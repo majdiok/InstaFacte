@@ -11,6 +11,7 @@ namespace FactuTrust.API.Tests;
 /// Performance baseline for firm registration. Requires SQL Server + Features:AccountingFirms:Enabled.
 /// Set RUN_FIRM_REGISTRATION_PERF=1 to execute.
 /// </summary>
+[Collection("SqlServerIntegration")]
 public sealed class RegisterFirmPerformanceTests : IClassFixture<ChannelsDisabledWebApplicationFactory>
 {
     private readonly ChannelsDisabledWebApplicationFactory _factory;

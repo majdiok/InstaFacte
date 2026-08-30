@@ -34,14 +34,14 @@ public sealed class PlatformBootstrapWebApplicationFactory : ChannelsDisabledWeb
 }
 
 /// <summary>
-/// Les classes qui se connectent avec le compte bootstrap partagent cette collection : xUnit ne
-/// les exécute jamais en parallèle (deux logins concurrents du même compte font courir l'écriture
-/// RefreshToken/session ⇒ DbUpdateConcurrencyException ⇒ 409 flaky).
+/// Toutes les classes qui utilisent les bases SQL master/tenant réelles partagent cette collection.
+/// Leurs factories démarrent des hôtes distincts mais pointent vers les mêmes bases de CI : les
+/// exécuter en parallèle fait entrer en concurrence bootstrap, login, provisioning et migrations.
 /// </summary>
-[CollectionDefinition("PlatformBootstrapLogin")]
-public sealed class PlatformBootstrapLoginCollection;
+[CollectionDefinition("SqlServerIntegration")]
+public sealed class SqlServerIntegrationCollection;
 
-[Collection("PlatformBootstrapLogin")]
+[Collection("SqlServerIntegration")]
 public sealed class PlatformBootstrapIntegrationTests : IClassFixture<PlatformBootstrapWebApplicationFactory>
 {
     private readonly PlatformBootstrapWebApplicationFactory _factory;

@@ -14,7 +14,7 @@ namespace FactuTrust.API.Tests;
 /// <summary>
 /// Vérifie GET/PUT /api/platform/ai-settings incluant le moteur d'inférence Ollama.
 /// </summary>
-[Collection("PlatformBootstrapLogin")]
+[Collection("SqlServerIntegration")]
 public sealed class PlatformAiSettingsIntegrationTests : IClassFixture<PlatformBootstrapWebApplicationFactory>
 {
     private static readonly JsonSerializerOptions ApiJsonOptions = new()

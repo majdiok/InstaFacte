@@ -10,7 +10,7 @@ using Xunit;
 
 namespace FactuTrust.API.Tests;
 
-[Collection("PlatformBootstrapLogin")]
+[Collection("SqlServerIntegration")]
 public sealed class PlatformTenantModalSettingsIntegrationTests : IClassFixture<PlatformBootstrapWebApplicationFactory>
 {
     private static readonly JsonSerializerOptions ApiJsonOptions = new()

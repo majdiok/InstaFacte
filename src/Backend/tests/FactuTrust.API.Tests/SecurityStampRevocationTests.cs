@@ -18,6 +18,7 @@ namespace FactuTrust.API.Tests;
 /// if that PATCH's transaction rolls back, the OLD token is NOT affected (atomicity).
 /// Requires a real SQL Server (company registration provisions a real tenant DB).
 /// </summary>
+[Collection("SqlServerIntegration")]
 public sealed class SecurityStampRevocationTests : IClassFixture<ChannelsDisabledWebApplicationFactory>
 {
     private readonly ChannelsDisabledWebApplicationFactory _factory;

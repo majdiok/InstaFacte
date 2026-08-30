@@ -18,6 +18,7 @@ namespace FactuTrust.API.Tests;
 /// Integration checks for /api/platform authorization (requires running API + SQL; may be skipped if DB unavailable).
 /// Utilise <see cref="ChannelsDisabledWebApplicationFactory"/> : flags Channels OFF (pas de pont Node en test).
 /// </summary>
+[Collection("SqlServerIntegration")]
 public sealed class PlatformApiIntegrationTests : IClassFixture<ChannelsDisabledWebApplicationFactory>
 {
     private readonly ChannelsDisabledWebApplicationFactory _factory;
