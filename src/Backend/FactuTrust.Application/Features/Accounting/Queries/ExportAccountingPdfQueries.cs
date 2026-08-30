@@ -118,6 +118,12 @@ public sealed class ExportMonthlyDeclarationOfficialFormQueryHandler
             declaration.Value.PayrollWithholdingIrpp,
             declaration.Value.PayrollWithholdingCss);
 
+        withholdingLines = RentWithholdingFormLines.Merge(
+            withholdingLines,
+            declaration.Value.WithholdingTax,
+            declaration.Value.RentWithholdingBase,
+            declaration.Value.RentWithholdingAmount);
+
         var bytes = await _pdf.GenerateMonthlyDeclarationOfficialFormPdfAsync(
             declaration.Value, withholdingLines, cancellationToken);
 

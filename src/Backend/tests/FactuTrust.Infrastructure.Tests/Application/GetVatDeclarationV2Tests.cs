@@ -119,6 +119,8 @@ public sealed class GetVatDeclarationV2Tests
         var journals = new Mock<IJournalEntryRepository>();
         journals.Setup(r => r.SumDebitsByAccountAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(0m);
+        journals.Setup(r => r.SumDebitsByAccountPrefixAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0m);
 
         var invoices = new Mock<IInvoiceRepository>();
         invoices.Setup(r => r.SumFiscalStampAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
@@ -193,6 +195,8 @@ public sealed class GetVatDeclarationV2Tests
         var journals = new Mock<IJournalEntryRepository>();
         journals.Setup(r => r.SumDebitsByAccountAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(999m); // ne doit PAS être utilisé quand des lignes immobilisation existent
+        journals.Setup(r => r.SumDebitsByAccountPrefixAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0m);
 
         var invoices = new Mock<IInvoiceRepository>();
         var supplierInvoices = new Mock<ISupplierInvoiceRepository>();
@@ -235,6 +239,8 @@ public sealed class GetVatDeclarationV2Tests
         var journals = new Mock<IJournalEntryRepository>();
         journals.Setup(r => r.SumDebitsByAccountAsync("43662", It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(50m);
+        journals.Setup(r => r.SumDebitsByAccountPrefixAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0m);
 
         var invoices = new Mock<IInvoiceRepository>();
         var supplierInvoices = new Mock<ISupplierInvoiceRepository>();
@@ -283,6 +289,8 @@ public sealed class GetVatDeclarationV2Tests
 
         var journals = new Mock<IJournalEntryRepository>();
         journals.Setup(r => r.SumDebitsByAccountAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0m);
+        journals.Setup(r => r.SumDebitsByAccountPrefixAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(0m);
         var invoices = new Mock<IInvoiceRepository>();
         var supplierInvoices = new Mock<ISupplierInvoiceRepository>();
@@ -371,6 +379,8 @@ public sealed class GetVatDeclarationV2Tests
 
         var journals = new Mock<IJournalEntryRepository>();
         journals.Setup(r => r.SumDebitsByAccountAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0m);
+        journals.Setup(r => r.SumDebitsByAccountPrefixAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(0m);
 
         var invoices = new Mock<IInvoiceRepository>();
@@ -510,5 +520,46 @@ public sealed class GetVatDeclarationV2Tests
         Assert.Equal(25.500m, result.Value.PayrollWithholdingIrpp);
         Assert.Equal(4.500m, result.Value.PayrollWithholdingCss);
         Assert.Equal(168.000m, result.Value.PayrollSalariesGrossBase);
+    }
+
+    [Fact]
+    public async Task Handle_V2_AddsRentJournalWithholdingFromAccount613()
+    {
+        var mediator = new Mock<IMediator>();
+        mediator.Setup(m => m.Send(It.IsAny<GetSalesVatReportQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<SalesVatReportRowDto>>(new List<SalesVatReportRowDto>()));
+        mediator.Setup(m => m.Send(It.IsAny<GetPurchasesVatReportQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<PurchasesVatReportRowDto>>(new List<PurchasesVatReportRowDto>()));
+        mediator.Setup(m => m.Send(It.IsAny<GetWithholdingMonthlyReportQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WithholdingMonthlyReportDto(2026, 8, new(), 0m, 0m, 0));
+
+        var vatRepo = new Mock<IVatDeclarationRepository>();
+        vatRepo.Setup(r => r.GetByYearMonthAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((VatDeclaration?)null);
+
+        var journals = new Mock<IJournalEntryRepository>();
+        journals.Setup(r => r.SumDebitsByAccountAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0m);
+        journals.Setup(r => r.SumDebitsByAccountPrefixAsync("613", It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1_350m);
+
+        var invoices = new Mock<IInvoiceRepository>();
+        var supplierInvoices = new Mock<ISupplierInvoiceRepository>();
+        supplierInvoices.Setup(r => r.SumFixedAssetDeductibleVatAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0m);
+
+        var settings = Options.Create(new AccountingSettings { MonthlyDeclarationV2Enabled = true });
+        var handler = new GetVatDeclarationQueryHandler(
+            mediator.Object, vatRepo.Object, journals.Object, invoices.Object, supplierInvoices.Object,
+            CreateTenantSummaryMock().Object, CreatePayrollProvider(), settings);
+
+        var result = await handler.Handle(new GetVatDeclarationQuery(2026, 8), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1_350m, result.Value.RentWithholdingBase);
+        Assert.Equal(135m, result.Value.RentWithholdingAmount);
+        var suggested = result.Value.Suggested!;
+        Assert.Equal(135m, suggested.WithholdingFromRentJournal);
+        Assert.Equal(135m, suggested.WithholdingTax);
     }
 }

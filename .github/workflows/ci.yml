@@ -4,8 +4,9 @@ name: CI
 # dès que le dépôt sera poussé sur GitHub. En attendant, utiliser
 # scripts/verify-all.ps1 en local (mêmes étapes).
 #
-# Secret GitHub requis pour le job Playwright smoke :
+# Secrets GitHub requis :
 #   CI_SQL_SA_PASSWORD — mot de passe SA SQL Server (politique de complexité Microsoft).
+#   TRUNK_API_TOKEN — token organisation Trunk (Settings → Organization → General) pour Flaky Tests.
 on:
   push:
     branches: [master, main]
@@ -111,6 +112,16 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Smoke e2e (Chromium)
         run: npx playwright test e2e/sidebar-collapse.spec.ts e2e/test-backend-connection.spec.ts --project=chromium
+      - name: Upload Test Results to Trunk.io
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: trunk-io/analytics-uploader@v2
+        with:
+          junit-paths: src/Frontend/factutrust-web/e2e/test-results/junit.xml
+          org-slug: instafact
+          token: ${{ secrets.TRUNK_API_TOKEN }}
+        env:
+          TRUNK_API_TOKEN: ${{ secrets.TRUNK_API_TOKEN }}
 
   frontend-backoffice:
     name: Backoffice Angular (build)

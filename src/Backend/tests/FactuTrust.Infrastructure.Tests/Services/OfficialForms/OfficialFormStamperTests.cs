@@ -146,6 +146,45 @@ public sealed class OfficialFormStamperTests
     }
 
     [Fact]
+    public void Stamp_PlacesRentWithholdingOnArticleFourIndividuals()
+    {
+        var map = OfficialFormFieldMap.Load(MapName);
+        var line4Base = map.ByKey["Withholding.Line4Individuals.Base"];
+        var line4Amount = map.ByKey["Withholding.Line4Individuals.Amount"];
+
+        var bytes = BuildStamper().Stamp(map, new Dictionary<string, string?>
+        {
+            [line4Base.Key] = "1 350,000",
+            [line4Amount.Key] = "135,000"
+        });
+
+        using var document = PdfDocument.Open(bytes);
+        var page = document.GetPage(line4Amount.Page);
+        var amountBaseline = page.Height - line4Amount.Y;
+
+        var stampedAmount = page.Letters
+            .Where(l => Math.Abs(l.StartBaseLine.Y - amountBaseline) < 2d
+                        && l.Value.Length == 1
+                        && (char.IsDigit(l.Value[0]) || l.Value[0] == ','))
+            .OrderBy(l => l.StartBaseLine.X)
+            .ToList();
+
+        Assert.NotEmpty(stampedAmount);
+        Assert.Contains("135,000", string.Concat(stampedAmount.Select(l => l.Value)));
+
+        var baseBaseline = page.Height - line4Base.Y;
+        var stampedBase = page.Letters
+            .Where(l => Math.Abs(l.StartBaseLine.Y - baseBaseline) < 2d
+                        && l.Value.Length == 1
+                        && (char.IsDigit(l.Value[0]) || l.Value[0] == ',' || l.Value[0] == ' '))
+            .OrderBy(l => l.StartBaseLine.X)
+            .ToList();
+
+        Assert.NotEmpty(stampedBase);
+        Assert.Contains("1 350,000", string.Concat(stampedBase.Select(l => l.Value)));
+    }
+
+    [Fact]
     public void Stamp_LeavesUnsuppliedAndEmptyCellsBlank()
     {
         var map = OfficialFormFieldMap.Load(MapName);

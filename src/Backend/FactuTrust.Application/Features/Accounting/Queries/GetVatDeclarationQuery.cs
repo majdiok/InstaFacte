@@ -3,6 +3,8 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Accounting;
+using FactuTrust.Application.Features.Accounting.OfficialForm;
 using FactuTrust.Application.Features.Accounting.Services;
 using FactuTrust.Application.Features.Reports.Queries;
 using FactuTrust.Application.Features.WithholdingTax.Queries;
@@ -159,6 +161,8 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
             PayrollSalariesNetTaxableBase = context.Payroll.SalariesNetTaxableBase,
             PayrollWithholdingIrpp = context.Payroll.WithholdingIrpp,
             PayrollWithholdingCss = context.Payroll.WithholdingCss,
+            RentWithholdingBase = context.RentWithholdingBase,
+            RentWithholdingAmount = context.RentWithholdingAmount,
             CompanyName = tenantSummary?.CompanyName ?? string.Empty,
             Nif = tenantSummary?.Nif ?? string.Empty,
             TaxRegimeDisplay = tenantSummary?.TaxRegimeDisplay ?? string.Empty,
@@ -194,6 +198,8 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
         public decimal DeductiblePurchasesTaxableBase { get; init; }
         public decimal FodecTaxableBase { get; init; }
         public PayrollMonthlyContribution Payroll { get; init; } = PayrollMonthlyContribution.None;
+        public decimal RentWithholdingBase { get; init; }
+        public decimal RentWithholdingAmount { get; init; }
         public IReadOnlyList<VatRateBreakdownDto> CollectedVatBreakdown { get; init; } = Array.Empty<VatRateBreakdownDto>();
     }
 
@@ -267,6 +273,11 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
 
         var v2 = _settings.MonthlyDeclarationV2Enabled;
 
+        var rentBase = v2
+            ? await _journalEntries.SumDebitsByAccountPrefixAsync(
+                CashDeskPostingAccounts.Rent, start, end, cancellationToken)
+            : 0m;
+
         return new PeriodContext
         {
             Currency = sales.Value.FirstOrDefault()?.Currency ?? Money.DefaultCurrency,
@@ -286,6 +297,8 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
             DeductiblePurchasesTaxableBase = purchases.Value.Sum(p => p.TotalTaxableAmount),
             FodecTaxableBase = v2 ? await _invoices.SumFodecTaxableBaseAsync(start, end, cancellationToken) : 0m,
             Payroll = v2 ? await _payroll.GetAsync(request.Year, request.Month, cancellationToken) : PayrollMonthlyContribution.None,
+            RentWithholdingBase = rentBase,
+            RentWithholdingAmount = RentWithholdingFormLines.ComputeAmount(rentBase),
             // Base + TVA par taux, caisse incluse : requis par MonthlyDeclarationFormBinder
             // (case Vat.Rate{r}.Base lue depuis breakdown.TaxableBase, Vat.Rate{r}.Due depuis
             // CollectedVat{r}) — ne pas alimenter la base ferait diverger Base × taux de Due.
@@ -342,11 +355,12 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
         if (!v2)
             return vat;
 
-        // Retenue à la source : factures fournisseurs (module RS) et traitements et salaires
-        // (IRPP + CSS du cycle de paie). Les deux relèvent de la même ligne de la déclaration.
+        // Retenue à la source : factures fournisseurs, traitements et salaires (IRPP + CSS),
+        // et loyers journal 613 (article 4 personnes physiques 10 %).
         var rs = await _mediator.Send(new GetWithholdingMonthlyReportQuery(request.Year, request.Month), cancellationToken);
         var withholdingFromInvoices = rs.GrandTotalWithheld;
         var withholdingFromSalaries = context.Payroll.WithholdingTotal;
+        var withholdingFromRentJournal = context.RentWithholdingAmount;
 
         return vat with
         {
@@ -357,7 +371,8 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
             Foprolos = context.Payroll.Foprolos,
             WithholdingFromInvoices = withholdingFromInvoices,
             WithholdingFromSalaries = withholdingFromSalaries,
-            WithholdingTax = withholdingFromInvoices + withholdingFromSalaries
+            WithholdingFromRentJournal = withholdingFromRentJournal,
+            WithholdingTax = withholdingFromInvoices + withholdingFromSalaries + withholdingFromRentJournal
             // Acomptes provisionnels : aucune source automatique, saisie manuelle uniquement.
         };
     }
@@ -384,6 +399,7 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
         WithholdingTax = live.WithholdingTax,
         WithholdingFromInvoices = live.WithholdingFromInvoices,
         WithholdingFromSalaries = live.WithholdingFromSalaries,
+        WithholdingFromRentJournal = live.WithholdingFromRentJournal,
         TotalToPay = TotalToPay(live, v2),
         PayrollRunExists = context.Payroll.RunExists,
         PayrollRunStatus = context.Payroll.Status is { } s ? (int)s : null,
@@ -413,6 +429,7 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
         public decimal WithholdingTax { get; init; }
         public decimal WithholdingFromInvoices { get; init; }
         public decimal WithholdingFromSalaries { get; init; }
+        public decimal WithholdingFromRentJournal { get; init; }
         public decimal Acomptes { get; init; }
 
         public static TaxAmounts FromEntity(VatDeclaration d) => new()

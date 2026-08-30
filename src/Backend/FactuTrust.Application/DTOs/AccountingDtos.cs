@@ -537,6 +537,15 @@ public sealed record VatDeclarationDto
     public decimal PayrollWithholdingCss { get; init; }
 
     /// <summary>
+    /// Somme des débits validés sur le compte 613 (et sous-comptes) du mois — assiette RS loyers
+    /// article 4 personnes physiques. Toujours recalculée (contexte live).
+    /// </summary>
+    public decimal RentWithholdingBase { get; init; }
+
+    /// <summary>Retenue 10 % sur <see cref="RentWithholdingBase"/> (article 4, personnes physiques).</summary>
+    public decimal RentWithholdingAmount { get; init; }
+
+    /// <summary>
     /// Recalcul temps réel de la période depuis les modules (ventes, achats, retenue à la source,
     /// paie). Toujours renseigné quand la V2 est active.
     ///
@@ -577,6 +586,9 @@ public sealed record VatDeclarationComputedDto
 
     /// <summary>Part de la RS provenant des traitements et salaires (IRPP + CSS).</summary>
     public decimal WithholdingFromSalaries { get; init; }
+
+    /// <summary>Part de la RS provenant des débits journal 613 (loyers PP 10 %).</summary>
+    public decimal WithholdingFromRentJournal { get; init; }
 
     /// <summary>Total à payer si l'on retenait l'intégralité des valeurs calculées.</summary>
     public decimal TotalToPay { get; init; }

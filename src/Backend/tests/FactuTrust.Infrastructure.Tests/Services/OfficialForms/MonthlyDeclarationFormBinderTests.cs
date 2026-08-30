@@ -305,6 +305,28 @@ public sealed class MonthlyDeclarationFormBinderTests
         Assert.Equal("166,693", values["Withholding.Total"]);
         Assert.Null(values.GetValueOrDefault("Withholding.Line4Individuals.Amount"));
     }
+
+    [Fact]
+    public void Bind_PlacesRentWithholdingOnOfficialLineFourIndividuals()
+    {
+        // Cas ste nour 08/2026 : loyers journal 613 → article 4 personnes physiques 10 %.
+        var lines = new Dictionary<string, decimal>
+        {
+            ["Line1.Base"] = 1_185.201m,
+            ["Line1.Amount"] = 150.467m,
+            ["Line3.Base"] = 1_185.201m,
+            ["Line3.Amount"] = 5.926m,
+            ["Line4Individuals.Base"] = 1_350m,
+            ["Line4Individuals.Amount"] = 135m
+        };
+
+        var values = MonthlyDeclarationFormBinder.Bind(
+            Declaration(d => d.WithholdingTax = 291.393m), lines);
+
+        Assert.Equal("1 350,000", values["Withholding.Line4Individuals.Base"]);
+        Assert.Equal("135,000", values["Withholding.Line4Individuals.Amount"]);
+        Assert.Equal("291,393", values["Withholding.Total"]);
+    }
 }
 
 /// <summary>
@@ -487,5 +509,57 @@ public sealed class PayrollWithholdingFormLinesTests
     {
         Assert.Empty(PayrollWithholdingFormLines.Merge(
             null, declaredTotal: 0m, netTaxable: 1_185.201m, irpp: 150.467m, css: 5.926m));
+    }
+}
+
+/// <summary>
+/// Fusion RS loyers journal 613 (article 4 — personnes physiques 10 %) sur le formulaire officiel.
+/// </summary>
+public sealed class RentWithholdingFormLinesTests
+{
+    [Fact]
+    public void Merge_SteNour_MapsAccount613ToLineFourIndividuals()
+    {
+        var payrollLines = PayrollWithholdingFormLines.Merge(
+            invoiceLines: null,
+            declaredTotal: 291.393m,
+            netTaxable: 1_185.201m,
+            irpp: 150.467m,
+            css: 5.926m);
+
+        var lines = RentWithholdingFormLines.Merge(
+            payrollLines,
+            declaredTotal: 291.393m,
+            rentBase: 1_350m,
+            rentWithheld: 135m);
+
+        Assert.Equal(1_350m, lines["Line4Individuals.Base"]);
+        Assert.Equal(135m, lines["Line4Individuals.Amount"]);
+        Assert.Equal(1_185.201m, lines["Line1.Base"]);
+        Assert.Equal(150.467m, lines["Line1.Amount"]);
+    }
+
+    [Fact]
+    public void Merge_OmitsLineWhenRentWithheldIsZero()
+    {
+        var lines = RentWithholdingFormLines.Merge(null, declaredTotal: 100m, rentBase: 0m, rentWithheld: 0m);
+
+        Assert.Empty(lines);
+    }
+
+    [Fact]
+    public void Merge_AbandonsBreakdownWhenVentilatedTotalExceedsDeclared()
+    {
+        var payrollLines = PayrollWithholdingFormLines.Merge(
+            null, declaredTotal: 291.393m, netTaxable: 1_185.201m, irpp: 150.467m, css: 5.926m);
+
+        Assert.Empty(RentWithholdingFormLines.Merge(
+            payrollLines, declaredTotal: 200m, rentBase: 1_350m, rentWithheld: 135m));
+    }
+
+    [Fact]
+    public void ComputeAmount_RoundsToThreeDecimals()
+    {
+        Assert.Equal(135m, RentWithholdingFormLines.ComputeAmount(1_350m));
     }
 }

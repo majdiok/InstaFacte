@@ -69,6 +69,12 @@ public interface IJournalEntryRepository
     Task<decimal> SumDebitsByAccountAsync(string accountNumber, DateTime from, DateTime to, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Somme des débits sur un compte ou ses sous-comptes (préfixe). Consommé par la déclaration
+    /// mensuelle (assiette RS loyers 613) : brouillons exclus, comme <see cref="SumDebitsByAccountAsync"/>.
+    /// </summary>
+    Task<decimal> SumDebitsByAccountPrefixAsync(string accountPrefix, DateTime from, DateTime to, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Mouvements de TVA caisse comptabilisés sur la période, en montants SIGNÉS :
     /// écritures SourceEntityType="CashOperation" (Y COMPRIS extournées) portant du 436711,
     /// PLUS leurs extournes manuelles (SourceEntityType="ManualReversal" dont ReversesEntryId

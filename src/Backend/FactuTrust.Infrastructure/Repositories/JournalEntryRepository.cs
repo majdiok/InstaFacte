@@ -239,6 +239,22 @@ public sealed class JournalEntryRepository : IJournalEntryRepository
             .SumAsync(l => l.DebitAmount.Amount, cancellationToken);
     }
 
+    public async Task<decimal> SumDebitsByAccountPrefixAsync(string accountPrefix, DateTime from, DateTime to, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var prefix = accountPrefix.Trim();
+        var fromDate = from.Date;
+        var toDate = to.Date;
+
+        return await context.JournalEntryLines
+            .Where(l => l.AccountNumber == prefix || l.AccountNumber.StartsWith(prefix))
+            .Where(l => l.JournalEntry!.EntryDate >= fromDate && l.JournalEntry.EntryDate <= toDate)
+            .Where(l => !l.JournalEntry!.IsReversed)
+            // Consommé par la déclaration mensuelle (RS loyers) : jamais de brouillons.
+            .Where(l => l.JournalEntry!.Status != Domain.Enums.JournalEntryStatus.Brouillon)
+            .SumAsync(l => l.DebitAmount.Amount, cancellationToken);
+    }
+
     /// <summary>
     /// Déclaration TVA assise sur le JOURNAL (plan §6.7) : on somme ce qui a été réellement
     /// comptabilisé sur 436711/707, pas les opérations de caisse elles-mêmes (l'opération est

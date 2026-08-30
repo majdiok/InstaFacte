@@ -152,6 +152,40 @@ public sealed class AccountingReportingDraftPolicyTests
         Assert.Equal(100m, sum);
     }
 
+    private static JournalEntry MakeRentEntry(
+        int number, string account, decimal debit, JournalEntryStatus status, DateTime date)
+    {
+        var lines = new[]
+        {
+            new JournalLineInput(account, "Loyer", debit, 0m, null, ThirdPartyKind.None),
+            new JournalLineInput("5411", "Caisse", 0m, debit, null, ThirdPartyKind.None)
+        };
+        var entry = JournalEntry.Create(
+            number, "JC", date, $"Loyer {number}", Guid.NewGuid(),
+            false, "CashOperation", null, lines, initialStatus: status).Value;
+        entry.SetAuditInfo("test", false);
+        return entry;
+    }
+
+    [Fact]
+    public async Task SumDebitsByAccountPrefix_613_IncludesValidatedRootAndSubAccount_ExcludesDrafts()
+    {
+        var repo = new JournalEntryRepository(_factory);
+        var date = new DateTime(2026, 8, 15);
+        await using (var ctx = _factory.CreateContext())
+        {
+            ctx.JournalEntries.Add(MakeRentEntry(20, "613", 750m, JournalEntryStatus.Validee, date));
+            ctx.JournalEntries.Add(MakeRentEntry(21, "6132", 600m, JournalEntryStatus.Validee, date));
+            ctx.JournalEntries.Add(MakeRentEntry(22, "613", 400m, JournalEntryStatus.Brouillon, date));
+            await ctx.SaveChangesAsync();
+        }
+
+        var sum = await repo.SumDebitsByAccountPrefixAsync(
+            "613", new DateTime(2026, 8, 1), new DateTime(2026, 8, 31));
+
+        Assert.Equal(1_350m, sum);
+    }
+
     // ── Non-régression : édition cabinet d'un brouillon (plan v3, tâche 7) ──────────────────
     // Le brouillard est par nature provisoire : une édition cabinet d'un brouillon doit se
     // refléter IMMÉDIATEMENT dans les écrans de consultation (brouillard inclus) — comportement
