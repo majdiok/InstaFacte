@@ -29,6 +29,11 @@ public sealed record CompanyDto
     public string? WarehouseName { get; init; }
     public string? CnssEmployerNumber { get; init; }
     public bool ClientPortalEnabled { get; init; } = true;
+
+    // Sector-aware registration wizard (plan §6.1 B7) — read-only in Phase 1, populated from the
+    // master Tenant row; null for tenants registered before this feature or via register-firm.
+    public string? CompanySegment { get; init; }
+    public string? BusinessDomain { get; init; }
 }
 
 /// <summary>

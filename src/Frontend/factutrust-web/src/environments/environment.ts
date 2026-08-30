@@ -63,7 +63,9 @@ export const environment = {
      * À basculer CONJOINTEMENT avec `TreasuryForecast:Enabled` côté API : si le back est off,
      * toutes les routes du module répondent 503.
      */
-    treasuryCashForecast: true
+    treasuryCashForecast: true,
+    /** Sector-aware 4-step registration wizard at /auth/register. Set false to serve the legacy 3-step form. */
+    registrationWizardV2: true
   },
   /** First-login product tour + checklist. Mirror of ProductOnboarding:Enabled. */
   productOnboardingEnabled: true

@@ -292,6 +292,16 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1)
             }));
 
+    // Catalogue sectoriel public (wizard d'inscription) — donnée statique, lisible seule.
+    options.AddPolicy("public-catalog", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = isDevelopment ? 2000 : 60,
+                Window = TimeSpan.FromMinutes(1)
+            }));
+
     options.OnRejected = async (context, _) =>
     {
         context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;

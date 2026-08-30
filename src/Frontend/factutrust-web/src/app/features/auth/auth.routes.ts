@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { authGuard } from '@core/guards/auth.guard';
 import { accountingFirmsFeatureGuard } from '@core/guards/accounting-firms.guard';
+import { environment } from '@environments/environment';
 
 export const AUTH_ROUTES: Routes = [
   {
@@ -31,7 +32,10 @@ export const AUTH_ROUTES: Routes = [
   },
   {
     path: 'register',
-    loadComponent: () => import('./register/register.component').then(m => m.RegisterComponent),
+    loadComponent: () =>
+      environment.featureFlags.registrationWizardV2
+        ? import('./register-wizard/register-wizard.component').then(m => m.RegisterWizardComponent)
+        : import('./register/register.component').then(m => m.RegisterComponent),
     title: 'Inscription - InstaFact'
   },
   {

@@ -89,6 +89,10 @@ export interface RegisterRequest {
   phone: string;
   website?: string;
   warehouseName?: string;
+  /** Sector-aware registration wizard (Phase 1). Absent/undefined ⇒ exact legacy behavior. */
+  companySegment?: string;
+  businessDomain?: string;
+  enabledModules?: number[];
 }
 
 export interface RegisterAccountingFirmRequest {

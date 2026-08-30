@@ -37,6 +37,9 @@
     }
 
     .icon {
+      // Forcer PrimeIcons : le thème Pluto impose `i.icon { font-family: fontawesome }`
+      // (style.css), ce qui transforme les glyphes `.pi` en « tofu ».
+      font-family: 'primeicons' !important;
       display: flex;
       align-items: center;
       justify-content: center;
