@@ -75,7 +75,6 @@ export interface RecurringContractDetail {
   nextBillingDate?: string | null;
   lastBilledPeriodEnd?: string | null;
   paymentTermTemplateId?: string | null;
-  priceListId?: string | null;
   autoRenew: boolean;
   noticePeriodDays: number;
   currency: string;
@@ -102,7 +101,6 @@ export interface UpsertRecurringContractPayload {
   autoRenew: boolean;
   noticePeriodDays: number;
   paymentTermTemplateId?: string | null;
-  priceListId?: string | null;
   sourceQuoteId?: string | null;
   reference?: string | null;
   notes?: string | null;

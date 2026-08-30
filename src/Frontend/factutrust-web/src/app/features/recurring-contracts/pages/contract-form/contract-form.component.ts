@@ -16,7 +16,7 @@ import {
   UpsertRecurringContractPayload
 } from '@core/services/recurring-contract.service';
 import { ClientService, ClientListItem } from '@core/services/client.service';
-import { PricingService, PaymentTermTemplate, PriceListListItem } from '@core/services/pricing.service';
+import { PricingService, PaymentTermTemplate } from '@core/services/pricing.service';
 import { ProductService, ProductListItem } from '@core/services/product.service';
 import { QuoteDetail, QuoteService } from '@core/services/quote.service';
 import { ToastService } from '@core/services/toast.service';
@@ -53,7 +53,8 @@ interface ContractLineForm extends ContractLinePayloadSource {
     <form (ngSubmit)="save()">
       <app-form-section [number]="1" title="Client et référence" icon="pi-user">
         <div class="grid">
-          <label>Client *
+          <label>
+            <span class="field-label required">Client</span>
             <select class="ft-input" [(ngModel)]="clientId" name="clientId" required [disabled]="!!quoteId">
               <option value="">— Sélectionner —</option>
               @for (c of clients(); track c.id) {
@@ -82,7 +83,8 @@ interface ContractLineForm extends ContractLinePayloadSource {
           <label>Jour de facturation
             <input class="ft-input" type="number" min="1" max="31" [(ngModel)]="billingDayOfMonth" name="billingDay" />
           </label>
-          <label>Date de début *
+          <label>
+            <span class="field-label required">Date de début</span>
             <input class="ft-input" type="date" [(ngModel)]="startDate" name="startDate" required />
           </label>
           <label>Date de fin
@@ -93,14 +95,6 @@ interface ContractLineForm extends ContractLinePayloadSource {
               <option [ngValue]="null">— Par défaut —</option>
               @for (pt of paymentTerms(); track pt.id) {
                 <option [ngValue]="pt.id">{{ pt.name }}</option>
-              }
-            </select>
-          </label>
-          <label>Grille tarifaire
-            <select class="ft-input" [(ngModel)]="priceListId" name="priceListId">
-              <option [ngValue]="null">— Aucune —</option>
-              @for (pl of priceLists(); track pl.id) {
-                <option [ngValue]="pl.id">{{ pl.name }}</option>
               }
             </select>
           </label>
@@ -135,8 +129,8 @@ interface ContractLineForm extends ContractLinePayloadSource {
               </app-button>
             </div>
             <div class="grid">
-              <label class="span-2">Description *
-                <input class="ft-input" placeholder="Description" [(ngModel)]="line.description" [name]="'desc' + i" required />
+              <label class="span-2">Description
+                <input class="ft-input" placeholder="Description (optionnelle)" [(ngModel)]="line.description" [name]="'desc' + i" />
               </label>
               @if (line.lineType !== 'OneTimeSetup') {
                 <label>Produit
@@ -158,7 +152,8 @@ interface ContractLineForm extends ContractLinePayloadSource {
                 <input class="ft-input" type="number" step="0.001" min="0" placeholder="TVA %" [(ngModel)]="line.vatRate" [name]="'vat' + i" />
               </label>
               @if (line.lineType === 'UsageMetered') {
-                <label>Métrique *
+                <label>
+                  <span class="field-label required">Métrique</span>
                   <select class="ft-input" [(ngModel)]="line.usageMetricId" [name]="'metric' + i">
                     <option [ngValue]="null">— Sélectionner —</option>
                     @for (m of usageMetrics(); track m.id) {
@@ -211,6 +206,11 @@ interface ContractLineForm extends ContractLinePayloadSource {
       gap: var(--spacing-1);
       font-size: var(--font-size-sm);
       color: var(--color-text-secondary);
+    }
+
+    .field-label.required::after {
+      content: ' *';
+      color: var(--color-error-500);
     }
 
     .span-2 { grid-column: span 2; }
@@ -281,7 +281,6 @@ export class ContractFormComponent implements OnInit {
 
   readonly clients = signal<ClientListItem[]>([]);
   readonly paymentTerms = signal<PaymentTermTemplate[]>([]);
-  readonly priceLists = signal<PriceListListItem[]>([]);
   readonly products = signal<ProductListItem[]>([]);
   readonly usageMetrics = signal<UsageMetric[]>([]);
   readonly isEdit = signal(false);
@@ -298,7 +297,6 @@ export class ContractFormComponent implements OnInit {
   autoRenew = true;
   noticePeriodDays = 30;
   paymentTermTemplateId: string | null = null;
-  priceListId: string | null = null;
   reference = '';
   notes = '';
   lines: ContractLineForm[] = [this.newLine(0)];
@@ -392,7 +390,6 @@ export class ContractFormComponent implements OnInit {
       autoRenew: this.autoRenew,
       noticePeriodDays: this.noticePeriodDays,
       paymentTermTemplateId: this.paymentTermTemplateId,
-      priceListId: this.priceListId,
       reference: this.reference || null,
       notes: this.notes || null,
       lines: toLinePayloads(this.lines)
@@ -461,9 +458,6 @@ export class ContractFormComponent implements OnInit {
     }
     if (this.lines.length === 0) return 'Ajoutez au moins une ligne au contrat.';
     for (const line of this.lines) {
-      if (!line.description?.trim()) {
-        return 'Chaque ligne doit avoir une description.';
-      }
       if (line.lineType === 'UsageMetered' && !line.usageMetricId) {
         return 'La métrique est obligatoire pour une ligne à la consommation.';
       }
@@ -494,10 +488,6 @@ export class ContractFormComponent implements OnInit {
     this.pricingService.getPaymentTerms(true).subscribe({
       next: res => this.paymentTerms.set(res.data ?? []),
       error: () => this.paymentTerms.set([])
-    });
-    this.pricingService.getPriceLists().subscribe({
-      next: res => this.priceLists.set(res.data ?? []),
-      error: () => this.priceLists.set([])
     });
     // Catalogue non critique : une 403 (pas de permission produits) laisse le select vide.
     this.productService.getProducts({ pageSize: 200 }).subscribe({
@@ -559,7 +549,6 @@ export class ContractFormComponent implements OnInit {
     this.autoRenew = c.autoRenew;
     this.noticePeriodDays = c.noticePeriodDays;
     this.paymentTermTemplateId = c.paymentTermTemplateId ?? null;
-    this.priceListId = c.priceListId ?? null;
     this.reference = c.reference ?? '';
     this.notes = c.notes ?? '';
     this.lines = c.lines.map((l, i) => ({

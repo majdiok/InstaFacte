@@ -35,7 +35,7 @@ public sealed partial class RecurringContractService
         var created = RecurringContract.CreateDraft(
             clientId, source.BillingFrequency, source.BillingDayOfMonth, startDate, endDate,
             source.AutoRenew, source.NoticePeriodDays, source.Currency,
-            source.PaymentTermTemplateId, source.PriceListId, sourceQuoteId: null,
+            source.PaymentTermTemplateId, sourceQuoteId: null,
             dto.Reference ?? source.Reference, source.Notes);
         if (created.IsFailure)
             return Result.Failure<Guid>(created.Error);

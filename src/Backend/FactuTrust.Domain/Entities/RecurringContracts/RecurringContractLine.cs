@@ -8,7 +8,7 @@ public sealed class RecurringContractLine : Entity
     public Guid RecurringContractId { get; private set; }
     public RecurringContractLineType LineType { get; private set; }
     public Guid? ProductId { get; private set; }
-    public string Description { get; private set; } = null!;
+    public string Description { get; private set; } = string.Empty;
     public decimal Quantity { get; private set; }
     public decimal UnitPriceHT { get; private set; }
     public decimal VatRate { get; private set; }
@@ -39,8 +39,6 @@ public sealed class RecurringContractLine : Entity
         description = description?.Trim() ?? string.Empty;
         if (recurringContractId == Guid.Empty)
             return Result.Failure<RecurringContractLine>(Error.Validation("RecurringContractId", "Le contrat est obligatoire"));
-        if (string.IsNullOrEmpty(description))
-            return Result.Failure<RecurringContractLine>(Error.Validation("Description", "La description est obligatoire"));
         if (quantity < 0)
             return Result.Failure<RecurringContractLine>(Error.Validation("Quantity", "La quantité ne peut pas être négative"));
         if (unitPriceHt < 0)
@@ -80,8 +78,6 @@ public sealed class RecurringContractLine : Entity
         int sortOrder)
     {
         description = description?.Trim() ?? string.Empty;
-        if (string.IsNullOrEmpty(description))
-            return Result.Failure(Error.Validation("Description", "La description est obligatoire"));
         if (quantity < 0)
             return Result.Failure(Error.Validation("Quantity", "La quantité ne peut pas être négative"));
         if (unitPriceHt < 0)

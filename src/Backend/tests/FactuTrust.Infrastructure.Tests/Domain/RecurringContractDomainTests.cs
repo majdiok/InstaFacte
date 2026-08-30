@@ -31,6 +31,19 @@ public sealed class RecurringContractDomainTests
     }
 
     [Fact]
+    public void AddLine_WithEmptyDescription_Succeeds()
+    {
+        var contract = RecurringContract.CreateDraft(
+            Guid.NewGuid(), BillingFrequency.Monthly, 1, new DateTime(2026, 1, 1)).Value;
+
+        var result = contract.AddLine(
+            RecurringContractLineType.FixedRecurring, "   ", 1, 50m, 19m);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(string.Empty, result.Value.Description);
+    }
+
+    [Fact]
     public void BillingRun_IdempotentPeriod_UniqueConstraintConcept()
     {
         var contractId = Guid.NewGuid();

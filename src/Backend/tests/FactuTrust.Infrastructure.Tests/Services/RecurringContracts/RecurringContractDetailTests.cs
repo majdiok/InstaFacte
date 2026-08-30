@@ -42,7 +42,6 @@ public sealed class RecurringContractDetailTests
         Assert.Equal(baseDto.NextBillingDate, detail.NextBillingDate);
         Assert.Equal(baseDto.LastBilledPeriodEnd, detail.LastBilledPeriodEnd);
         Assert.Equal(baseDto.PaymentTermTemplateId, detail.PaymentTermTemplateId);
-        Assert.Equal(baseDto.PriceListId, detail.PriceListId);
         Assert.Equal(baseDto.AutoRenew, detail.AutoRenew);
         Assert.Equal(baseDto.NoticePeriodDays, detail.NoticePeriodDays);
         Assert.Equal(baseDto.Currency, detail.Currency);

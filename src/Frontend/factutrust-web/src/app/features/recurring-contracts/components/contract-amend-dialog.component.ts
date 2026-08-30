@@ -86,8 +86,8 @@ interface ProrationOption {
             </app-button>
           </div>
           <div class="grid">
-            <label class="span-2">Description *
-              <input class="ft-input" [(ngModel)]="line.description" [name]="'amendDesc' + i" />
+            <label class="span-2">Description
+              <input class="ft-input" placeholder="Description (optionnelle)" [(ngModel)]="line.description" [name]="'amendDesc' + i" />
             </label>
             <label>Qté
               <input class="ft-input" type="number" [(ngModel)]="line.quantity" [name]="'amendQty' + i" />
@@ -99,7 +99,8 @@ interface ProrationOption {
               <input class="ft-input" type="number" step="0.001" min="0" [(ngModel)]="line.vatRate" [name]="'amendVat' + i" />
             </label>
             @if (line.lineType === 'UsageMetered') {
-              <label>Métrique *
+              <label>
+                <span class="field-label required">Métrique</span>
                 <select class="ft-input" [(ngModel)]="line.usageMetricId" [name]="'amendMetric' + i">
                   <option [ngValue]="null">— Sélectionner —</option>
                   @for (m of usageMetrics; track m.id) {
@@ -152,6 +153,11 @@ interface ProrationOption {
       gap: var(--spacing-1);
       font-size: var(--font-size-sm);
       color: var(--color-text-secondary);
+    }
+
+    .field-label.required::after {
+      content: ' *';
+      color: var(--color-error-500);
     }
 
     .span-2 { grid-column: span 2; }
@@ -290,10 +296,6 @@ export class ContractAmendDialogComponent {
       return;
     }
     for (const line of this.lines) {
-      if (!line.description?.trim()) {
-        this.toast.add({ severity: 'warn', summary: 'Avenant incomplet', detail: 'Chaque ligne doit avoir une description.' });
-        return;
-      }
       if (line.lineType === 'UsageMetered' && !line.usageMetricId) {
         this.toast.add({ severity: 'warn', summary: 'Avenant incomplet', detail: 'La métrique est obligatoire pour une ligne à la consommation.' });
         return;

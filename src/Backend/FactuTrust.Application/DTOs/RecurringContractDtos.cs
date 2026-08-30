@@ -44,7 +44,6 @@ public sealed record RecurringContractDto
     public DateTime? NextBillingDate { get; init; }
     public DateTime? LastBilledPeriodEnd { get; init; }
     public Guid? PaymentTermTemplateId { get; init; }
-    public Guid? PriceListId { get; init; }
     public bool AutoRenew { get; init; }
     public int NoticePeriodDays { get; init; }
     public string Currency { get; init; } = "TND";
@@ -61,7 +60,8 @@ public sealed record RecurringContractLineDto
     public RecurringContractLineType LineType { get; init; }
     public string LineTypeDisplay { get; init; } = null!;
     public Guid? ProductId { get; init; }
-    public string Description { get; init; } = null!;
+    /// <summary>Désignation de ligne ; peut être vide (optionnelle à la création / édition).</summary>
+    public string Description { get; init; } = string.Empty;
     public decimal Quantity { get; init; }
     public decimal UnitPriceHT { get; init; }
     public decimal VatRate { get; init; }
@@ -85,7 +85,6 @@ public sealed record UpsertRecurringContractDto
     public bool AutoRenew { get; init; } = true;
     public int NoticePeriodDays { get; init; } = 30;
     public Guid? PaymentTermTemplateId { get; init; }
-    public Guid? PriceListId { get; init; }
     public Guid? SourceQuoteId { get; init; }
     public string? Reference { get; init; }
     public string? Notes { get; init; }
@@ -97,7 +96,8 @@ public sealed record UpsertRecurringContractLineDto
     public Guid? Id { get; init; }
     public RecurringContractLineType LineType { get; init; }
     public Guid? ProductId { get; init; }
-    public string Description { get; init; } = null!;
+    /// <summary>Optionnelle : chaîne vide acceptée (normalisée côté domaine).</summary>
+    public string Description { get; init; } = string.Empty;
     public decimal Quantity { get; init; }
     public decimal UnitPriceHT { get; init; }
     public decimal VatRate { get; init; } = 19m;
@@ -351,7 +351,6 @@ public sealed record RecurringContractDetailDto
     public DateTime? NextBillingDate { get; init; }
     public DateTime? LastBilledPeriodEnd { get; init; }
     public Guid? PaymentTermTemplateId { get; init; }
-    public Guid? PriceListId { get; init; }
     public bool AutoRenew { get; init; }
     public int NoticePeriodDays { get; init; }
     public string Currency { get; init; } = "TND";
