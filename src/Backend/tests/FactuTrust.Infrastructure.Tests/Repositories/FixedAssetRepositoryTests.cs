@@ -330,7 +330,7 @@ public sealed class FixedAssetRepositorySqlRetryTests : IDisposable
     }
 
     [Fact]
-    public async Task BeginTransaction_WithoutExecutionStrategy_ThrowsOnSqlServerRetry()
+    public async Task Context_UsesSqlServerRetryingExecutionStrategy()
     {
         if (!_canRun)
             return;
@@ -338,8 +338,9 @@ public sealed class FixedAssetRepositorySqlRetryTests : IDisposable
         await using var context = CreateContext();
         await context.Database.EnsureCreatedAsync();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => context.Database.BeginTransactionAsync(CancellationToken.None));
+        var strategy = context.Database.CreateExecutionStrategy();
+
+        Assert.IsType<SqlServerRetryingExecutionStrategy>(strategy);
     }
 
     [Fact]

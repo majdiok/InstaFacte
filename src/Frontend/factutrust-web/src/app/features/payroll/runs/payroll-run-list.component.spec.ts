@@ -74,7 +74,8 @@ describe('PayrollRunListComponent', () => {
           useValue: {
             hasPermission: (p: string) => perms.includes(p),
             isAccountingFirm: () => false,
-            isDelegatedMode: () => false
+            isDelegatedMode: () => false,
+            isPayrollFirmManaged: () => false
           }
         },
         {

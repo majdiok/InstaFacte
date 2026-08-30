@@ -1,6 +1,7 @@
 using FactuTrust.Infrastructure.Migrations.Tenant;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
+using FactuTrust.Infrastructure.Tests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Xunit;
@@ -8,13 +9,12 @@ using Xunit;
 namespace FactuTrust.Infrastructure.Tests.MultiTenancy;
 
 /// <summary>
-/// Reproduces the POS submit failure path: PriceResolver reads ClientProductPrices
-/// with EF-mapped audit columns (CreatedBy / UpdatedBy / Version).
+/// Reproduces the POS submit failure path against an isolated provisioned tenant database:
+/// PriceResolver reads pricing tables with EF-mapped audit columns.
 /// </summary>
-public sealed class PricingAuditColumns_SteFatimaTests
+public sealed class PricingAuditColumnsTests : IDisposable
 {
-    private const string SteFatimaConnection =
-        "Server=(localdb)\\MSSQLLocalDB;Database=FactuTrust_Tenant_45907A7B;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true";
+    private readonly SqlTestDatabase _sqlDb = new(nameof(PricingAuditColumnsTests));
 
     [Fact]
     public void AddPricingAuditColumns_Migration_IsRegistered()
@@ -28,23 +28,21 @@ public sealed class PricingAuditColumns_SteFatimaTests
     }
 
     [Fact]
-    public async Task EnsureCoreDocumentAuditColumns_OnSteFatima_ReturnsSuccess()
+    public async Task EnsureCoreDocumentAuditColumns_OnProvisionedTenant_ReturnsSuccess()
     {
-        var result = await TenantCoreSchemaValidator.EnsureCoreDocumentAuditColumnsAsync(SteFatimaConnection);
+        if (!_sqlDb.CanRun) return;
+
+        var result = await TenantCoreSchemaValidator.EnsureCoreDocumentAuditColumnsAsync(_sqlDb.ConnectionString!);
         Assert.True(result.IsSuccess, result.Error?.Description);
     }
 
     [Fact]
     public async Task ClientProductPrices_EfQueryWithAuditColumns_DoesNotThrow()
     {
-        var options = new DbContextOptionsBuilder<TenantDbContext>()
-            .UseSqlServer(SteFatimaConnection)
-            .Options;
+        if (!_sqlDb.CanRun) return;
 
-        await using var context = new TenantDbContext(options);
+        await using var context = CreateContext();
 
-        // Same shape as ClientProductPriceRepository.GetForClientProductAsync — must not
-        // throw SqlException 207 Invalid column name CreatedBy/UpdatedBy/Version.
         var rows = await context.ClientProductPrices
             .AsNoTracking()
             .Select(p => new { p.Id, p.CreatedBy, p.UpdatedBy, p.Version, p.ClientId, p.ProductId })
@@ -57,11 +55,9 @@ public sealed class PricingAuditColumns_SteFatimaTests
     [Fact]
     public async Task Promotions_And_PriceLists_EfQueryWithAuditColumns_DoesNotThrow()
     {
-        var options = new DbContextOptionsBuilder<TenantDbContext>()
-            .UseSqlServer(SteFatimaConnection)
-            .Options;
+        if (!_sqlDb.CanRun) return;
 
-        await using var context = new TenantDbContext(options);
+        await using var context = CreateContext();
 
         var promotions = await context.Promotions
             .AsNoTracking()
@@ -78,4 +74,11 @@ public sealed class PricingAuditColumns_SteFatimaTests
         Assert.NotNull(promotions);
         Assert.NotNull(priceLists);
     }
+
+    private TenantDbContext CreateContext() => new(
+        new DbContextOptionsBuilder<TenantDbContext>()
+            .UseSqlServer(_sqlDb.ConnectionString!)
+            .Options);
+
+    public void Dispose() => _sqlDb.Dispose();
 }

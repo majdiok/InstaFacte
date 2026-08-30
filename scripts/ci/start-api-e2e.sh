@@ -8,7 +8,7 @@ LOG_FILE="${ROOT}/api-e2e.log"
 PID_FILE="${ROOT}/api-e2e.pid"
 
 export ASPNETCORE_ENVIRONMENT="${ASPNETCORE_ENVIRONMENT:-Development}"
-export ASPNETCORE_URLS="${ASPNETCORE_URLS:-https://localhost:7001;http://localhost:7000}"
+export ASPNETCORE_URLS="${ASPNETCORE_URLS:-http://localhost:7000}"
 export JwtSettings__SecretKey="${JwtSettings__SecretKey:-ci-only-jwt-signing-key-not-a-secret-0123456789abcdef}"
 export SignatureSettings__SecretKey="${SignatureSettings__SecretKey:-ci-only-signature-key-not-a-secret-0123456789ab}"
 export Channels__Enabled="${Channels__Enabled:-false}"
@@ -21,9 +21,7 @@ if [ -z "${ConnectionStrings__MasterConnection:-}" ] || [ -z "${ConnectionString
   exit 1
 fi
 
-dotnet dev-certs https --trust
-
 cd "$API_DIR"
-nohup dotnet run --no-build --configuration Release >"$LOG_FILE" 2>&1 &
+nohup dotnet run --no-build --no-launch-profile --configuration Release >"$LOG_FILE" 2>&1 &
 echo $! >"$PID_FILE"
 echo "API started (pid $(cat "$PID_FILE")), log: ${LOG_FILE}"

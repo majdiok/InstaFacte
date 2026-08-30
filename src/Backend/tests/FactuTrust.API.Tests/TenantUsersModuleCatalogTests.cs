@@ -16,6 +16,7 @@ namespace FactuTrust.API.Tests;
 /// module-catalog endpoint itself never touches the DB (pure Domain calculation), so read-only
 /// facts against the same session are independent of each other.
 /// </summary>
+[Collection("SqlServerIntegration")]
 public sealed class TenantUsersModuleCatalogTests : IClassFixture<ChannelsDisabledWebApplicationFactory>, IAsyncLifetime
 {
     private readonly ChannelsDisabledWebApplicationFactory _factory;

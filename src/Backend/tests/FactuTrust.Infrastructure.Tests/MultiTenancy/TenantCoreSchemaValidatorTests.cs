@@ -1,28 +1,29 @@
 using FactuTrust.Infrastructure.MultiTenancy;
+using FactuTrust.Infrastructure.Tests.Fixtures;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.MultiTenancy;
 
-public sealed class TenantCoreSchemaValidatorTests
+public sealed class TenantCoreSchemaValidatorTests : IDisposable
 {
-    [Fact]
-    public async Task EnsureInvoiceAuditColumnsAsync_OnDefaultTenant_ReturnsSuccess()
-    {
-        var connectionString =
-            "Server=(localdb)\\MSSQLLocalDB;Database=FactuTrust_Tenant_Default;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true";
+    private readonly SqlTestDatabase _sqlDb = new(nameof(TenantCoreSchemaValidatorTests));
 
-        var result = await TenantCoreSchemaValidator.EnsureInvoiceAuditColumnsAsync(connectionString);
+    [Fact]
+    public async Task EnsureInvoiceAuditColumnsAsync_OnProvisionedTenant_ReturnsSuccess()
+    {
+        if (!_sqlDb.CanRun) return;
+
+        var result = await TenantCoreSchemaValidator.EnsureInvoiceAuditColumnsAsync(_sqlDb.ConnectionString!);
 
         Assert.True(result.IsSuccess, result.Error?.Description);
     }
 
     [Fact]
-    public async Task EnsureCoreDocumentAuditColumnsAsync_OnDefaultTenant_ReturnsSuccess()
+    public async Task EnsureCoreDocumentAuditColumnsAsync_OnProvisionedTenant_ReturnsSuccess()
     {
-        var connectionString =
-            "Server=(localdb)\\MSSQLLocalDB;Database=FactuTrust_Tenant_Default;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true";
+        if (!_sqlDb.CanRun) return;
 
-        var result = await TenantCoreSchemaValidator.EnsureCoreDocumentAuditColumnsAsync(connectionString);
+        var result = await TenantCoreSchemaValidator.EnsureCoreDocumentAuditColumnsAsync(_sqlDb.ConnectionString!);
 
         Assert.True(result.IsSuccess, result.Error?.Description);
     }
@@ -43,14 +44,5 @@ public sealed class TenantCoreSchemaValidatorTests
         }
     }
 
-    [Fact]
-    public async Task EnsureCoreDocumentAuditColumnsAsync_OnInstaIADevTenant_ReturnsSuccess()
-    {
-        var connectionString =
-            "Server=(localdb)\\MSSQLLocalDB;Database=FactuTrust_Tenant_EDEA3855;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true";
-
-        var result = await TenantCoreSchemaValidator.EnsureCoreDocumentAuditColumnsAsync(connectionString);
-
-        Assert.True(result.IsSuccess, result.Error?.Description);
-    }
+    public void Dispose() => _sqlDb.Dispose();
 }

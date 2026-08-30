@@ -414,7 +414,13 @@ public sealed class Invoice : AggregateRoot
         if (quantity <= 0)
             return Result.Failure(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));
 
-        var unitPrice = customUnitPrice ?? product.UnitPrice;
+        var sourceUnitPrice = customUnitPrice ?? product.UnitPrice;
+        // An invoice line owns its price snapshot in EF Core. Reusing the Product-owned
+        // Money instance aliases two owned navigations and fails when the same detached
+        // product is used for another invoice (EF then attempts to change the identifying
+        // InvoiceLineId key of the existing owned value). Copy the value so the document
+        // snapshot has its own identity as well as its own immutable commercial value.
+        var unitPrice = Money.FromSignedAmount(sourceUnitPrice.Amount, sourceUnitPrice.Currency);
         var lineNumber = _lines.Count + 1;
 
         var lineResult = InvoiceLine.Create(

@@ -15,6 +15,7 @@ namespace FactuTrust.API.Tests;
 /// "last administrator" message, leaving at least one active administrator on the tenant.
 /// Requires a real SQL Server (company registration provisions a real tenant DB).
 /// </summary>
+[Collection("SqlServerIntegration")]
 public sealed class TenantUsersLastAdminTests : IClassFixture<ChannelsDisabledWebApplicationFactory>
 {
     private const string LastAdminMessage =

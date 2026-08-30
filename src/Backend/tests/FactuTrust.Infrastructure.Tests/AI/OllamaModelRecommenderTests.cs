@@ -54,7 +54,7 @@ public sealed class OllamaModelRecommenderTests
     {
         var models = new[]
         {
-            new OllamaModelInfo { Name = "mistral:latest", Size = 4_000_000_000L, ModifiedAt = DateTime.UtcNow }
+            new OllamaModelInfo { Name = "mistral:latest", Size = 40_000_000L, ModifiedAt = DateTime.UtcNow }
         };
 
         _ollamaClient.Setup(c => c.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
@@ -85,8 +85,8 @@ public sealed class OllamaModelRecommenderTests
     {
         var models = new[]
         {
-            new OllamaModelInfo { Name = "generic:latest", Size = 4_000_000_000L, ModifiedAt = DateTime.UtcNow },
-            new OllamaModelInfo { Name = "qwen2.5:latest", Size = 4_500_000_000L, ModifiedAt = DateTime.UtcNow }
+            new OllamaModelInfo { Name = "generic:latest", Size = 40_000_000L, ModifiedAt = DateTime.UtcNow },
+            new OllamaModelInfo { Name = "qwen2.5:latest", Size = 45_000_000L, ModifiedAt = DateTime.UtcNow }
         };
 
         _ollamaClient.Setup(c => c.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
@@ -129,8 +129,8 @@ public sealed class OllamaModelRecommenderTests
     {
         var models = new[]
         {
-            new OllamaModelInfo { Name = "small:latest", Size = 2_000_000_000L, ModifiedAt = DateTime.UtcNow },
-            new OllamaModelInfo { Name = "large:latest", Size = 6_000_000_000L, ModifiedAt = DateTime.UtcNow }
+            new OllamaModelInfo { Name = "small:latest", Size = 20_000_000L, ModifiedAt = DateTime.UtcNow },
+            new OllamaModelInfo { Name = "large:latest", Size = 60_000_000L, ModifiedAt = DateTime.UtcNow }
         };
 
         _ollamaClient.Setup(c => c.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
@@ -161,8 +161,8 @@ public sealed class OllamaModelRecommenderTests
     {
         var models = new[]
         {
-            new OllamaModelInfo { Name = "fit:latest", Size = 3_000_000_000L, ModifiedAt = DateTime.UtcNow },
-            new OllamaModelInfo { Name = "nofit:latest", Size = 3_000_000_000L, ModifiedAt = DateTime.UtcNow }
+            new OllamaModelInfo { Name = "fit:latest", Size = 30_000_000L, ModifiedAt = DateTime.UtcNow },
+            new OllamaModelInfo { Name = "nofit:latest", Size = 30_000_000L, ModifiedAt = DateTime.UtcNow }
         };
 
         _ollamaClient.Setup(c => c.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
@@ -194,7 +194,7 @@ public sealed class OllamaModelRecommenderTests
     {
         var models = new[]
         {
-            new OllamaModelInfo { Name = "test:latest", Size = 2_000_000_000L, ModifiedAt = DateTime.UtcNow }
+            new OllamaModelInfo { Name = "test:latest", Size = 20_000_000L, ModifiedAt = DateTime.UtcNow }
         };
 
         _ollamaClient.Setup(c => c.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);

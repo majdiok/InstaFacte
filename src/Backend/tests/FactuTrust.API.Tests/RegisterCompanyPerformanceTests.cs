@@ -14,6 +14,7 @@ namespace FactuTrust.API.Tests;
 /// Cold runs (no template backup) may exceed the 8s warm-template budget; this test
 /// documents the warm-path SLO once TenantProvisioning TemplateClone is ready.
 /// </summary>
+[Collection("SqlServerIntegration")]
 public sealed class RegisterCompanyPerformanceTests : IClassFixture<ChannelsDisabledWebApplicationFactory>
 {
     private readonly ChannelsDisabledWebApplicationFactory _factory;

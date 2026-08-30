@@ -86,7 +86,10 @@ describe('IrppRegularizationComponent', () => {
             hasPermission: () => canRun,
             hasAnyPermission: () => canRun,
             hasModule: () => true,
-            isFirmDelegatedReadonly: () => false
+            isFirmDelegatedReadonly: () => false,
+            isAccountingFirm: () => false,
+            isDelegatedMode: () => false,
+            isPayrollFirmManaged: () => false
           }
         },
         {

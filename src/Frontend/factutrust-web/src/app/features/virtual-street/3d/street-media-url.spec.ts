@@ -3,7 +3,7 @@ import { isTrustedStreetTextureUrl, parseHexColor, resolveStreetMediaUrl } from 
 
 describe('street-media-url', () => {
   it('resolveStreetMediaUrl returns absolute for relative paths using API origin', () => {
-    const origin = new URL(environment.apiUrl).origin;
+    const origin = new URL(environment.apiUrl, window.location.origin).origin;
     expect(resolveStreetMediaUrl('/media/x.png')).toBe(`${origin}/media/x.png`);
     expect(resolveStreetMediaUrl('media/x.png')).toBe(`${origin}/media/x.png`);
   });
@@ -13,7 +13,7 @@ describe('street-media-url', () => {
   });
 
   it('isTrustedStreetTextureUrl allows only API origin', () => {
-    const origin = new URL(environment.apiUrl).origin;
+    const origin = new URL(environment.apiUrl, window.location.origin).origin;
     expect(isTrustedStreetTextureUrl(`${origin}/files/logo.png`)).toBe(true);
     expect(isTrustedStreetTextureUrl('https://evil.example/logo.png')).toBe(false);
     expect(isTrustedStreetTextureUrl('javascript:alert(1)')).toBe(false);

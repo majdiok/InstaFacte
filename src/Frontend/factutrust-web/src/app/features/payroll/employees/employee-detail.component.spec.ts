@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -11,6 +12,9 @@ import { ToastService } from '@core/services/toast.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { PayrollService } from '@core/services/payroll.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
+import { Tabs } from 'primeng/tabs';
+import { EmployeeLeavesTabComponent } from './employee-leaves-tab.component';
+import { EmployeeAdvancesTabComponent } from './employee-advances-tab.component';
 
 describe('EmployeeDetailComponent', () => {
   const employeeServiceSpy = jasmine.createSpyObj<EmployeeService>('EmployeeService', ['getById', 'listLeaves', 'listAdvances', 'getLeaveBalance']);
@@ -89,34 +93,68 @@ describe('EmployeeDetailComponent', () => {
     return fixture;
   }
 
-  it('hides manage actions when read-only', async () => {
+  it('hides manage actions and renders employee tabs read-only', async () => {
     const fixture = await setup(false);
     const el = fixture.nativeElement as HTMLElement;
+    const tabs = fixture.debugElement.query(By.directive(Tabs)).componentInstance as Tabs;
+
     expect(el.textContent).not.toContain('Désactiver');
+
+    tabs.updateValue(1);
+    fixture.detectChanges();
     expect(el.textContent).not.toContain('Ajouter un contrat');
-    expect(el.textContent).not.toContain('Ajouter un congé');
-    expect(el.textContent).not.toContain('Nouvelle avance');
+
+    tabs.updateValue(2);
+    fixture.detectChanges();
+    const leaves = fixture.debugElement.query(By.directive(EmployeeLeavesTabComponent));
+    expect(leaves).not.toBeNull();
+    expect((leaves.componentInstance as EmployeeLeavesTabComponent).readOnly).toBeTrue();
+
+    tabs.updateValue(5);
+    fixture.detectChanges();
+    const advances = fixture.debugElement.query(By.directive(EmployeeAdvancesTabComponent));
+    expect(advances).not.toBeNull();
+    expect((advances.componentInstance as EmployeeAdvancesTabComponent).readOnly).toBeTrue();
   });
 
-  it('shows manage actions when user can manage employees', async () => {
+  it('shows privileged actions and writable employee tabs when user can manage employees', async () => {
     const fixture = await setup(true);
     const el = fixture.nativeElement as HTMLElement;
+    const tabs = fixture.debugElement.query(By.directive(Tabs)).componentInstance as Tabs;
+
     expect(el.textContent).toContain('Désactiver');
+
+    tabs.updateValue(1);
+    fixture.detectChanges();
     expect(el.textContent).toContain('Ajouter un contrat');
-    expect(el.textContent).toContain('Ajouter un congé');
-    expect(el.textContent).toContain('Nouvelle avance');
+
+    tabs.updateValue(2);
+    fixture.detectChanges();
+    const leaves = fixture.debugElement.query(By.directive(EmployeeLeavesTabComponent));
+    expect(leaves).not.toBeNull();
+    expect((leaves.componentInstance as EmployeeLeavesTabComponent).readOnly).toBeFalse();
+
+    tabs.updateValue(5);
+    fixture.detectChanges();
+    const advances = fixture.debugElement.query(By.directive(EmployeeAdvancesTabComponent));
+    expect(advances).not.toBeNull();
+    expect((advances.componentInstance as EmployeeAdvancesTabComponent).readOnly).toBeFalse();
   });
 
-  // Les onglets PrimeNG ne rendent que le panneau actif : ces deux cas portent donc sur l'état
-  // du composant, qui pilote la lecture seule transmise à l'onglet Congés.
-
-  it('bascule en mode cabinet quand la route porte firmInternalPayroll', async () => {
+  it('bascule en mode cabinet et force les congés en lecture seule', async () => {
     // Les congés du cabinet ont une source unique : ils se saisissent côté RH et sont reportés
     // ici à l'approbation. L'onglet doit donc être en lecture seule, même pour un responsable.
     const fixture = await setup(true, { firmInternalPayroll: true, payrollRouteBase: '/firm/payroll' });
+    const tabs = fixture.debugElement.query(By.directive(Tabs)).componentInstance as Tabs;
 
     expect(fixture.componentInstance.firmInternal()).toBeTrue();
     expect(fixture.componentInstance.routeBase()).toBe('/firm/payroll');
+
+    tabs.updateValue(2);
+    fixture.detectChanges();
+    const leaves = fixture.debugElement.query(By.directive(EmployeeLeavesTabComponent));
+    expect(leaves).not.toBeNull();
+    expect((leaves.componentInstance as EmployeeLeavesTabComponent).readOnly).toBeTrue();
   });
 
   it('reste en mode paie client quand la route ne dit rien', async () => {

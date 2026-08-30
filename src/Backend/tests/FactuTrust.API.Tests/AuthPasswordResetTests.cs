@@ -9,6 +9,7 @@ namespace FactuTrust.API.Tests;
 /// <summary>
 /// Password reset endpoint contract tests (anonymous, always generic forgot-password response).
 /// </summary>
+[Collection("SqlServerIntegration")]
 public sealed class AuthPasswordResetTests : IClassFixture<ChannelsDisabledWebApplicationFactory>
 {
     private readonly HttpClient _client;

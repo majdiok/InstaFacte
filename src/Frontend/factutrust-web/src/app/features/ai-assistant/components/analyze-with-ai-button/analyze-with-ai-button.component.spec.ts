@@ -27,7 +27,11 @@ describe('AnalyzeWithAiButtonComponent', () => {
       providers: [
         {
           provide: AuthService,
-          useValue: { hasAllPermissions: () => true }
+          useValue: {
+            hasAllPermissions: () => true,
+            isAccountingFirm: () => false,
+            isDelegatedMode: () => false
+          }
         },
         {
           provide: AiScreenAnalysisService,
