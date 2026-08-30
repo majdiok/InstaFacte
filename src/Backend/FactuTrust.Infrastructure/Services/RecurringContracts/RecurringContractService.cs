@@ -139,7 +139,7 @@ public sealed partial class RecurringContractService : IRecurringContractService
         var created = RecurringContract.CreateDraft(
             dto.ClientId, dto.BillingFrequency, dto.BillingDayOfMonth, dto.StartDate,
             dto.EndDate, dto.AutoRenew, dto.NoticePeriodDays, "TND",
-            dto.PaymentTermTemplateId, dto.PriceListId, dto.SourceQuoteId,
+            dto.PaymentTermTemplateId, dto.SourceQuoteId,
             dto.Reference, dto.Notes);
         if (created.IsFailure) return Result.Failure<Guid>(created.Error);
 
@@ -174,7 +174,7 @@ public sealed partial class RecurringContractService : IRecurringContractService
         var header = contract.UpdateHeader(
             dto.BillingFrequency, dto.BillingDayOfMonth, dto.StartDate, dto.EndDate,
             dto.AutoRenew, dto.NoticePeriodDays, dto.PaymentTermTemplateId,
-            dto.PriceListId, dto.Reference, dto.Notes);
+            dto.Reference, dto.Notes);
         if (header.IsFailure) return header;
 
         if (contract.Status.CanBeEdited())
@@ -668,7 +668,6 @@ public sealed partial class RecurringContractService : IRecurringContractService
             NextBillingDate = contract.NextBillingDate,
             LastBilledPeriodEnd = contract.LastBilledPeriodEnd,
             PaymentTermTemplateId = contract.PaymentTermTemplateId,
-            PriceListId = contract.PriceListId,
             AutoRenew = contract.AutoRenew,
             NoticePeriodDays = contract.NoticePeriodDays,
             Currency = contract.Currency,

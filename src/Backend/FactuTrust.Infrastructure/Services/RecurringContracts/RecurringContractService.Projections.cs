@@ -350,7 +350,6 @@ public sealed partial class RecurringContractService
             NextBillingDate = baseDto.NextBillingDate,
             LastBilledPeriodEnd = baseDto.LastBilledPeriodEnd,
             PaymentTermTemplateId = baseDto.PaymentTermTemplateId,
-            PriceListId = baseDto.PriceListId,
             AutoRenew = baseDto.AutoRenew,
             NoticePeriodDays = baseDto.NoticePeriodDays,
             Currency = baseDto.Currency,

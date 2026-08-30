@@ -16,7 +16,6 @@ public sealed class RecurringContract : AggregateRoot
     public DateTime? NextBillingDate { get; private set; }
     public DateTime? LastBilledPeriodEnd { get; private set; }
     public Guid? PaymentTermTemplateId { get; private set; }
-    public Guid? PriceListId { get; private set; }
     public bool AutoRenew { get; private set; }
     public int NoticePeriodDays { get; private set; }
     public string Currency { get; private set; } = "TND";
@@ -40,7 +39,6 @@ public sealed class RecurringContract : AggregateRoot
         int noticePeriodDays = 30,
         string currency = "TND",
         Guid? paymentTermTemplateId = null,
-        Guid? priceListId = null,
         Guid? sourceQuoteId = null,
         string? reference = null,
         string? notes = null)
@@ -66,7 +64,6 @@ public sealed class RecurringContract : AggregateRoot
             NoticePeriodDays = Math.Max(0, noticePeriodDays),
             Currency = string.IsNullOrWhiteSpace(currency) ? "TND" : currency.Trim().ToUpperInvariant(),
             PaymentTermTemplateId = paymentTermTemplateId,
-            PriceListId = priceListId,
             SourceQuoteId = sourceQuoteId,
             Reference = TrimOrNull(reference),
             Notes = TrimOrNull(notes)
@@ -91,7 +88,6 @@ public sealed class RecurringContract : AggregateRoot
         bool autoRenew,
         int noticePeriodDays,
         Guid? paymentTermTemplateId,
-        Guid? priceListId,
         string? reference,
         string? notes)
     {
@@ -111,7 +107,6 @@ public sealed class RecurringContract : AggregateRoot
         AutoRenew = autoRenew;
         NoticePeriodDays = Math.Max(0, noticePeriodDays);
         PaymentTermTemplateId = paymentTermTemplateId;
-        PriceListId = priceListId;
         Reference = TrimOrNull(reference);
         Notes = TrimOrNull(notes);
         IncrementVersion();

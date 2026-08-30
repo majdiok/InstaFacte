@@ -94,11 +94,18 @@ describe('ContractFormComponent canSave (validation du bouton Enregistrer)', () 
     expect(cmp.canSave).toBeFalse();
   });
 
-  it('canSave est false quand une ligne n\'a pas de description', () => {
+  it('canSave est true quand une ligne n\'a pas de description', () => {
     const cmp = createComponent();
     fillValidForm(cmp);
     cmp.lines[0].description = '   ';
-    expect(cmp.canSave).toBeFalse();
+    expect(cmp.canSave).toBeTrue();
+  });
+
+  it('canSave est true avec une description vide', () => {
+    const cmp = createComponent();
+    fillValidForm(cmp);
+    cmp.lines[0].description = '';
+    expect(cmp.canSave).toBeTrue();
   });
 
   it('canSave est false pour une ligne à la consommation sans métrique', () => {
