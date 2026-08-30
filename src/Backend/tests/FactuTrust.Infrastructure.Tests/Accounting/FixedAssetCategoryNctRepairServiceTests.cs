@@ -14,6 +14,7 @@ namespace FactuTrust.Infrastructure.Tests.Accounting;
 /// after the nct01-v1 remap log so they are never rewritten by it) onto canonical NCT targets.
 /// SQL Server required : the service executes raw SQL (sp_getapplock, log table).
 /// </summary>
+[Collection(SqlServerSerialCollection.Name)]
 public sealed class FixedAssetCategoryNctRepairServiceTests : IDisposable
 {
     private readonly SqlTestDatabase _sqlDb = new(nameof(FixedAssetCategoryNctRepairServiceTests));

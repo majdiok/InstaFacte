@@ -39,7 +39,7 @@ public sealed class FixedAssetDisposalEntryTests
             .ReturnsAsync(Result.Success(period));
 
         var journals = new Mock<IJournalEntryRepository>();
-        journals.Setup(x => x.GetBySourceAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+        journals.Setup(x => x.GetActiveBySourceAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(existingBySource);
         journals.Setup(x => x.ReserveNextEntryNumberAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(7);

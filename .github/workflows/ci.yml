@@ -24,10 +24,11 @@ jobs:
         run: sqllocaldb start MSSQLLocalDB
       - name: Build
         run: dotnet build src/Backend/FactuTrust.sln --configuration Release
-      - name: Tests (clé JWT de test requise par le fail-fast au démarrage)
-        env:
-          JwtSettings__SecretKey: ci-only-jwt-signing-key-not-a-secret-0123456789abcdef
-          SignatureSettings__SecretKey: ci-only-signature-key-not-a-secret-0123456789ab
+      # Do not define JWT/signature keys at process scope: WebApplicationFactory
+      # tests provide their own keys, including negative startup-validation cases.
+      # Environment variables have higher precedence than the factories' in-memory
+      # configuration and would invalidate those tests (or make forged JWTs return 401).
+      - name: Tests
         run: dotnet test src/Backend/FactuTrust.sln --configuration Release --no-build --verbosity minimal
 
   frontend-web:
