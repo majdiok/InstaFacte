@@ -114,6 +114,145 @@ describe('registration-catalog', () => {
     });
   });
 
+  /**
+   * Parity contract with the backend `SectorConfigurationCatalog` and the design
+   * mockups (/code/.plans/designs/type-societe-reference.html): exact codes, exact
+   * canonical French labels, and the plan §5 recommended-module id sets. This spec
+   * exists specifically to catch drift between the frontend static catalog and the
+   * backend catalog — both are declarative Phase 1 data and must stay in lockstep.
+   */
+  describe('sector catalog parity contract (plan §5 + design mockup labels)', () => {
+    it('pins the exact 6 segment codes, in order', () => {
+      expect(SEGMENT_OPTIONS.map(s => s.code)).toEqual([
+        'entreprise',
+        'commerce',
+        'services',
+        'btp-construction',
+        'association',
+        'etablissement-educatif'
+      ]);
+    });
+
+    it('pins the exact canonical French segment labels', () => {
+      const labels: Record<string, string> = {};
+      for (const s of SEGMENT_OPTIONS) labels[s.code] = s.label;
+      expect(labels).toEqual({
+        'entreprise': 'Entreprise',
+        'commerce': 'Commerce',
+        'services': 'Prestations de services',
+        'btp-construction': 'BTP & Construction',
+        'association': 'Association',
+        'etablissement-educatif': 'Établissement éducatif'
+      });
+    });
+
+    it('pins the exact 10 domain codes, in order', () => {
+      expect(DOMAIN_OPTIONS.map(d => d.code)).toEqual([
+        'technologie-informatique',
+        'alimentation-agroalimentaire',
+        'sante-paramedical',
+        'textile-habillement',
+        'transport-logistique',
+        'immobilier',
+        'energie-environnement',
+        'communication-marketing',
+        'artisanat',
+        'autre'
+      ]);
+    });
+
+    it('pins the exact canonical French domain labels (with "&", "Autre domaine" fallback)', () => {
+      const labels: Record<string, string> = {};
+      for (const d of DOMAIN_OPTIONS) labels[d.code] = d.label;
+      expect(labels).toEqual({
+        'technologie-informatique': 'Technologie & Informatique',
+        'alimentation-agroalimentaire': 'Alimentation & Agroalimentaire',
+        'sante-paramedical': 'Santé & Paramédical',
+        'textile-habillement': 'Textile & Habillement',
+        'transport-logistique': 'Transport & Logistique',
+        'immobilier': 'Immobilier',
+        'energie-environnement': 'Énergie & Environnement',
+        'communication-marketing': 'Communication & Marketing',
+        'artisanat': 'Artisanat',
+        'autre': 'Autre domaine'
+      });
+    });
+
+    it('pins the exact core module id set (plan §5)', () => {
+      expect([...CORE_MODULE_IDS].sort((a, b) => a - b)).toEqual([
+        AppModule.Clients,
+        AppModule.Products,
+        AppModule.Sales,
+        AppModule.Treasury,
+        AppModule.Reports,
+        AppModule.Administration
+      ].sort((a, b) => a - b));
+    });
+
+    const SEGMENT_ONLY_EXPECTED_MODULES: Record<string, AppModule[]> = {
+      'entreprise': [
+        AppModule.Administration, AppModule.Clients, AppModule.Products, AppModule.Sales,
+        AppModule.Treasury, AppModule.Reports,
+        AppModule.Purchases, AppModule.Stock, AppModule.Accounting, AppModule.CRM, AppModule.Fiscal
+      ],
+      'commerce': [
+        AppModule.Administration, AppModule.Clients, AppModule.Products, AppModule.Sales,
+        AppModule.Treasury, AppModule.Reports,
+        AppModule.Purchases, AppModule.Stock, AppModule.Fiscal
+      ],
+      'services': [
+        AppModule.Administration, AppModule.Clients, AppModule.Products, AppModule.Sales,
+        AppModule.Treasury, AppModule.Reports,
+        AppModule.CRM, AppModule.Projects, AppModule.RecurringContracts, AppModule.Fiscal
+      ],
+      'btp-construction': [
+        AppModule.Administration, AppModule.Clients, AppModule.Products, AppModule.Sales,
+        AppModule.Treasury, AppModule.Reports,
+        AppModule.Purchases, AppModule.Stock, AppModule.Projects, AppModule.Fiscal
+      ],
+      'association': [
+        AppModule.Administration, AppModule.Clients, AppModule.Products, AppModule.Sales,
+        AppModule.Treasury, AppModule.Reports,
+        AppModule.Accounting, AppModule.Fiscal
+      ],
+      'etablissement-educatif': [
+        AppModule.Administration, AppModule.Clients, AppModule.Products, AppModule.Sales,
+        AppModule.Treasury, AppModule.Reports,
+        AppModule.RecurringContracts, AppModule.Accounting, AppModule.Fiscal
+      ]
+    };
+
+    it('pins the exact per-segment recommended-module id set (base, no domain overlay — plan §5 table)', () => {
+      for (const [segment, expected] of Object.entries(SEGMENT_ONLY_EXPECTED_MODULES)) {
+        const result = recommendedModulesFor(segment, null);
+        const expectedSorted = [...new Set(expected)].sort((a, b) => a - b);
+        expect(result).toEqual(expectedSorted);
+      }
+    });
+
+    const DOMAIN_OVERLAY_EXPECTED_MODULES: Record<string, AppModule[]> = {
+      'technologie-informatique': [AppModule.Projects, AppModule.RecurringContracts],
+      'alimentation-agroalimentaire': [AppModule.Stock, AppModule.Purchases],
+      'sante-paramedical': [AppModule.CRM],
+      'textile-habillement': [AppModule.Stock],
+      'transport-logistique': [AppModule.Stock],
+      'immobilier': [],
+      'energie-environnement': [],
+      'communication-marketing': [AppModule.CRM],
+      'artisanat': [],
+      'autre': []
+    };
+
+    it('pins the exact domain overlay additions on top of the "entreprise" base (plan §5 table)', () => {
+      const base = new Set(recommendedModulesFor('entreprise', null));
+      for (const [domain, overlay] of Object.entries(DOMAIN_OVERLAY_EXPECTED_MODULES)) {
+        const result = new Set(recommendedModulesFor('entreprise', domain));
+        const expected = new Set([...base, ...overlay]);
+        expect(result).toEqual(expected);
+      }
+    });
+  });
+
   describe('RegistrationCatalogService', () => {
     let service: RegistrationCatalogService;
 

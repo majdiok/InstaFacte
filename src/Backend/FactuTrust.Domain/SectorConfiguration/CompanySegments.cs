@@ -26,18 +26,8 @@ public static class CompanySegments
     };
 
     /// <summary>Trims and lower-invariants a raw code. Null/whitespace ⇒ null.</summary>
-    public static string? Normalize(string? code)
-    {
-        if (string.IsNullOrWhiteSpace(code))
-            return null;
-
-        return code.Trim().ToLowerInvariant();
-    }
+    public static string? Normalize(string? code) => SectorCodes.Normalize(code);
 
     /// <summary>True when <paramref name="code"/> (after normalization) matches a known segment.</summary>
-    public static bool IsKnown(string? code)
-    {
-        var normalized = Normalize(code);
-        return normalized is not null && All.Contains(normalized, StringComparer.Ordinal);
-    }
+    public static bool IsKnown(string? code) => SectorCodes.IsKnown(code, All);
 }

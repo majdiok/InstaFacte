@@ -250,8 +250,9 @@ public sealed class RegistrationSectorServiceTests
     public async Task ApplyModuleSelection_forces_core_on_even_when_plan_would_deny_it()
     {
         await using var db = NewDb();
-        // A plan that (incorrectly) tries to deny a core module must not be able to switch it off —
-        // core modules bypass the plan check entirely (mirrors the Administration self-lockout rule).
+        // Administration is the single carve-out from the plan check (review §item 2, Branch B):
+        // a plan that (incorrectly) tries to deny it must not be able to switch it off — mirrors
+        // the existing self-lockout rule (a user can never disable their own Administration access).
         var service = NewService(db, new DenyingPlanResolver(new[] { AppModule.Administration }));
         var userId = Guid.NewGuid();
 
@@ -261,6 +262,49 @@ public sealed class RegistrationSectorServiceTests
 
         var rows = await db.UserModuleGrants.Where(g => g.UserId == userId).ToDictionaryAsync(r => r.Module, r => r.IsEnabled);
         Assert.True(rows[AppModule.Administration]);
+    }
+
+    [Fact]
+    public async Task ApplyModuleSelection_excludes_non_administration_core_module_denied_by_plan_no_escalation()
+    {
+        await using var db = NewDb();
+        // Review §item 2 (Branch B): unlike Administration, every OTHER core module (e.g. Clients)
+        // is intersected with the plan just like any non-core module. A plan that denies Clients is
+        // a misconfiguration, but the grant must honor the denial rather than force it on — anything
+        // marked IsEnabled=true here rides straight through to login/JWT with no second gate
+        // downstream (EffectivePermissionsCalculator/EffectivePermissionService never re-check
+        // IPlanResolver), so silently escalating past a plan denial would be a permanent bypass.
+        var service = NewService(db, new DenyingPlanResolver(new[] { AppModule.Clients }));
+        var userId = Guid.NewGuid();
+
+        await service.ApplyModuleSelectionAsync(
+            userId, null, new[] { (int)AppModule.Stock }, SubscriptionPlan.Free, CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        var rows = await db.UserModuleGrants.Where(g => g.UserId == userId).ToDictionaryAsync(r => r.Module, r => r.IsEnabled);
+
+        Assert.False(rows[AppModule.Clients], "A plan-denied core module must be excluded, not escalated.");
+        Assert.True(rows[AppModule.Administration], "Administration must survive regardless of plan denial.");
+        // Every other core module (not denied by this plan) still ends up enabled.
+        foreach (var coreModule in SectorConfigurationCatalog.CoreModules.Where(m => m != AppModule.Clients))
+            Assert.True(rows[coreModule], $"{coreModule} should still be enabled (not denied by the plan).");
+    }
+
+    [Fact]
+    public async Task ApplyModuleSelection_kill_switch_disabled_writes_no_grant_rows_even_with_requested_modules()
+    {
+        await using var db = NewDb();
+        // Review §item 1b: a disabled deployment (Features:RegistrationSector:Enabled = false) must
+        // never write grant rows, even if a caller still sends a non-empty enabledModules array
+        // (e.g. a stale/misbehaving client, or the flag toggled off mid-rollout).
+        var service = NewService(db, new AllowAllPlanResolver(), enabled: false);
+        var userId = Guid.NewGuid();
+
+        await service.ApplyModuleSelectionAsync(
+            userId, null, new[] { (int)AppModule.Stock, (int)AppModule.CRM }, SubscriptionPlan.Free, CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        Assert.Equal(0, await db.UserModuleGrants.CountAsync());
     }
 
     [Fact]

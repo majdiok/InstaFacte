@@ -16,11 +16,7 @@ import {
   passwordStrengthLevel as computePasswordStrengthLevel,
   passwordStrengthMetCount
 } from '../../../shared/auth-password.helpers';
-
-interface TaxRegime {
-  label: string;
-  value: number;
-}
+import { TaxRegime } from '../../tax-regime.types';
 
 @Component({
   selector: 'app-step-informations',

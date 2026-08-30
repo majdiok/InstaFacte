@@ -1,26 +1,20 @@
 import { Component, OnDestroy, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
+import { RouterModule } from '@angular/router';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { HttpErrorResponse } from '@angular/common/http';
 import { timeout, TimeoutError, catchError, throwError } from 'rxjs';
 import { AuthService, RegisterRequest } from '@core/services/auth.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
-import { ErrorMessageService } from '@core/services/error-message.service';
 import { AppModule } from '@core/models/app-module';
 import { environment } from '@environments/environment';
 import { LogoComponent } from '@shared/components/logo/logo.component';
 import { GOVERNORATE_OPTIONS } from '../shared/auth-governorate.options';
 import {
   AUTH_PASSWORD_VALIDATORS_PATTERN,
-  passwordCriteria as computePasswordCriteria,
-  passwordMatches as checkPasswordMatches,
-  passwordMismatch as checkPasswordMismatch,
-  passwordStrengthLabel as getPasswordStrengthLabel,
-  passwordStrengthLevel as computePasswordStrengthLevel,
-  passwordStrengthMetCount
+  passwordMismatch as checkPasswordMismatch
 } from '../shared/auth-password.helpers';
 import {
   applyNifBlurCleanup,
@@ -32,15 +26,11 @@ import {
   validateCompanyRegisterFormData
 } from '../shared/auth-registration.helpers';
 import { RegistrationCatalogService } from './registration-catalog';
+import { TaxRegime } from './tax-regime.types';
 import { StepCompanyTypeComponent } from './steps/step-company-type/step-company-type.component';
 import { StepInformationsComponent } from './steps/step-informations/step-informations.component';
 import { StepConfigurationComponent } from './steps/step-configuration/step-configuration.component';
 import { StepFinalisationComponent } from './steps/step-finalisation/step-finalisation.component';
-
-interface TaxRegime {
-  label: string;
-  value: number;
-}
 
 interface WizardStepMeta {
   name: string;
@@ -90,20 +80,16 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   readonly catalog = inject(RegistrationCatalogService);
 
   private static readonly REGISTRATION_TIMEOUT_MS = 120_000;
-  private static readonly STEP_COUNT = 4;
 
   private fb = inject(FormBuilder);
   private authService = inject(AuthService);
   private warehouseContext = inject(WarehouseContextService);
-  private router = inject(Router);
   private errorHandler = inject(ErrorHandlerService);
-  errorMessageService = inject(ErrorMessageService);
 
   loading = signal(false);
   loadingMessage = signal('Création de votre espace...');
   error = signal<string | null>(null);
   currentStep = signal(0);
-  showPartnerCode = signal(false);
   /** Once the user manually toggles a module, recommendation auto-recompute stops overwriting their choices. */
   modulesTouched = signal(false);
 
@@ -160,10 +146,8 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   registrationFormAriaLabel = computed(() => {
     const cur = this.currentStep();
     const prev = cur > 0 ? `Étapes précédentes complétées. ` : '';
-    return `${prev}Étape ${cur + 1} sur ${RegisterWizardComponent.STEP_COUNT} : ${this.stepsMeta[cur].name}.`;
+    return `${prev}Étape ${cur + 1} sur ${this.stepsMeta.length} : ${this.stepsMeta[cur].name}.`;
   });
-
-  readonly strengthSegments: readonly number[] = [1, 2, 3, 4, 5];
 
   taxRegimes: TaxRegime[] = [
     { label: 'Régime réel', value: 0 },
@@ -212,32 +196,12 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
     return checkPasswordMismatch(this.form.get('password')?.value, this.form.get('confirmPassword')?.value);
   }
 
-  passwordMatches(): boolean {
-    return checkPasswordMatches(this.form.get('password')?.value, this.form.get('confirmPassword')?.value);
-  }
-
-  passwordCriteria() {
-    return computePasswordCriteria(this.form.get('password')?.value);
-  }
-
-  passwordStrengthMetCount(): number {
-    return passwordStrengthMetCount(this.passwordCriteria());
-  }
-
-  passwordStrengthLevel() {
-    return computePasswordStrengthLevel(this.form.get('password')?.value, this.passwordCriteria());
-  }
-
-  passwordStrengthLabel(): string {
-    return getPasswordStrengthLabel(this.passwordStrengthLevel());
-  }
-
   stepHumanIndex(): number {
     return this.currentStep() + 1;
   }
 
   stepCount(): number {
-    return RegisterWizardComponent.STEP_COUNT;
+    return this.stepsMeta.length;
   }
 
   selectedSegment(): string {
@@ -282,11 +246,6 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
     this.form.get('enabledModules')?.setValue(recommended);
   }
 
-  isInvalid(field: string): boolean {
-    const control = this.form.get(field);
-    return !!(control?.invalid && control?.touched);
-  }
-
   isCurrentStepValid(): boolean {
     const step = this.currentStep();
 
@@ -315,7 +274,7 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   }
 
   goToStep(index: number): void {
-    if (index < 0 || index >= RegisterWizardComponent.STEP_COUNT || index === this.currentStep()) return;
+    if (index < 0 || index >= this.stepsMeta.length || index === this.currentStep()) return;
     // Allow jumping back freely (recap "Modifier" links); only gate forward navigation.
     if (index > this.currentStep() && !this.isCurrentStepValid()) return;
     this.currentStep.set(index);
@@ -323,7 +282,7 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   }
 
   nextStep(): void {
-    if (this.isCurrentStepValid() && this.currentStep() < RegisterWizardComponent.STEP_COUNT - 1) {
+    if (this.isCurrentStepValid() && this.currentStep() < this.stepsMeta.length - 1) {
       this.currentStep.update(s => s + 1);
       scrollAuthWizardStepIntoView();
     }
@@ -392,12 +351,6 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       businessDomain: formValue.businessDomain || undefined,
       enabledModules: Array.isArray(formValue.enabledModules) ? formValue.enabledModules : undefined
     };
-
-    console.log('[RegisterWizardComponent] Submitting registration request:', {
-      ...request,
-      password: '***',
-      confirmPassword: '***'
-    });
 
     this.authService.register(request).pipe(
       timeout(RegisterWizardComponent.REGISTRATION_TIMEOUT_MS),

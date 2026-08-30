@@ -77,6 +77,12 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
         SubscriptionPlan plan,
         CancellationToken cancellationToken)
     {
+        // Kill-switch gate: a disabled deployment must never write grant rows, even if a caller
+        // still sends enabledModules (e.g. a stale/misbehaving client, or the flag toggled off
+        // mid-rollout). This mirrors the same gate ResolveProfile applies for the profile itself.
+        if (!_options.Enabled)
+            return;
+
         // Absent/empty selection ⇒ write nothing. UserModuleGrant absence means "all modules
         // enabled" (EffectivePermissionService.ResolveEnabledModules) — this is the exact legacy
         // behavior for payloads that don't opt into the wizard's module step.
@@ -127,13 +133,21 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
                 string.Join(",", droppedValues));
         }
 
-        // Plan-intersection: core modules stay on regardless (mirrors the existing
-        // TenantUsersController self-lockout rule — Administration can never be switched off);
-        // every other candidate must also be allowed by the current subscription plan.
+        // Plan-intersection (review fix — plan §review item 2): the downstream resolution
+        // pipeline (EffectivePermissionsCalculator.Compute / EffectivePermissionService) is
+        // role- and grant-based only — it never re-checks IPlanResolver, and
+        // IsModuleAllowedAsync has no other caller in the codebase. That means anything we mark
+        // IsEnabled=true here rides straight through to login/JWT with no second gate. So core
+        // modules must NOT be forced on unconditionally: every candidate — core or not — is
+        // intersected with the plan, with a single carve-out for Administration, which mirrors
+        // the existing TenantUsersController self-lockout rule (a user can never disable their
+        // own Administration access) and must never be switched off regardless of plan
+        // configuration. A plan that denies any other core module is a misconfiguration; we
+        // honor the plan (deny) but log it loudly so it gets fixed upstream.
         var finalSet = new HashSet<AppModule>();
         foreach (var module in candidateSet)
         {
-            if (coreModuleSet.Contains(module))
+            if (module == AppModule.Administration)
             {
                 finalSet.Add(module);
                 continue;
@@ -141,7 +155,19 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
 
             var isAllowedByPlan = await _planResolver.IsModuleAllowedAsync(plan, (int)module, cancellationToken);
             if (isAllowedByPlan)
+            {
                 finalSet.Add(module);
+                continue;
+            }
+
+            if (coreModuleSet.Contains(module))
+            {
+                _logger.LogWarning(
+                    "RegistrationSectorService.ApplyModuleSelectionAsync: plan {Plan} denies core module {Module} for user {UserId} — excluding it from the grant (inconsistent plan configuration; core modules are normally always allowed).",
+                    plan,
+                    module,
+                    userId);
+            }
         }
 
         // Full selection ⇒ canonical legacy representation is "no grant rows".

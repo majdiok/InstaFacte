@@ -9,16 +9,8 @@ import { InputMaskModule } from 'primeng/inputmask';
 import { CheckboxModule } from 'primeng/checkbox';
 import { AppModule } from '@core/models/app-module';
 import { RegistrationCatalogService } from '../../registration-catalog';
-
-interface TaxRegime {
-  label: string;
-  value: number;
-}
-
-interface GovernorateOption {
-  label: string;
-  value: string;
-}
+import { TaxRegime } from '../../tax-regime.types';
+import { GovernorateOption } from '../../../shared/auth-governorate.options';
 
 @Component({
   selector: 'app-step-finalisation',

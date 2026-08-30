@@ -157,7 +157,11 @@ public class AuthController : ControllerBase
 
             tenantId = tenant.Id;
             provisionedDatabaseName = tenant.DatabaseName;
-            tenant.SetSectorClassification(dto.CompanySegment, dto.BusinessDomain);
+            // Persist the RESOLVED profile's codes, never the raw dto values: when the
+            // Features:RegistrationSector kill-switch is off (or the payload didn't resolve to a
+            // known profile) sectorProfile is null and both columns stay NULL — this is the
+            // kill-switch gate for storage, mirroring the gate already applied in ResolveProfile.
+            tenant.SetSectorClassification(sectorProfile?.SegmentCode, sectorProfile?.DomainCode);
 
             var masterSw = Stopwatch.StartNew();
             _masterContext.Tenants.Add(tenant);

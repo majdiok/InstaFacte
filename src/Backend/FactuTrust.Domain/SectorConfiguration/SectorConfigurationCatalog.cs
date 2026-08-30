@@ -63,7 +63,7 @@ public static class SectorConfigurationCatalog
         {
             Code = CompanySegments.Entreprise,
             LabelFr = "Entreprise",
-            DescriptionFr = "Société commerciale ou industrielle classique.",
+            DescriptionFr = "Sociétés commerciales et de services aux entreprises.",
             IconKey = "briefcase",
             SortOrder = 0,
             BaseRecommendedModules = new[] { AppModule.Purchases, AppModule.Stock, AppModule.Accounting, AppModule.CRM, AppModule.Fiscal },
@@ -73,7 +73,7 @@ public static class SectorConfigurationCatalog
         {
             Code = CompanySegments.Commerce,
             LabelFr = "Commerce",
-            DescriptionFr = "Vente de produits, boutique ou négoce.",
+            DescriptionFr = "Négoce et distribution.",
             IconKey = "shopping-cart",
             SortOrder = 1,
             BaseRecommendedModules = new[] { AppModule.Purchases, AppModule.Stock, AppModule.Fiscal },
@@ -83,7 +83,7 @@ public static class SectorConfigurationCatalog
         {
             Code = CompanySegments.Services,
             LabelFr = "Prestations de services",
-            DescriptionFr = "Conseil, prestations intellectuelles ou techniques.",
+            DescriptionFr = "Services et conseils.",
             IconKey = "handshake",
             SortOrder = 2,
             BaseRecommendedModules = new[] { AppModule.CRM, AppModule.Projects, AppModule.RecurringContracts, AppModule.Fiscal },
@@ -92,8 +92,8 @@ public static class SectorConfigurationCatalog
         new SegmentDefinition
         {
             Code = CompanySegments.BtpConstruction,
-            LabelFr = "BTP / Construction",
-            DescriptionFr = "Bâtiment, travaux publics et chantiers.",
+            LabelFr = "BTP & Construction",
+            DescriptionFr = "Bâtiment et travaux publics.",
             IconKey = "hard-hat",
             SortOrder = 3,
             BaseRecommendedModules = new[] { AppModule.Purchases, AppModule.Stock, AppModule.Projects, AppModule.Fiscal },
@@ -103,7 +103,7 @@ public static class SectorConfigurationCatalog
         {
             Code = CompanySegments.Association,
             LabelFr = "Association",
-            DescriptionFr = "Organisation à but non lucratif.",
+            DescriptionFr = "Organismes à but non lucratif.",
             IconKey = "heart-handshake",
             SortOrder = 4,
             BaseRecommendedModules = new[] { AppModule.Accounting, AppModule.Fiscal },
@@ -113,7 +113,7 @@ public static class SectorConfigurationCatalog
         {
             Code = CompanySegments.EtablissementEducatif,
             LabelFr = "Établissement éducatif",
-            DescriptionFr = "École, institut de formation ou centre éducatif.",
+            DescriptionFr = "Écoles, universités, centres de formation.",
             IconKey = "graduation-cap",
             SortOrder = 5,
             BaseRecommendedModules = new[] { AppModule.RecurringContracts, AppModule.Accounting, AppModule.Fiscal },
@@ -126,35 +126,35 @@ public static class SectorConfigurationCatalog
         new DomainDefinition
         {
             Code = BusinessDomains.TechnologieInformatique,
-            LabelFr = "Technologie / Informatique",
+            LabelFr = "Technologie & Informatique",
             SortOrder = 0,
             OverlayModules = new[] { AppModule.Projects, AppModule.RecurringContracts }
         },
         new DomainDefinition
         {
             Code = BusinessDomains.AlimentationAgroalimentaire,
-            LabelFr = "Alimentation / Agroalimentaire",
+            LabelFr = "Alimentation & Agroalimentaire",
             SortOrder = 1,
             OverlayModules = new[] { AppModule.Stock, AppModule.Purchases }
         },
         new DomainDefinition
         {
             Code = BusinessDomains.SanteParamedical,
-            LabelFr = "Santé / Paramédical",
+            LabelFr = "Santé & Paramédical",
             SortOrder = 2,
             OverlayModules = new[] { AppModule.CRM }
         },
         new DomainDefinition
         {
             Code = BusinessDomains.TextileHabillement,
-            LabelFr = "Textile / Habillement",
+            LabelFr = "Textile & Habillement",
             SortOrder = 3,
             OverlayModules = new[] { AppModule.Stock }
         },
         new DomainDefinition
         {
             Code = BusinessDomains.TransportLogistique,
-            LabelFr = "Transport / Logistique",
+            LabelFr = "Transport & Logistique",
             SortOrder = 4,
             OverlayModules = new[] { AppModule.Stock }
         },
@@ -168,14 +168,14 @@ public static class SectorConfigurationCatalog
         new DomainDefinition
         {
             Code = BusinessDomains.EnergieEnvironnement,
-            LabelFr = "Énergie / Environnement",
+            LabelFr = "Énergie & Environnement",
             SortOrder = 6,
             OverlayModules = Array.Empty<AppModule>()
         },
         new DomainDefinition
         {
             Code = BusinessDomains.CommunicationMarketing,
-            LabelFr = "Communication / Marketing",
+            LabelFr = "Communication & Marketing",
             SortOrder = 7,
             OverlayModules = new[] { AppModule.CRM }
         },
@@ -189,7 +189,7 @@ public static class SectorConfigurationCatalog
         new DomainDefinition
         {
             Code = BusinessDomains.Autre,
-            LabelFr = "Autre",
+            LabelFr = "Autre domaine",
             SortOrder = 9,
             OverlayModules = Array.Empty<AppModule>()
         }

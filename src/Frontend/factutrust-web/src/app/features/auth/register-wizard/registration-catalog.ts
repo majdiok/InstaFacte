@@ -73,14 +73,14 @@ export const SEGMENT_OPTIONS: readonly SegmentOption[] = [
   {
     code: 'services',
     label: 'Prestations de services',
-    subtitle: 'Consulting, prestations intellectuelles et récurrentes',
+    subtitle: 'Services et conseils',
     icon: 'pi-briefcase',
     tone: 'tone-orange'
   },
   {
     code: 'btp-construction',
     label: 'BTP & Construction',
-    subtitle: 'Chantiers, travaux et construction',
+    subtitle: 'Bâtiment et travaux publics',
     icon: 'pi-hammer',
     tone: 'tone-yellow'
   },
@@ -94,7 +94,7 @@ export const SEGMENT_OPTIONS: readonly SegmentOption[] = [
   {
     code: 'etablissement-educatif',
     label: 'Établissement éducatif',
-    subtitle: 'Écoles, centres de formation et instituts',
+    subtitle: 'Écoles, universités, centres de formation',
     icon: 'pi-graduation-cap',
     tone: 'tone-indigo'
   }
