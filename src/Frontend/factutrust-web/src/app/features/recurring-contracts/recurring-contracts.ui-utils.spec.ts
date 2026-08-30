@@ -159,6 +159,15 @@ describe('recurring-contracts.ui-utils', () => {
       expect(payloads[0].id).toBeNull();
     });
 
+    it('accepte une description vide ou blanche (trim → chaîne vide)', () => {
+      const payloads = toLinePayloads([
+        { lineType: 'FixedRecurring', description: '   ', quantity: 1, unitPriceHT: 10, vatRate: 19 },
+        { lineType: 'FixedRecurring', description: '', quantity: 1, unitPriceHT: 10, vatRate: 19 }
+      ]);
+      expect(payloads[0].description).toBe('');
+      expect(payloads[1].description).toBe('');
+    });
+
     it('réordonne les lignes séquentiellement', () => {
       const payloads = toLinePayloads([
         { lineType: 'FixedRecurring', description: 'A', quantity: 1, unitPriceHT: 1, vatRate: 19 },
@@ -184,7 +193,6 @@ describe('recurring-contracts.ui-utils', () => {
       autoRenew: false,
       noticePeriodDays: 60,
       paymentTermTemplateId: 'pt-1',
-      priceListId: 'pl-1',
       currency: 'TND',
       sourceQuoteId: null,
       reference: 'REF',
@@ -200,7 +208,6 @@ describe('recurring-contracts.ui-utils', () => {
       expect(payload.autoRenew).toBeFalse();
       expect(payload.noticePeriodDays).toBe(60);
       expect(payload.paymentTermTemplateId).toBe('pt-1');
-      expect(payload.priceListId).toBe('pl-1');
       expect(payload.startDate).toBe('2026-01-01');
       expect(payload.endDate).toBe('2026-12-31');
     });

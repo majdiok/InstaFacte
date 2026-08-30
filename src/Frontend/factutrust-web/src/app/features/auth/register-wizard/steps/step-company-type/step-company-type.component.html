@@ -1,0 +1,87 @@
+<div class="wizard-step" [formGroup]="form">
+  <h3 class="step-title">1. Type de société</h3>
+
+  <div class="choice-grid">
+    <div class="choice-col">
+      <div class="sec-head">
+        <span class="sec-num">1</span>
+        <h4>Choisissez le segment de votre société</h4>
+      </div>
+
+      <div class="seg-grid" role="radiogroup" aria-label="Segment de société">
+        @for (segment of segments; track segment.code) {
+          <div
+            class="seg-card"
+            [class.selected]="isSegmentSelected(segment.code)"
+            role="radio"
+            tabindex="0"
+            [attr.aria-checked]="isSegmentSelected(segment.code)"
+            [attr.aria-label]="'Segment : ' + segment.label"
+            (click)="selectSegment(segment.code)"
+            (keydown)="onSegmentKeydown($event, segment.code)">
+            @if (isSegmentSelected(segment.code)) {
+              <span class="seg-check" @fadeInOut><i class="pi pi-check" aria-hidden="true"></i></span>
+            }
+            <span class="seg-ico" [class]="segment.tone"><i class="pi {{ segment.icon }}" aria-hidden="true"></i></span>
+            <span class="seg-title">{{ segment.label }}</span>
+            <span class="seg-sub">{{ segment.subtitle }}</span>
+          </div>
+        }
+      </div>
+
+      @if (form.get('companySegment')?.invalid && form.get('companySegment')?.touched) {
+        <div class="field-error" role="alert" @fadeInOut>
+          <i class="pi pi-info-circle"></i> Veuillez choisir un segment de société
+        </div>
+      }
+
+      <div class="hint-bar">
+        <span class="hint-ico"><i class="pi pi-question-circle" aria-hidden="true"></i></span>
+        <div>
+          <b>Vous ne trouvez pas votre segment&nbsp;?</b>
+          <p>Vous pourrez affiner le paramétrage et personnaliser les modules après l'inscription.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="choice-col">
+      <div class="sec-head">
+        <span class="sec-num">2</span>
+        <h4>Sélectionnez votre domaine d'activité</h4>
+      </div>
+
+      <div class="dom-grid" role="radiogroup" aria-label="Domaine d'activité">
+        @for (domain of domains; track domain.code) {
+          <label
+            class="dom-item"
+            [class.selected]="isDomainSelected(domain.code)">
+            <span class="dom-ico" [class]="domain.tone"><i class="pi {{ domain.icon }}" aria-hidden="true"></i></span>
+            <span class="dom-label">{{ domain.label }}</span>
+            <input
+              type="radio"
+              name="business-domain"
+              [value]="domain.code"
+              [checked]="isDomainSelected(domain.code)"
+              (change)="selectDomain(domain.code)"
+              [attr.aria-label]="domain.label">
+            <span class="dom-radio" aria-hidden="true"></span>
+          </label>
+        }
+      </div>
+
+      @if (form.get('businessDomain')?.invalid && form.get('businessDomain')?.touched) {
+        <div class="field-error" role="alert" @fadeInOut>
+          <i class="pi pi-info-circle"></i> Veuillez choisir un domaine d'activité
+        </div>
+      }
+
+      <div class="smart-callout">
+        <span class="smart-ico"><i class="pi pi-sparkles" aria-hidden="true"></i></span>
+        <div>
+          <div class="smart-title"><i class="pi pi-bolt" aria-hidden="true"></i> Configuration intelligente</div>
+          <p>En fonction de votre choix, nous activons automatiquement les modules et paramètres adaptés à votre secteur.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

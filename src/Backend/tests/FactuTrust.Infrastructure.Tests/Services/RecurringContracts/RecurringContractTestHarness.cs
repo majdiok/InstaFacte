@@ -77,7 +77,7 @@ internal sealed class RecurringContractTestHarness
         var contract = RecurringContract.CreateDraft(
             clientId, frequency, billingDay, startDate ?? DateTime.UtcNow.Date,
             endDate, autoRenew, noticePeriodDays, "TND",
-            paymentTermTemplateId, priceListId: null, sourceQuoteId, reference, notes).Value;
+            paymentTermTemplateId, sourceQuoteId, reference, notes).Value;
         contract.AssignNumber(number ?? $"CTR-T-{Guid.NewGuid():N}"[..12]);
 
         lines?.Invoke(contract);

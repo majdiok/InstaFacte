@@ -221,6 +221,10 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
                 .HasFilter("[ManagedByFirmTenantId] IS NOT NULL");
             entity.Ignore(t => t.IsFirmManaged);
 
+            // Sector-aware registration wizard (plan §6.1 B2) — additive, nullable.
+            entity.Property(t => t.CompanySegment).HasMaxLength(50);
+            entity.Property(t => t.BusinessDomain).HasMaxLength(50);
+
             // Value object configurations
             entity.OwnsOne(t => t.NIF, nif =>
             {

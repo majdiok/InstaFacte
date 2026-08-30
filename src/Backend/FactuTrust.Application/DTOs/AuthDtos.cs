@@ -37,6 +37,17 @@ public sealed record RegisterDto
     /// </summary>
     [System.Text.Json.Serialization.JsonPropertyName("warehouseName")]
     public string? WarehouseName { get; init; }
+
+    // Sector-aware registration wizard (plan §3 C1/C2, §6.1 B3) — all optional; legacy clients
+    // simply omit them, in which case the behavior is byte-identical to today.
+    /// <summary>Code segment (catalogue sectoriel), ex. "commerce". Null = comportement historique.</summary>
+    public string? CompanySegment { get; init; }
+
+    /// <summary>Code domaine d'activité, ex. "sante-paramedical".</summary>
+    public string? BusinessDomain { get; init; }
+
+    /// <summary>AppModule ids (int) choisis à l'étape Configuration. Null = tous les modules (historique).</summary>
+    public IReadOnlyList<int>? EnabledModules { get; init; }
 }
 
 /// <summary>
