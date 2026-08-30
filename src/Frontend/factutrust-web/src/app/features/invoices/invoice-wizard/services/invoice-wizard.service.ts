@@ -2469,8 +2469,9 @@ export class InvoiceWizardService {
           customMention: paymentLegal.legalMentions.customMention || null
         } : this.getDefaultLegalMentions();
 
-        const currentStep = d.currentStep ?? 0;
-        const steps = this.initializeSteps().map((s, i) => ({
+        const baseSteps = this.initializeSteps();
+        const currentStep = this.resolveRestoredStepIndex(d.currentStep ?? 0, baseSteps);
+        const steps = baseSteps.map((s, i) => ({
           ...s,
           isComplete: i < currentStep,
           isValid: true,
@@ -2480,7 +2481,7 @@ export class InvoiceWizardService {
 
         this.state.set({
           ...this.initialState,
-          currentStep: d.currentStep ?? 0,
+          currentStep,
           steps,
           metadata,
           seller: sellerInfo,
@@ -2494,10 +2495,43 @@ export class InvoiceWizardService {
         });
         this.openedFromExistingDraft = true;
         this.syncFodecFromProducts();
+        this.validateSpecificStep(currentStep);
       }),
       switchMap(() => this.fetchNextInvoiceNumber().pipe(map(() => void 0))),
       catchError(() => of(void 0))
     );
+  }
+
+  /**
+   * Assainit l'index d'étape restauré depuis un brouillon persistant.
+   * - Index dans les bornes du flux actif → inchangé (aucun impact sur les brouillons
+   *   autosauvegardés par le flux courant, ni sur le flux legacy à 6 étapes).
+   * - Index >= steps.length (brouillon persisté avec l'indexation legacy à 6 étapes,
+   *   ex. brouillons de billing-run avec CurrentStep = 4) → mappage par clé vers
+   *   l'étape équivalente du flux actif.
+   * - Bornage défensif final pour toute autre valeur inattendue (négatif, NaN).
+   */
+  private resolveRestoredStepIndex(rawStep: number, steps: WizardStep[]): number {
+    const last = steps.length - 1;
+    if (Number.isInteger(rawStep) && rawStep >= 0 && rawStep <= last) {
+      return rawStep;
+    }
+    if (Number.isInteger(rawStep) && rawStep > last) {
+      const legacyKeys: WizardStepKey[] = ['metadata', 'seller', 'client', 'lines', 'legal', 'preview'];
+      const legacyToSimplified: Record<string, WizardStepKey> = {
+        metadata: 'document',
+        seller: 'document',
+        client: 'client',
+        lines: 'billing',
+        legal: 'billing',
+        preview: 'review'
+      };
+      const legacyKey = legacyKeys[rawStep];
+      const targetKey = legacyKey ? legacyToSimplified[legacyKey] : undefined;
+      const idx = targetKey ? steps.findIndex(s => s.key === targetKey) : -1;
+      if (idx >= 0) return idx;
+    }
+    return Math.min(Math.max(Number.isFinite(rawStep) ? Math.trunc(rawStep) : 0, 0), last);
   }
 
   // ============================================

@@ -7,6 +7,7 @@ import { ClientTaxType, InvoiceType, InvoiceWizardState, TunisianVatRate } from 
 import { computeWizardTotalsCheck } from './invoice-wizard-calculation.utils';
 import { environment } from '@environments/environment';
 import { SubscriptionInfo, SubscriptionService } from '@core/services/subscription.service';
+import { FeatureFlagsService } from '@core/services/feature-flags.service';
 
 const VALID_PRODUCT_ID = '550e8400-e29b-41d4-a716-446655440001';
 const VALID_PRODUCT_ID_2 = '550e8400-e29b-41d4-a716-446655440002';
@@ -125,6 +126,16 @@ const defaultWizardProviders = [
   provideHttpClientTesting(),
   provideSubscriptionMock()
 ];
+
+/** Flush la requête next-number émise par loadDraft (switchMap fetchNextInvoiceNumber). */
+function flushNextNumber(httpMock: HttpTestingController): void {
+  const nextNumber = httpMock.expectOne(req =>
+    req.method === 'GET' && req.url.includes('/invoices/wizard/next-number'));
+  nextNumber.flush({
+    success: true,
+    data: { number: 'FAC-2026-000001', prefix: 'FAC', year: 2026, sequence: 1 }
+  });
+}
 
 describe('InvoiceWizardService client normalization', () => {
   beforeEach(() => {
@@ -434,12 +445,7 @@ describe('InvoiceWizardService submit from existing draft', () => {
       }
     });
 
-    const nextNumber = httpMock.expectOne(req =>
-      req.method === 'GET' && req.url.includes('/invoices/wizard/next-number'));
-    nextNumber.flush({
-      success: true,
-      data: { number: 'FAC-2026-000001', prefix: 'FAC', year: 2026, sequence: 1 }
-    });
+    flushNextNumber(httpMock);
 
     setupMinimalValidWizardState(svc);
     addValidLinkedLine(svc);
@@ -936,5 +942,208 @@ describe('InvoiceWizardService initForCreditNote', () => {
 
     const invoiceReq = httpMock.expectOne(`${environment.apiUrl}/invoices/${invoiceId}`);
     invoiceReq.flush({ message: 'Not found' }, { status: 404, statusText: 'Not Found' });
+  });
+});
+
+describe('InvoiceWizardService loadDraft restored step index (simplified 4-step flow)', () => {
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: defaultWizardProviders
+    });
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  const DRAFT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+  function buildDraft(currentStep: unknown, overrides?: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: DRAFT_ID,
+      currentStep,
+      metadata: {
+        type: 'INVOICE',
+        issueDate: '2026-08-27',
+        dueDate: '2026-09-26',
+        currency: 'TND',
+        internalReference: 'Contrat CTR-2026-0001'
+      },
+      seller: null,
+      client: { clientId: VALID_CLIENT_ID, isNewClient: false },
+      lines: [],
+      paymentLegal: { paymentMethod: 'BANK_TRANSFER', paymentTerms: '30 jours' },
+      ...overrides
+    };
+  }
+
+  /** Charge un brouillon et flush les deux requêtes HTTP (draft + next-number). */
+  function loadDraftWith(svc: InvoiceWizardService, draft: Record<string, unknown>): void {
+    svc.loadDraft(DRAFT_ID).subscribe();
+    const getDraft = httpMock.expectOne(`${environment.apiUrl}/invoices/wizard/drafts/${DRAFT_ID}`);
+    getDraft.flush({ success: true, data: draft });
+    flushNextNumber(httpMock);
+  }
+
+  it('runs in simplified 4-step flow by default (guard for the tests below)', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    expect(svc.isSimplifiedFlow()).toBeTrue();
+    expect(svc.getStepKeys()).toEqual(['document', 'client', 'billing', 'review']);
+  });
+
+  it('maps legacy currentStep 4 (billing-run draft, étape "legal") to the "billing" step (index 2)', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    loadDraftWith(svc, buildDraft(4));
+
+    const state = svc.wizardState();
+    expect(state.currentStep).toBe(2);
+    expect(state.steps.length).toBe(4);
+    expect(state.steps[2].key).toBe('billing');
+    expect(state.steps[2].isActive).toBeTrue();
+    expect(state.steps[0].isComplete).toBeTrue();
+    expect(state.steps[1].isComplete).toBeTrue();
+    expect(state.steps[3].isDisabled).toBeTrue();
+  });
+
+  it('maps legacy currentStep 5 ("preview") to the "review" step (index 3)', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    loadDraftWith(svc, buildDraft(5));
+
+    expect(svc.wizardState().currentStep).toBe(3);
+    expect(svc.wizardState().steps[3].key).toBe('review');
+    expect(svc.wizardState().steps[3].isActive).toBeTrue();
+  });
+
+  it('keeps in-bounds indices 0..3 unchanged (autosaved simplified-flow drafts)', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    for (const step of [0, 1, 2, 3]) {
+      loadDraftWith(svc, buildDraft(step));
+      expect(svc.wizardState().currentStep).toBe(step);
+      expect(svc.wizardState().steps[step].isActive).toBeTrue();
+    }
+  });
+
+  it('clamps negative and non-finite indices into [0, 3]', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+
+    loadDraftWith(svc, buildDraft(-2));
+    expect(svc.wizardState().currentStep).toBe(0);
+
+    loadDraftWith(svc, buildDraft(Number.NaN));
+    expect(svc.wizardState().currentStep).toBe(0);
+
+    loadDraftWith(svc, buildDraft(99));
+    expect(svc.wizardState().currentStep).toBe(3);
+  });
+
+  it('defaults to step 0 when currentStep is missing', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    loadDraftWith(svc, buildDraft(null));
+    expect(svc.wizardState().currentStep).toBe(0);
+  });
+
+  it('validates the restored step deterministically: empty lines make "billing" invalid right after load', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+
+    svc.loadDraft(DRAFT_ID).subscribe();
+    const getDraft = httpMock.expectOne(`${environment.apiUrl}/invoices/wizard/drafts/${DRAFT_ID}`);
+    getDraft.flush({ success: true, data: buildDraft(4, { lines: [] }) });
+
+    // Asserted BEFORE flushing next-number: validity comes from validateSpecificStep in loadDraft.
+    expect(svc.wizardState().currentStep).toBe(2);
+    expect(svc.wizardState().steps[2].isValid).toBeFalse();
+
+    flushNextNumber(httpMock);
+  });
+
+  it('validates the restored step deterministically: valid prefilled lines make "billing" valid right after load', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+
+    svc.loadDraft(DRAFT_ID).subscribe();
+    const getDraft = httpMock.expectOne(`${environment.apiUrl}/invoices/wizard/drafts/${DRAFT_ID}`);
+    getDraft.flush({
+      success: true,
+      data: buildDraft(4, {
+        lines: [{
+          lineNumber: 1,
+          productId: VALID_PRODUCT_ID,
+          designation: 'Abonnement mensuel',
+          quantity: 1,
+          unitPriceHT: 100,
+          vatRate: 19,
+          totalHT: 100,
+          vatAmount: 19,
+          totalTTC: 119
+        }]
+      })
+    });
+
+    expect(svc.wizardState().currentStep).toBe(2);
+    expect(svc.wizardState().steps[2].isValid).toBeTrue();
+
+    // syncFodecFromProducts est déclenché par la ligne liée à un produit.
+    const fodecFlags = httpMock.expectOne(req => req.url.includes('/products/fodec-flags'));
+    fodecFlags.flush({ success: true, data: [{ id: VALID_PRODUCT_ID, isFodecApplicable: false }] });
+
+    flushNextNumber(httpMock);
+  });
+});
+
+describe('InvoiceWizardService loadDraft restored step index (legacy 6-step flow)', () => {
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        ...defaultWizardProviders,
+        {
+          provide: FeatureFlagsService,
+          useValue: { wizardSimplifiedFlow: () => false }
+        }
+      ]
+    });
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  const DRAFT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+  function loadDraftWith(svc: InvoiceWizardService, currentStep: number): void {
+    svc.loadDraft(DRAFT_ID).subscribe();
+    const getDraft = httpMock.expectOne(`${environment.apiUrl}/invoices/wizard/drafts/${DRAFT_ID}`);
+    getDraft.flush({
+      success: true,
+      data: {
+        id: DRAFT_ID,
+        currentStep,
+        metadata: { type: 'INVOICE', issueDate: '2026-08-27', dueDate: '2026-09-26', currency: 'TND' },
+        seller: null,
+        client: { clientId: VALID_CLIENT_ID, isNewClient: false },
+        lines: [],
+        paymentLegal: { paymentMethod: 'BANK_TRANSFER', paymentTerms: '30 jours' }
+      }
+    });
+    flushNextNumber(httpMock);
+  }
+
+  it('keeps indices 4 and 5 unchanged (in bounds for the 6-step flow)', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    expect(svc.isSimplifiedFlow()).toBeFalse();
+
+    loadDraftWith(svc, 4);
+    expect(svc.wizardState().currentStep).toBe(4);
+    expect(svc.wizardState().steps.length).toBe(6);
+    expect(svc.wizardState().steps[4].key).toBe('legal');
+    expect(svc.wizardState().steps[4].isActive).toBeTrue();
+
+    loadDraftWith(svc, 5);
+    expect(svc.wizardState().currentStep).toBe(5);
+    expect(svc.wizardState().steps[5].key).toBe('preview');
   });
 });
