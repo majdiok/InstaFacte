@@ -11,6 +11,8 @@ import { BankAccountService } from '@core/services/bank-account.service';
 import { ClientService } from '@core/services/client.service';
 import { SupplierService } from '@core/services/supplier.service';
 import { JournalEntryProposal } from '../../models/accounting-document-import.models';
+import { ImportProposalEditorComponent } from './import-proposal-editor.component';
+import { ConfirmationService } from '@core/services/confirmation.service';
 
 function sampleProposal(): JournalEntryProposal {
   return {
@@ -151,16 +153,15 @@ describe('AccountingDocumentImportDialogComponent', () => {
   });
 
   it('changeDirection asks confirmation when manual edits exist', () => {
-    const confirmSpy = spyOn(window, 'confirm').and.returnValue(false);
+    const confirmSpy = spyOn(TestBed.inject(ConfirmationService), 'confirm');
     component.proposal.set(sampleProposal());
     component.phase.set('review');
     component['currentFile'] = new File(['x'], 'test.pdf');
     fixture.detectChanges();
 
-    const editor = component.proposalEditor;
-    if (editor) {
-      spyOn(editor, 'hasManualEdits').and.returnValue(true);
-    }
+    component.proposalEditor = {
+      hasManualEdits: () => true
+    } as ImportProposalEditorComponent;
 
     component.changeDirection('SALE');
     expect(confirmSpy).toHaveBeenCalled();

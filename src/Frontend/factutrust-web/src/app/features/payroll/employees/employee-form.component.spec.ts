@@ -18,7 +18,7 @@ describe('EmployeeFormComponent', () => {
         { provide: EmployeeService, useValue: jasmine.createSpyObj('EmployeeService', ['create', 'update', 'getById']) },
         { provide: ToastService, useValue: jasmine.createSpyObj('ToastService', ['add']) },
         { provide: ErrorMessageService, useValue: { getErrorMessage: () => 'Erreur' } },
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => null } } } }
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => null }, data: {} } } }
       ]
     });
     fixture = TestBed.createComponent(EmployeeFormComponent);

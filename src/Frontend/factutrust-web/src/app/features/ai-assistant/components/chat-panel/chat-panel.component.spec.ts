@@ -6,6 +6,8 @@ import { ChatPanelComponent } from './chat-panel.component';
 import { AiChatSessionService } from '../../services/ai-chat-session.service';
 import { AiPromptFavoritesService } from '../../services/ai-prompt-favorites.service';
 import { MessageSelectionService } from '../../services/message-selection.service';
+import { AiChatService } from '../../services/ai-chat.service';
+import { PowerPointExportService } from '../../services/powerpoint-export.service';
 
 @Component({
   standalone: true,
@@ -79,8 +81,10 @@ describe('ChatPanelComponent', () => {
       imports: [HostComponent],
       providers: [
         MessageSelectionService,
+        { provide: AiChatService, useValue: { extractDocument: jasmine.createSpy('extractDocument') } },
         { provide: AiChatSessionService, useValue: sessionMock },
         { provide: AiPromptFavoritesService, useValue: favoritesMock },
+        { provide: PowerPointExportService, useValue: {} },
         { provide: Router, useValue: { navigate: jasmine.createSpy('navigate') } }
       ]
     }).compileComponents();

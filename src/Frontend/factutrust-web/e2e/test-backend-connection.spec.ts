@@ -1,10 +1,12 @@
 import { test, expect } from '@playwright/test';
 
+const API_BASE = process.env.E2E_API_BASE ?? 'https://localhost:7001';
+
 /**
  * Test de diagnostic pour vérifier la connexion au backend
  */
 test.describe('Test de Connexion Backend', () => {
-  test('devrait pouvoir se connecter au backend en HTTPS', async ({ page }) => {
+  test('devrait pouvoir se connecter au backend configuré', async ({ page }) => {
     // Aller sur la page d'inscription
     await page.goto('/auth/register');
     await page.waitForSelector('form', { timeout: 10000 });
@@ -12,7 +14,7 @@ test.describe('Test de Connexion Backend', () => {
     // Test 1: Vérifier que le backend répond via page.request
     console.log('🔍 Test 1: Connexion via page.request...');
     try {
-      const response = await page.request.get('https://localhost:7001/swagger', {
+      const response = await page.request.get(`${API_BASE}/swagger`, {
         ignoreHTTPSErrors: true,
         timeout: 5000
       });
@@ -23,9 +25,9 @@ test.describe('Test de Connexion Backend', () => {
     
     // Test 2: Vérifier que fetch fonctionne depuis le navigateur
     console.log('🔍 Test 2: Connexion via fetch depuis le navigateur...');
-    const fetchTest = await page.evaluate(async () => {
+    const fetchTest = await page.evaluate(async (apiBase) => {
       try {
-        const response = await fetch('https://localhost:7001/swagger', {
+        const response = await fetch(`${apiBase}/swagger`, {
           method: 'GET',
           mode: 'cors'
         });
@@ -41,14 +43,14 @@ test.describe('Test de Connexion Backend', () => {
           name: error.name
         };
       }
-    });
+    }, API_BASE);
     console.log('📊 Résultat fetch:', JSON.stringify(fetchTest, null, 2));
     
     // Test 3: Tester OPTIONS (CORS preflight)
     console.log('🔍 Test 3: Test CORS preflight (OPTIONS)...');
-    const corsTest = await page.evaluate(async () => {
+    const corsTest = await page.evaluate(async (apiBase) => {
       try {
-        const response = await fetch('https://localhost:7001/api/auth/register', {
+        const response = await fetch(`${apiBase}/api/auth/register`, {
           method: 'OPTIONS',
           headers: {
             'Origin': 'http://localhost:4200',
@@ -68,14 +70,14 @@ test.describe('Test de Connexion Backend', () => {
           name: error.name
         };
       }
-    });
+    }, API_BASE);
     console.log('📊 Résultat CORS:', JSON.stringify(corsTest, null, 2));
     
     // Test 4: Tester POST avec un payload simple
     console.log('🔍 Test 4: Test POST avec payload...');
-    const postTest = await page.evaluate(async () => {
+    const postTest = await page.evaluate(async (apiBase) => {
       try {
-        const response = await fetch('https://localhost:7001/api/auth/register', {
+        const response = await fetch(`${apiBase}/api/auth/register`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -103,7 +105,7 @@ test.describe('Test de Connexion Backend', () => {
           stack: error.stack?.substring(0, 500)
         };
       }
-    });
+    }, API_BASE);
     console.log('📊 Résultat POST:', JSON.stringify(postTest, null, 2));
     
     // Vérifier que au moins le test 1 passe

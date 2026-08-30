@@ -134,6 +134,7 @@ public sealed class InvoiceRepositoryTests : IDisposable
             discountPercent: 10);
 
         Assert.True(addLineResult.IsSuccess, "L'ajout de la ligne devrait réussir");
+        Assert.NotSame(product.UnitPrice, invoice.Lines.Single().UnitPrice);
 
         // Act & Assert
         // Cette opération devrait maintenant fonctionner sans erreur "owned entity without owner"

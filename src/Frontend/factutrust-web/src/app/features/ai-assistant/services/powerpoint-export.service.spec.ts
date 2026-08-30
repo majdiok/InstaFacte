@@ -97,7 +97,7 @@ describe('PowerPointExportService', () => {
   });
 
   it('listTemplates resolves preview thumbnail URLs to API origin', done => {
-    const apiOrigin = new URL(environment.apiUrl).origin;
+    const apiOrigin = new URL(environment.apiUrl, window.location.origin).origin;
     service.listTemplates().subscribe(list => {
       expect(list.length).toBe(1);
       expect(list[0].previewThumbnailUrl).toBe(

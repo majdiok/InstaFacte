@@ -9,7 +9,8 @@ export function resolveStreetMediaUrl(url: string | null | undefined): string | 
   const t = url.trim();
   if (t.startsWith('data:') || t.startsWith('http://') || t.startsWith('https://')) return t;
   try {
-    const origin = new URL(environment.apiUrl).origin;
+    const origin = resolveApiOrigin();
+    if (!origin) return null;
     return origin + (t.startsWith('/') ? t : '/' + t);
   } catch {
     return null;
@@ -24,10 +25,20 @@ export function isTrustedStreetTextureUrl(absoluteUrl: string): boolean {
   try {
     const u = new URL(absoluteUrl);
     if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
-    const apiOrigin = new URL(environment.apiUrl).origin;
+    const apiOrigin = resolveApiOrigin();
+    if (!apiOrigin) return false;
     return u.origin === apiOrigin;
   } catch {
     return false;
+  }
+}
+
+function resolveApiOrigin(): string | null {
+  const base = typeof window !== 'undefined' ? window.location.origin : undefined;
+  try {
+    return new URL(environment.apiUrl, base).origin;
+  } catch {
+    return null;
   }
 }
 
