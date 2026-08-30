@@ -82,14 +82,18 @@ public static class FixedAssetCategoryNctRepairService
         if (!await TableExistsAsync(db, "DepreciationRateCategories", cancellationToken))
             return;
 
-        await EnsureLogTableAsync(db, cancellationToken);
-        if (await AlreadyAppliedAsync(db, cancellationToken))
+        // Fast path only when the log table already exists. Table creation itself must happen under
+        // the same transaction-owned applock as the repair; otherwise two application instances can
+        // both observe a missing table and race on CREATE TABLE before either reaches the lock.
+        if (await TableExistsAsync(db, "ChartOfAccountRemapLogs", cancellationToken)
+            && await AlreadyAppliedAsync(db, cancellationToken))
             return;
 
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
         try
         {
             await AcquireApplockAsync(db, cancellationToken);
+            await EnsureLogTableAsync(db, cancellationToken);
 
             // Re-check after acquiring the lock: a concurrent instance may have already applied and
             // committed while we were waiting on sp_getapplock.

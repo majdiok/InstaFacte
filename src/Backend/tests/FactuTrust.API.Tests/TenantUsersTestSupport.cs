@@ -51,6 +51,7 @@ public static class TenantUsersTestSupport
     public static async Task<RegisteredCompany> RegisterCompanyAsync(HttpClient client)
     {
         var unique = Guid.NewGuid().ToString("N")[..12];
+        var nifDigits = (Convert.ToUInt64(unique, 16) % 10_000_000_000UL).ToString("D10");
         var dto = new RegisterDto
         {
             Email = $"admin-{unique}@example.com",
@@ -59,7 +60,7 @@ public static class TenantUsersTestSupport
             FirstName = "Admin",
             LastName = "Test",
             CompanyName = $"Société Test {unique}",
-            Nif = "1234567/A/B/C/000",
+            Nif = $"{nifDigits[..7]}/A/B/C/{nifDigits[7..]}",
             TaxRegime = TaxRegime.RealRegime,
             Street = "1 rue Test",
             City = "Tunis",

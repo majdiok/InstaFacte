@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
@@ -119,7 +120,26 @@ public sealed class FixedAssetsIsolationFactory : ChannelsDisabledWebApplication
             // Aucune migration réelle en InMemory.
             services.RemoveAll<ITenantMigrationGuard>();
             services.AddScoped<ITenantMigrationGuard, NoOpMigrationGuard>();
+
+            // These tests forge tenant/role JWTs to exercise the authorization and database-isolation
+            // boundary. Session revocation has dedicated integration coverage and would otherwise reject
+            // the intentionally non-persisted user ids before the fixed-assets endpoints are reached.
+            services.RemoveAll<ISecurityStampTokenValidator>();
+            services.AddSingleton<ISecurityStampTokenValidator, AcceptTestSecurityStampTokenValidator>();
         });
+    }
+
+    private sealed class AcceptTestSecurityStampTokenValidator : ISecurityStampTokenValidator
+    {
+        public Task<bool> IsValidAsync(
+            Guid userId,
+            string? tokenSecurityStamp,
+            bool requireSecurityStampClaim,
+            CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public void Invalidate(Guid userId)
+        {
+        }
     }
 
     /// <summary>Seeding idempotent (une fois par instance de fixture) des deux magasins tenant.</summary>
