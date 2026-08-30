@@ -410,6 +410,7 @@ public static class DependencyInjection
         services.AddScoped<IEmailMessageQueryService, EmailMessageQueryService>();
         services.AddScoped<SendEmailJob>();
         services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+        services.AddScoped<IRegistrationSectorService, RegistrationSectorService>();
         services.AddScoped<IPlatformTenantQueryService, PlatformTenantQueryService>();
         services.AddScoped<ISubscriptionAdminService, SubscriptionAdminService>();
         services.AddScoped<IPlatformMfaService, TotpPlatformMfaService>();
@@ -503,6 +504,7 @@ public static class DependencyInjection
         services.Configure<FixedAssetsOptions>(configuration.GetSection(FixedAssetsOptions.SectionName));
         services.Configure<AccountingAttachmentsOptions>(configuration.GetSection(AccountingAttachmentsOptions.SectionName));
         services.Configure<AccountingFirmsOptions>(configuration.GetSection(AccountingFirmsOptions.SectionName));
+        services.Configure<RegistrationSectorOptions>(configuration.GetSection(RegistrationSectorOptions.SectionName));
         services.Configure<PayrollOptions>(configuration.GetSection(PayrollOptions.SectionName));
         services.Configure<TenantProvisioningOptions>(configuration.GetSection(TenantProvisioningOptions.SectionName));
         services.Configure<FirmGovernanceOptions>(configuration.GetSection(FirmGovernanceOptions.SectionName));

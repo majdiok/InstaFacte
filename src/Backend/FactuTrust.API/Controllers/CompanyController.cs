@@ -338,7 +338,9 @@ public class CompanyController : ControllerBase
             InvoiceFooter = null,
             WarehouseName = warehouseName,
             CnssEmployerNumber = company?.CnssEmployerNumber,
-            ClientPortalEnabled = company?.ClientPortalEnabled ?? true
+            ClientPortalEnabled = company?.ClientPortalEnabled ?? true,
+            CompanySegment = tenant.CompanySegment,
+            BusinessDomain = tenant.BusinessDomain
         };
     }
 

@@ -27,6 +27,11 @@ export const seleniumConfig = {
   // Données de test
   testData: {
     validUser: {
+      // Étape 1 (wizard v2) : type de société — segment/domaine (registration-catalog.ts).
+      companySegment: 'commerce',
+      companySegmentLabel: 'Commerce',
+      businessDomain: 'artisanat',
+      businessDomainLabel: 'Artisanat',
       firstName: 'John',
       lastName: 'Doe',
       email: `test-${Date.now()}@example.com`,

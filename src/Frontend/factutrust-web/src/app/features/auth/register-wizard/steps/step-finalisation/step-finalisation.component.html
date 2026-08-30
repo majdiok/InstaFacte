@@ -1,0 +1,157 @@
+<div class="wizard-step" [formGroup]="form">
+  <h3 class="step-title">4. Finalisation</h3>
+
+  <div class="step4-grid">
+    <div class="form-section">
+      <div class="sec-head">
+        <span class="sec-num">1</span>
+        <h4>Adresse de votre société</h4>
+      </div>
+
+      <div class="form-group">
+        <label for="wiz-street" class="sr-only">Adresse principale</label>
+        <div class="input-icon-wrapper">
+          <i class="pi pi-map-marker icon"></i>
+          <input pInputText id="wiz-street" formControlName="street" placeholder="Adresse principale *"
+                 autocomplete="street-address"
+                 [attr.aria-required]="true"
+                 [class.ng-invalid]="isInvalid('street')">
+        </div>
+        @if (isInvalid('street')) {
+          <div class="field-error" role="alert" @fadeInOut>
+            <i class="pi pi-info-circle"></i> L'adresse est requise
+          </div>
+        }
+      </div>
+
+      <div class="form-group">
+        <label for="wiz-streetLine2" class="sr-only">Complément d'adresse</label>
+        <div class="input-icon-wrapper">
+          <i class="pi pi-building icon"></i>
+          <input pInputText id="wiz-streetLine2" formControlName="streetLine2" placeholder="Complément d'adresse (optionnel)">
+        </div>
+      </div>
+
+      <div class="form-row address-row">
+        <div class="form-group flex-2">
+          <label for="wiz-city" class="sr-only">Ville</label>
+          <div class="input-icon-wrapper">
+            <i class="pi pi-map icon"></i>
+            <input pInputText id="wiz-city" formControlName="city" placeholder="Ville *" class="w-full"
+                   autocomplete="address-level2"
+                   [attr.aria-required]="true"
+                   [class.ng-invalid]="isInvalid('city')">
+          </div>
+          @if (isInvalid('city')) {
+            <div class="field-error" role="alert" @fadeInOut>
+              <i class="pi pi-info-circle"></i> Requis
+            </div>
+          }
+        </div>
+
+        <div class="form-group flex-1">
+          <label for="wiz-postalCode" class="sr-only">Code postal</label>
+          <p-inputMask id="wiz-postalCode" formControlName="postalCode" mask="9999" placeholder="Code postal" styleClass="w-full">
+          </p-inputMask>
+          <small class="field-hint">4 chiffres</small>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="wiz-governorate" class="sr-only">Gouvernorat</label>
+        <p-select id="wiz-governorate" [options]="governorates" formControlName="governorate"
+                    optionLabel="label" optionValue="value" placeholder="Gouvernorat *"
+                    [filter]="true" filterBy="label" appendTo="body"
+                    styleClass="w-full custom-dropdown"
+                    [class.ng-invalid]="isInvalid('governorate')"
+                    [attr.aria-required]="true">
+        </p-select>
+        <small class="field-hint">24 gouvernorats tunisiens disponibles</small>
+        @if (isInvalid('governorate')) {
+          <div class="field-error" role="alert" @fadeInOut>
+            <i class="pi pi-info-circle"></i> Le gouvernorat est requis
+          </div>
+        }
+      </div>
+
+      <div class="cgu-box">
+        <div class="terms-group">
+          <p-checkbox inputId="wiz-acceptTerms" formControlName="acceptTerms" [binary]="true"></p-checkbox>
+          <label for="wiz-acceptTerms">
+            En continuant, j'accepte les <a routerLink="/legal/terms" target="_blank" class="link-primary">Conditions d'Utilisation</a> et la <a routerLink="/legal/privacy" target="_blank" class="link-primary">Politique de Confidentialité</a>.
+          </label>
+        </div>
+        @if (isInvalid('acceptTerms')) {
+          <div class="field-error block mt-2" role="alert" @fadeInOut>
+            <i class="pi pi-info-circle"></i> Vous devez accepter les conditions pour continuer.
+          </div>
+        }
+      </div>
+    </div>
+
+    <div class="form-section recap-section">
+      <div class="sec-head">
+        <span class="sec-num">2</span>
+        <h4>Récapitulatif de votre espace</h4>
+      </div>
+
+      <div class="recap-list">
+        <div class="recap-row">
+          <span class="rec-ico tone-blue"><i class="pi pi-sitemap"></i></span>
+          <div class="rec-body">
+            <div class="rec-label">Segment</div>
+            <div class="rec-value">{{ recapSegment() }}</div>
+          </div>
+          <button type="button" class="rec-edit" (click)="goTo(0)">
+            <i class="pi pi-pencil"></i> Modifier
+          </button>
+        </div>
+
+        <div class="recap-row">
+          <span class="rec-ico tone-purple"><i class="pi pi-briefcase"></i></span>
+          <div class="rec-body">
+            <div class="rec-label">Domaine d'activité</div>
+            <div class="rec-value">{{ recapDomain() }}</div>
+          </div>
+          <button type="button" class="rec-edit" (click)="goTo(0)">
+            <i class="pi pi-pencil"></i> Modifier
+          </button>
+        </div>
+
+        <div class="recap-row">
+          <span class="rec-ico tone-green"><i class="pi pi-id-card"></i></span>
+          <div class="rec-body">
+            <div class="rec-label">Régime fiscal</div>
+            <div class="rec-value">{{ recapTaxRegime() }}</div>
+          </div>
+          <button type="button" class="rec-edit" (click)="goTo(1)">
+            <i class="pi pi-pencil"></i> Modifier
+          </button>
+        </div>
+
+        <div class="recap-row">
+          <span class="rec-ico tone-orange"><i class="pi pi-cog"></i></span>
+          <div class="rec-body">
+            <div class="rec-label">Modules activés</div>
+            <div class="rec-chips">
+              @for (label of recapModuleLabels(); track label) {
+                <span>{{ label }}</span>
+              }
+            </div>
+          </div>
+          <button type="button" class="rec-edit" (click)="goTo(2)">
+            <i class="pi pi-pencil"></i> Modifier
+          </button>
+        </div>
+      </div>
+
+      <div class="smart-callout">
+        <span class="smart-ico"><i class="pi pi-sparkles"></i></span>
+        <div>
+          <div class="smart-title">Votre espace sera prêt en quelques secondes</div>
+          <p>Plan comptable tunisien, TVA et devise TND seront configurés automatiquement.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

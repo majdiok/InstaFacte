@@ -1,0 +1,65 @@
+// Shared visual primitives for the sector-aware registration wizard (Phase 1).
+// Each step component's own .scss file does `@use` this partial so Angular's
+// per-component style encapsulation still applies — see step-*.component.scss.
+
+.wizard-step {
+  .step-title {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--color-neutral-800);
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--color-neutral-100);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+}
+
+.form-section {
+  border: 1px solid var(--color-neutral-100);
+  border-radius: 18px;
+  padding: 1.5rem 1.6rem;
+  background: #fbfcfe;
+}
+
+.form-section + .form-section {
+  margin-top: 1.4rem;
+}
+
+.sec-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1rem;
+
+  .sec-num {
+    width: 1.7rem;
+    height: 1.7rem;
+    flex: 0 0 1.7rem;
+    border-radius: 50%;
+    background: var(--color-primary-600);
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  h4 {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--color-neutral-800);
+    margin: 0;
+  }
+}
+
+.tone-blue { background: #e3ecfe; color: #2f6bf0; }
+.tone-green { background: #dcf5e7; color: #16a34a; }
+.tone-orange { background: #feeeda; color: #ea8a1f; }
+.tone-yellow { background: #fdf3d8; color: #d9a406; }
+.tone-pink { background: #fde5ef; color: #ec4899; }
+.tone-indigo { background: #e4e6fd; color: #4f46e5; }
+.tone-purple { background: #efe4fd; color: #8b5cf6; }
+.tone-teal { background: #d8f4f2; color: #0d9488; }
+.tone-gray { background: #eef1f6; color: #64748b; }

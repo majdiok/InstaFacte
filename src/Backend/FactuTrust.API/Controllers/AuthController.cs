@@ -12,6 +12,7 @@ using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Auth;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.SectorConfiguration;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Services;
@@ -42,6 +43,7 @@ public class AuthController : ControllerBase
     private readonly AccountingFirmsOptions _accountingFirmsOptions;
     private readonly IEmailService _emailService;
     private readonly IClientPortalService _clientPortalService;
+    private readonly IRegistrationSectorService _registrationSectorService;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
@@ -58,6 +60,7 @@ public class AuthController : ControllerBase
         IOptions<AccountingFirmsOptions> accountingFirmsOptions,
         IEmailService emailService,
         IClientPortalService clientPortalService,
+        IRegistrationSectorService registrationSectorService,
         ILogger<AuthController> logger)
     {
         _userManager = userManager;
@@ -73,6 +76,7 @@ public class AuthController : ControllerBase
         _accountingFirmsOptions = accountingFirmsOptions.Value;
         _emailService = emailService;
         _clientPortalService = clientPortalService;
+        _registrationSectorService = registrationSectorService;
         _logger = logger;
     }
 
@@ -105,6 +109,15 @@ public class AuthController : ControllerBase
         var phoneResult = PhoneNumber.Create(dto.Phone);
         if (phoneResult.IsFailure)
             return BadRequest(ApiResponse<AuthResponseDto>.Fail(phoneResult.Error.Description));
+
+        // Sector-aware registration wizard (plan §3 C1/C5, §6.1 B5) — optional fields; a legacy
+        // payload (both codes absent) resolves to a null profile and behaves byte-identically to
+        // today.
+        var sectorProfileResult = _registrationSectorService.ResolveProfile(dto.CompanySegment, dto.BusinessDomain);
+        if (sectorProfileResult.IsFailure)
+            return BadRequest(ApiResponse<AuthResponseDto>.Fail(sectorProfileResult.Error.Description));
+        var sectorProfile = sectorProfileResult.Value;
+
         LogCompanyRegistrationStep("Validation", validationSw.ElapsedMilliseconds, null, correlationId);
 
         var emailCheckSw = Stopwatch.StartNew();
@@ -144,6 +157,7 @@ public class AuthController : ControllerBase
 
             tenantId = tenant.Id;
             provisionedDatabaseName = tenant.DatabaseName;
+            tenant.SetSectorClassification(dto.CompanySegment, dto.BusinessDomain);
 
             var masterSw = Stopwatch.StartNew();
             _masterContext.Tenants.Add(tenant);
@@ -176,8 +190,21 @@ public class AuthController : ControllerBase
             await _userManager.AddToRoleAsync(user, UserRole.Administrator.ToString());
             LogCompanyRegistrationStep("IdentityCreate", identitySw.ElapsedMilliseconds, tenant.Id, correlationId);
 
+            // Sector-aware registration wizard (plan §3 C4, §6.1 B5) — restriction-only; null/empty
+            // dto.EnabledModules writes no grant rows (exact legacy "all modules enabled" behavior).
+            // Rides this same transaction/SaveChanges — no separate commit.
+            await _registrationSectorService.ApplyModuleSelectionAsync(
+                user.Id,
+                sectorProfile,
+                dto.EnabledModules,
+                SubscriptionPlan.Free,
+                cancellationToken);
+
             var provisionSw = Stopwatch.StartNew();
-            await _tenantService.CreateTenantDatabaseAsync(tenant.Id, tenant.DatabaseName, dto.WarehouseName, cancellationToken);
+            var effectiveWarehouseName = !string.IsNullOrWhiteSpace(dto.WarehouseName)
+                ? dto.WarehouseName
+                : sectorProfile?.DefaultWarehouseName;
+            await _tenantService.CreateTenantDatabaseAsync(tenant.Id, tenant.DatabaseName, effectiveWarehouseName, cancellationToken);
             LogCompanyRegistrationStep("DatabaseProvision", provisionSw.ElapsedMilliseconds, tenant.Id, correlationId);
 
             await _masterContext.SaveChangesAsync(cancellationToken);

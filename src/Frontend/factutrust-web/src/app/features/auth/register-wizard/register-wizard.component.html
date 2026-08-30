@@ -1,0 +1,165 @@
+<div class="wizard">
+  <aside class="sidebar">
+    <div>
+      <app-logo size="medium" variant="lockup" routerLink="/"></app-logo>
+      <h1 class="sidebar-title">Créez votre espace entreprise</h1>
+      <p class="sidebar-sub">Quelques informations pour personnaliser votre expérience et configurer votre ERP selon votre activité.</p>
+    </div>
+
+    <nav class="step-list" aria-label="Étapes de l'inscription">
+      @for (step of stepsMeta; track step.name; let i = $index) {
+        <div class="step-item"
+             [class.active]="currentStep() === i"
+             [class.done]="currentStep() > i"
+             [attr.aria-current]="currentStep() === i ? 'step' : 'false'"
+             (click)="goToStep(i)">
+          <span class="step-ico"><i class="pi {{ step.icon }}"></i></span>
+          <span class="step-txt">
+            <span class="step-name">{{ step.name }}</span>
+            <span class="step-desc">{{ step.desc }}</span>
+          </span>
+        </div>
+      }
+    </nav>
+
+    <div class="side-box why-box">
+      <div class="why-head">
+        <span class="why-ico"><i class="pi pi-question-circle"></i></span>
+        Pourquoi cette étape&nbsp;?
+      </div>
+      <ul class="why-list">
+        @for (reason of stepsMeta[currentStep()].why; track reason) {
+          <li><i class="pi pi-check" aria-hidden="true"></i><span>{{ reason }}</span></li>
+        }
+      </ul>
+    </div>
+
+    <div class="side-box badge-box">
+      <i class="pi pi-shield" aria-hidden="true"></i>
+      <span>Conforme à la réglementation tunisienne</span>
+    </div>
+
+    <div class="side-box help-box">
+      <div class="help-head">
+        <span class="help-ico"><i class="pi pi-headphones"></i></span>
+        <div>
+          <div class="help-title">Besoin d'aide&nbsp;?</div>
+          <div class="help-sub">Notre équipe vous accompagne</div>
+        </div>
+      </div>
+      <a class="help-link" href="mailto:support@instafact.tn">
+        Contacter le support <i class="pi pi-arrow-right"></i>
+      </a>
+    </div>
+  </aside>
+
+  <main class="panel">
+    <div class="panel-card">
+      <div class="hstepper" role="group" aria-label="Progression de l'inscription">
+        @for (step of stepsMeta; track step.name; let i = $index; let last = $last) {
+          <div class="hstep" [class.active]="currentStep() === i" [class.done]="currentStep() > i">
+            <span class="hstep-dot"><i class="pi {{ step.icon }}"></i></span>
+            <span class="hstep-label">{{ i + 1 }}. {{ step.name }}</span>
+          </div>
+          @if (!last) {
+            <div class="hstep-line" [class.filled]="currentStep() > i"></div>
+          }
+        }
+      </div>
+
+      <form [formGroup]="form" (ngSubmit)="onSubmit()" [attr.aria-label]="registrationFormAriaLabel()">
+
+        @if (error()) {
+          <div class="global-error" role="alert" @fadeInOut>
+            <div class="error-icon">
+              <i class="pi pi-exclamation-triangle"></i>
+            </div>
+            <div class="error-content">
+              <h4>Erreur lors de l'inscription</h4>
+              <p>{{ error() }}</p>
+            </div>
+            <button type="button" class="close-btn" (click)="error.set(null)" aria-label="Fermer">
+              <i class="pi pi-times"></i>
+            </button>
+          </div>
+        }
+
+        <div class="steps-container">
+          @if (currentStep() === 0) {
+            <div class="step-pane" @stepSlide>
+              <app-step-company-type [form]="form"></app-step-company-type>
+            </div>
+          }
+
+          @if (currentStep() === 1) {
+            <div class="step-pane" @stepSlide>
+              <app-step-informations
+                [form]="form"
+                [taxRegimes]="taxRegimes"
+                (nifBlur)="onNifBlur()">
+              </app-step-informations>
+            </div>
+          }
+
+          @if (currentStep() === 2) {
+            <div class="step-pane" @stepSlide>
+              <app-step-configuration
+                [form]="form"
+                [segment]="selectedSegment()"
+                [domain]="selectedDomain()"
+                (moduleToggled)="onModuleToggled($event)"
+                (resetToRecommendations)="resetModulesToRecommendations()">
+              </app-step-configuration>
+            </div>
+          }
+
+          @if (currentStep() === 3) {
+            <div class="step-pane" @stepSlide>
+              <app-step-finalisation
+                [form]="form"
+                [taxRegimes]="taxRegimes"
+                [governorates]="governorates"
+                (editStep)="goToStep($event)">
+              </app-step-finalisation>
+            </div>
+          }
+        </div>
+
+        <div class="navigation-footer">
+          @if (currentStep() > 0) {
+            <button type="button" class="btn-back" (click)="previousStep()" aria-label="Étape précédente">
+              <i class="pi pi-arrow-left" aria-hidden="true"></i> Précédent
+            </button>
+          } @else {
+            <div class="spacer"></div>
+          }
+
+          <p class="step-indicator" aria-live="polite">
+            Étape <span class="step-indicator__num">{{ stepHumanIndex() }}</span> sur {{ stepCount() }}
+          </p>
+
+          @if (currentStep() < stepCount() - 1) {
+            <button type="button" class="btn-next" [class.btn-next--ready]="isCurrentStepValid()" [disabled]="!isCurrentStepValid()" (click)="nextStep()" aria-label="Étape suivante">
+              Continuer <i class="pi pi-arrow-right" aria-hidden="true"></i>
+            </button>
+          } @else {
+            <button type="submit" class="btn-submit" [disabled]="form.invalid || loading()" [class.is-loading]="loading()">
+              @if (loading()) {
+                <i class="pi pi-spin pi-spinner mr-2" aria-hidden="true"></i> {{ loadingMessage() }}
+              } @else {
+                <i class="pi pi-check mr-2" aria-hidden="true"></i> Créer mon espace
+              }
+            </button>
+          }
+        </div>
+      </form>
+
+      <div class="login-prompt">
+        <p>Vous avez déjà un compte ? <a routerLink="/auth/login" class="link-primary fw-semibold">Connectez-vous</a></p>
+        @if (environment.accountingFirmsEnabled) {
+          <p class="mt-2">Cabinet comptable ? <a routerLink="/auth/register-firm" class="link-primary fw-semibold">Inscription cabinet</a></p>
+        }
+      </div>
+    </div>
+  </main>
+</div>

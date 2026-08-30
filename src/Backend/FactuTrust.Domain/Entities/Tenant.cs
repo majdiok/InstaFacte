@@ -33,6 +33,15 @@ public sealed class Tenant : AggregateRoot
 
     public bool IsFirmManaged => ManagedByFirmTenantId.HasValue;
 
+    /// <summary>
+    /// Sector-aware registration wizard (plan §3 C1/C7) — normalized catalog code, e.g. "commerce".
+    /// Null for legacy registrations and for firm tenants (register-firm never sets this).
+    /// </summary>
+    public string? CompanySegment { get; private set; }
+
+    /// <summary>Normalized catalog code, e.g. "sante-paramedical". Null when no domain was captured.</summary>
+    public string? BusinessDomain { get; private set; }
+
     private Tenant() { }
 
     public static Result<Tenant> Create(
@@ -164,6 +173,27 @@ public sealed class Tenant : AggregateRoot
             return Result.Failure(nif.Error);
         NIF = nif.Value;
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Sector-aware registration wizard (plan §6.1 B1/B5) — records the resolved segment/domain
+    /// codes on the tenant. Normalizes (trim/lower-invariant); null/whitespace clears the field.
+    /// Factory signatures are untouched: existing callers (register-firm, firm-managed clients)
+    /// simply never call this, leaving both columns null.
+    /// </summary>
+    public void SetSectorClassification(string? companySegment, string? businessDomain)
+    {
+        CompanySegment = Normalize(companySegment);
+        BusinessDomain = Normalize(businessDomain);
+
+        static string? Normalize(string? code)
+        {
+            if (string.IsNullOrWhiteSpace(code))
+                return null;
+
+            var trimmed = code.Trim().ToLowerInvariant();
+            return trimmed.Length > 50 ? trimmed[..50] : trimmed;
+        }
     }
 
     public void Deactivate()
