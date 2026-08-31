@@ -13,6 +13,7 @@
 | `EnableStudioReportPdf` | `true` | `true` | Coupe-circuit de l'impression PDF des états Studio. |
 | `EnableStudioSqlReportEngine` | **`false`** | `false` | Moteur d'ÉTATS sur les tables réelles (concepteur humain **et** IA). |
 | `EnableStudioAiReportTools` | **`false`** | `false` | Outils `studio_*_report` de l'assistant. Sans effet si le moteur est off. |
+| `EnableStudioReportShortcut` | **`false`** | `false` | Raccourci DÉTERMINISTE : une demande d'état non ambiguë est exécutée AVANT l'appel au modèle. Rend le résultat indépendant du modèle configuré. |
 | `EnableStudioSqlSourceGuard` | **`false`** | `false` | Étend le classement par domaine aux FENÊTRES. Passer le runbook d'impact d'abord. |
 
 > Les drapeaux en gras sont **off par défaut** : sans eux, le comportement du Studio IA est
@@ -121,6 +122,29 @@ Bornes associées : `StudioReportMaxRows` (défaut 5 000, plafond dur 50 000) et
     (revérifier contre le point 31).
 39. Double-clic sur « Valider et enregistrer » ⇒ une seule création (verrou `RowVersion`).
 40. Le modèle ne doit **jamais** annoncer que l'état est enregistré avant validation de l'aperçu.
+
+### Raccourci déterministe (`EnableStudioReportShortcut`)
+
+Le modèle Studio n'émet pas toujours d'appel d'outil — un modèle de *code* n'en émet presque jamais.
+Le raccourci reconnaît la demande et exécute l'état lui-même. Vérifier :
+
+42. « créer un rapport détaillé de ventes d'articles » (sans période) ⇒ tableau affiché, **période
+    annoncée en clair** dans la réponse (défaut : année en cours).
+43. « ventes par client ce trimestre » ⇒ bon préréglage **et** bonne période.
+44. « crée une table Rapports avec les champs titre et date » ⇒ **aucun** raccourci d'état ; le flux
+    de création de table est intact. C'est le faux positif à ne jamais accepter.
+45. « fais-moi un rapport de licornes » ⇒ message adapté à l'intention (« Je n'ai pas pu préparer cet
+    état… ») **et** des suggestions cliquables, jamais « créer ce système ».
+
+**Signature de bon fonctionnement dans les logs** (`src/Backend/FactuTrust.API/logs/factutrust-<date>.log`) :
+
+```bash
+Select-String -Path src/Backend/FactuTrust.API/logs/factutrust-20260816.log -Pattern "phase=total_request" | Select-Object -Last 3
+```
+
+Attendu : `tools_executed_this_request=1` et `content_chars_persisted>0`. La signature d'échec —
+`final_response_meaningful=true` **avec** `content_chars_persisted=0` et `content_chars_streamed=0` —
+doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_fallback`.
 
 ### Avant d'activer `EnableStudioSqlSourceGuard`
 

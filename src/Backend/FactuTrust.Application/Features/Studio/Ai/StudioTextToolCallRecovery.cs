@@ -5,7 +5,9 @@ namespace FactuTrust.Application.Features.Studio.Ai;
 public enum BareStudioSpecKind
 {
     App,
-    System
+    System,
+    /// <summary>Spécification d'ÉTAT écrite en prose au lieu d'un appel d'outil.</summary>
+    Report
 }
 
 /// <summary>
@@ -35,12 +37,22 @@ public static class StudioTextToolCallRecovery
         "studio_plan_report"
     };
 
-    /// <summary>Choisit le message de reformulation d'après l'outil visé (ou le texte, à défaut).</summary>
-    public static string ResolveReformulateMessage(string? toolName, string? content = null)
+    /// <summary>
+    /// Choisit le message de reformulation, par ordre de fiabilité décroissante : l'outil visé, la
+    /// forme du texte produit par le modèle, puis la DEMANDE de l'utilisateur. Ce dernier recours
+    /// compte : quand le modèle n'a rien produit d'exploitable, seule la demande initiale renseigne
+    /// encore sur l'intention.
+    /// </summary>
+    public static string ResolveReformulateMessage(
+        string? toolName, string? content = null, string? userMessage = null)
     {
         if (toolName is not null && toolName.Contains("report", StringComparison.OrdinalIgnoreCase))
             return ReformulateReportMessage;
-        return LooksLikeReportSpecText(content) ? ReformulateReportMessage : ReformulateMessage;
+        if (LooksLikeReportSpecText(content))
+            return ReformulateReportMessage;
+        return StudioReportIntentRouter.LooksLikeReportRequest(userMessage)
+            ? ReformulateReportMessage
+            : ReformulateMessage;
     }
 
     /// <summary>Signature d'une spécification d'état : une source/préréglage ET une mesure ou un regroupement.</summary>
@@ -122,6 +134,9 @@ public static class StudioTextToolCallRecovery
         kind switch
         {
             BareStudioSpecKind.System => planPreview ? "studio_plan_system" : "studio_generate_system",
+            // Un état écrit en prose est CALCULÉ, pas enregistré : le chemin par défaut est
+            // l'exécution en lecture seule. L'enregistrement reste une demande explicite.
+            BareStudioSpecKind.Report => "studio_run_report",
             _ => planPreview ? "studio_plan_app" : "studio_generate_app"
         };
 
@@ -279,8 +294,31 @@ public static class StudioTextToolCallRecovery
             return true;
         }
 
+        // Spécification d'ÉTAT : un modèle de code écrit volontiers le JSON au lieu d'appeler l'outil.
+        // Reconnaissable à une SOURCE (préréglage ou table) accompagnée d'une forme d'analyse.
+        var hasPreset = root.TryGetProperty("preset", out var preset) && preset.ValueKind == JsonValueKind.String;
+        var hasSource = root.TryGetProperty("source", out var source) && source.ValueKind == JsonValueKind.String;
+        if (hasPreset || hasSource)
+        {
+            var hasShape = hasPreset
+                || HasNonEmptyArray(root, "groupBy")
+                || HasNonEmptyArray(root, "measures")
+                || HasNonEmptyArray(root, "columns");
+            if (hasShape)
+            {
+                kind = BareStudioSpecKind.Report;
+                specJson = root.GetRawText();
+                return true;
+            }
+        }
+
         return false;
     }
+
+    private static bool HasNonEmptyArray(JsonElement root, string property) =>
+        root.TryGetProperty(property, out var value)
+        && value.ValueKind == JsonValueKind.Array
+        && value.GetArrayLength() > 0;
 
     private static bool IsBareStudioSpecJson(string candidate)
     {

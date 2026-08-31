@@ -240,10 +240,23 @@ public static class AssistantVisibleContentFormatter
             .Where(line => !InternalToolNameRegex.IsMatch(line) && !JsonWordRegex.IsMatch(line));
 
         var result = MultiBlankLineRegex.Replace(string.Join("\n", kept), "\n\n").Trim();
-        return string.IsNullOrWhiteSpace(result)
-            ? "D'accord — dites-moi les champs à ajouter et je mets à jour le système."
-            : result;
+        return string.IsNullOrWhiteSpace(result) ? StudioRedactionFallback : result;
     }
+
+    /// <summary>
+    /// Texte de repli quand la redaction a tout retiré (réponse entièrement « interne »).
+    ///
+    /// Sa LONGUEUR est contractuelle : il doit dépasser
+    /// <c>OllamaSettings.MinAssistantTextCharsForCompleteResponse</c>, sinon
+    /// <see cref="HasMeaningfulAssistantText"/> le rejette et la réponse tombe dans le filet
+    /// anti-silence — dont le libellé parle de création de système, à contretemps d'une demande
+    /// d'état. Le repli précédent faisait 71 caractères pour un seuil de 80 : le piège se refermait
+    /// mécaniquement. Neutre par ailleurs : il ne présume ni d'une table ni d'un état.
+    /// Couvert par <c>AssistantVisibleContentFormatterTests</c>.
+    /// </summary>
+    public const string StudioRedactionFallback =
+        "Je peux créer des tables et produire des états sur vos données. Dites-moi ce que vous "
+        + "voulez obtenir : pour un état, la période et ce qu'il faut mesurer ; pour une table, ses champs.";
 
     public static int MeasureVisibleProseLength(string? content)
     {

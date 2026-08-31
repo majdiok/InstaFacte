@@ -72,6 +72,14 @@ public sealed class SendChatMessageHandler
         + "Reprends les chiffres du résultat SANS EN INVENTER AUCUN et n'appelle AUCUN outil. "
         + "Termine en proposant d'affiner la période ou de l'enregistrer comme état réutilisable.";
 
+    /// <summary>
+    /// Filet anti-silence du mode Studio, employé UNIQUEMENT quand la demande ne ressemble pas à une
+    /// demande d'état (sinon <c>StudioTextToolCallRecovery.ReformulateReportMessage</c> prend le relais).
+    /// </summary>
+    private const string StudioBuilderSilenceFallback =
+        "Je n'ai pas réussi à créer ce système. Reformulez votre demande en décrivant les tables et "
+        + "leurs champs (ex. « table Employés avec nom, poste ; table Congés avec employé, dates, statut »).";
+
     public SendChatMessageHandler(
         IOllamaClient ollamaClient,
         IOllamaGenerationGate ollamaGenerationGate,
@@ -1267,8 +1275,17 @@ public sealed class SendChatMessageHandler
                     && (StudioTextToolCallRecovery.TryExtract(fullContent.ToString(), out var leakedTool, out _)
                         || StudioTextToolCallRecovery.LooksLikeStudioSpecText(fullContent.ToString())))
                 {
-                    yield return ChatStreamEvent.ContentReplace(
-                        StudioTextToolCallRecovery.ResolveReformulateMessage(leakedTool, fullContent.ToString()));
+                    // Ce message est une RÉPONSE à part entière : le persister et poser le drapeau,
+                    // sinon le filet anti-silence en fin de flux émet un second ContentReplace qui
+                    // le recouvre — l'utilisateur voyait alors « créer ce système » sur une demande
+                    // d'état.
+                    var reformulate = StudioTextToolCallRecovery.ResolveReformulateMessage(
+                        leakedTool, fullContent.ToString(), command.Message);
+                    totalContentCharsStreamed += reformulate.Length;
+                    contentCharsPersisted = reformulate.Length;
+                    conversation.AddMessage(MessageRole.Assistant, reformulate);
+                    meaningfulResponseDelivered = true;
+                    yield return ChatStreamEvent.ContentReplace(reformulate);
                 }
                 else if (liveStreaming && liveStreamedAny)
                 {
@@ -1636,7 +1653,8 @@ public sealed class SendChatMessageHandler
                 meaningfulResponseDelivered,
                 toolsExecutedThisRequest > 0,
                 _ollamaSettings.ForceFinalSynthesisOnlyAfterTools,
-                _screenAnalysisOptions.ForceFinalSynthesisEnabled)
+                _screenAnalysisOptions.ForceFinalSynthesisEnabled,
+                assistantMode == AssistantMode.StudioBuilder)
                 || firmUngroundedNeedsSynthesis))
         {
             forcedSynthesisTriggered = true;
@@ -2050,10 +2068,35 @@ public sealed class SendChatMessageHandler
         // au lieu d'une bulle vide.
         if (assistantMode == AssistantMode.StudioBuilder && !meaningfulResponseDelivered)
         {
-            const string fallback = "Je n'ai pas réussi à créer ce système. Reformulez votre demande en décrivant les tables et leurs champs (ex. « table Employés avec nom, poste ; table Congés avec employé, dates, statut »).";
+            // Le libellé suit l'INTENTION lue dans la demande de l'utilisateur : parler de création
+            // de système à qui réclame un état l'oriente vers une mauvaise reformulation.
+            var fallback = StudioReportIntentRouter.LooksLikeReportRequest(command.Message)
+                ? StudioTextToolCallRecovery.ReformulateReportMessage
+                : StudioBuilderSilenceFallback;
+            contentCharsPersisted = fallback.Length;
             conversation.AddMessage(MessageRole.Assistant, fallback);
             meaningfulResponseDelivered = true;
             yield return ChatStreamEvent.ContentReplace(fallback);
+
+            // Chemin jusqu'ici MUET dans les logs : il ne se détectait qu'à la signature
+            // content_chars_persisted=0. On le nomme, pour pouvoir le compter.
+            _logger.LogWarning(
+                "AI chat {CorrelationId} studio_silence_fallback report_intent={ReportIntent} tools_executed={ToolsExecuted} rounds={Rounds}",
+                correlationId ?? "-",
+                StudioReportIntentRouter.LooksLikeReportRequest(command.Message),
+                toolsExecutedThisRequest,
+                toolCallRound);
+
+            // Repartir avec des formulations qui fonctionnent plutôt qu'un conseil générique.
+            var suggestions = StudioReportIntentRouter.SuggestPresets(command.Message)
+                .Select(key => SqlReportPresetCatalog.Find(key))
+                .Where(p => p is not null)
+                .Select(p => p!.PeriodFieldKey is not null
+                    ? $"{p.DisplayName} ce mois"
+                    : p.DisplayName)
+                .ToList();
+            if (suggestions.Count > 0)
+                yield return ChatStreamEvent.SuggestedPromptsEvent(JsonSerializer.Serialize(suggestions));
         }
 
         sw.Restart();
@@ -2118,11 +2161,16 @@ public sealed class SendChatMessageHandler
         bool meaningfulResponseDelivered,
         bool toolsWereExecuted,
         bool onlyAfterTools,
-        bool screenAnalysisForceFinalSynthesisEnabled = false)
+        bool screenAnalysisForceFinalSynthesisEnabled = false,
+        bool isStudioBuilder = false)
         => (!isScreenAnalysis || screenAnalysisForceFinalSynthesisEnabled)
            && forceEnabled
            && !meaningfulResponseDelivered
-           && (!onlyAfterTools || toolsWereExecuted);
+           // Studio : le mode qui a le plus besoin du filet en était le seul privé. Quand aucun outil
+           // ne tourne, `onlyAfterTools` coupait la seule seconde chance et la réponse tombait dans le
+           // filet anti-silence. Paramètre optionnel en fin de signature : les autres appelants et
+           // leurs tests gardent la sémantique historique à l'identique.
+           && (!onlyAfterTools || toolsWereExecuted || isStudioBuilder);
 
     /// <summary>
     /// Détection « le tour firm demande des données » (Lot 1.3 du plan v3) : vraie si le raccourci
@@ -2775,8 +2823,11 @@ public sealed class SendChatMessageHandler
             && toolIntent is not (AiToolIntentRouter.AiToolIntent.Greeting or AiToolIntentRouter.AiToolIntent.Synthesis)
             ? AiToolIntentRouter.AiToolIntent.Fallback
             : toolIntent;
-        var useCpuCoreSubset = isCpuOnly && !isScoped && effectiveIntent == AiToolIntentRouter.AiToolIntent.Fallback;
-        var useCpuIntentSubset = isCpuOnly && !isScoped && effectiveIntent is AiToolIntentRouter.AiToolIntent.Sales
+        // Les sous-ensembles CPU ne s'appliquent qu'au catalogue Default non scopé : les modes
+        // focalisés sont déjà curés, les y soumettre les ampute (cf. CpuSubsetApplies).
+        var cpuSubsetApplies = AiToolIntentRouter.CpuSubsetApplies(mode, agentScope, isCpuOnly);
+        var useCpuCoreSubset = cpuSubsetApplies && effectiveIntent == AiToolIntentRouter.AiToolIntent.Fallback;
+        var useCpuIntentSubset = cpuSubsetApplies && effectiveIntent is AiToolIntentRouter.AiToolIntent.Sales
             or AiToolIntentRouter.AiToolIntent.Stock
             or AiToolIntentRouter.AiToolIntent.Accounting;
         var definitions = AiToolRegistry.GetDefinitionsForMode(mode, enableMutationTools, agentScope, studioPlanPreview, studioModifyTools, studioViewTools, studioReportTools, studioFocus)

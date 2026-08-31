@@ -426,6 +426,23 @@ public static class AiToolIntentRouter
         };
     }
 
+    /// <summary>
+    /// Les sous-ensembles CPU s'appliquent-ils ? UNIQUEMENT au catalogue Default non scopé.
+    ///
+    /// Ils ont été conçus pour dégrossir ce catalogue (~90 outils) sur une machine sans GPU. Les modes
+    /// FOCALISÉS — Compliance, ScreenAnalysis, StudioBuilder — et les assistants experts exposent déjà
+    /// un catalogue restreint et curé par <c>GetDefinitionsForMode</c> ; les intersecter en plus avec
+    /// <c>CpuCoreToolNames</c>, qui ne contient aucun de leurs outils propres, les ampute en silence :
+    /// StudioBuilder tombait à UN seul outil (aucun <c>studio_*</c>), Compliance perdait
+    /// <c>compliance_check_invoice</c>, ScreenAnalysis perdait <c>resolve_reporting_period</c>.
+    ///
+    /// Le piège venait de la garde <c>!isScoped</c>, qui ne couvre que le mode Default : tous ces modes
+    /// forcent l'intent <see cref="AiToolIntent.Fallback"/> et ne sont jamais « scopés », donc armaient
+    /// le sous-ensemble.
+    /// </summary>
+    public static bool CpuSubsetApplies(AssistantMode mode, AssistantAgentScope agentScope, bool isCpuOnly) =>
+        isCpuOnly && mode == AssistantMode.Default && agentScope == AssistantAgentScope.None;
+
     public static bool ShouldIncludeTool(
         string toolName,
         AiToolIntent intent,

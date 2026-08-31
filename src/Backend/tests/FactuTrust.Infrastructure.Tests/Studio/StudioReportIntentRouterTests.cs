@@ -180,6 +180,45 @@ public sealed class StudioReportIntentRouterTests
 
     // ---- LooksLikeReportRequest (utilisé par le message d'échec) ----
 
+    // ---- Bouclage : le JSON émis par le raccourci doit être celui qu'attend le parseur ----
+
+    [Theory]
+    [InlineData("créer un rapport détaillé de ventes d'articles")]
+    [InlineData("rapport du chiffre d'affaires par client ce trimestre")]
+    [InlineData("analyse des achats par fournisseur le mois dernier")]
+    public void The_shortcut_payload_round_trips_through_the_spec_parser(string message)
+    {
+        // Reproduit EXACTEMENT ce que SendChatMessageHandler sérialise pour studio_run_report.
+        // Une divergence ici casserait le raccourci en silence, sans qu'aucun autre test ne le voie.
+        var detection = StudioReportIntentRouter.TryInfer(message);
+        Assert.NotNull(detection);
+
+        var period = ReportingPeriodResolver.Resolve(
+            detection!.PeriodPreset ?? StudioReportIntentRouter.DefaultPeriodPreset,
+            TimeProvider.System);
+        var preset = SqlReportPresetCatalog.Find(detection.PresetKey);
+        Assert.NotNull(preset);
+
+        var specJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            title = preset!.DisplayName,
+            preset = detection.PresetKey,
+            from = period.FromDate.ToString("yyyy-MM-dd"),
+            to = period.ToDate.ToString("yyyy-MM-dd")
+        });
+
+        Assert.True(StudioAiReportSpec.TryParse(specJson, out var parsed, out var error), error);
+        Assert.Equal(detection.PresetKey, parsed!.PresetKey);
+        Assert.Equal(period.FromDate, parsed.From);
+        Assert.Equal(period.ToDate, parsed.To);
+        Assert.Empty(parsed.Warnings);
+
+        // Et la matérialisation retombe bien sur la table de faits du préréglage.
+        var (factTable, definition) = StudioAiReportSpec.Materialize(parsed);
+        Assert.Equal(preset.FactTable, factTable);
+        Assert.Contains(definition.Filters, f => f.Op == "between");
+    }
+
     [Fact]
     public void LooksLikeReportRequest_separates_analysis_from_construction()
     {

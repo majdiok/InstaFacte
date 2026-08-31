@@ -93,6 +93,52 @@ recette contre `/reports/sales-by-line`.
 
 ---
 
+## 4 bis. Le raccourci déterministe — pourquoi il existe
+
+Les premiers essais en conditions réelles ont montré que le modèle Studio **n'émettait aucun appel
+d'outil** (`had_tool_calls=false` dans les logs), quel que soit le soin porté au prompt : le modèle
+configuré était un modèle de *code*, qui écrit du JSON en prose plutôt que d'appeler une fonction.
+La réponse tombait alors dans le filet anti-silence, dont le libellé parlait de création de système.
+
+`StudioReportIntentRouter` reconnaît la demande et **exécute l'état avant d'appeler le modèle**, sur
+le patron du raccourci de contrôle de conformité déjà en place. Le modèle ne fait plus que rédiger.
+
+Trois propriétés à préserver :
+
+1. **En cas de doute, on n'exécute rien.** Score insuffisant, ou message décrivant une structure à
+   créer (« table X avec les champs… ») ⇒ aucun raccourci, le flux normal reprend la main.
+2. **La période retenue est annoncée.** Sans période exprimée, le défaut est l'année en cours, et le
+   modèle a consigne de l'énoncer — l'utilisateur corrige d'un message.
+3. **`toolsExecutedThisRequest++` réactive la synthèse forcée.** Avec
+   `ForceFinalSynthesisOnlyAfterTools: true`, c'est ce qui rend la bulle vide structurellement
+   impossible sur ce chemin.
+
+Le raccourci est piloté par `EnableStudioReportShortcut`. Il ne remplace pas les outils : quand la
+demande est trop fine pour un préréglage, le modèle garde la main — avec un catalogue **focalisé**
+(`StudioToolFocus.Report`) qui divise par trois le poids des schémas exposés.
+
+## 4 ter. La panne CPU silencieuse — corrigée
+
+Les sous-ensembles d'outils CPU (`AiToolIntentRouter.CpuCoreToolNames`) ont été conçus pour dégrossir
+le catalogue **Default** (~90 outils) sur une machine sans GPU. Leur garde d'armement était
+`!isScoped`, qui ne couvre que le mode Default : or **tous** les modes focalisés forcent l'intent
+`Fallback` et ne sont jamais « scopés ». Ils armaient donc le sous-ensemble et se faisaient
+intersecter avec une liste ne contenant aucun de leurs outils propres.
+
+Dégâts constatés sur une plateforme réglée en « CPU uniquement » :
+
+| Mode | Effet |
+|---|---|
+| **StudioBuilder** | Catalogue réduit à **un seul** outil (`propose_follow_up_prompts`) — **aucun `studio_*`**. Panne totale et muette. |
+| **Compliance** | Perte de `compliance_check_invoice`, le contrôle qui définit le mode. |
+| **ScreenAnalysis** | Perte de `resolve_reporting_period`, la garde anti-hallucination de date. |
+
+La décision d'armement est désormais explicite et testable :
+`AiToolIntentRouter.CpuSubsetApplies(mode, agentScope, isCpuOnly)` — vrai **uniquement** pour le
+catalogue Default non scopé. Le dégrossissement voulu sur ce catalogue est conservé à l'identique.
+Garde : `CpuToolSubsetScopeTests`, qui reproduit le pipeline complet de `BuildOllamaTools` — jusque-là
+seul `GetDefinitionsForMode` était couvert, ce qui laissait passer le défaut.
+
 ## 5. Deux sorties, un seul moteur
 
 | Outil | Nature | Effet |

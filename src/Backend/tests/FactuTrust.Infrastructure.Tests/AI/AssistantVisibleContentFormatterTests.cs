@@ -200,7 +200,10 @@ public sealed class AssistantVisibleContentFormatterTests
 
         var clean = AssistantVisibleContentFormatter.RedactStudioInternalLeaks(content);
 
-        Assert.Equal("D'accord — dites-moi les champs à ajouter et je mets à jour le système.", clean);
+        // Le texte de repli est désormais une constante : sa longueur est contractuelle (elle doit
+        // franchir MinAssistantTextCharsForCompleteResponse, cf. StudioSilentFailureGuardsTests) et
+        // il ne présume plus d'une création de table.
+        Assert.Equal(AssistantVisibleContentFormatter.StudioRedactionFallback, clean);
     }
 
     // ── SanitizeInternalToolNames : substitution par libellés (jamais de perte de contenu) ──────
