@@ -11,11 +11,16 @@ namespace FactuTrust.Infrastructure.Services.RecurringContracts;
 
 /// <summary>
 /// Ajustement contrôlé du brouillon d'une échéance (modal « Ajustement du brouillon »).
-/// Whitelist : désignation, quantité, prix unitaire HT. Aucune émission, aucun journal.
+/// Whitelist : désignation, quantité, prix unitaire HT, TVA. Produit et nombre de lignes figés.
+/// Synchronise le snapshot du billing run et aligne les lignes catalogue du contrat.
+/// Aucune émission, aucun journal comptable.
 /// </summary>
 public sealed partial class RecurringContractService
 {
     private static readonly TimeSpan SubmissionLockTimeout = TimeSpan.FromMinutes(5);
+
+    private const string UsageLineDesignationPrefix = "Consommation période";
+    private const string ProrationLineDesignation = "Ajustement prorata période";
 
     public async Task<Result<AdjustableRecurringDraftDto>> GetAdjustableDraftAsync(
         Guid billingRunId, CancellationToken cancellationToken = default)
@@ -69,6 +74,11 @@ public sealed partial class RecurringContractService
                     "UnitPriceHT",
                     $"Ligne {i + 1} : le prix unitaire HT ne peut pas être négatif."));
 
+            if (!TunisianValidationRules.IsValidVatRate(patch.VatRate))
+                return Result.Failure<AdjustableRecurringDraftDto>(Error.Validation(
+                    "VatRate",
+                    $"Ligne {i + 1} : le taux de TVA doit être 0, 7, 13 ou 19 %."));
+
             var designation = (patch.Designation ?? string.Empty).Trim();
             if (designation.Length == 0)
                 designation = current.Designation ?? string.Empty;
@@ -88,19 +98,132 @@ public sealed partial class RecurringContractService
                 Designation = designation,
                 Quantity = patch.Quantity,
                 UnitPriceHT = patch.UnitPriceHT,
+                VatRate = patch.VatRate,
                 PriceOverridden = true
             });
         }
 
         draft.UpdateLines(merged);
+
+        var (fixedAmount, usageAmount, prorationAmount) = SplitDraftAmountsByKind(existing, merged);
+        var revise = run.ReviseDraftAmounts(fixedAmount, usageAmount, prorationAmount);
+        if (revise.IsFailure)
+            return Result.Failure<AdjustableRecurringDraftDto>(revise.Error);
+
+        var syncLines = await SyncContractCatalogLinesAsync(run, merged, cancellationToken);
+        if (syncLines.IsFailure)
+            return Result.Failure<AdjustableRecurringDraftDto>(syncLines.Error);
+
         await _db.SaveChangesAsync(cancellationToken);
 
-        // Recharger le contrat (AsNoTracking) pour le mapping — le run n'a pas changé.
         var mapped = await LoadAdjustableAsync(run.Id, trackDraft: false, cancellationToken);
         if (mapped.IsFailure)
             return Result.Failure<AdjustableRecurringDraftDto>(mapped.Error);
 
         return Result.Success(await MapAdjustableDraftAsync(mapped.Value, cancellationToken));
+    }
+
+    /// <summary>
+    /// Ventile le HT des lignes draft (qty × prix) en Fixed / Usage / Proration.
+    /// La classification se base sur les désignations d'origine (avant patch) pour rester stable
+    /// si l'utilisateur renomme une ligne synthétique Usage/Prorata.
+    /// </summary>
+    private static (decimal Fixed, decimal Usage, decimal Proration) SplitDraftAmountsByKind(
+        IReadOnlyList<DraftInvoiceLine> original,
+        IReadOnlyList<DraftInvoiceLine> merged)
+    {
+        decimal fixedHt = 0m;
+        decimal usageHt = 0m;
+        decimal prorationHt = 0m;
+
+        for (var i = 0; i < merged.Count; i++)
+        {
+            var lineHt = TunisianValidationRules.RoundToMillimes(merged[i].Quantity * merged[i].UnitPriceHT);
+            var kind = ClassifyDraftLineKind(original[i].Designation);
+
+            switch (kind)
+            {
+                case DraftLineKind.Usage:
+                    usageHt += lineHt;
+                    break;
+                case DraftLineKind.Proration:
+                    prorationHt += lineHt;
+                    break;
+                default:
+                    fixedHt += lineHt;
+                    break;
+            }
+        }
+
+        return (fixedHt, usageHt, prorationHt);
+    }
+
+    private static DraftLineKind ClassifyDraftLineKind(string? designation)
+    {
+        var d = designation ?? string.Empty;
+        if (d.StartsWith(UsageLineDesignationPrefix, StringComparison.Ordinal))
+            return DraftLineKind.Usage;
+        if (d.StartsWith(ProrationLineDesignation, StringComparison.Ordinal))
+            return DraftLineKind.Proration;
+        return DraftLineKind.Fixed;
+    }
+
+    private enum DraftLineKind { Fixed, Usage, Proration }
+
+    /// <summary>
+    /// Aligne les lignes catalogue actives du contrat (même filtre/ordre que BuildDraftLines)
+    /// sur les premières lignes du brouillon. Les lignes synthétiques Usage/Prorata ne sont pas
+    /// répercutées sur <see cref="RecurringContractLine"/>.
+    /// </summary>
+    private async Task<Result> SyncContractCatalogLinesAsync(
+        RecurringContractBillingRun run,
+        IReadOnlyList<DraftInvoiceLine> merged,
+        CancellationToken cancellationToken)
+    {
+        var contract = await _db.RecurringContracts
+            .Include(c => c.Lines)
+            .FirstOrDefaultAsync(c => c.Id == run.RecurringContractId, cancellationToken);
+        if (contract is null)
+            return Result.Failure(Error.NotFound("RecurringContract", run.RecurringContractId));
+
+        var catalogLines = GetCatalogLinesForDraft(contract, run.PeriodTo).ToList();
+        if (merged.Count < catalogLines.Count)
+            return Result.Failure(Error.Validation(
+                "Lines",
+                "Incohérence structurelle : le brouillon a moins de lignes que le catalogue du contrat."));
+
+        for (var i = 0; i < catalogLines.Count; i++)
+        {
+            var contractLine = catalogLines[i];
+            var draftLine = merged[i];
+            var updated = contractLine.Update(
+                draftLine.Designation ?? contractLine.Description,
+                draftLine.Quantity,
+                draftLine.UnitPriceHT,
+                draftLine.VatRate,
+                contractLine.IncludedQuantity,
+                contractLine.OverageUnitPriceHT,
+                contractLine.SortOrder);
+            if (updated.IsFailure)
+                return updated;
+        }
+
+        return Result.Success();
+    }
+
+    /// <summary>Même filtre que <c>RecurringContractBillingService.BuildDraftLines</c> (hors usage/prorata).</summary>
+    internal static IEnumerable<RecurringContractLine> GetCatalogLinesForDraft(
+        RecurringContract contract,
+        DateTime periodTo)
+    {
+        foreach (var contractLine in contract.GetActiveLinesOn(periodTo))
+        {
+            if (contractLine.LineType == RecurringContractLineType.OneTimeSetup && contract.SetupFeeBilled)
+                continue;
+            if (contractLine.LineType == RecurringContractLineType.UsageMetered)
+                continue;
+            yield return contractLine;
+        }
     }
 
     private async Task<Result<(RecurringContractBillingRun Run, InvoiceDraft Draft, RecurringContract Contract)>> LoadAdjustableAsync(

@@ -44,6 +44,22 @@ public sealed class RecurringContractBillingRun : Entity
         ErrorMessage = null;
     }
 
+    /// <summary>
+    /// Révision des montants snapshot tant que le run est encore en brouillon (après ajustement
+    /// des lignes). Interdit une fois facturé / échoué / ignoré — protège l'historique et la compta.
+    /// </summary>
+    public Result ReviseDraftAmounts(decimal fixedAmount, decimal usageAmount, decimal prorationAmount)
+    {
+        if (Status != RecurringContractBillingRunStatus.DraftCreated)
+            return Result.Failure(Error.Conflict(
+                "Les montants de l'échéance ne peuvent être révisés que tant qu'elle est en brouillon."));
+
+        FixedAmount = decimal.Round(fixedAmount, 3, MidpointRounding.AwayFromZero);
+        UsageAmount = decimal.Round(usageAmount, 3, MidpointRounding.AwayFromZero);
+        ProrationAmount = decimal.Round(prorationAmount, 3, MidpointRounding.AwayFromZero);
+        return Result.Success();
+    }
+
     public void MarkInvoiced(Guid invoiceId)
     {
         InvoiceId = invoiceId;

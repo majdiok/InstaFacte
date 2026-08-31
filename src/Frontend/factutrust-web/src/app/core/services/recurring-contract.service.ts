@@ -197,6 +197,7 @@ export interface AdjustRecurringDraftLinePayload {
   designation: string;
   quantity: number;
   unitPriceHT: number;
+  vatRate: number;
 }
 
 /** POST /billing-runs/{id}/issue */

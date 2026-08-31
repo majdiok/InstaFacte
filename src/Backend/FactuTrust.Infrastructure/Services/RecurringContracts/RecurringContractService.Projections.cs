@@ -1,5 +1,6 @@
 using System.Globalization;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.InvoiceWizard.Validators;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.RecurringContracts;
 using FactuTrust.Domain.Enums;
@@ -20,6 +21,8 @@ public sealed partial class RecurringContractService
     /// runs existants par clé (PeriodFrom, PeriodTo) — jamais de doublon. Contrat clos
     /// (Cancelled/Expired) → seuls les runs existants sont retournés. Contrat Draft → projection
     /// depuis la date initiale calculée, toutes les occurrences « À venir ».
+    /// Montants : pour un run DraftCreated/Invoiced matérialisé, on privilégie le snapshot du run
+    /// (et le TTC du brouillon/facture) plutôt que le recalcul catalogue.
     /// </summary>
     public async Task<IReadOnlyList<RecurringContractScheduleItemDto>?> GetScheduleAsync(
         Guid id, int count, CancellationToken cancellationToken = default)
@@ -38,6 +41,9 @@ public sealed partial class RecurringContractService
         count = Math.Clamp(count, 1, 60);
         var today = DateTime.UtcNow.Date;
         var usageEstimate = ComputeUsageEstimate(runs);
+
+        var draftTotalsById = await LoadDraftTotalsByIdAsync(runs, contract.Currency, cancellationToken);
+        var invoiceTotalsById = await LoadInvoiceTotalsByIdAsync(runs, cancellationToken);
 
         var projected = contract.Status is RecurringContractStatus.Cancelled or RecurringContractStatus.Expired
             ? Array.Empty<ProjectedBillingOccurrence>()
@@ -59,8 +65,9 @@ public sealed partial class RecurringContractService
                 consumedKeys.Add(key);
             }
 
-            var (ht, ttc) = EstimateOccurrenceAmounts(contract, occurrence, usageEstimate, isFirstProjected);
+            var estimated = EstimateOccurrenceAmounts(contract, occurrence, usageEstimate, isFirstProjected);
             isFirstProjected = false;
+            var (ht, ttc) = ResolveScheduleAmounts(run, estimated, draftTotalsById, invoiceTotalsById);
 
             var status = run is not null
                 ? MapRunStatus(run.Status)
@@ -90,14 +97,31 @@ public sealed partial class RecurringContractService
         foreach (var run in runs.Where(r => !consumedKeys.Contains((r.PeriodFrom.Date, r.PeriodTo.Date))))
         {
             var status = MapRunStatus(run.Status);
+            var ht = run.TotalAmount;
+            var ttc = 0m;
+            if (run.Status == RecurringContractBillingRunStatus.DraftCreated
+                && run.InvoiceDraftId.HasValue
+                && draftTotalsById.TryGetValue(run.InvoiceDraftId.Value, out var draftTotals))
+            {
+                ht = run.TotalAmount;
+                ttc = draftTotals.Ttc;
+            }
+            else if (run.Status == RecurringContractBillingRunStatus.Invoiced
+                     && run.InvoiceId.HasValue
+                     && invoiceTotalsById.TryGetValue(run.InvoiceId.Value, out var invTotals))
+            {
+                ht = invTotals.Ht;
+                ttc = invTotals.Ttc;
+            }
+
             items.Add(new RecurringContractScheduleItemDto
             {
                 Date = run.PeriodFrom,
                 PeriodFrom = run.PeriodFrom,
                 PeriodTo = run.PeriodTo,
                 Description = FormatPeriodDescription(run.PeriodFrom, run.PeriodTo),
-                EstimatedAmountHT = run.TotalAmount,
-                EstimatedAmountTTC = 0m,
+                EstimatedAmountHT = ht,
+                EstimatedAmountTTC = ttc,
                 Status = status,
                 StatusDisplay = status.ToDisplayString(),
                 BillingRunId = run.Id,
@@ -107,6 +131,85 @@ public sealed partial class RecurringContractService
         }
 
         return items.OrderByDescending(i => i.Date).ToList();
+    }
+
+    private static (decimal Ht, decimal Ttc) ResolveScheduleAmounts(
+        RecurringContractBillingRun? run,
+        (decimal Ht, decimal Ttc) estimatedFallback,
+        IReadOnlyDictionary<Guid, (decimal Ht, decimal Ttc)> draftTotalsById,
+        IReadOnlyDictionary<Guid, (decimal Ht, decimal Ttc)> invoiceTotalsById)
+    {
+        if (run is null)
+            return estimatedFallback;
+
+        if (run.Status == RecurringContractBillingRunStatus.DraftCreated)
+        {
+            var ht = run.TotalAmount;
+            var ttc = estimatedFallback.Ttc;
+            if (run.InvoiceDraftId.HasValue
+                && draftTotalsById.TryGetValue(run.InvoiceDraftId.Value, out var draftTotals))
+                ttc = draftTotals.Ttc;
+            return (ht, ttc);
+        }
+
+        if (run.Status == RecurringContractBillingRunStatus.Invoiced)
+        {
+            if (run.InvoiceId.HasValue
+                && invoiceTotalsById.TryGetValue(run.InvoiceId.Value, out var invTotals))
+                return invTotals;
+            return (run.TotalAmount, estimatedFallback.Ttc);
+        }
+
+        return estimatedFallback;
+    }
+
+    private async Task<Dictionary<Guid, (decimal Ht, decimal Ttc)>> LoadDraftTotalsByIdAsync(
+        IReadOnlyList<RecurringContractBillingRun> runs,
+        string currency,
+        CancellationToken cancellationToken)
+    {
+        var draftIds = runs
+            .Where(r => r.Status == RecurringContractBillingRunStatus.DraftCreated && r.InvoiceDraftId.HasValue)
+            .Select(r => r.InvoiceDraftId!.Value)
+            .Distinct()
+            .ToList();
+        if (draftIds.Count == 0)
+            return new Dictionary<Guid, (decimal, decimal)>();
+
+        var drafts = await _db.InvoiceDrafts.AsNoTracking()
+            .Where(d => draftIds.Contains(d.Id))
+            .ToListAsync(cancellationToken);
+
+        var result = new Dictionary<Guid, (decimal Ht, decimal Ttc)>(drafts.Count);
+        foreach (var draft in drafts)
+        {
+            var wizardLines = draft.GetLines().Select(ToWizardLine).ToList();
+            var calc = InvoiceCalculationService.CalculateTotals(wizardLines, currency);
+            result[draft.Id] = (calc.TotalHT, calc.TotalTTC);
+        }
+
+        return result;
+    }
+
+    private async Task<Dictionary<Guid, (decimal Ht, decimal Ttc)>> LoadInvoiceTotalsByIdAsync(
+        IReadOnlyList<RecurringContractBillingRun> runs,
+        CancellationToken cancellationToken)
+    {
+        var invoiceIds = runs
+            .Where(r => r.Status == RecurringContractBillingRunStatus.Invoiced && r.InvoiceId.HasValue)
+            .Select(r => r.InvoiceId!.Value)
+            .Distinct()
+            .ToList();
+        if (invoiceIds.Count == 0)
+            return new Dictionary<Guid, (decimal, decimal)>();
+
+        var invoices = await _db.Invoices.AsNoTracking()
+            .Where(i => invoiceIds.Contains(i.Id))
+            .ToListAsync(cancellationToken);
+
+        return invoices.ToDictionary(
+            i => i.Id,
+            i => (i.SubTotal.Amount, i.TotalAmount.Amount));
     }
 
     /// <summary>

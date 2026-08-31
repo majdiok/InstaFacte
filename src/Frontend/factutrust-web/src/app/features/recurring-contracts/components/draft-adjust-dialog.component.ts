@@ -60,7 +60,7 @@ interface EditableDraftLine {
           <p class="info-line">
             <i class="pi pi-info-circle"></i>
             Période du {{ d.periodFrom | date:'dd/MM/yyyy' }} au {{ d.periodTo | date:'dd/MM/yyyy' }}.
-            Le produit, la TVA et le nombre de lignes ne sont pas modifiables.
+            Le produit et le nombre de lignes ne sont pas modifiables.
             Sur une ligne catalogue, le libellé de la facture émise reste celui du produit.
           </p>
 
@@ -96,7 +96,14 @@ interface EditableDraftLine {
                     [name]="'adjPrice' + i" />
                 </label>
                 <label>TVA %
-                  <input class="ft-input" [value]="line.vatRate" disabled />
+                  <select
+                    class="ft-input"
+                    [(ngModel)]="line.vatRate"
+                    [name]="'adjVat' + i">
+                    @for (rate of vatRates; track rate) {
+                      <option [ngValue]="rate">{{ rate }} %</option>
+                    }
+                  </select>
                 </label>
               </div>
             </div>
@@ -203,6 +210,7 @@ export class DraftAdjustDialogComponent {
   readonly busy = computed(() => this.loading() || this.saving() || this.issuing());
 
   lines: EditableDraftLine[] = [];
+  readonly vatRates = [0, 7, 13, 19] as const;
 
   totalsMetrics(): TotalMetric[] {
     const currency = this.draft()?.currency ?? 'TND';
@@ -225,7 +233,9 @@ export class DraftAdjustDialogComponent {
 
   canPersist(): boolean {
     return !!this.draft() && this.lines.length > 0 && this.lines.every(l =>
-      Number(l.quantity) > 0 && Number(l.unitPriceHT) >= 0);
+      Number(l.quantity) > 0
+      && Number(l.unitPriceHT) >= 0
+      && this.vatRates.includes(Number(l.vatRate) as 0 | 7 | 13 | 19));
   }
 
   onShow(): void {
@@ -302,7 +312,8 @@ export class DraftAdjustDialogComponent {
       index: l.index,
       designation: (l.designation ?? '').trim(),
       quantity: Number(l.quantity),
-      unitPriceHT: Number(l.unitPriceHT)
+      unitPriceHT: Number(l.unitPriceHT),
+      vatRate: Number(l.vatRate)
     }))).pipe(
       tap(updated => {
         this.draft.set(updated);
@@ -362,7 +373,8 @@ export class DraftAdjustDialogComponent {
       index: l.index,
       designation: (l.designation ?? '').trim(),
       quantity: Number(l.quantity),
-      unitPriceHT: Number(l.unitPriceHT)
+      unitPriceHT: Number(l.unitPriceHT),
+      vatRate: Number(l.vatRate)
     })));
   }
 

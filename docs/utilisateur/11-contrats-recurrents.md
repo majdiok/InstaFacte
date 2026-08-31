@@ -61,6 +61,17 @@ Pour chaque période :
 
 La facture validée est automatiquement liée au contrat et au billing run.
 
+### Ajuster un brouillon d'échéance
+
+Sur une échéance en statut **Brouillon** (onglet **Échéances**), l'action **Ajuster** permet de modifier la description, la quantité, le prix unitaire HT et le **taux de TVA** (0 / 7 / 13 / 19 %). Le produit et le nombre de lignes restent figés.
+
+À l'enregistrement :
+- le brouillon de facture est mis à jour ;
+- les montants de l'échéance (Historique) et l'estimation affichée (Échéances) sont recalculés ;
+- les **lignes du contrat** (onglet Services) sont alignées sur les lignes catalogue ajustées — les périodes futures utiliseront donc ce nouveau tarif.
+
+L'ajustement **n'écrit pas** dans le journal comptable : seule l'**émission** de la facture génère l'écriture de vente. Pour un historique d'avenant formel (prorata calendaire), utilisez **Nouvel avenant**.
+
 ---
 
 ## Consommation (usage metering)

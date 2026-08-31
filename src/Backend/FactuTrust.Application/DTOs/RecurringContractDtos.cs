@@ -443,4 +443,5 @@ public sealed record AdjustRecurringDraftLineDto
     public string Designation { get; init; } = string.Empty;
     public decimal Quantity { get; init; }
     public decimal UnitPriceHT { get; init; }
+    public int VatRate { get; init; }
 }

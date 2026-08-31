@@ -117,10 +117,26 @@ describe('DraftAdjustDialogComponent', () => {
     cmp.save();
 
     expect(service.adjustDraftLines).toHaveBeenCalledWith('run-1', [
-      { index: 0, designation: 'Abonnement', quantity: 2, unitPriceHT: 150 }
+      { index: 0, designation: 'Abonnement', quantity: 2, unitPriceHT: 150, vatRate: 19 }
     ]);
     expect(service.issueBillingRun).not.toHaveBeenCalled();
     expect(saved).toHaveBeenCalled();
+  });
+
+  it('inclut la TVA modifiée dans le payload PATCH', () => {
+    const cmp = createComponent();
+    cmp.lines[0].vatRate = 7;
+    cmp.save();
+
+    expect(service.adjustDraftLines).toHaveBeenCalledWith('run-1', [
+      { index: 0, designation: 'Abonnement', quantity: 1, unitPriceHT: 100, vatRate: 7 }
+    ]);
+  });
+
+  it('refuse l\'enregistrement si le taux de TVA est invalide', () => {
+    const cmp = createComponent();
+    cmp.lines[0].vatRate = 20;
+    expect(cmp.canPersist()).toBeFalse();
   });
 
   it('Émettre persiste le brouillon dirty puis réutilise issueBillingRun', () => {

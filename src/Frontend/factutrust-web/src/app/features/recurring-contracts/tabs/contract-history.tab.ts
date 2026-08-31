@@ -144,8 +144,8 @@ import { DraftAdjustDialogComponent } from '../components/draft-adjust-dialog.co
     <app-draft-adjust-dialog
       [(visible)]="adjustVisible"
       [billingRunId]="adjustRunId"
-      (saved)="loadRuns()"
-      (issued)="loadRuns()">
+      (saved)="onDraftMutated()"
+      (issued)="onDraftMutated()">
     </app-draft-adjust-dialog>
   `,
   styles: [`
@@ -262,6 +262,8 @@ export class ContractHistoryTabComponent implements OnInit, OnChanges {
   @Input({ required: true }) contract!: RecurringContractDetail;
   @Input() refreshToken = 0;
   @Output() createAmend = new EventEmitter<void>();
+  /** Notifie la fiche contrat pour recharger détail / Services / Échéances / KPI. */
+  @Output() draftChanged = new EventEmitter<void>();
 
   private readonly service = inject(RecurringContractService);
   private readonly auth = inject(AuthService);
@@ -318,6 +320,11 @@ export class ContractHistoryTabComponent implements OnInit, OnChanges {
     });
   }
 
+  onDraftMutated(): void {
+    this.load();
+    this.draftChanged.emit();
+  }
+
   private loadAmendments(): void {
     this.loadingAmendments.set(true);
     this.service.getAmendments(this.contract.id).subscribe({
@@ -362,6 +369,7 @@ export class ContractHistoryTabComponent implements OnInit, OnChanges {
           detail: `Facture ${issued.invoiceNumber} émise.`
         });
         this.loadRuns();
+        this.draftChanged.emit();
       },
       error: err => {
         this.issuingId.set(null);

@@ -5,6 +5,7 @@ using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.RecurringContracts;
 using FactuTrust.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.Services.RecurringContracts;
@@ -42,31 +43,36 @@ public sealed class RecurringContractAdjustDraftTests
     private static AdjustRecurringDraftLinesRequest Request(params AdjustRecurringDraftLineDto[] lines) =>
         new() { Lines = lines };
 
-    private static AdjustRecurringDraftLineDto Patch(int index, string designation, decimal qty, decimal price) =>
-        new() { Index = index, Designation = designation, Quantity = qty, UnitPriceHT = price };
+    private static AdjustRecurringDraftLineDto Patch(
+        int index, string designation, decimal qty, decimal price, int vat = 19) =>
+        new() { Index = index, Designation = designation, Quantity = qty, UnitPriceHT = price, VatRate = vat };
 
     [Fact]
     public async Task Adjust_UpdatesAllowedFields_KeepsDraftAndImmutableFields()
     {
         var harness = new RecurringContractTestHarness();
         var client = await harness.SeedClientAsync("Client ajustement");
+        var periodFrom = new DateTime(2026, 1, 1);
+        var periodTo = new DateTime(2026, 1, 31);
         var contract = await harness.SeedContractAsync(client.Id,
+            startDate: periodFrom,
             configure: c => c.Activate(),
             lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
         var productId = Guid.NewGuid().ToString();
         var draft = await harness.SeedInvoiceDraftAsync(
         [
             CatalogLine(productId, "Abonnement", 1m, 100m, 19),
-            CustomLine("Consommation période", 1m, 20m, 19)
+            CustomLine("Consommation période 01/01/2026 - 31/01/2026", 1m, 20m, 19)
         ]);
         var run = await harness.SeedRunAsync(
-            contract.Id, new DateTime(2026, 1, 1), new DateTime(2026, 1, 31),
-            RecurringContractBillingRunStatus.DraftCreated, fixedAmount: 100m, invoiceDraftId: draft.Id);
+            contract.Id, periodFrom, periodTo,
+            RecurringContractBillingRunStatus.DraftCreated,
+            fixedAmount: 100m, usageAmount: 20m, invoiceDraftId: draft.Id);
 
         await using var sut = harness.CreateService();
         var result = await sut.AdjustDraftLinesAsync(run.Id, Request(
-            Patch(0, "Abonnement ajusté", 2m, 150m),
-            Patch(1, "Consommation ajustée", 1m, 35m)));
+            Patch(0, "Abonnement ajusté", 2m, 150m, 19),
+            Patch(1, "Consommation ajustée", 1m, 35m, 19)));
 
         Assert.True(result.IsSuccess);
         Assert.Equal(2, result.Value.Lines.Count);
@@ -84,6 +90,9 @@ public sealed class RecurringContractAdjustDraftTests
         var persistedDraft = await ctx.InvoiceDrafts.FindAsync(draft.Id);
         Assert.Equal(RecurringContractBillingRunStatus.DraftCreated, persistedRun!.Status);
         Assert.Null(persistedRun.InvoiceId);
+        Assert.Equal(300m, persistedRun.FixedAmount);
+        Assert.Equal(35m, persistedRun.UsageAmount);
+        Assert.Equal(0m, persistedRun.ProrationAmount);
         Assert.False(persistedDraft!.IsConverted);
         var lines = persistedDraft.GetLines();
         Assert.Equal(2, lines.Count);
@@ -91,6 +100,47 @@ public sealed class RecurringContractAdjustDraftTests
         Assert.Equal(19, lines[0].VatRate);
         Assert.True(lines[0].PriceOverridden);
         Assert.Equal(19, lines[1].VatRate);
+
+        var persistedContract = await ctx.RecurringContracts
+            .Include(c => c.Lines)
+            .FirstAsync(c => c.Id == contract.Id);
+        var catalog = Assert.Single(persistedContract.Lines.Where(l => l.IsActive));
+        Assert.Equal("Abonnement ajusté", catalog.Description);
+        Assert.Equal(2m, catalog.Quantity);
+        Assert.Equal(150m, catalog.UnitPriceHT);
+        Assert.Equal(19m, catalog.VatRate);
+    }
+
+    [Fact]
+    public async Task Adjust_UpdatesVatRate_AndRecalculatesTotals()
+    {
+        var harness = new RecurringContractTestHarness();
+        var (run, draft) = await SeedDraftCreatedAsync(harness, [CustomLine("Prestation", 2m, 50m, 19)]);
+
+        await using var sut = harness.CreateService();
+        var result = await sut.AdjustDraftLinesAsync(run.Id, Request(Patch(0, "Prestation", 2m, 50m, 7)));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(7, result.Value.Lines[0].VatRate);
+        Assert.Equal(100m, result.Value.Totals.TotalHT);
+        Assert.Equal(7m, result.Value.Totals.TotalVat);
+
+        await using var ctx = harness.Factory.CreateContext();
+        var persisted = (await ctx.InvoiceDrafts.FindAsync(draft.Id))!.GetLines();
+        Assert.Equal(7, persisted[0].VatRate);
+    }
+
+    [Fact]
+    public async Task Adjust_RejectsInvalidVatRate()
+    {
+        var harness = new RecurringContractTestHarness();
+        var (run, _) = await SeedDraftCreatedAsync(harness, [CustomLine("Ligne")]);
+
+        await using var sut = harness.CreateService();
+        var result = await sut.AdjustDraftLinesAsync(run.Id, Request(Patch(0, "Ligne", 1m, 10m, 20)));
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("TVA", result.Error.Description, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -264,6 +314,31 @@ public sealed class RecurringContractAdjustDraftTests
     }
 
     [Fact]
+    public async Task Adjust_ThenSchedule_ShowsRevisedRunAmount()
+    {
+        var harness = new RecurringContractTestHarness();
+        var client = await harness.SeedClientAsync("Client schedule adj");
+        var periodFrom = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+        var periodTo = periodFrom.AddMonths(1).AddDays(-1);
+        var contract = await harness.SeedContractAsync(client.Id,
+            startDate: periodFrom,
+            configure: c => c.Activate(),
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+        var draft = await harness.SeedInvoiceDraftAsync([CustomLine("Abonnement", 1m, 100m, 19)]);
+        var run = await harness.SeedRunAsync(
+            contract.Id, periodFrom, periodTo,
+            RecurringContractBillingRunStatus.DraftCreated, fixedAmount: 100m, invoiceDraftId: draft.Id);
+
+        await using var sut = harness.CreateService();
+        var adjusted = await sut.AdjustDraftLinesAsync(run.Id, Request(Patch(0, "Abonnement", 3m, 80m, 19)));
+        Assert.True(adjusted.IsSuccess);
+
+        var schedule = await sut.GetScheduleAsync(contract.Id, count: 12);
+        var item = Assert.Single(schedule!, i => i.BillingRunId == run.Id);
+        Assert.Equal(240m, item.EstimatedAmountHT);
+    }
+
+    [Fact]
     public async Task Adjust_ThenIssue_SendsExistingSubmitInvoiceCommandWithStableKey()
     {
         var harness = new RecurringContractTestHarness();
@@ -294,19 +369,63 @@ public sealed class RecurringContractAdjustDraftTests
         var submitted = Assert.Single(mediator.Sent.OfType<SubmitInvoiceCommand>());
         Assert.Equal(draft.Id, submitted.DraftId);
         Assert.Equal(RecurringBillingIssueKeys.ForRun(run.Id), submitted.IdempotencyKey);
+
+        await using var ctx = harness.Factory.CreateContext();
+        var persistedRun = await ctx.RecurringContractBillingRuns.FindAsync(run.Id);
+        Assert.Equal(240m, persistedRun!.FixedAmount);
+    }
+
+    [Fact]
+    public async Task Adjust_UsageSyntheticLine_DoesNotCreateExtraContractLine()
+    {
+        var harness = new RecurringContractTestHarness();
+        var client = await harness.SeedClientAsync("Client usage");
+        var periodFrom = new DateTime(2026, 6, 1);
+        var periodTo = new DateTime(2026, 6, 30);
+        var contract = await harness.SeedContractAsync(client.Id,
+            startDate: periodFrom,
+            configure: c => c.Activate(),
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+        var draft = await harness.SeedInvoiceDraftAsync(
+        [
+            CustomLine("Abonnement", 1m, 100m, 19),
+            CustomLine("Consommation période 01/06/2026 - 30/06/2026", 1m, 40m, 19)
+        ]);
+        var run = await harness.SeedRunAsync(
+            contract.Id, periodFrom, periodTo,
+            RecurringContractBillingRunStatus.DraftCreated,
+            fixedAmount: 100m, usageAmount: 40m, invoiceDraftId: draft.Id);
+
+        await using var sut = harness.CreateService();
+        var result = await sut.AdjustDraftLinesAsync(run.Id, Request(
+            Patch(0, "Abonnement", 1m, 120m, 19),
+            Patch(1, "Consommation période 01/06/2026 - 30/06/2026", 1m, 55m, 7)));
+
+        Assert.True(result.IsSuccess);
+
+        await using var ctx = harness.Factory.CreateContext();
+        var persistedContract = await ctx.RecurringContracts.Include(c => c.Lines).FirstAsync(c => c.Id == contract.Id);
+        Assert.Single(persistedContract.Lines);
+        Assert.Equal(120m, persistedContract.Lines.Single().UnitPriceHT);
+        var persistedRun = await ctx.RecurringContractBillingRuns.FindAsync(run.Id);
+        Assert.Equal(120m, persistedRun!.FixedAmount);
+        Assert.Equal(55m, persistedRun.UsageAmount);
     }
 
     private static async Task<(RecurringContractBillingRun Run, InvoiceDraft Draft)> SeedDraftCreatedAsync(
         RecurringContractTestHarness harness,
         IReadOnlyList<DraftInvoiceLine> lines)
     {
+        var periodFrom = new DateTime(2026, 6, 1);
+        var periodTo = new DateTime(2026, 6, 30);
         var client = await harness.SeedClientAsync($"Client {Guid.NewGuid():N}"[..20]);
         var contract = await harness.SeedContractAsync(client.Id,
+            startDate: periodFrom,
             configure: c => c.Activate(),
             lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
         var draft = await harness.SeedInvoiceDraftAsync(lines);
         var run = await harness.SeedRunAsync(
-            contract.Id, new DateTime(2026, 6, 1), new DateTime(2026, 6, 30),
+            contract.Id, periodFrom, periodTo,
             RecurringContractBillingRunStatus.DraftCreated, fixedAmount: 100m, invoiceDraftId: draft.Id);
         return (run, draft);
     }

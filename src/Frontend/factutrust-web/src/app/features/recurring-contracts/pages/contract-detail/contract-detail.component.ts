@@ -172,7 +172,10 @@ type ContractAction = 'activate' | 'suspend' | 'resume' | 'cancel' | 'renew' | '
                 </app-contract-overview-tab>
               </p-tabpanel>
               <p-tabpanel [value]="1">
-                <app-contract-schedule-tab [contract]="c" [refreshToken]="refreshToken()">
+                <app-contract-schedule-tab
+                  [contract]="c"
+                  [refreshToken]="refreshToken()"
+                  (draftChanged)="onDraftAdjusted()">
                 </app-contract-schedule-tab>
               </p-tabpanel>
               <p-tabpanel [value]="2">
@@ -190,7 +193,8 @@ type ContractAction = 'activate' | 'suspend' | 'resume' | 'cancel' | 'renew' | '
                 <app-contract-history-tab
                   [contract]="c"
                   [refreshToken]="refreshToken()"
-                  (createAmend)="amendDialogVisible = true">
+                  (createAmend)="amendDialogVisible = true"
+                  (draftChanged)="onDraftAdjusted()">
                 </app-contract-history-tab>
               </p-tabpanel>
               <p-tabpanel [value]="6">
@@ -396,6 +400,12 @@ export class ContractDetailComponent implements OnInit {
   }
 
   onAmended(): void {
+    this.reloadContractOnly();
+    this.refreshToken.update(t => t + 1);
+  }
+
+  /** Après ajustement / émission d'un brouillon d'échéance : sync Services, KPI, Historique. */
+  onDraftAdjusted(): void {
     this.reloadContractOnly();
     this.refreshToken.update(t => t + 1);
   }

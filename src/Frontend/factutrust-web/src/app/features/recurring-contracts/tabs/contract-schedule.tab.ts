@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, OnInit, Output, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
@@ -118,8 +118,8 @@ import { DraftAdjustDialogComponent } from '../components/draft-adjust-dialog.co
     <app-draft-adjust-dialog
       [(visible)]="adjustVisible"
       [billingRunId]="adjustRunId"
-      (saved)="load()"
-      (issued)="load()">
+      (saved)="onDraftMutated()"
+      (issued)="onDraftMutated()">
     </app-draft-adjust-dialog>
   `,
   styles: [`
@@ -147,6 +147,8 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
   @Input({ required: true }) contract!: RecurringContractDetail;
   /** Incrémenté par la page parente après une action (suspendre, renouveler…) pour recharger. */
   @Input() refreshToken = 0;
+  /** Notifie la fiche contrat pour recharger détail / Services / Historique / KPI. */
+  @Output() draftChanged = new EventEmitter<void>();
 
   private readonly service = inject(RecurringContractService);
   private readonly auth = inject(AuthService);
@@ -197,6 +199,11 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
         this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.errorHandler.extractErrorMessage(err) });
       }
     });
+  }
+
+  onDraftMutated(): void {
+    this.load();
+    this.draftChanged.emit();
   }
 
   generateNow(): void {
@@ -250,6 +257,7 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
           detail: `Facture ${issued.invoiceNumber} émise.`
         });
         this.load();
+        this.draftChanged.emit();
       },
       error: err => {
         this.issuingId.set(null);
