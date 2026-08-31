@@ -58,32 +58,34 @@ export interface ProjectTaskMoveEvent {
               {{ phase.name }}
               <span class="proj-kanban-col-count">{{ columnTasks[phase.id].length }}</span>
             </h3>
-            @for (task of columnTasks[phase.id]; track task.id) {
-              <div
-                class="proj-kanban-card"
-                [class.proj-kanban-card--pending]="isPending(task.id)"
-                cdkDrag
-                [cdkDragData]="task"
-                [cdkDragDisabled]="!canUpdateTask || isPending(task.id)"
-                (cdkDragStarted)="dragging = true"
-                (cdkDragEnded)="onDragEnded()">
-                <button
-                  type="button"
-                  class="proj-kanban-card__body"
-                  (click)="onCardClick(task)">
-                  <strong>{{ task.title }}</strong>
-                  <div class="text-sm">{{ task.priorityDisplay }}</div>
-                  <div class="text-sm">{{ task.assigneeUserName || 'Non assigné' }}</div>
-                  <div class="text-sm">
-                    {{ task.loggedHours | number:'1.0-1' }} / {{ task.estimatedHours | number:'1.0-1' }} h
-                  </div>
-                  <p-progressBar [value]="task.progressPercent" [showValue]="false" styleClass="mt-1" />
-                  @if (task.isOverdue) {
-                    <span class="text-danger">En retard</span>
-                  }
-                </button>
-              </div>
-            }
+            <div class="proj-kanban-col-body">
+              @for (task of columnTasks[phase.id]; track task.id) {
+                <div
+                  class="proj-kanban-card"
+                  [class.proj-kanban-card--pending]="isPending(task.id)"
+                  cdkDrag
+                  [cdkDragData]="task"
+                  [cdkDragDisabled]="!canUpdateTask || isPending(task.id)"
+                  (cdkDragStarted)="dragging = true"
+                  (cdkDragEnded)="onDragEnded()">
+                  <button
+                    type="button"
+                    class="proj-kanban-card__body"
+                    (click)="onCardClick(task)">
+                    <strong>{{ task.title }}</strong>
+                    <div class="text-sm">{{ task.priorityDisplay }}</div>
+                    <div class="text-sm">{{ task.assigneeUserName || 'Non assigné' }}</div>
+                    <div class="text-sm">
+                      {{ task.loggedHours | number:'1.0-1' }} / {{ task.estimatedHours | number:'1.0-1' }} h
+                    </div>
+                    <p-progressBar [value]="task.progressPercent" [showValue]="false" styleClass="mt-1" />
+                    @if (task.isOverdue) {
+                      <span class="text-danger">En retard</span>
+                    }
+                  </button>
+                </div>
+              }
+            </div>
           </div>
         }
       </div>
