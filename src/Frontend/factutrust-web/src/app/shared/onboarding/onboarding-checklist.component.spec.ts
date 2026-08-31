@@ -142,4 +142,26 @@ describe('OnboardingChecklistComponent', () => {
       expect(canSee({})).toBeTrue();
     });
   });
+
+  describe('progress counts the filtered list (plan WP-F5)', () => {
+    // No shipped catalog item is module/segment-gated yet (see the WP-F4 TODO), so
+    // `items` — the private signal that `ngOnInit` populates via
+    // `catalog.filter(item => this.canSee(item))` — is set directly here to
+    // simulate what a real catalog with a hidden item would produce, and assert
+    // that `progressLabel`/`visibleItems` derive their denominator from that
+    // already-filtered list, not from the full unfiltered catalog.
+    it('progressLabel and visibleItems reflect only the items that passed canSee, not the full catalog', () => {
+      setup({ admin: true, doneIds: ['create-client'] });
+      const filtered = [
+        { id: 'create-client', label: 'Créer un client', description: '', route: '/clients' },
+        { id: 'create-invoice', label: 'Créer une facture', description: '', route: '/invoices' }
+      ];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (fixture.componentInstance as any).items.set(filtered);
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.visibleItems().length).toBe(2);
+      expect(fixture.componentInstance.progressLabel()).toBe('1 / 2 étapes terminées');
+    });
+  });
 });
