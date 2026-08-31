@@ -5,6 +5,7 @@ using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.SectorConfiguration;
 using FactuTrust.Infrastructure.Persistence;
+using FactuTrust.Infrastructure.Services.SectorRules;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -17,9 +18,6 @@ namespace FactuTrust.Infrastructure.Services;
 /// </summary>
 public sealed class RegistrationSectorService : IRegistrationSectorService
 {
-    /// <summary>Defensive cap on the size of an incoming <c>enabledModules</c> array (plan §6.1 B4).</summary>
-    private const int MaxRequestedModules = 64;
-
     private readonly MasterDbContext _db;
     private readonly IPlanResolver _planResolver;
     private readonly ISectorCatalogProvider _catalogProvider;
@@ -113,129 +111,20 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
             return;
 
         var coreModules = profile?.CoreModules ?? SectorConfigurationCatalog.CoreModules;
-        var coreModuleSet = new HashSet<AppModule>(coreModules);
-
-        var candidateSet = new HashSet<AppModule>(coreModuleSet);
-        var droppedValues = new List<int>();
-        var consideredCount = 0;
-
-        foreach (var rawValue in requestedModules)
-        {
-            if (consideredCount >= MaxRequestedModules)
-            {
-                droppedValues.Add(rawValue);
-                continue;
-            }
-
-            consideredCount++;
-
-            if (!Enum.IsDefined(typeof(AppModule), rawValue))
-            {
-                droppedValues.Add(rawValue);
-                continue;
-            }
-
-            var module = (AppModule)rawValue;
-
-            // Honoraires is firm-native and never offered through the registration wizard.
-            if (module == AppModule.Honoraires)
-            {
-                droppedValues.Add(rawValue);
-                continue;
-            }
-
-            candidateSet.Add(module);
-        }
-
-        if (droppedValues.Count > 0)
-        {
-            _logger.LogWarning(
-                "RegistrationSectorService.ApplyModuleSelectionAsync: dropped {Count} invalid/disallowed module id(s) for user {UserId}: {Values}",
-                droppedValues.Count,
-                userId,
-                string.Join(",", droppedValues));
-        }
-
-        // Phase 2 (plan §WP-B4): auto-pull the transitive closure of any DB-defined module
-        // dependency edges (e.g. Stock → Purchases) so the operator never has to know about
-        // implicit prerequisites. Each auto-added module then flows through the exact same
-        // plan-ceiling intersection below as a user-requested one — a plan that denies the
-        // required module still wins. Honoraires can never be pulled in this way (it is
-        // firm-native and CRUD validation forbids it as a dependency target — WP-B5).
         var dependencyEdges = _catalogProvider.GetSnapshot().ModuleDependencies;
-        if (dependencyEdges.Count > 0)
-        {
-            var requiredModulesByModuleId = dependencyEdges
-                .ToLookup(edge => edge.ModuleId, edge => edge.RequiredModuleId);
 
-            var autoAddedModules = new List<AppModule>();
-            var pending = new Queue<AppModule>(candidateSet);
-            while (pending.Count > 0)
-            {
-                var current = pending.Dequeue();
-                foreach (var requiredModuleId in requiredModulesByModuleId[(int)current])
-                {
-                    if (!Enum.IsDefined(typeof(AppModule), requiredModuleId))
-                        continue;
-
-                    var requiredModule = (AppModule)requiredModuleId;
-                    if (requiredModule == AppModule.Honoraires)
-                        continue;
-
-                    if (candidateSet.Add(requiredModule))
-                    {
-                        autoAddedModules.Add(requiredModule);
-                        pending.Enqueue(requiredModule);
-                    }
-                }
-            }
-
-            if (autoAddedModules.Count > 0)
-            {
-                _logger.LogInformation(
-                    "RegistrationSectorService.ApplyModuleSelectionAsync: auto-pulled {Count} dependency module id(s) for user {UserId}: {Values}",
-                    autoAddedModules.Count,
-                    userId,
-                    string.Join(",", autoAddedModules.Select(m => (int)m)));
-            }
-        }
-
-        // Plan-intersection (review fix — plan §review item 2): the downstream resolution
-        // pipeline (EffectivePermissionsCalculator.Compute / EffectivePermissionService) is
-        // role- and grant-based only — it never re-checks IPlanResolver, and
-        // IsModuleAllowedAsync has no other caller in the codebase. That means anything we mark
-        // IsEnabled=true here rides straight through to login/JWT with no second gate. So core
-        // modules must NOT be forced on unconditionally: every candidate — core or not — is
-        // intersected with the plan, with a single carve-out for Administration, which mirrors
-        // the existing TenantUsersController self-lockout rule (a user can never disable their
-        // own Administration access) and must never be switched off regardless of plan
-        // configuration. A plan that denies any other core module is a misconfiguration; we
-        // honor the plan (deny) but log it loudly so it gets fixed upstream.
-        var finalSet = new HashSet<AppModule>();
-        foreach (var module in candidateSet)
-        {
-            if (module == AppModule.Administration)
-            {
-                finalSet.Add(module);
-                continue;
-            }
-
-            var isAllowedByPlan = await _planResolver.IsModuleAllowedAsync(plan, (int)module, cancellationToken);
-            if (isAllowedByPlan)
-            {
-                finalSet.Add(module);
-                continue;
-            }
-
-            if (coreModuleSet.Contains(module))
-            {
-                _logger.LogWarning(
-                    "RegistrationSectorService.ApplyModuleSelectionAsync: plan {Plan} denies core module {Module} for user {UserId} — excluding it from the grant (inconsistent plan configuration; core modules are normally always allowed).",
-                    plan,
-                    module,
-                    userId);
-            }
-        }
+        // The candidate/plan-intersection logic is shared with the tenant re-configuration flow
+        // (plan §WP-B7, D6) via SectorModuleSetCalculator — enum filtering, Honoraires rejection,
+        // dependency closure, Administration carve-out and plan ceiling all live in one place.
+        var finalSet = await SectorModuleSetCalculator.ComputeEnabledSetAsync(
+            coreModules,
+            requestedModules,
+            plan,
+            dependencyEdges,
+            _planResolver,
+            userId,
+            _logger,
+            cancellationToken);
 
         // Full selection ⇒ canonical legacy representation is "no grant rows".
         if (finalSet.Count == AppModuleExtensions.AllValues.Length)

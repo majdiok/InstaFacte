@@ -422,6 +422,8 @@ public static class DependencyInjection
         services.AddScoped<ISectorRuleAdminService, FactuTrust.Infrastructure.Services.SectorRules.SectorRuleAdminService>();
         // Phase 2 — application additive des modèles de données sectoriels aux bases tenant (plan §WP-B6).
         services.AddScoped<ISectorDataTemplateApplier, FactuTrust.Infrastructure.Services.SectorRules.SectorDataTemplateApplier>();
+        // Phase 2 — re-configuration sectorielle d'un tenant existant depuis le backoffice (plan §WP-B7).
+        services.AddScoped<ITenantSectorReconfigurationService, FactuTrust.Infrastructure.Services.SectorRules.TenantSectorReconfigurationService>();
         services.AddScoped<IPlatformTenantQueryService, PlatformTenantQueryService>();
         services.AddScoped<ISubscriptionAdminService, SubscriptionAdminService>();
         services.AddScoped<IPlatformMfaService, TotpPlatformMfaService>();
