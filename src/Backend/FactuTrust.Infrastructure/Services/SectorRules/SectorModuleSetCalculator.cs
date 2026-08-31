@@ -53,16 +53,9 @@ public static class SectorModuleSetCalculator
 
             consideredCount++;
 
-            if (!Enum.IsDefined(typeof(AppModule), rawValue))
-            {
-                droppedValues.Add(rawValue);
-                continue;
-            }
-
-            var module = (AppModule)rawValue;
-
-            // Honoraires is firm-native and never offered through the registration wizard.
-            if (module == AppModule.Honoraires)
+            // Undefined enum values and Honoraires (firm-native, never offered through the registration
+            // wizard) are dropped — ids only in the warning log, no PII.
+            if (!TryAsOfferedModule(rawValue, out var module))
             {
                 droppedValues.Add(rawValue);
                 continue;
@@ -96,11 +89,7 @@ public static class SectorModuleSetCalculator
                 var current = pending.Dequeue();
                 foreach (var requiredModuleId in requiredModulesByModuleId[(int)current])
                 {
-                    if (!Enum.IsDefined(typeof(AppModule), requiredModuleId))
-                        continue;
-
-                    var requiredModule = (AppModule)requiredModuleId;
-                    if (requiredModule == AppModule.Honoraires)
+                    if (!TryAsOfferedModule(requiredModuleId, out var requiredModule))
                         continue;
 
                     if (candidateSet.Add(requiredModule))
@@ -155,5 +144,22 @@ public static class SectorModuleSetCalculator
         }
 
         return finalSet;
+    }
+
+    /// <summary>
+    /// Maps a raw module id to a wizard-offered <see cref="AppModule"/>: undefined enum values and
+    /// <see cref="AppModule.Honoraires"/> (firm-native, never offered) are rejected. Shared by the
+    /// seed filter and the dependency transitive closure so both apply the same eligibility rule.
+    /// </summary>
+    private static bool TryAsOfferedModule(int rawValue, out AppModule module)
+    {
+        if (Enum.IsDefined(typeof(AppModule), rawValue) && (AppModule)rawValue != AppModule.Honoraires)
+        {
+            module = (AppModule)rawValue;
+            return true;
+        }
+
+        module = default;
+        return false;
     }
 }

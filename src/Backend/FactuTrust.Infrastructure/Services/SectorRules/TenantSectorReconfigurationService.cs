@@ -111,17 +111,11 @@ public sealed class TenantSectorReconfigurationService : ITenantSectorReconfigur
         var touchedUserIds = new List<Guid>();
 
         // Step 1 — classification (master DB).
-        try
+        await RunFaultIsolatedStepAsync(steps, "classification", "Classification", tenantId, actorAdminId, async () =>
         {
             tenant.SetSectorClassification(afterSegment, afterDomain);
             await _db.SaveChangesAsync(cancellationToken);
-            steps.Add(new StepResultDto { Step = "classification", Success = true });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "SectorReconfiguration.ClassificationFailed TenantId={TenantId} ActorId={ActorId}", tenantId, actorAdminId);
-            steps.Add(new StepResultDto { Step = "classification", Success = false, Error = ex.Message });
-        }
+        });
 
         // Step 2 — per-user module grants (master DB), only when RecomputeModuleGrants. Each user is
         // its own fault-isolated step; a failure is recorded and the run continues. Administration is
@@ -129,9 +123,9 @@ public sealed class TenantSectorReconfigurationService : ITenantSectorReconfigur
         // never touched.
         if (request.RecomputeModuleGrants)
         {
-            var coreModules = profile?.CoreModules ?? SectorConfigurationCatalog.CoreModules;
-            var recommendedSeed = (profile?.RecommendedModules ?? Array.Empty<AppModule>()).Select(m => (int)m).ToList();
-            var dependencyEdges = _catalogProvider.GetSnapshot().ModuleDependencies;
+            var snapshot = _catalogProvider.GetSnapshot();
+            var (coreModules, recommendedSeed) = ResolveModuleInputs(profile);
+            var dependencyEdges = snapshot.ModuleDependencies;
 
             foreach (var user in users)
             {
@@ -162,24 +156,18 @@ public sealed class TenantSectorReconfigurationService : ITenantSectorReconfigur
         // Step 3 — sector data templates (tenant DB, additive-only), only when ApplyDataTemplates.
         if (request.ApplyDataTemplates)
         {
-            try
+            await RunFaultIsolatedStepAsync(steps, "templates", "Templates", tenantId, actorAdminId, async () =>
             {
                 if (connectionString is null)
                     throw new InvalidOperationException("Base de données tenant indisponible : modèles non appliqués.");
 
                 await _templateApplier.ApplyAsync(tenantId, connectionString, afterSegment, afterDomain, dryRun: false, cancellationToken);
-                steps.Add(new StepResultDto { Step = "templates", Success = true });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "SectorReconfiguration.TemplatesFailed TenantId={TenantId} ActorId={ActorId}", tenantId, actorAdminId);
-                steps.Add(new StepResultDto { Step = "templates", Success = false, Error = ex.Message });
-            }
+            });
         }
 
         // Step 4 — audit row in the TENANT DB (hash-chained). Details JSON carries segment/domain
         // before/after + affected user GUIDs only — no emails/names. The actor admin id is a GUID.
-        try
+        await RunFaultIsolatedStepAsync(steps, "audit", "Audit", tenantId, actorAdminId, async () =>
         {
             if (connectionString is null)
                 throw new InvalidOperationException("Base de données tenant indisponible : audit non écrit.");
@@ -194,13 +182,7 @@ public sealed class TenantSectorReconfigurationService : ITenantSectorReconfigur
                 touchedUserIds,
                 actorAdminId,
                 cancellationToken);
-            steps.Add(new StepResultDto { Step = "audit", Success = true });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "SectorReconfiguration.AuditFailed TenantId={TenantId} ActorId={ActorId}", tenantId, actorAdminId);
-            steps.Add(new StepResultDto { Step = "audit", Success = false, Error = ex.Message });
-        }
+        });
 
         // Effective change reflects the now-persisted state.
         var reloadedTenant = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
@@ -220,6 +202,40 @@ public sealed class TenantSectorReconfigurationService : ITenantSectorReconfigur
     }
 
     // ---------- helpers ----------
+
+    /// <summary>
+    /// Resolves the calculator inputs shared by the preview diff and the apply grant rewrite:
+    /// the effective core module set (profile core, or the catalog default) and the recommended
+    /// module ids as an int seed.
+    /// </summary>
+    private static (IReadOnlyList<AppModule> CoreModules, IReadOnlyList<int> RecommendedSeed) ResolveModuleInputs(SectorProfile? profile)
+    {
+        var coreModules = profile?.CoreModules ?? SectorConfigurationCatalog.CoreModules;
+        var recommendedSeed = (profile?.RecommendedModules ?? Array.Empty<AppModule>()).Select(m => (int)m).ToList();
+        return (coreModules, recommendedSeed);
+    }
+
+    /// <summary>
+    /// Runs a fault-isolated apply step: on success records a success step; on failure logs the
+    /// error (structured event <c>SectorReconfiguration.{logEvent}Failed</c>) and records a failure
+    /// step, then returns so the run continues (fail-continue, per <c>TenantMigrationHelper</c>).
+    /// Used for the non-per-user steps whose log context is tenant + actor only.
+    /// </summary>
+    private async Task RunFaultIsolatedStepAsync(
+        ICollection<StepResultDto> steps, string step, string logEvent,
+        Guid tenantId, Guid? actorAdminId, Func<Task> work)
+    {
+        try
+        {
+            await work();
+            steps.Add(new StepResultDto { Step = step, Success = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SectorReconfiguration.{Event}Failed TenantId={TenantId} ActorId={ActorId}", logEvent, tenantId, actorAdminId);
+            steps.Add(new StepResultDto { Step = step, Success = false, Error = ex.Message });
+        }
+    }
 
     /// <summary>
     /// Resolves the target segment/domain from the request relative to the tenant's current
@@ -266,8 +282,7 @@ public sealed class TenantSectorReconfigurationService : ITenantSectorReconfigur
         var userDiffs = new List<UserModuleDiffDto>();
         if (request.RecomputeModuleGrants)
         {
-            var coreModules = profile?.CoreModules ?? SectorConfigurationCatalog.CoreModules;
-            var recommendedSeed = (profile?.RecommendedModules ?? Array.Empty<AppModule>()).Select(m => (int)m).ToList();
+            var (coreModules, recommendedSeed) = ResolveModuleInputs(profile);
             var dependencyEdges = snapshot.ModuleDependencies;
 
             foreach (var user in users)
