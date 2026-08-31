@@ -1,14 +1,9 @@
+using FactuTrust.Application.Common;
 using FactuTrust.Domain.Entities.SectorRules;
 using FactuTrust.Domain.SectorConfiguration;
 using Microsoft.EntityFrameworkCore;
 
 namespace FactuTrust.Infrastructure.Persistence.Seeds;
-
-/// <summary>
-/// Phase 2 — moteur de règles sectorielles en base (plan §WP-B3). Result of one
-/// <see cref="SectorRuleSeeder.SeedAsync"/> run.
-/// </summary>
-public sealed record SectorRuleSeedResult(int Inserted, int Updated, int SkippedExisting, long NewVersion, bool Forced);
 
 /// <summary>
 /// Idempotent upsert-by-code seeder that projects the static <see cref="SectorConfigurationCatalog"/>

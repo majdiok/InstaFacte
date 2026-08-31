@@ -66,6 +66,11 @@ public static class PlatformPermissions
     // ---------- Configuration IA (modèle LLM global) ----------
     public const string AiManage = Prefix + "ai:manage";
 
+    // ---------- Règles sectorielles (Phase 2, plan §WP-B5) ----------
+    public const string SectorRulesRead = Prefix + "sector-rules:read";
+    public const string SectorRulesManage = Prefix + "sector-rules:manage";
+    public const string SectorRulesApply = Prefix + "sector-rules:apply";
+
     /// <summary>Toutes les permissions reconnues — utile pour assigner le rôle Super-Admin.</summary>
     public static readonly IReadOnlyList<string> All = new[]
     {
@@ -79,6 +84,7 @@ public static class PlatformPermissions
         AdminsRead, AdminsManage,
         ProvidersConfigure,
         NotificationsRead,
-        AiManage
+        AiManage,
+        SectorRulesRead, SectorRulesManage, SectorRulesApply
     };
 }
