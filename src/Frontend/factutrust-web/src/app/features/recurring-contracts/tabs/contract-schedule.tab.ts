@@ -17,6 +17,7 @@ import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { scheduleBadgeStatus } from '../recurring-contracts.ui-utils';
+import { DraftAdjustDialogComponent } from '../components/draft-adjust-dialog.component';
 
 /** Onglet « Échéances » : calendrier prévisionnel (endpoint phase 2, tolérant 404). */
 @Component({
@@ -24,7 +25,8 @@ import { scheduleBadgeStatus } from '../recurring-contracts.ui-utils';
   standalone: true,
   imports: [
     CommonModule, RouterModule, TableModule,
-    ButtonComponent, EmptyStateComponent, StatusBadgeComponent, SkeletonTableComponent
+    ButtonComponent, EmptyStateComponent, StatusBadgeComponent, SkeletonTableComponent,
+    DraftAdjustDialogComponent
   ],
   template: `
     <div class="section-header">
@@ -98,7 +100,7 @@ import { scheduleBadgeStatus } from '../recurring-contracts.ui-utils';
                         variant="ghost"
                         size="sm"
                         icon="pi-file-edit"
-                        [routerLink]="['/invoices/new/draft', e.invoiceDraftId]">
+                        (clicked)="openAdjust(e)">
                         Ajuster
                       </app-button>
                     }
@@ -112,6 +114,13 @@ import { scheduleBadgeStatus } from '../recurring-contracts.ui-utils';
         </p-table>
       </div>
     }
+
+    <app-draft-adjust-dialog
+      [(visible)]="adjustVisible"
+      [billingRunId]="adjustRunId"
+      (saved)="load()"
+      (issued)="load()">
+    </app-draft-adjust-dialog>
   `,
   styles: [`
     .section-header {
@@ -149,6 +158,8 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
   readonly loading = signal(true);
   readonly generating = signal(false);
   readonly issuingId = signal<string | null>(null);
+  adjustVisible = false;
+  adjustRunId: string | null = null;
   private initialized = false;
 
   readonly canGenerate = computed(() =>
@@ -206,6 +217,12 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
         this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.errorHandler.extractErrorMessage(err) });
       }
     });
+  }
+
+  openAdjust(entry: ContractScheduleEntry): void {
+    if (!entry.billingRunId) return;
+    this.adjustRunId = entry.billingRunId;
+    this.adjustVisible = true;
   }
 
   confirmIssue(entry: ContractScheduleEntry): void {

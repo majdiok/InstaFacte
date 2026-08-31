@@ -392,4 +392,51 @@ public sealed class RecurringContractsController : ControllerBase
             new { id = result.Value.InvoiceId },
             ApiResponse<InvoiceCreatedResultDto>.Ok(result.Value, "Facture émise avec succès"));
     }
+
+    /// <summary>
+    /// Charge le brouillon d'un run en vue du modal d'ajustement (lignes existantes uniquement).
+    /// </summary>
+    [HttpGet("billing-runs/{billingRunId:guid}/adjustable-draft")]
+    [Authorize(Policy = PermissionPolicies.InvoicesCreate)]
+    [ProducesResponseType(typeof(ApiResponse<AdjustableRecurringDraftDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ApiResponse<AdjustableRecurringDraftDto>>> GetAdjustableDraft(
+        Guid billingRunId, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.GetAdjustableDraftAsync(billingRunId, cancellationToken);
+        return MapAdjustableDraftResult(result);
+    }
+
+    /// <summary>
+    /// Enregistre les ajustements autorisés (description, quantité, prix HT) sur le brouillon.
+    /// Le run reste en brouillon ; aucune facture ni écriture comptable n'est créée.
+    /// </summary>
+    [HttpPatch("billing-runs/{billingRunId:guid}/draft-lines")]
+    [Authorize(Policy = PermissionPolicies.InvoicesCreate)]
+    [ProducesResponseType(typeof(ApiResponse<AdjustableRecurringDraftDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ApiResponse<AdjustableRecurringDraftDto>>> AdjustDraftLines(
+        Guid billingRunId,
+        [FromBody] AdjustRecurringDraftLinesRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.AdjustDraftLinesAsync(billingRunId, request, cancellationToken);
+        return MapAdjustableDraftResult(result, successMessage: "Brouillon mis à jour.");
+    }
+
+    private ActionResult<ApiResponse<AdjustableRecurringDraftDto>> MapAdjustableDraftResult(
+        Result<AdjustableRecurringDraftDto> result,
+        string? successMessage = null)
+    {
+        if (result.IsFailure)
+        {
+            if (result.Error.Code.Contains("NotFound"))
+                return NotFound(ApiResponse<AdjustableRecurringDraftDto>.Fail(result.Error.Description));
+            if (result.Error.Code == "Conflict")
+                return Conflict(ApiResponse<AdjustableRecurringDraftDto>.Fail(result.Error.Description));
+            return BadRequest(ApiResponse<AdjustableRecurringDraftDto>.Fail(result.Error.Description));
+        }
+
+        return Ok(ApiResponse<AdjustableRecurringDraftDto>.Ok(result.Value, successMessage));
+    }
 }

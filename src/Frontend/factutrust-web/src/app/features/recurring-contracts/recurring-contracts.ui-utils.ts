@@ -121,6 +121,15 @@ export function toLinePayloads(lines: ContractLinePayloadSource[]): RecurringCon
  * Σ des lignes « récurrent fixe » ramenée au mois selon la périodicité (÷3 trimestriel,
  * ÷12 annuel). Partagée entre le formulaire (estimation live) et la VM de détail (repli local).
  */
+/**
+ * Ramène le HT d'une échéance (brouillon) au mois selon la périodicité du contrat.
+ * Distinct de {@link fixedLinesMonthlyEstimate} : ici on n'a plus de type de ligne contrat.
+ */
+export function periodAmountMonthlyEstimate(amountHT: number, frequency: BillingFrequency): number {
+  const divisor = frequency === 'Quarterly' ? 3 : frequency === 'Annual' ? 12 : 1;
+  return (amountHT || 0) / divisor;
+}
+
 export function fixedLinesMonthlyEstimate(
   lines: ReadonlyArray<Pick<ContractLinePayloadSource, 'lineType' | 'quantity' | 'unitPriceHT'> & { isActive?: boolean | null }>,
   frequency: BillingFrequency

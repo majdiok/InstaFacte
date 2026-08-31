@@ -5,6 +5,7 @@ import {
   runBadgeStatus,
   scheduleBadgeStatus,
   formatContractAmount,
+  periodAmountMonthlyEstimate,
   fixedLinesMonthlyEstimate,
   toLinePayloads,
   toUpsertPayload,
@@ -82,6 +83,17 @@ describe('recurring-contracts.ui-utils', () => {
       expect(formatContractAmount(null)).toBe('—');
       expect(formatContractAmount(undefined)).toBe('—');
       expect(formatContractAmount(NaN)).toBe('—');
+    });
+  });
+
+  describe('periodAmountMonthlyEstimate', () => {
+    it('laisse le HT mensuel inchangé', () => {
+      expect(periodAmountMonthlyEstimate(300, 'Monthly')).toBe(300);
+    });
+
+    it('divise par 3 en trimestriel et par 12 en annuel', () => {
+      expect(periodAmountMonthlyEstimate(300, 'Quarterly')).toBe(100);
+      expect(periodAmountMonthlyEstimate(1200, 'Annual')).toBe(100);
     });
   });
 

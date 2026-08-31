@@ -272,7 +272,7 @@ public sealed record RecurringContractScheduleItemDto
     public string StatusDisplay { get; init; } = null!;
     /// <summary>Run associé quand l'occurrence a déjà été matérialisée (null sinon).</summary>
     public Guid? BillingRunId { get; init; }
-    /// <summary>Dénormalisé du run fusionné : permet au frontend les liens directs wizard/facture sans appel supplémentaire.</summary>
+    /// <summary>Dénormalisé du run fusionné : modal d'ajustement / lien facture sans appel supplémentaire.</summary>
     public Guid? InvoiceDraftId { get; init; }
     public Guid? InvoiceId { get; init; }
 }
@@ -389,4 +389,58 @@ public sealed record RecurringContractStatsDto
     /// <summary>Runs DraftCreated avec brouillon associé (tous contrats).</summary>
     public int PendingDraftsCount { get; init; }
     public string Currency { get; init; } = "TND";
+}
+
+/// <summary>
+/// Brouillon d'échéance récurrente exposé au modal d'ajustement (whitelist).
+/// Ne reprend pas le DTO wizard afin de n'exposer ni client, ni paiement, ni metadata.
+/// </summary>
+public sealed record AdjustableRecurringDraftDto
+{
+    public Guid BillingRunId { get; init; }
+    public Guid InvoiceDraftId { get; init; }
+    public Guid ContractId { get; init; }
+    public string Currency { get; init; } = "TND";
+    public DateTime PeriodFrom { get; init; }
+    public DateTime PeriodTo { get; init; }
+    public BillingFrequency ContractBillingFrequency { get; init; }
+    public bool IsConverted { get; init; }
+    public DateTime ExpiresAt { get; init; }
+    public IReadOnlyList<AdjustableRecurringDraftLineDto> Lines { get; init; } = Array.Empty<AdjustableRecurringDraftLineDto>();
+    public AdjustableRecurringDraftTotalsDto Totals { get; init; } = new();
+}
+
+public sealed record AdjustableRecurringDraftLineDto
+{
+    public int Index { get; init; }
+    public string? ProductId { get; init; }
+    public string? ProductName { get; init; }
+    public string Designation { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public decimal UnitPriceHT { get; init; }
+    public int VatRate { get; init; }
+    public bool FodecApplicable { get; init; }
+}
+
+public sealed record AdjustableRecurringDraftTotalsDto
+{
+    public decimal TotalHT { get; init; }
+    public decimal TotalVat { get; init; }
+    public decimal TotalFodec { get; init; }
+    public decimal FiscalStampAmount { get; init; }
+    public decimal TotalTTC { get; init; }
+    public string Currency { get; init; } = "TND";
+}
+
+public sealed record AdjustRecurringDraftLinesRequest
+{
+    public IReadOnlyList<AdjustRecurringDraftLineDto> Lines { get; init; } = Array.Empty<AdjustRecurringDraftLineDto>();
+}
+
+public sealed record AdjustRecurringDraftLineDto
+{
+    public int Index { get; init; }
+    public string Designation { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public decimal UnitPriceHT { get; init; }
 }

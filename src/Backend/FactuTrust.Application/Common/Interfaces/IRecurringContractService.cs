@@ -59,4 +59,17 @@ public interface IRecurringContractService
     Task<RecurringContractDetailDto?> GetDetailAsync(Guid id, CancellationToken cancellationToken = default);
     /// <summary>KPI de la page liste.</summary>
     Task<RecurringContractStatsDto> GetStatsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Charge le brouillon d'un run <c>DraftCreated</c> pour le modal d'ajustement (lignes + totaux).
+    /// </summary>
+    Task<Result<AdjustableRecurringDraftDto>> GetAdjustableDraftAsync(
+        Guid billingRunId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Met à jour uniquement désignation / quantité / prix HT des lignes existantes du brouillon.
+    /// Le run reste <c>DraftCreated</c> ; aucune émission ni écriture comptable.
+    /// </summary>
+    Task<Result<AdjustableRecurringDraftDto>> AdjustDraftLinesAsync(
+        Guid billingRunId, AdjustRecurringDraftLinesRequest request, CancellationToken cancellationToken = default);
 }

@@ -157,6 +157,48 @@ export interface PendingRecurringDraft {
   totalAmount: number;
 }
 
+/** GET /billing-runs/{id}/adjustable-draft — modal d'ajustement (whitelist). */
+export interface AdjustableRecurringDraftLine {
+  index: number;
+  productId?: string | null;
+  productName?: string | null;
+  designation: string;
+  quantity: number;
+  unitPriceHT: number;
+  vatRate: number;
+  fodecApplicable: boolean;
+}
+
+export interface AdjustableRecurringDraftTotals {
+  totalHT: number;
+  totalVat: number;
+  totalFodec: number;
+  fiscalStampAmount: number;
+  totalTTC: number;
+  currency: string;
+}
+
+export interface AdjustableRecurringDraft {
+  billingRunId: string;
+  invoiceDraftId: string;
+  contractId: string;
+  currency: string;
+  periodFrom: string;
+  periodTo: string;
+  contractBillingFrequency: BillingFrequency;
+  isConverted: boolean;
+  expiresAt: string;
+  lines: AdjustableRecurringDraftLine[];
+  totals: AdjustableRecurringDraftTotals;
+}
+
+export interface AdjustRecurringDraftLinePayload {
+  index: number;
+  designation: string;
+  quantity: number;
+  unitPriceHT: number;
+}
+
 /** POST /billing-runs/{id}/issue */
 export interface IssuedRecurringInvoice {
   invoiceId: string;
@@ -343,6 +385,22 @@ export class RecurringContractService {
     return this.http.post<ApiResponse<IssuedRecurringInvoice>>(
       `${this.base}/billing-runs/${billingRunId}/issue`,
       {}
+    ).pipe(map(r => r.data!));
+  }
+
+  getAdjustableDraft(billingRunId: string): Observable<AdjustableRecurringDraft> {
+    return this.http.get<ApiResponse<AdjustableRecurringDraft>>(
+      `${this.base}/billing-runs/${billingRunId}/adjustable-draft`
+    ).pipe(map(r => r.data!));
+  }
+
+  adjustDraftLines(
+    billingRunId: string,
+    lines: AdjustRecurringDraftLinePayload[]
+  ): Observable<AdjustableRecurringDraft> {
+    return this.http.patch<ApiResponse<AdjustableRecurringDraft>>(
+      `${this.base}/billing-runs/${billingRunId}/draft-lines`,
+      { lines }
     ).pipe(map(r => r.data!));
   }
 
