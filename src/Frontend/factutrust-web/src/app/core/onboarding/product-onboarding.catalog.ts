@@ -218,6 +218,12 @@ export const FIRM_TOUR_STEPS: readonly ProductTourStepDef[] = [
 ];
 
 export const COMPANY_CHECKLIST_ITEMS: readonly OnboardingChecklistItemDef[] = [
+  // TODO (plan WP-F4): consider additive, segment/module-gated first-run items once
+  // confirmed with product — e.g. a Stock module item ("Vérifier votre entrepôt par
+  // défaut", route '/stock', modules: [AppModule.Stock]) or a 'commerce' segment item.
+  // None of the 6 items below is stock/segment-specific today; `modules`/`segments`
+  // on OnboardingChecklistItemDef are wired end-to-end (see canSee() below) and ready
+  // to use as soon as the exact list is decided — keep additions additive-only.
   {
     id: COMPANY_CHECKLIST_IDS.companyProfile,
     label: 'Compléter la fiche entreprise',

@@ -17,6 +17,8 @@ describe('OnboardingChecklistComponent', () => {
     delegated?: boolean;
     firm?: boolean;
     admin?: boolean;
+    companySegment?: string | null;
+    enabledModuleIds?: number[];
   }): void {
     patchSpy = jasmine.createSpy('patch').and.returnValue(of({
       enabled: true,
@@ -34,6 +36,7 @@ describe('OnboardingChecklistComponent', () => {
           provide: AuthService,
           useValue: {
             user: () => ({
+              companySegment: opts.companySegment ?? null,
               productOnboardingChecklist: {
                 dismissed: false,
                 doneIds: opts.doneIds ?? []
@@ -43,7 +46,11 @@ describe('OnboardingChecklistComponent', () => {
             isAccountingFirm: () => !!opts.firm,
             isAdmin: () => !!opts.admin,
             isFirmManager: () => !!opts.firm,
-            hasPermission: () => true
+            hasPermission: () => true,
+            hasAllModules: (modules: readonly number[]) => {
+              const enabled = new Set(opts.enabledModuleIds ?? []);
+              return modules.every(m => enabled.has(m));
+            }
           }
         },
         {
@@ -94,5 +101,45 @@ describe('OnboardingChecklistComponent', () => {
   it('does not render in delegated mode', () => {
     setup({ delegated: true, admin: true });
     expect(fixture.nativeElement.textContent).not.toContain('Premiers pas');
+  });
+
+  describe('module/segment gating (plan WP-F4)', () => {
+    // `canSee` is a private helper; the plan's OnboardingChecklistItemDef.modules/segments
+    // gating rules are exercised directly here since no shipped catalog item is
+    // module/segment-gated yet (see the TODO in product-onboarding.catalog.ts).
+    function canSee(item: object): boolean {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (fixture.componentInstance as any).canSee(item);
+    }
+
+    it('hides an item whose required modules are not all enabled', () => {
+      setup({ admin: true, enabledModuleIds: [] });
+      expect(canSee({ modules: [7] })).toBeFalse();
+    });
+
+    it('shows an item whose required modules are all enabled', () => {
+      setup({ admin: true, enabledModuleIds: [7, 9] });
+      expect(canSee({ modules: [7, 9] })).toBeTrue();
+    });
+
+    it('hides a segment-gated item when the user has no companySegment', () => {
+      setup({ admin: true, companySegment: null });
+      expect(canSee({ segments: ['commerce'] })).toBeFalse();
+    });
+
+    it('hides a segment-gated item when companySegment does not match', () => {
+      setup({ admin: true, companySegment: 'association' });
+      expect(canSee({ segments: ['commerce'] })).toBeFalse();
+    });
+
+    it('shows a segment-gated item when companySegment matches', () => {
+      setup({ admin: true, companySegment: 'commerce' });
+      expect(canSee({ segments: ['commerce', 'services'] })).toBeTrue();
+    });
+
+    it('items with neither modules nor segments are unaffected', () => {
+      setup({ admin: true });
+      expect(canSee({})).toBeTrue();
+    });
   });
 });
