@@ -20,7 +20,7 @@ public sealed class PayrollCalculatorWithCeilingsTests
     var parameters = PayrollParameterDefaults.CreateDefaults(2026).Value;
     var input = SampleInput(baseSalary: 5000m);
     var result = PayrollCalculator.Compute(input, parameters);
-    Assert.Equal(459.000m, result.CnssEmployee);
+    Assert.Equal(484.000m, result.CnssEmployee); // 5 000 × 9,68 % (RSNA depuis le 01/01/2025)
   }
 
   [Fact]
@@ -29,8 +29,8 @@ public sealed class PayrollCalculatorWithCeilingsTests
     var parameters = ParametersWithCeiling(3000m);
     var input = SampleInput(baseSalary: 5000m);
     var result = PayrollCalculator.Compute(input, parameters);
-    Assert.Equal(275.400m, result.CnssEmployee);
-    Assert.Equal(497.100m, result.CnssEmployer);
+    Assert.Equal(290.400m, result.CnssEmployee); // 3 000 × 9,68 %
+    Assert.Equal(512.100m, result.CnssEmployer); // 3 000 × 17,07 %
   }
 
   [Fact]
@@ -54,14 +54,16 @@ public sealed class PayrollCalculatorWithCeilingsTests
     Assert.Equal(100.000m, result.Tfp);       // 5 000 × 2 % (secteur non industriel)
     Assert.Equal(50.000m, result.Foprolos);   // 5 000 × 1 %
     // La CNSS, elle, reste bien plafonnée.
-    Assert.Equal(275.400m, result.CnssEmployee);
+    Assert.Equal(290.400m, result.CnssEmployee); // 3 000 × 9,68 %
   }
 
   [Fact]
   public void WithCeiling_LegacyParameters_KeepTheCappedBase()
   {
     // Non-régression : un exercice déjà en base conserve l'assiette plafonnée, donc ses montants.
+    // Un exercice legacy a PayrollTaxBaseMode=Legacy (défaut de colonne) + ApplyCnssCeilingToPayrollTaxes=true.
     var parameters = ParametersWithCeiling(3000m);
+    parameters.SetPayrollTaxBaseMode(PayrollTaxBaseMode.Legacy);
     parameters.SetApplyCnssCeilingToPayrollTaxes(true);
     var input = SampleInput(baseSalary: 5000m);
 

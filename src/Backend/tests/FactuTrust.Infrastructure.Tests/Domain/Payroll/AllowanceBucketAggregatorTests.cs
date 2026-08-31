@@ -26,8 +26,12 @@ public sealed class AllowanceBucketAggregatorTests
     }
 
     [Fact]
-    public void Aggregate_SimplifiedModel_OnlyBothFlagsGoToTaxableCnssable()
+    public void Aggregate_SimplifiedModel_TaxableAllowancesStillTaxed_R25()
     {
+        // R-25 : en mode legacy (matrice quadrant désactivée), une indemnité imposable mais non
+        // soumise à la CNSS (Taxable=true, Cnss=false) doit aller en taxableOnly — elle reste
+        // imposée à l'IRPP — et non plus en nonTaxable (sous-taxation silencieuse d'origine).
+        // Les indemnités non imposables (Taxable=false) restent en nonTaxable.
         var lines = new[]
         {
             new AllowanceLineInput("Récurrente", 100m, true, true),
@@ -38,9 +42,9 @@ public sealed class AllowanceBucketAggregatorTests
         var result = AllowanceBucketAggregator.Aggregate(lines, enableQuadrantMatrix: false);
 
         Assert.Equal(100m, result.TaxableCnssable);
-        Assert.Equal(0m, result.TaxableOnly);
+        Assert.Equal(25m, result.TaxableOnly);
         Assert.Equal(0m, result.CnssOnly);
-        Assert.Equal(65m, result.NonTaxable);
+        Assert.Equal(40m, result.NonTaxable);
     }
 
     [Fact]

@@ -238,4 +238,22 @@ public sealed class PayrollRunRepository : IPayrollRunRepository
         context.Entry(run).State = EntityState.Modified;
         await context.SaveChangesAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// R-15 : persiste les bulletins figés (compte auxiliaire 425) à la validation. Attache chaque
+    /// bulletin passé et le marque modifié — seuls les bulletins réellement figés sont transmis.
+    /// </summary>
+    public async Task UpdatePayslipsAsync(IReadOnlyCollection<Payslip> payslips, CancellationToken cancellationToken = default)
+    {
+        if (payslips.Count == 0)
+            return;
+
+        await using var context = _contextFactory.CreateContext();
+        foreach (var payslip in payslips)
+        {
+            context.Payslips.Attach(payslip);
+            context.Entry(payslip).State = EntityState.Modified;
+        }
+        await context.SaveChangesAsync(cancellationToken);
+    }
 }

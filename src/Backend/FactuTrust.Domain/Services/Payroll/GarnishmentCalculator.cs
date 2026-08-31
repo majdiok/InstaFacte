@@ -3,7 +3,26 @@ using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Domain.Services.Payroll;
 
-/// <summary>Calcule le montant saisissable et alloue les saisies par priorité.</summary>
+/// <summary>
+/// Calcule le montant saisissable et alloue les saisies par priorité.
+///
+/// <para>
+/// R-26 (CAL-013) : le barème réellement appliqué est celui des tranches
+/// <see cref="Entities.Payroll.PayrollGarnishmentBracket"/> de l'exercice (paramétrable par
+/// tenant via <c>ReplaceGarnishmentBrackets</c>), désormais seedé par défaut, pour les exercices
+/// non déjà présetés, avec le barème légal de l'article 354 du code de procédure civile et
+/// commerciale (CPCC) — voir <c>PayrollLegalPresets.GarnishmentBracketsArt354Cpcc</c>. Les
+/// exercices déjà présetés (2020-2026) conservent la convention historique indexée sur le SMIG de
+/// l'exercice pour ne pas modifier le comportement des tenants existants.
+/// </para>
+/// <para>
+/// <see cref="ComputeAvailableSeizable"/> ci-dessous ne sert de secours que lorsque le tenant n'a
+/// <i>aucune</i> tranche configurée (cas normalement inatteignable depuis un preset) :
+/// pension alimentaire → 50 % du net (convention prudente, l'alimentaire peut légalement
+/// atteindre la portion normalement insaisissable — art. 354 al. 2 CPCC) ; à défaut de tranches et
+/// hors alimentaire → 33 % forfaitaire. Le calcul par tranches légales est la voie normale.
+/// </para>
+/// </summary>
 public static class GarnishmentCalculator
 {
     public sealed record GarnishmentAllocation(

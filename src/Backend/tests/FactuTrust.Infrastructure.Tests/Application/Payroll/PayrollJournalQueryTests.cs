@@ -63,10 +63,13 @@ public sealed class PayrollJournalQueryTests
             .ReturnsAsync(run);
 
         var entries = new Mock<IJournalEntryRepository>();
-        entries.Setup(e => e.GetBySourceAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+        // R-27 : la requête lit désormais l'écriture active (filtre les extournées).
+        entries.Setup(e => e.GetActiveBySourceAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(postedEntry);
 
-        return new GeneratePayrollJournalQueryHandler(runs.Object, entries.Object);
+        var settings = Microsoft.Extensions.Options.Options.Create(new FactuTrust.Application.Configuration.AccountingSettings());
+
+        return new GeneratePayrollJournalQueryHandler(runs.Object, entries.Object, settings);
     }
 
     private static JournalEntry BuildPostedEntry(PayrollRun run)

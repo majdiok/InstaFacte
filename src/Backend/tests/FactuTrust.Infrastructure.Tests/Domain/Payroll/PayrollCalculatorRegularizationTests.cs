@@ -42,10 +42,11 @@ public sealed class PayrollCalculatorRegularizationTests
         Assert.Equal(0m, baseline.RegularizationDeferred);
         Assert.False(baseline.IsRegularizationCapped);
 
-        // Valeurs figées du golden test historique (PayrollCalculatorTests).
-        Assert.Equal(183.600m, baseline.CnssEmployee);
+        // Valeurs figées du golden test historique (PayrollCalculatorTests) — preset 2026 corrigé
+        // (CNSS RSNA 9,68 % depuis le 01/01/2025).
+        Assert.Equal(193.600m, baseline.CnssEmployee);
         Assert.Equal(166.667m, baseline.ProfessionalExpenses);
-        Assert.Equal(266.600m, baseline.Irpp);
+        Assert.Equal(264.100m, baseline.Irpp);
 
         // Aucune ligne de régularisation ne doit apparaître.
         Assert.DoesNotContain(baseline.Lines, l => l.Label.Contains("Régularisation"));

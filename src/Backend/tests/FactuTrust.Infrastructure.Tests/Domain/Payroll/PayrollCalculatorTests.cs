@@ -29,14 +29,14 @@ public sealed class PayrollCalculatorTests
         var c = PayrollCalculator.Compute(input, Params());
 
         Assert.Equal(2000m, c.GrossSalary);
-        Assert.Equal(183.600m, c.CnssEmployee);          // 2000 * 9.18%
-        Assert.Equal(1816.400m, c.TaxableBaseAfterCnss);
+        Assert.Equal(193.600m, c.CnssEmployee);          // 2000 * 9.68% (RSNA depuis le 01/01/2025, LF 2025)
+        Assert.Equal(1806.400m, c.TaxableBaseAfterCnss);
         Assert.Equal(166.667m, c.ProfessionalExpenses);  // capped at 2000/12
-        Assert.Equal(1649.733m, c.MonthlyNetTaxable);
-        Assert.Equal(266.600m, c.Irpp);
-        Assert.Equal(8.249m, c.Css);
-        Assert.Equal(1541.551m, c.NetSalary);
-        Assert.Equal(331.400m, c.CnssEmployer);          // 2000 * 16.57%
+        Assert.Equal(1639.733m, c.MonthlyNetTaxable);
+        Assert.Equal(264.100m, c.Irpp);                  // (750 + 9676,796 × 25 %) / 12
+        Assert.Equal(8.199m, c.Css);
+        Assert.Equal(1534.101m, c.NetSalary);
+        Assert.Equal(341.400m, c.CnssEmployer);          // 2000 * 17.07%
         Assert.Equal(8.000m, c.WorkAccidentContribution);// 2000 * 0.4%
         Assert.Equal(40.000m, c.Tfp);                    // 2000 * 2% (non-industrial)
         Assert.Equal(20.000m, c.Foprolos);               // 2000 * 1%
@@ -304,23 +304,24 @@ public sealed class PayrollCalculatorTests
     [Fact]
     public void Compute_MonthlySmig_MatchesHandComputedValues()
     {
-        // SMIG 528,320 : le net imposable annuel (5182,056) dépasse légèrement la tranche à 0 %.
+        // SMIG 2026 = 554,736 (décret n° 2026-67) ; CNSS RSNA 9,68 % depuis le 01/01/2025.
+        // Le net imposable annuel (5411,208) dépasse la tranche à 0 %.
         var input = new PayrollComputationInput
         {
-            BaseSalary = 528.320m,
+            BaseSalary = 554.736m,
             Regime = SocialRegime.Rsna
         };
 
         var c = PayrollCalculator.Compute(input, Params());
 
-        Assert.Equal(48.500m, c.CnssEmployee);         // 528,320 × 9,18 %
-        Assert.Equal(479.820m, c.TaxableBaseAfterCnss);
-        Assert.Equal(47.982m, c.ProfessionalExpenses); // 10 %, sous le plafond
-        Assert.Equal(431.838m, c.MonthlyNetTaxable);
-        Assert.Equal(5182.056m, c.AnnualNetTaxable);
-        Assert.Equal(2.276m, c.Irpp);                  // (5182,056 − 5000) × 15 % ÷ 12
-        Assert.Equal(2.159m, c.Css);                   // 5182,056 × 0,5 % ÷ 12
-        Assert.Equal(475.385m, c.NetSalary);
+        Assert.Equal(53.698m, c.CnssEmployee);         // 554,736 × 9,68 %
+        Assert.Equal(501.038m, c.TaxableBaseAfterCnss);
+        Assert.Equal(50.104m, c.ProfessionalExpenses); // 10 %, sous le plafond
+        Assert.Equal(450.934m, c.MonthlyNetTaxable);
+        Assert.Equal(5411.208m, c.AnnualNetTaxable);
+        Assert.Equal(5.140m, c.Irpp);                  // (5411,208 − 5000) × 15 % ÷ 12
+        Assert.Equal(2.255m, c.Css);                   // 5411,208 × 0,5 % ÷ 12
+        Assert.Equal(493.643m, c.NetSalary);
     }
 
     [Fact]
@@ -328,14 +329,15 @@ public sealed class PayrollCalculatorTests
     {
         var pars = Params();
 
-        // 509 TND/mois : net imposable annuel 4992,564 ≤ 5000 → IRPP et CSS exonérés.
+        // 509 TND/mois : net imposable annuel 4965,072 ≤ 5000 → IRPP et CSS exonérés
+        // (CNSS RSNA 9,68 % depuis 2025, d'où le seuil de franchissement ~512,5 TND/mois).
         var below = PayrollCalculator.Compute(new PayrollComputationInput { BaseSalary = 509m, Regime = SocialRegime.Rsna }, pars);
         Assert.True(below.AnnualNetTaxable <= 5000m);
         Assert.Equal(0m, below.Irpp);
         Assert.Equal(0m, below.Css);
 
-        // 510 TND/mois : net imposable annuel 5002,368 > 5000 → CSS due sur la totalité.
-        var above = PayrollCalculator.Compute(new PayrollComputationInput { BaseSalary = 510m, Regime = SocialRegime.Rsna }, pars);
+        // 513 TND/mois : net imposable annuel 5004,096 > 5000 → CSS due sur la totalité.
+        var above = PayrollCalculator.Compute(new PayrollComputationInput { BaseSalary = 513m, Regime = SocialRegime.Rsna }, pars);
         Assert.True(above.AnnualNetTaxable > 5000m);
         Assert.True(above.Css > 0m);
     }
@@ -367,7 +369,8 @@ public sealed class PayrollCalculatorTests
     [Fact]
     public void Compute_ParentDeduction_BelowCap_UsesFivePercentOfNetIncome()
     {
-        // Salaire faible : 5 % du revenu net annuel (392,342) reste sous le plafond de 450.
+        // Salaire faible : 5 % du revenu net annuel reste sous le plafond de 450.
+        // CNSS RSNA 9,68 % (LF 2025) : (800 − 77,440) × 0,9 × 12 = 7803,648 ; × 5 % = 390,182 ; ÷ 12 = 32,515
         var input = new PayrollComputationInput
         {
             BaseSalary = 800m,
@@ -377,8 +380,7 @@ public sealed class PayrollCalculatorTests
 
         var c = PayrollCalculator.Compute(input, Params());
 
-        // (726,560 − 72,656) × 12 = 7846,848 ; × 5 % = 392,342 ; ÷ 12 = 32,695
-        Assert.Equal(32.695m, c.FamilyDeductions);
+        Assert.Equal(32.515m, c.FamilyDeductions);
     }
 
     [Fact]
@@ -454,11 +456,11 @@ public sealed class PayrollCalculatorTests
         Assert.Null(fraisPro.Rate);
 
         var irpp = Assert.Single(c.Lines, l => l.Label == "Retenue IRPP");
-        Assert.Equal(1649.733m, irpp.Base);
+        Assert.Equal(1639.733m, irpp.Base);
         Assert.Null(irpp.Rate);
 
         var css = Assert.Single(c.Lines, l => l.Label.Contains("CSS"));
-        Assert.Equal(1649.733m, css.Base);
+        Assert.Equal(1639.733m, css.Base);
         Assert.Equal(0.5m, css.Rate);
 
         var foprolos = Assert.Single(c.Lines, l => l.Label == "FOPROLOS");
@@ -479,7 +481,7 @@ public sealed class PayrollCalculatorTests
 
         var fraisPro = Assert.Single(c.Lines, l => l.Label.StartsWith("Frais professionnels"));
         Assert.Equal("Frais professionnels (déduction)", fraisPro.Label);
-        Assert.Equal(908.200m, fraisPro.Base); // 1000 − 91,800 (CNSS)
+        Assert.Equal(903.200m, fraisPro.Base); // 1000 − 96,800 (CNSS 9,68 %)
         Assert.Equal(10m, fraisPro.Rate);
     }
 
@@ -553,12 +555,13 @@ public sealed class PayrollCalculatorTests
     [Fact]
     public void Compute_WithNoneMode_IsBackwardCompatible()
     {
+        // Base 528,320 (ancien SMIG 2025) avec le preset 2026 corrigé (CNSS 9,68 %, SMIG 554,736).
         var input = new PayrollComputationInput { BaseSalary = 528.320m, Regime = SocialRegime.Rsna };
         var c = PayrollCalculator.Compute(input, ParamsWithSmigMode(SmigIrppExemptionMode.None));
 
-        Assert.Equal(2.276m, c.Irpp);
-        Assert.Equal(2.159m, c.Css);
-        Assert.Equal(475.385m, c.NetSalary);
+        Assert.Equal(1.919m, c.Irpp);
+        Assert.Equal(2.147m, c.Css);
+        Assert.Equal(473.113m, c.NetSalary);
         Assert.Equal(0m, c.IrppSmigExemption);
     }
 
@@ -569,11 +572,11 @@ public sealed class PayrollCalculatorTests
         var c = PayrollCalculator.Compute(input, ParamsWithSmigMode(SmigIrppExemptionMode.SmigPortion));
 
         Assert.Equal(0m, c.Irpp);
-        Assert.Equal(2.276m, c.IrppBeforeSmigExemption);
-        Assert.Equal(2.276m, c.IrppSmigExemption);
-        Assert.Equal(2.159m, c.Css);
-        Assert.Equal(477.661m, c.NetSalary);
-        Assert.Contains(c.Lines, l => l.Label == "Exonération IRPP SMIG (art. 21)");
+        Assert.Equal(1.919m, c.IrppBeforeSmigExemption);
+        Assert.Equal(1.919m, c.IrppSmigExemption);
+        Assert.Equal(2.147m, c.Css);
+        Assert.Equal(475.032m, c.NetSalary);
+        Assert.Contains(c.Lines, l => l.Label == "Exonération IRPP SMIG");
     }
 
     [Fact]
@@ -595,12 +598,14 @@ public sealed class PayrollCalculatorTests
     [Fact]
     public void Compute_SmigWorker_WithFullIfBelow_YieldsZeroIrpp()
     {
+        // R-12 : FullIfBelow se juge désormais sur le net imposable mensuel (429,461 ≤ SMIG 554,736),
+        // pas sur le seul salaire de base — ici les deux critères concordent (salaire de base 528,320 < SMIG).
         var input = new PayrollComputationInput { BaseSalary = 528.320m, Regime = SocialRegime.Rsna };
         var c = PayrollCalculator.Compute(input, ParamsWithSmigMode(SmigIrppExemptionMode.FullIfBelow));
 
         Assert.Equal(0m, c.Irpp);
-        Assert.Equal(2.276m, c.IrppSmigExemption);
-        Assert.Equal(477.661m, c.NetSalary);
+        Assert.Equal(1.919m, c.IrppSmigExemption);
+        Assert.Equal(475.032m, c.NetSalary);
     }
 
     [Fact]

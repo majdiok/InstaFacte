@@ -55,6 +55,26 @@ public sealed class JournalEntryRepository : IJournalEntryRepository
             .AnyAsync(j => j.SourceEntityType == sourceEntityType && !j.IsReversed, cancellationToken);
     }
 
+    /// <summary>
+    /// Plan §5.4 (diagnostic de conformité paie) : écritures actives (non extournées) pour un
+    /// ensemble de types sources, avec leurs lignes. Tri date/numéro pour un inventaire déterministe.
+    /// </summary>
+    public async Task<IReadOnlyList<JournalEntry>> ListActiveBySourceTypesAsync(
+        IReadOnlyCollection<string> sourceTypes,
+        CancellationToken cancellationToken = default)
+    {
+        if (sourceTypes is null || sourceTypes.Count == 0)
+            return Array.Empty<JournalEntry>();
+
+        await using var context = _contextFactory.CreateContext();
+        return await context.JournalEntries
+            .Include(j => j.Lines)
+            .Where(j => !j.IsReversed && sourceTypes.Contains(j.SourceEntityType!))
+            .OrderBy(j => j.EntryDate)
+            .ThenBy(j => j.EntryNumber)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<JournalEntry?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

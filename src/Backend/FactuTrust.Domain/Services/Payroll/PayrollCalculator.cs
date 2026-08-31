@@ -71,6 +71,19 @@ public static class PayrollCalculator
         if (monthlyNetTaxable < 0) monthlyNetTaxable = 0m;
         monthlyNetTaxable = R(monthlyNetTaxable);
 
+        // 6b. Déduction annuelle SMIG (LF 2019 interprétée) : forfait mensuel (500 TND/an ÷ 12)
+        //     appliqué sur la base imposable des salariés éligibles (rémunération ≤ SMIG du mois).
+        //     L'annualisation ×12 qui suit reprend cette base réduite ; la régularisation de fin
+        //     d'exercice applique ensuite le forfait annuel exact proratisé aux mois éligibles
+        //     (voir IrppRegularizationCalculator). Mode activé via SmigIrppExemptionMode.
+        var smigAnnualDeductionAmount = 0m;
+        if (parameters.SmigIrppExemptionMode == SmigIrppExemptionMode.SmigAnnualDeduction)
+        {
+            smigAnnualDeductionAmount = SmigIrppExemptionCalculator.ComputeMonthlySmigAnnualDeductionEffect(
+                monthlyNetTaxable, parameters.MonthlySmig);
+            monthlyNetTaxable = R(Math.Max(0m, monthlyNetTaxable - smigAnnualDeductionAmount));
+        }
+
         var annualNetTaxable = R(monthlyNetTaxable * 12m);
 
         var annualIrpp = ComputeProgressiveTax(annualNetTaxable, parameters);
@@ -90,18 +103,48 @@ public static class PayrollCalculator
         }
 
         // 8. Net à payer (retenues pré-impôt, régularisation annuelle, puis retenues post-impôt).
-        var preTaxDeductions = ResolvePreTaxDeductions(input);
-        var postTaxDeductions = R(input.PostTaxDeductionLines.Sum(l => l.Amount));
-
-        var netBeforeRegularization = R(
+        // R-22 : allocation budgétaire des retenues. Quand le net disponible est insuffisant, les
+        // retenues volontaires sont réparties par ordre de priorité (avantage en nature, mutuelle,
+        // prêt, avance…) et le reliquat est reporté au mois suivant via RequestedAmount/
+        // CarriedOverAmount — comme pour les oppositions — au lieu d'écrêter le net à zéro tout en
+        // gardant le montant intégral des lignes sur le bulletin.
+        var grossNetComponents = R(
             cnssableGross
             + input.TaxableOnlyAllowances
             + input.NonTaxableAllowances
             + statutoryNonTaxable
             - cnssEmployee
             - irpp
-            - css
-            - preTaxDeductions);
+            - css);
+        var availablePreTaxBudget = grossNetComponents < 0 ? 0m : grossNetComponents;
+
+        decimal preTaxDeductions;
+        decimal preTaxCarriedOver;
+        IReadOnlyList<DeductionLineInput> adjustedPreTaxLines;
+        var hasPartialDeductions = false;
+
+        if (input.DeductionLines.Count > 0)
+        {
+            var (adjusted, applied, carried) = AllocateDeductionBudget(input.DeductionLines, availablePreTaxBudget);
+            preTaxDeductions = applied;
+            preTaxCarriedOver = carried;
+            adjustedPreTaxLines = adjusted;
+            if (carried > 0m) hasPartialDeductions = true;
+        }
+        else
+        {
+            adjustedPreTaxLines = Array.Empty<DeductionLineInput>();
+            preTaxDeductions = R(input.OtherDeductions);
+            preTaxCarriedOver = 0m;
+            if (preTaxDeductions > availablePreTaxBudget)
+            {
+                preTaxCarriedOver = R(preTaxDeductions - availablePreTaxBudget);
+                preTaxDeductions = availablePreTaxBudget;
+                hasPartialDeductions = true;
+            }
+        }
+
+        var netBeforeRegularization = R(availablePreTaxBudget - preTaxDeductions);
         if (netBeforeRegularization < 0) netBeforeRegularization = 0m;
 
         // Régularisation IRPP/CSS annuelle (décembre ou solde de tout compte) : le rappel est
@@ -112,6 +155,24 @@ public static class PayrollCalculator
 
         var netBeforePostTax = R(netBeforeRegularization - regularization.Irpp - regularization.Css);
         if (netBeforePostTax < 0) netBeforePostTax = 0m;
+
+        decimal postTaxDeductions;
+        decimal postTaxCarriedOver;
+        IReadOnlyList<DeductionLineInput> adjustedPostTaxLines;
+        if (input.PostTaxDeductionLines.Count > 0)
+        {
+            var (adjusted, applied, carried) = AllocateDeductionBudget(input.PostTaxDeductionLines, netBeforePostTax);
+            postTaxDeductions = applied;
+            postTaxCarriedOver = carried;
+            adjustedPostTaxLines = adjusted;
+            if (carried > 0m) hasPartialDeductions = true;
+        }
+        else
+        {
+            adjustedPostTaxLines = Array.Empty<DeductionLineInput>();
+            postTaxDeductions = 0m;
+            postTaxCarriedOver = 0m;
+        }
 
         var netSalary = R(netBeforePostTax - postTaxDeductions);
         if (netSalary < 0) netSalary = 0m;
@@ -126,7 +187,12 @@ public static class PayrollCalculator
         // règle propre à la CNSS : ces trois taxes n'en ont pas. Le paramètre reste par défaut
         // aligné sur la CNSS pour ne pas modifier les cycles des exercices déjà paramétrés ; les
         // exercices créés à partir des présets légaux l'ont désactivé.
-        var payrollTaxBase = parameters.ApplyCnssCeilingToPayrollTaxes ? cnssContributionBase : cnssableGross;
+        // R-24 : PayrollTaxBaseMode.TotalGross (assiette légale = brut total de la rémunération)
+        // prime sur ApplyCnssCeilingToPayrollTaxes ; le mode Legacy conserve le comportement
+        // historique (assiette CNSS plafonnée ou non selon l'option).
+        var payrollTaxBase = parameters.PayrollTaxBaseMode == PayrollTaxBaseMode.TotalGross
+            ? totalGross
+            : (parameters.ApplyCnssCeilingToPayrollTaxes ? cnssContributionBase : cnssableGross);
         var tfpRate = input.IsIndustrialSector ? parameters.TfpRateIndustry : parameters.TfpRateOther;
         var tfp = R(payrollTaxBase * tfpRate / 100m);
         var foprolos = R(payrollTaxBase * parameters.FoprolosRate / 100m);
@@ -136,8 +202,9 @@ public static class PayrollCalculator
             input, parameters, cnssEmployeeRate, cnssEmployerRate, tfpRate,
             cnssableGross, cnssContributionBase, payrollTaxBase, accidentBase, cnssEmployee, baseAfterCnss,
             professionalExpenses, professionalExpensesCapped, familyDeductions,
-            monthlyNetTaxable, irpp, css, smigExemption, regularization.Irpp, regularization.Css,
-            preTaxDeductions, postTaxDeductions,
+            monthlyNetTaxable, irpp, css, smigExemption, smigAnnualDeductionAmount,
+            regularization.Irpp, regularization.Css,
+            preTaxDeductions, postTaxDeductions, adjustedPreTaxLines, adjustedPostTaxLines,
             cnssEmployer, workAccident, tfp, foprolos, cssEmployer);
 
         return new PayrollComputation
@@ -154,12 +221,15 @@ public static class PayrollCalculator
             Css = css,
             IrppBeforeSmigExemption = irppBeforeExemption,
             IrppSmigExemption = smigExemption,
+            SmigAnnualDeductionAmount = smigAnnualDeductionAmount,
             OtherDeductions = R(preTaxDeductions + postTaxDeductions),
             NonTaxableAllowances = R(input.NonTaxableAllowances + statutoryNonTaxable),
             IrppRegularization = regularization.Irpp,
             CssRegularization = regularization.Css,
             RegularizationDeferred = regularization.Deferred,
             IsRegularizationCapped = regularization.IsCapped,
+            HasPartialDeductions = hasPartialDeductions,
+            PartialDeductionCarryOver = R(preTaxCarriedOver + postTaxCarriedOver),
             NetSalary = netSalary,
             CnssEmployer = cnssEmployer,
             WorkAccidentContribution = workAccident,
@@ -244,12 +314,77 @@ public static class PayrollCalculator
         return R(annual / 12m);
     }
 
-    private static decimal ResolvePreTaxDeductions(PayrollComputationInput input)
+    /// <summary>
+    /// R-22 : répartit un budget disponible sur des lignes de retenue par ordre de priorité
+    /// (avantage en nature &gt; mutuelle &gt; prêt &gt; avance &gt; titres-restaurant &gt; opposition/pension
+    /// &gt; autres). Les lignes excédant le budget sont réduites ou abandonnées et leur reliquat est
+    /// reporté au mois suivant via <see cref="DeductionLineInput.RequestedAmount"/> /
+    /// <see cref="DeductionLineInput.CarriedOverAmount"/> — comme pour les oppositions — au lieu
+    /// d'écrêter le net à zéro tout en conservant le montant intégral des lignes. L'ordre des
+    /// lignes en entrée est préservé en sortie (l'allocation par priorité est interne).
+    /// </summary>
+    /// <returns>Les lignes ajustées, le total appliqué et le total reporté au mois suivant.</returns>
+    private static (IReadOnlyList<DeductionLineInput> Adjusted, decimal AppliedTotal, decimal CarriedOver) AllocateDeductionBudget(
+        IReadOnlyCollection<DeductionLineInput> lines, decimal availableBudget)
     {
-        if (input.DeductionLines.Count > 0)
-            return R(input.DeductionLines.Sum(l => l.Amount));
-        return R(input.OtherDeductions);
+        if (lines.Count == 0)
+            return (Array.Empty<DeductionLineInput>(), 0m, 0m);
+
+        var lineList = lines.ToList();
+        var totalRequested = R(lineList.Sum(l => l.Amount));
+        if (totalRequested <= 0m)
+            return (lineList, 0m, 0m);
+
+        // Budget suffisant : aucune ligne n'est réduite.
+        if (totalRequested <= availableBudget)
+            return (lineList, totalRequested, 0m);
+
+        // Allocation par priorité en préservant l'ordre d'origine.
+        var indexed = lineList.Select((line, index) => (Line: line, Index: index)).ToList();
+        var appliedByIndex = new decimal[lineList.Count];
+        var remaining = availableBudget < 0m ? 0m : availableBudget;
+        foreach (var (line, index) in indexed.OrderBy(x => DeductionPriority(x.Line)))
+        {
+            decimal applied;
+            if (remaining <= 0m)
+            {
+                applied = 0m;
+            }
+            else
+            {
+                applied = Math.Min(line.Amount, remaining);
+                remaining = R(remaining - applied);
+            }
+            appliedByIndex[index] = R(applied);
+        }
+
+        var adjusted = indexed
+            .Select(x => appliedByIndex[x.Index] == x.Line.Amount
+                ? x.Line
+                : x.Line with
+                {
+                    Amount = appliedByIndex[x.Index],
+                    RequestedAmount = x.Line.RequestedAmount ?? x.Line.Amount,
+                    CarriedOverAmount = R(x.Line.Amount - appliedByIndex[x.Index])
+                })
+            .ToList();
+
+        var appliedTotal = R(appliedByIndex.Sum());
+        return (adjusted, appliedTotal, R(totalRequested - appliedTotal));
     }
+
+    /// <summary>Priorité d'allocation d'une retenue (plus bas = servi en premier quand le budget est rare).</summary>
+    private static int DeductionPriority(DeductionLineInput line) => line.Kind switch
+    {
+        DeductionKind.InKindBenefitOffset => 0,
+        DeductionKind.MutuelleEmployee => 1,
+        DeductionKind.Loan => 2,
+        DeductionKind.Advance => 3,
+        DeductionKind.MealVoucherEmployeeShare => 4,
+        DeductionKind.Alimony => 5,
+        DeductionKind.Garnishment => 6,
+        _ => 7
+    };
 
     /// <summary>
     /// Écrête un rappel de régularisation au net disponible : on ne peut pas prélever plus que
@@ -311,10 +446,13 @@ public static class PayrollCalculator
         decimal irpp,
         decimal css,
         decimal smigExemption,
+        decimal smigAnnualDeductionAmount,
         decimal irppRegularization,
         decimal cssRegularization,
         decimal preTaxDeductions,
         decimal postTaxDeductions,
+        IReadOnlyList<DeductionLineInput> adjustedPreTaxLines,
+        IReadOnlyList<DeductionLineInput> adjustedPostTaxLines,
         decimal cnssEmployer,
         decimal workAccident,
         decimal tfp,
@@ -324,7 +462,10 @@ public static class PayrollCalculator
         var lines = new List<PayrollComputationLine>();
         var order = 0;
 
-        void Add(string label, PayslipLineKind kind, decimal amount, decimal? baseAmount = null, decimal? rate = null, DeductionKind? deductionKind = null)
+        void Add(
+            string label, PayslipLineKind kind, decimal amount, decimal? baseAmount = null, decimal? rate = null,
+            DeductionKind? deductionKind = null, EarningKind? earningKind = null, string? accountSce = null,
+            Guid? sourceEntityId = null, decimal? requestedAmount = null, decimal? carriedOverAmount = null)
             => lines.Add(new PayrollComputationLine
             {
                 Order = order++,
@@ -333,15 +474,20 @@ public static class PayrollCalculator
                 Base = baseAmount,
                 Rate = rate,
                 Amount = R(amount),
-                DeductionKind = deductionKind
+                DeductionKind = deductionKind,
+                EarningKind = earningKind,
+                AccountSce = accountSce,
+                SourceEntityId = sourceEntityId,
+                RequestedAmount = requestedAmount,
+                CarriedOverAmount = carriedOverAmount
             });
 
         // Gains
-        Add("Salaire de base", PayslipLineKind.Earning, input.BaseSalary);
+        Add("Salaire de base", PayslipLineKind.Earning, input.BaseSalary, earningKind: EarningKind.Salary);
         if (input.AllowanceLines.Count > 0)
         {
             foreach (var allowance in input.AllowanceLines)
-                Add(allowance.Label, PayslipLineKind.Earning, allowance.Amount);
+                Add(allowance.Label, PayslipLineKind.Earning, allowance.Amount, earningKind: allowance.Kind);
         }
         else
         {
@@ -356,10 +502,10 @@ public static class PayrollCalculator
         }
 
         if (input.InKindTaxableCnssableBenefits > 0)
-            Add("Avantage en nature (imposable)", PayslipLineKind.Earning, input.InKindTaxableCnssableBenefits);
+            Add("Avantage en nature (imposable)", PayslipLineKind.Earning, input.InKindTaxableCnssableBenefits, earningKind: EarningKind.InKindBenefit);
 
         if (input.OvertimeAmount > 0)
-            Add("Heures supplémentaires", PayslipLineKind.Earning, input.OvertimeAmount);
+            Add("Heures supplémentaires", PayslipLineKind.Earning, input.OvertimeAmount, earningKind: EarningKind.Overtime);
         if (input.UnpaidAbsenceAmount > 0)
             Add("Absences non rémunérées", PayslipLineKind.Deduction, input.UnpaidAbsenceAmount);
         if (input.ProrataDeductionAmount > 0)
@@ -379,7 +525,9 @@ public static class PayrollCalculator
         if (familyDeductions > 0)
             Add("Déductions familiales", PayslipLineKind.Info, familyDeductions);
         if (smigExemption > 0)
-            Add("Exonération IRPP SMIG (art. 21)", PayslipLineKind.Info, smigExemption, monthlyNetTaxable, parameters.ResolveSmigExemptionRate());
+            Add("Exonération IRPP SMIG", PayslipLineKind.Info, smigExemption, monthlyNetTaxable, parameters.ResolveSmigExemptionRate());
+        if (smigAnnualDeductionAmount > 0)
+            Add("Déduction SMIG annuelle (forfait mensuel)", PayslipLineKind.Info, smigAnnualDeductionAmount, monthlyNetTaxable);
         if (irpp > 0)
             Add("Retenue IRPP", PayslipLineKind.Deduction, irpp, monthlyNetTaxable);
         if (css > 0)
@@ -399,18 +547,28 @@ public static class PayrollCalculator
         else if (cssRegularization < 0)
             Add("Régularisation CSS (restitution)", PayslipLineKind.Earning, -cssRegularization);
 
-        if (input.DeductionLines.Count > 0)
+        if (adjustedPreTaxLines.Count > 0)
         {
-            foreach (var deduction in input.DeductionLines.Where(d => d.Amount > 0))
-                Add(deduction.Label, PayslipLineKind.Deduction, deduction.Amount, deductionKind: deduction.Kind);
+            foreach (var deduction in adjustedPreTaxLines.Where(d => d.Amount > 0))
+                Add(deduction.Label, PayslipLineKind.Deduction, deduction.Amount,
+                    deductionKind: deduction.Kind,
+                    sourceEntityId: deduction.SourceEntityId,
+                    requestedAmount: deduction.RequestedAmount,
+                    carriedOverAmount: deduction.CarriedOverAmount,
+                    accountSce: deduction.AccountSce);
         }
         else if (preTaxDeductions > 0)
         {
             Add("Autres retenues (avances, oppositions)", PayslipLineKind.Deduction, preTaxDeductions, deductionKind: DeductionKind.Other);
         }
 
-        foreach (var postTax in input.PostTaxDeductionLines.Where(d => d.Amount > 0))
-            Add(postTax.Label, PayslipLineKind.Deduction, postTax.Amount, deductionKind: postTax.Kind);
+        foreach (var postTax in adjustedPostTaxLines.Where(d => d.Amount > 0))
+            Add(postTax.Label, PayslipLineKind.Deduction, postTax.Amount,
+                deductionKind: postTax.Kind,
+                sourceEntityId: postTax.SourceEntityId,
+                requestedAmount: postTax.RequestedAmount,
+                carriedOverAmount: postTax.CarriedOverAmount,
+                accountSce: postTax.AccountSce);
 
         // Charges patronales
         if (cnssEmployer > 0)
@@ -425,7 +583,7 @@ public static class PayrollCalculator
             Add("CSS patronale", PayslipLineKind.EmployerContribution, cssEmployer, payrollTaxBase, parameters.CssEmployerRate);
 
         foreach (var employerCharge in input.EmployerChargeLines.Where(c => c.Amount > 0))
-            Add(employerCharge.Label, PayslipLineKind.EmployerContribution, employerCharge.Amount);
+            Add(employerCharge.Label, PayslipLineKind.EmployerContribution, employerCharge.Amount, accountSce: employerCharge.AccountSce);
 
         return lines;
     }

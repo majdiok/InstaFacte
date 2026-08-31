@@ -16,7 +16,9 @@ public sealed class SocialFundScheme : AggregateRoot
     public decimal FixedEmployerAmount { get; private set; }
     public decimal? MonthlyEmployeeCap { get; private set; }
     public string EmployeeAccountSce { get; private set; } = "428.1";
-    public string EmployerAccountSce { get; private set; } = "647";
+    /// <summary>Compte de dette SCE de la part employeur (fonds social). Default doctrinal « 4538 »
+    /// (fonds social à payer) — cf. plan §4 WS-1 R-14 : « 647 » est un compte de charge, pas de dette.</summary>
+    public string EmployerAccountSce { get; private set; } = "4538";
     public DateTime? EffectiveFrom { get; private set; }
     public DateTime? EffectiveTo { get; private set; }
 
@@ -32,7 +34,7 @@ public sealed class SocialFundScheme : AggregateRoot
         decimal fixedEmployerAmount = 0,
         decimal? monthlyEmployeeCap = null,
         string employeeAccountSce = "428.1",
-        string employerAccountSce = "647",
+        string employerAccountSce = "4538",
         DateTime? effectiveFrom = null,
         DateTime? effectiveTo = null)
     {
@@ -55,7 +57,7 @@ public sealed class SocialFundScheme : AggregateRoot
             FixedEmployerAmount = R(fixedEmployerAmount),
             MonthlyEmployeeCap = monthlyEmployeeCap.HasValue ? R(monthlyEmployeeCap.Value) : null,
             EmployeeAccountSce = string.IsNullOrWhiteSpace(employeeAccountSce) ? "428.1" : employeeAccountSce.Trim(),
-            EmployerAccountSce = string.IsNullOrWhiteSpace(employerAccountSce) ? "647" : employerAccountSce.Trim(),
+            EmployerAccountSce = string.IsNullOrWhiteSpace(employerAccountSce) ? "4538" : employerAccountSce.Trim(),
             EffectiveFrom = effectiveFrom?.Date,
             EffectiveTo = effectiveTo?.Date
         });

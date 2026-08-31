@@ -22,6 +22,16 @@ public interface IEmployeeRepository : IRepository<Employee>
         int month,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// R-29 : salariés actifs OU partis en cours du mois indiqué (TerminationDate dans le mois),
+    /// disposant d'un contrat couvrant au moins un jour du mois. Chemin non-prorata : inclut les
+    /// départs mi-mois afin qu'ils reçoivent un bulletin final (convention bulletin plein mois).
+    /// </summary>
+    Task<IReadOnlyList<Employee>> GetActiveOrTerminatedInMonthAsync(
+        int year,
+        int month,
+        CancellationToken cancellationToken = default);
+
     Task<bool> ExistsByEmployeeNumberAsync(string employeeNumber, Guid? excludeId = null, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyDictionary<Guid, string>> GetFullNamesByIdsAsync(

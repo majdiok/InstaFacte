@@ -4,6 +4,7 @@ using FactuTrust.Application.Features.Payroll.Declarations.CnssRemittance;
 using FactuTrust.Application.Features.Payroll.Payments;
 using FactuTrust.Application.Features.Payroll.PublicHolidays;
 using FactuTrust.Application.Features.Payroll.Regularization;
+using FactuTrust.Application.Features.Payroll.Reports;
 using FactuTrust.Application.Features.Payroll.SocialFunds;
 
 namespace FactuTrust.Application.Authorization;
@@ -37,7 +38,14 @@ public static class PayrollFirmExclusiveRequests
         typeof(CancelPayrollPaymentCommand),
         typeof(CancelAllPayrollRunPaymentsCommand),
         typeof(RecordCnssContributionPaymentCommand),
-        typeof(CancelCnssContributionPaymentCommand)
+        typeof(CancelCnssContributionPaymentCommand),
+        // ── WS-5 : outils firm-only de remédiation historique & diagnostic SCE ──
+        typeof(PayrollComplianceDiagnosticQuery),
+        typeof(GeneratePayrollReclassificationCommand),
+        typeof(UnsettleAdvanceCommand),
+        typeof(UnsettleLoanInstallmentCommand),
+        typeof(GetPayrollExposureReportQuery),
+        typeof(ExportPayrollExposureReportQuery)
     };
 
     public static bool IsFirmExclusiveRequest(Type requestType) =>

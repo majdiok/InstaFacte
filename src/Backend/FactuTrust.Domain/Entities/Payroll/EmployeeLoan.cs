@@ -90,6 +90,30 @@ public sealed class EmployeeLoan : AggregateRoot
         IncrementVersion();
     }
 
+    /// <summary>
+    /// Dé-solde UNE échéance précise (outil de revue WS-5 / R-06) : l'échéance réintègre le pool des
+    /// échéances à recouvrer et sera retenue sur un cycle ultérieur. Symétrique ciblée de
+    /// <see cref="UnsettleInstallmentsForRun"/> (qui dé-solde toutes les échéances d'un cycle à la
+    /// réouverture). Refus si l'échéance n'est pas marquée réglée.
+    /// </summary>
+    public Result UnsettleInstallment(Guid installmentId)
+    {
+        var installment = _installments.FirstOrDefault(i => i.Id == installmentId);
+        if (installment is null)
+            return Result.Failure(Error.NotFound("EmployeeLoanInstallment", installmentId));
+        if (!installment.IsSettled)
+            return Result.Failure(Error.Validation("EmployeeLoanInstallment",
+                "L'échéance n'est pas marquée réglée — aucune action."));
+
+        installment.Unsettle();
+
+        if (Status == EmployeeLoanStatus.FullyRepaid)
+            Status = EmployeeLoanStatus.Active;
+
+        IncrementVersion();
+        return Result.Success();
+    }
+
     public void Cancel()
     {
         if (_installments.Any(i => i.IsSettled))

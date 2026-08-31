@@ -60,10 +60,10 @@ public sealed class PayrollInputBuilder
         var allowanceInputs = new List<AllowanceLineInput>();
 
         foreach (var allowance in contract.Allowances)
-            allowanceInputs.Add(new AllowanceLineInput(allowance.Label, allowance.Amount, allowance.Taxable, allowance.SubjectToCnss));
+            allowanceInputs.Add(new AllowanceLineInput(allowance.Label, allowance.Amount, allowance.Taxable, allowance.SubjectToCnss, EarningKind.OrdinaryAllowance));
 
         foreach (var allowance in variableAllowanceLines)
-            allowanceInputs.Add(new AllowanceLineInput(allowance.Label, allowance.Amount, allowance.Taxable, allowance.SubjectToCnss));
+            allowanceInputs.Add(new AllowanceLineInput(allowance.Label, allowance.Amount, allowance.Taxable, allowance.SubjectToCnss, EarningKind.OrdinaryAllowance));
 
         if (_settings.PayrollTerminationIndemnityEnabled)
         {
@@ -73,19 +73,19 @@ public sealed class PayrollInputBuilder
                 if (settlement.LegalIndemnityAmount > 0m)
                     allowanceInputs.Add(new AllowanceLineInput(
                         "Indemnité légale (art. 22bis CDT)",
-                        settlement.LegalIndemnityAmount, true, true));
+                        settlement.LegalIndemnityAmount, true, true, EarningKind.TerminationIndemnity));
                 if (settlement.NoticeIndemnityAmount > 0m)
                     allowanceInputs.Add(new AllowanceLineInput(
                         "Indemnité de préavis",
-                        settlement.NoticeIndemnityAmount, true, true));
+                        settlement.NoticeIndemnityAmount, true, true, EarningKind.TerminationIndemnity));
                 if (settlement.UnusedLeaveAmount > 0m)
                     allowanceInputs.Add(new AllowanceLineInput(
                         "Indemnité congés non consommés",
-                        settlement.UnusedLeaveAmount, true, true));
+                        settlement.UnusedLeaveAmount, true, true, EarningKind.TerminationIndemnity));
                 if (settlement.OtherIndemnityAmount > 0m)
                     allowanceInputs.Add(new AllowanceLineInput(
                         "Indemnité de rupture",
-                        settlement.OtherIndemnityAmount, true, true));
+                        settlement.OtherIndemnityAmount, true, true, EarningKind.TerminationIndemnity));
             }
         }
 
@@ -344,7 +344,8 @@ public sealed class PayrollInputBuilder
                     scheme.Name,
                     contribution.EmployeeAmount,
                     DeductionKind.MutuelleEmployee,
-                    enrollment.Id));
+                    enrollment.Id,
+                    AccountSce: scheme.EmployeeAccountSce));
 
             if (contribution.EmployerAmount > 0)
                 employerChargeLines.Add(new EmployerChargeLineInput(
@@ -386,7 +387,9 @@ public sealed class PayrollInputBuilder
                 a.Label,
                 a.AppliedAmount,
                 a.Type == GarnishmentType.Alimony ? DeductionKind.Alimony : DeductionKind.Garnishment,
-                a.GarnishmentId))
+                a.GarnishmentId,
+                a.RequestedAmount,
+                a.CarriedOverAmount))
             .ToList();
     }
 

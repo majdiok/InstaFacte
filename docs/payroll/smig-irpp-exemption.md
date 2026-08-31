@@ -1,21 +1,74 @@
-# Exonération IRPP SMIG (article 21)
+# Exonération / déduction IRPP SMIG
 
-## Base légale
+> ⚠️ **Avertissement de conformité (R-12 / CAL-006, vérifié 2026-08-31)** : la base légale du mode
+> `SmigPortion` (crédit mensuel d'IRPP appliqué à **tous** les salariés) n'a **pas pu être
+> vérifiée** dans les textes. Le mode reste fonctionnel pour préserver les bulletins des tenants
+> qui l'ont déjà activé, mais **n'est plus recommandé**. La règle légale vérifiable distincte est
+> la **déduction annuelle de 500 TND** pour les salariés rémunérés au SMIG/SMAG (voir §3).
+> Le changement de libellé UI (« recommandé » → avertissement explicite) est un item frontend
+> différé — voir `/code/.plans/audit/phase3-deferred.md`.
 
-L'article 21 du code de l'IRPP tunisien (LF 2019) prévoit une exonération de l'IRPP sur la
-partie du salaire ne dépassant pas le SMIG mensuel en vigueur.
+## 1. Base légale
 
-## Activation
+### Mode `SmigPortion` (portion SMIG exonérée)
 
-**RH & Paie → Paramètres paie → Conformité → Exonération IRPP SMIG (art. 21)**
+Aucune base légale vérifiée n'a été retrouvée pour le mécanisme tel que codé (crédit
+`taux × min(net imposable ; SMIG)` versé à tout salarié, y compris ceux gagnant bien plus que le
+SMIG). La référence « article 21 du code de l'IRPP (LF 2019) » figurait antérieurement dans cette
+documentation **sans source corroborée** ; elle est **retirée** en attendant une confirmation
+fiscaliste. À défaut, ce mode doit être considéré comme une convention de calcul métier héritée
+du mockup, pas comme une disposition légale.
+
+### Déduction annuelle SMIG/SMAG (règle vérifiable)
+
+Une **déduction supplémentaire de 500 TND/an** de la base imposable est prévue pour les salariés
+rémunérés au niveau du SMIG/SMAG (art. 26 CIR — profiscal.com, paie-tunisie.com, vérifié 2026-08).
+C'est une **déduction de la base imposable** (et non un crédit d'impôt) : elle réduit le net
+imposable annuel avant application du barème IRPP.
+
+> ⏳ **À confirmer par un fiscaliste (Q2 du plan)** : le libellé exact de l'éligibilité (seuil
+> strictement inférieur au SMIG, ou inférieur ou égal ; prise en compte du SMAG agricole) et le
+> texte précis (art. 26 vs autre). Les fonctions pures sont déjà exposées (voir §3) et prêtes à
+> être câblées dès confirmation.
+
+## 2. Activation
+
+**RH & Paie → Paramètres paie → Conformité → Exonération IRPP SMIG**
 
 - Désactivée par défaut (`SmigIrppExemptionMode = None`) : les exercices existants conservent
-  exactement leur comportement.
-- Le SMIG mensuel (`MonthlySmig`, défaut 528,320 TND) doit être positif pour activer un mode.
+  exactement leur comportement (règle cardinale).
+- Le SMIG mensuel (`MonthlySmig`) doit être positif pour activer un mode.
 
-## Modes disponibles
+## 3. Modes disponibles
 
-### `SmigPortion` — Portion SMIG exonérée (recommandé, correspond au mockup métier)
+### `SmigAnnualDeduction` — Déduction annuelle 500 TND (règle légale vérifiable)
+
+> ⏳ **Mode non encore câblé dans le moteur** : les fonctions de calcul pures existent dans
+> `SmigIrppExemptionCalculator` (`SmigAnnualDeductionAmount`, `IsEligibleForSmigAnnualDeduction`,
+> `ComputeMonthlySmigAnnualDeductionEffect`) mais la valeur d'énumération
+> `SmigIrppExemptionMode.SmigAnnualDeduction` et son branchement dans `PayrollCalculator.cs` /
+> `IrppRegularizationCalculator.cs` sont **différés** (hors périmètre WS-3 — voir
+> `/code/.plans/audit/phase3-deferred.md`).
+
+Mécanisme prévu (à câbler) :
+
+```
+éligibilité (par mois) : rémunération mensuelle totale imposable ≤ SMIG mensuel
+effet mensuel  = 500 / 12 = 41,667 TND  (déduction de la base imposable, arrondi 3 déc.)
+régularisation = forfait annuel exact de 500 TND  (pas la somme des arrondis mensuels)
+```
+
+- L'éligibilité se juge sur la **rémunération mensuelle totale imposable** (net imposable du
+  mois, salaire de base + primes + avantages), **pas** sur le seul salaire de base contractuel.
+- Effet mensuel = 500 ÷ 12 = **41,667 TND** (arrondi `AwayFromZero` à 3 décimales).
+  Sur 12 mois la somme des arrondis atteint **500,004 TND** (dérive d'arrondi connue) ; la
+  régularisation annuelle applique donc le **forfait exact de 500 TND**, corrigeant cet écart de
+  0,004 TND à l'annualisation.
+
+### `SmigPortion` — Portion SMIG exonérée (⚠️ sans base légale vérifiée)
+
+> ⚠️ Non recommandé — voir avertissement en tête de page. Conservé pour compatibilité des
+> tenants l'ayant déjà activé.
 
 Applicable à **tous** les salariés :
 
@@ -27,54 +80,73 @@ IRPP final   = max(0 ; IRPP brut − exonération)
 
 Le taux applicable est :
 - le taux saisi dans **Taux applicable (%)** si renseigné ;
-- sinon le **premier taux non nul** du barème IRPP de l'exercice (15 % par défaut).
+- sinon le **premier taux non nul** du barème IRPP de l'exercice (15 % en 2025+, 26 % en 2024 et
+  antérieur).
 
-### `FullIfBelow` — Exonération totale si salaire de base ≤ SMIG
+### `FullIfBelow` — Exonération totale si rémunération totale ≤ SMIG
 
 ```
-si salaire de base ≤ SMIG mensuel :
+si rémunération mensuelle totale imposable ≤ SMIG mensuel :
     IRPP final = 0
 sinon :
     IRPP inchangé
 ```
 
-L'éligibilité s'apprécie sur le **salaire de base du contrat**, pas sur le brut cotisable.
+- **Correction R-12 (CAL-006)** : l'éligibilité s'apprécie désormais sur la **rémunération
+  mensuelle totale imposable** (`monthlyNetTaxable` / `MonthlyNetTaxable`), et **non** sur le
+  seul salaire de base contractuel comme auparavant. Un salarié au SMIG de base mais avec de
+  fortes primes (rémunération totale > SMIG) n'est plus exonéré à tort.
+- Pour la régularisation annuelle (`ApplyOnCumul`), l'éligibilité exige que **tous** les mois
+  comptés soient ≤ SMIG.
 
-## Exemple chiffré au SMIG (528,320 TND, mode SmigPortion)
+## 4. Exemple chiffré au SMIG (554,736 TND, mode SmigPortion — conservé pour référence)
 
 | Élément | Montant |
 |---------|---------|
-| IRPP brut (barème) | 2,276 TND |
-| Exonération (min(431,838 ; 528,320) × 15 %) | 2,276 TND (plafonnée à l'IRPP brut) |
+| IRPP brut (barème) | 1,919 TND |
+| Exonération (min(459,212 ; 554,736) × 15 %) | 1,919 TND (plafonnée à l'IRPP brut) |
 | IRPP net retenu | **0,000 TND** |
-| CSS (inchangée) | 2,159 TND |
-| Gain net salarié | +2,276 TND |
+| CSS (inchangée) | 2,296 TND |
+| Gain net salarié | +1,919 TND |
 
-## Bulletin et traçabilité
+> Les chiffres reflètent le SMIG 2026 (554,736 TND) et le taux CNSS 9,68 % corrigés. Les valeurs
+> antérieures (SMIG 528,320, IRPP brut 2,276) correspondaient au preset non conforme d'origine.
+
+## 5. Bulletin et traçabilité
 
 - Ligne informative : **Exonération IRPP SMIG (art. 21)** (`PayslipLineKind.Info`).
+  > ℹ️ Le libellé « art. 21 » est conservé dans le bulletin pour ne pas casser les modèles
+  > existants ; il est **réévalué** dans le cadre de la confirmation fiscaliste (§1).
 - Champs figés : `IrppBeforeSmigExemption`, `IrppSmigExemption` sur le bulletin.
 - `Payslip.Irpp` = IRPP **net** à retenir (compte 432, déclarations).
 - Agrégat cycle : `PayrollRun.TotalIrppSmigExemption`.
 
-## Régularisation annuelle
+## 6. Régularisation annuelle
 
-Si `EnableIrppRegularization` est activée, l'exonération est aussi appliquée sur l'IRPP dû
-au **cumul annuel** (mode SmigPortion : plafond SMIG × nombre de mois comptés), pour éviter
-un rattrapage en décembre.
+Si `EnableIrppRegularization` est activée, l'exonération est aussi appliquée sur l'IRPP dû au
+**cumul annuel** :
+- mode `SmigPortion` : plafond = SMIG × nombre de mois comptés ;
+- mode `FullIfBelow` : exonération totale si tous les mois comptés sont ≤ SMIG ;
+- mode `SmigAnnualDeduction` (à câbler) : forfait exact de 500 TND sur la base imposable annuelle.
 
-## Comptabilité
+## 7. Comptabilité
 
-L'exonération augmente le crédit **421** (net à payer) et diminue le crédit **432** (IRPP)
-du même montant. Le débit **640** (masse salariale) est inchangé.
+L'exonération augmente le crédit **421** (net à payer) et diminue le crédit **432** (IRPP) du
+même montant. Le débit **640** (masse salariale) est inchangé.
 
-## FAQ
+## 8. FAQ
 
-**La CSS est-elle exonérée ?** Non — l'article 21 concerne l'IRPP uniquement.
+**La CSS est-elle exonérée ?** Non — le dispositif concerne l'IRPP uniquement.
 
-**Faut-il recalculer les cycles ?** Oui, après activation ou changement de mode, recalculez
-les cycles en brouillon/calculé.
+**Faut-il recalculer les cycles ?** Oui, après activation ou changement de mode, recalculez les
+cycles en brouillon/calculé.
 
-**Impact sur les salariés au-dessus du SMIG ?** En mode SmigPortion, la portion plafonnée au
-SMIG est exonérée pour tous ; en mode FullIfBelow, aucun effet si le salaire de base dépasse
-le SMIG.
+**Quel mode choisir ?** `SmigAnnualDeduction` est la règle légale vérifiable (à câbler, en
+attente de confirmation fiscaliste Q2). `FullIfBelow` est une exonération totale simple pour les
+salariés strictement au SMIG. `SmigPortion` est conservé pour compatibilité mais n'a pas de base
+légale vérifiée — ne pas activer sur de nouveaux tenants.
+
+**Pourquoi `FullIfBelow` n'exonère-t-il plus un salarié au SMIG de base avec des primes ?** Parce
+que l'éligibilité se juge désormais sur la rémunération mensuelle **totale** imposable (R-12),
+pas sur le seul salaire de base. C'est conforme à l'esprit du dispositif (aider les salariés dont
+la rémunération globale ne dépasse pas le SMIG).

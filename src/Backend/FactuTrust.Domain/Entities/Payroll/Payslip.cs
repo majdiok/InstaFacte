@@ -29,10 +29,15 @@ public sealed class Payslip : Entity
     public decimal AnnualNetTaxable { get; private set; }
     public decimal Irpp { get; private set; }
     public decimal Css { get; private set; }
-    /// <summary>IRPP brut avant exonération SMIG (art. 21).</summary>
+    /// <summary>IRPP brut avant exonération/déduction SMIG.</summary>
     public decimal IrppBeforeSmigExemption { get; private set; }
     /// <summary>Montant de l'exonération IRPP SMIG appliquée.</summary>
     public decimal IrppSmigExemption { get; private set; }
+    /// <summary>
+    /// Forfait mensuel de la déduction annuelle SMIG (500 TND/an ÷ 12) appliqué sur la base
+    /// imposable (mode <c>SmigAnnualDeduction</c>, R-12). 0 hors de ce mode. Figé pour audit.
+    /// </summary>
+    public decimal SmigAnnualDeductionAmount { get; private set; }
     public decimal OtherDeductions { get; private set; }
     public decimal NonTaxableAllowances { get; private set; }
 
@@ -46,6 +51,14 @@ public sealed class Payslip : Entity
     public decimal CssRegularization { get; private set; }
     /// <summary>Part du rappel non prélevée faute de net suffisant (0 si aucun écrêtage).</summary>
     public decimal RegularizationDeferred { get; private set; }
+
+    /// <summary>
+    /// R-22 : vrai si au moins une retenue n'a pas pu être prélevée intégralement faute de net
+    /// suffisant et a été partiellement reportée au mois suivant. 0 sur les bulletins antérieurs.
+    /// </summary>
+    public bool HasPartialDeductions { get; private set; }
+    /// <summary>R-22 : total des retenues reportées au mois suivant (pré- + post-impôt).</summary>
+    public decimal PartialDeductionCarryOver { get; private set; }
 
     public decimal NetSalary { get; private set; }
 
@@ -84,7 +97,7 @@ public sealed class Payslip : Entity
     public decimal PaidAmount { get; private set; }
     /// <summary>Date du dernier paiement (ou date de solde complet).</summary>
     public DateTime? PaidAt { get; private set; }
-    /// <summary>Compte auxiliaire 421xxxx figé pour la comptabilité.</summary>
+    /// <summary>Compte auxiliaire 425XXXXXXX figé pour la comptabilité.</summary>
     public string? EmployeeAuxiliaryAccount { get; private set; }
 
     public decimal RemainingToPay => R(NetSalary - PaidAmount);
@@ -145,11 +158,14 @@ public sealed class Payslip : Entity
             Css = computation.Css,
             IrppBeforeSmigExemption = computation.IrppBeforeSmigExemption,
             IrppSmigExemption = computation.IrppSmigExemption,
+            SmigAnnualDeductionAmount = computation.SmigAnnualDeductionAmount,
             OtherDeductions = computation.OtherDeductions,
             NonTaxableAllowances = computation.NonTaxableAllowances,
             IrppRegularization = computation.IrppRegularization,
             CssRegularization = computation.CssRegularization,
             RegularizationDeferred = computation.RegularizationDeferred,
+            HasPartialDeductions = computation.HasPartialDeductions,
+            PartialDeductionCarryOver = computation.PartialDeductionCarryOver,
             NetSalary = computation.NetSalary,
             ProrataWorkedDays = prorataWorkedDays,
             ProrataNonWorkedDays = prorataNonWorkedDays,
@@ -168,7 +184,8 @@ public sealed class Payslip : Entity
         foreach (var line in computation.Lines)
         {
             payslip._lines.Add(PayslipLine.Create(
-                payslip.Id, line.Order, line.Label, line.Kind, line.Base, line.Rate, line.Amount, line.DeductionKind));
+                payslip.Id, line.Order, line.Label, line.Kind, line.Base, line.Rate, line.Amount, line.DeductionKind,
+                line.EarningKind, line.AccountSce, line.SourceEntityId, line.RequestedAmount, line.CarriedOverAmount));
         }
 
         return payslip;
@@ -198,7 +215,7 @@ public sealed class Payslip : Entity
         return Result.Success();
     }
 
-    /// <summary>Figé le compte auxiliaire 421 pour la comptabilité (à la validation).</summary>
+    /// <summary>Figé le compte auxiliaire 425 pour la comptabilité (à la validation).</summary>
     internal void EnsureAuxiliaryAccount(string auxiliaryAccount)
     {
         if (!string.IsNullOrWhiteSpace(auxiliaryAccount))
@@ -245,12 +262,30 @@ public sealed class PayslipLine : Entity
     public decimal Amount { get; private set; }
     /// <summary>Type de retenue (pour ventilation comptable). Null pour les lignes historiques.</summary>
     public DeductionKind? DeductionKind { get; private set; }
+    /// <summary>Nature du gain (pour ventilation comptable SCE). Null pour les lignes historiques.</summary>
+    public EarningKind? EarningKind { get; private set; }
+    /// <summary>Compte SCE figé au calcul (ex. compte du régime de fonds social). Null si non applicable.</summary>
+    public string? AccountSce { get; private set; }
+    /// <summary>
+    /// Identifiant de l'entité source (avance, prêt, saisie...) dont cette ligne est issue, figé au calcul.
+    /// Sert à ne solder à la validation que les éléments effectivement reflétés dans ce bulletin.
+    /// </summary>
+    public Guid? SourceEntityId { get; private set; }
+    /// <summary>Montant initialement demandé (utile pour les saisies partiellement retenues). Null si non applicable.</summary>
+    public decimal? RequestedAmount { get; private set; }
+    /// <summary>Solde reporté au mois suivant (saisies). Null si non applicable.</summary>
+    public decimal? CarriedOverAmount { get; private set; }
 
     private PayslipLine() { }
 
     internal static PayslipLine Create(
         Guid payslipId, int order, string label, PayslipLineKind kind, decimal? baseAmount, decimal? rate, decimal amount,
-        DeductionKind? deductionKind = null)
+        DeductionKind? deductionKind = null,
+        EarningKind? earningKind = null,
+        string? accountSce = null,
+        Guid? sourceEntityId = null,
+        decimal? requestedAmount = null,
+        decimal? carriedOverAmount = null)
     {
         return new PayslipLine
         {
@@ -261,7 +296,12 @@ public sealed class PayslipLine : Entity
             Base = baseAmount,
             Rate = rate,
             Amount = Math.Round(amount, 3, MidpointRounding.AwayFromZero),
-            DeductionKind = deductionKind
+            DeductionKind = deductionKind,
+            EarningKind = earningKind,
+            AccountSce = accountSce,
+            SourceEntityId = sourceEntityId,
+            RequestedAmount = requestedAmount,
+            CarriedOverAmount = carriedOverAmount
         };
     }
 }

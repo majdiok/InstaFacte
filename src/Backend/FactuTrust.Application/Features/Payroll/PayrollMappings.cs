@@ -287,6 +287,8 @@ public static class PayrollMappings
             SmigIrppExemptionMode = p.SmigIrppExemptionMode.ToString(),
             SmigIrppExemptionModeDisplay = p.SmigIrppExemptionMode.ToDisplayString(),
             SmigIrppExemptionRateOverride = p.SmigIrppExemptionRateOverride,
+            PayrollTaxBaseMode = p.PayrollTaxBaseMode.ToString(),
+            PayrollTaxBaseModeDisplay = p.PayrollTaxBaseMode.ToDisplayString(),
             IrppBrackets = p.IrppBrackets
                 .OrderBy(b => b.LowerBound)
                 .Select(b => new IrppBracketDto { LowerBound = b.LowerBound, Rate = b.Rate })

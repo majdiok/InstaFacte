@@ -93,4 +93,10 @@ public interface IPayrollRunRepository
     /// carries any domain events, which are dispatched on save.
     /// </summary>
     Task UpdateScalarAsync(PayrollRun run, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// R-15 : persiste les bulletins modifiés (figeage du compte auxiliaire 425 à la validation).
+    /// Attache et marque chaque bulletin modifié — ciblé pour ne pas réécrire tout le cycle.
+    /// </summary>
+    Task UpdatePayslipsAsync(IReadOnlyCollection<Payslip> payslips, CancellationToken cancellationToken = default);
 }

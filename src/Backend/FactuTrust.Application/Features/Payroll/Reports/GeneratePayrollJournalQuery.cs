@@ -1,10 +1,12 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Services.Payroll;
 using MediatR;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.Payroll.Reports;
 
@@ -23,11 +25,16 @@ public sealed class GeneratePayrollJournalQueryHandler
 {
     private readonly IPayrollRunRepository _runs;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly AccountingSettings _settings;
 
-    public GeneratePayrollJournalQueryHandler(IPayrollRunRepository runs, IJournalEntryRepository journalEntries)
+    public GeneratePayrollJournalQueryHandler(
+        IPayrollRunRepository runs,
+        IJournalEntryRepository journalEntries,
+        IOptions<AccountingSettings> settings)
     {
         _runs = runs;
         _journalEntries = journalEntries;
+        _settings = settings.Value;
     }
 
     public async Task<Result<PayrollJournalDto>> Handle(GeneratePayrollJournalQuery request, CancellationToken cancellationToken)
@@ -163,7 +170,9 @@ public sealed class GeneratePayrollJournalQueryHandler
     /// </summary>
     private async Task<AccountingView> BuildAccountingViewAsync(PayrollRun run, CancellationToken cancellationToken)
     {
-        var entry = await _journalEntries.GetBySourceAsync(
+        // R-27 : l'écriture active fait foi. Après réouverture→revalidation, l'écriture extournée
+        // est ignorée et seule la nouvelle écriture active est présentée.
+        var entry = await _journalEntries.GetActiveBySourceAsync(
             PayrollReportHelpers.PayrollRunSourceType, run.Id, cancellationToken);
 
         if (entry is not null)
@@ -189,21 +198,41 @@ public sealed class GeneratePayrollJournalQueryHandler
             ? R(run.Payslips.Sum(p => p.OtherDeductions))
             : run.TotalOtherDeductions;
 
-        var built = PayrollJournalEntryBuilder.BuildLines(
-            run.TotalGross,
-            run.TotalNet,
-            run.TotalCnssEmployee,
-            run.TotalCnssEmployer,
-            run.TotalIrpp,
-            run.TotalCss,
-            run.TotalTfp,
-            run.TotalFoprolos,
-            run.TotalWorkAccident,
-            otherDeductions,
-            $"Paie {run.Month:D2}/{run.Year}",
-            run.TotalIrppRegularization,
-            run.TotalCssRegularization,
-            run.TotalCssEmployer);
+        // Simulation alignée sur la génération réelle : même profil (§5.3) et même carte de comptes.
+        var profile = ResolvePayrollAccountProfile(run.Year, run.Month);
+        var accountMap = new PayrollJournalEntryAccountMap
+        {
+            LoansAccount = _settings.PayrollEmployeeLoansAccount,
+            GarnishmentsAccount = _settings.PayrollGarnishmentsAccount,
+            MutuelleEmployeeAccount = _settings.PayrollMutuelleEmployeeAccount,
+            MealVoucherEmployeeAccount = _settings.PayrollMealVoucherEmployeeAccount,
+            InKindBenefitOffsetAccount = profile == PayrollAccountProfile.Sce2026
+                ? _settings.PayrollInKindOffsetAccount
+                : PayrollJournalEntryBuilder.AdvancesAccount
+        };
+
+        var label = $"Paie {run.Month:D2}/{run.Year}";
+        var hasTypedDeductions = run.Payslips.Any(p =>
+            p.Lines.Any(l => l.Kind == PayslipLineKind.Deduction && l.DeductionKind.HasValue));
+
+        var built = hasTypedDeductions
+            ? PayrollJournalEntryBuilder.BuildLinesFromRun(run, label, accountMap, null, profile)
+            : PayrollJournalEntryBuilder.BuildLines(
+                run.TotalGross,
+                run.TotalNet,
+                run.TotalCnssEmployee,
+                run.TotalCnssEmployer,
+                run.TotalIrpp,
+                run.TotalCss,
+                run.TotalTfp,
+                run.TotalFoprolos,
+                run.TotalWorkAccident,
+                otherDeductions,
+                label,
+                run.TotalIrppRegularization,
+                run.TotalCssRegularization,
+                run.TotalCssEmployer,
+                profile: profile);
 
         if (built.IsFailure)
             return new AccountingView(Array.Empty<PayrollJournalAccountingLineDto>(), false, null, null, null);
@@ -220,6 +249,22 @@ public sealed class GeneratePayrollJournalQueryHandler
             .ToList();
 
         return new AccountingView(simulated, false, null, null, null);
+    }
+
+    /// <summary>
+    /// Profil d'imputation du cycle (plan §5.3) — réplique de AccountingService pour aligner la
+    /// simulation sur la génération réelle.
+    /// </summary>
+    private PayrollAccountProfile ResolvePayrollAccountProfile(int year, int month)
+    {
+        var effective = _settings.PayrollAccountProfileEffectiveDate;
+        if (effective is null)
+            return _settings.PayrollAccountProfile;
+
+        var periodEnd = new DateTime(year, month, 1).AddMonths(1).AddDays(-1);
+        return periodEnd < effective.Value
+            ? PayrollAccountProfile.Legacy
+            : _settings.PayrollAccountProfile;
     }
 
     private sealed record AccountingView(

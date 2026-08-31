@@ -1,6 +1,44 @@
 namespace FactuTrust.Domain.Enums;
 
 /// <summary>
+/// Profil d'imputation comptable de la paie. <c>Legacy</c> reproduit la cartographie historique
+/// (TFP/FOPROLOS/CSS pat dans 647/432, indemnités dans 641…) ; <c>Sce2026</c> applique la
+/// ventilation conforme au plan comptable SCE (TFP→6611, FOPROLOS→6612, taxes→437, indemnités de
+/// rupture→64602, avantage en nature→6404, compensation AN→4386…). La sélection par cycle se fait
+/// via <c>AccountingSettings.PayrollAccountProfileEffectiveDate</c> (cf. plan §5.3).
+/// </summary>
+public enum PayrollAccountProfile
+{
+    /// <summary>Cartographie historique — préservée à l'octet près pour les cycles antérieurs au bascule.</summary>
+    Legacy = 0,
+    /// <summary>Cartographie conforme au plan comptable tunisien SCE.</summary>
+    Sce2026 = 1
+}
+
+/// <summary>
+/// Assiette des taxes sur salaires (TFP, FOPROLOS, CSS patronale). L'assiette légale tunisienne
+/// est le brut total de la rémunération ; le mode <c>Legacy</c> reproduit le comportement
+/// historique (assiette CNSS plafonnée ou non selon <c>ApplyCnssCeilingToPayrollTaxes</c>).
+/// </summary>
+public enum PayrollTaxBaseMode
+{
+    /// <summary>Base historique : cnssableGross (avec ou sans plafond CNSS selon ApplyCnssCeilingToPayrollTaxes).</summary>
+    Legacy = 0,
+    /// <summary>Base légale : brut total de la rémunération (hors remboursements de frais purs — en attente de confirmation Q1 de l'assiette exacte).</summary>
+    TotalGross = 1
+}
+
+public static class PayrollTaxBaseModeExtensions
+{
+    public static string ToDisplayString(this PayrollTaxBaseMode mode) => mode switch
+    {
+        PayrollTaxBaseMode.Legacy => "Base historique (CNSS)",
+        PayrollTaxBaseMode.TotalGross => "Brut total (assiette légale)",
+        _ => mode.ToString()
+    };
+}
+
+/// <summary>
 /// Type de contrat de travail (Tunisie).
 /// </summary>
 public enum ContractType
@@ -304,16 +342,22 @@ public static class PayrollSuspensionTypeExtensions
 /// Nature d'une retenue sur salaire (pour ventilation comptable et affichage bulletin).
 /// </summary>
 /// <summary>
-/// Mode d'exonération IRPP SMIG (article 21 du code de l'IRPP, LF 2019).
+/// Mode d'exemption/déduction IRPP pour les bas salaires (SMIG/SMAG). Aucune référence
+/// légale vérifiable n'est citée ici : le libellé « art. 21 » précédent était non documenté.
+/// Le mode par défaut (None) n'applique aucune exemption ; les autres modes correspondent à des
+/// interprétations de conformité dont l'assiette et le plafond exacts doivent être validés
+/// contre les textes en vigueur (LF / code de l'IRPP) avant usage en production.
 /// </summary>
 public enum SmigIrppExemptionMode
 {
     /// <summary>Aucune exonération — comportement historique.</summary>
     None = 0,
-    /// <summary>Portion du salaire imposable plafonnée au SMIG exonérée au taux applicable.</summary>
+    /// <summary>Portion du salaire imposable plafonnée au SMIG exonérée au taux applicable (base légale non vérifiée).</summary>
     SmigPortion = 1,
     /// <summary>IRPP nul si le salaire de base mensuel ne dépasse pas le SMIG.</summary>
-    FullIfBelow = 2
+    FullIfBelow = 2,
+    /// <summary>Déduction annuelle de 500 TND pour SMIG/SMAG — forfait annuel proratisé au mois puis régularisé à l'année (LF 2019 interprétée).</summary>
+    SmigAnnualDeduction = 3
 }
 
 public static class SmigIrppExemptionModeExtensions
@@ -321,8 +365,9 @@ public static class SmigIrppExemptionModeExtensions
     public static string ToDisplayString(this SmigIrppExemptionMode mode) => mode switch
     {
         SmigIrppExemptionMode.None => "Désactivée",
-        SmigIrppExemptionMode.SmigPortion => "Portion SMIG exonérée (art. 21)",
+        SmigIrppExemptionMode.SmigPortion => "Portion SMIG exonérée",
         SmigIrppExemptionMode.FullIfBelow => "Exonération totale si salaire ≤ SMIG",
+        SmigIrppExemptionMode.SmigAnnualDeduction => "Déduction annuelle 500 TND (SMIG/SMAG)",
         _ => throw new ArgumentOutOfRangeException(nameof(mode))
     };
 }
@@ -375,6 +420,33 @@ public static class DeductionKindExtensions
         DeductionKind.MealVoucherEmployeeShare => "Tickets restaurant (part employée)",
         DeductionKind.InKindBenefitOffset => "Compensation avantage en nature",
         DeductionKind.Other => "Autre retenue",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind))
+    };
+}
+
+/// <summary>Nature d'une ligne de gain (earning) sur le bulletin de paie, utilisée pour l'imputation comptable SCE.</summary>
+public enum EarningKind
+{
+    Salary = 0,
+    Overtime = 1,
+    Bonus = 2,
+    OrdinaryAllowance = 3,
+    InKindBenefit = 4,
+    TerminationIndemnity = 5,
+    Other = 99
+}
+
+public static class EarningKindExtensions
+{
+    public static string ToDisplayString(this EarningKind kind) => kind switch
+    {
+        EarningKind.Salary => "Salaire",
+        EarningKind.Overtime => "Heures supplémentaires",
+        EarningKind.Bonus => "Prime",
+        EarningKind.OrdinaryAllowance => "Indemnité ordinaire",
+        EarningKind.InKindBenefit => "Avantage en nature",
+        EarningKind.TerminationIndemnity => "Indemnité de rupture",
+        EarningKind.Other => "Autre gain",
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 }

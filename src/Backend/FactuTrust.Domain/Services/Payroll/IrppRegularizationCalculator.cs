@@ -1,4 +1,5 @@
 using FactuTrust.Domain.Entities.Payroll;
+using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Domain.Services.Payroll;
 
@@ -38,6 +39,27 @@ public static class IrppRegularizationCalculator
 
         var cumulNetTaxable = R(months.Sum(m => m.MonthlyNetTaxable));
         if (cumulNetTaxable < 0) cumulNetTaxable = 0m;
+
+        // R-12 (SmigAnnualDeduction) : les cumuls mensuels portés par les bulletins sont déjà
+        // amputés du forfait mensuel R(500/12) par le moteur mensuel. On reconstitue le cumul
+        // avant déduction, puis on applique le forfait annuel EXACT proratisé aux mois éligibles
+        // (500 × moisÉligibles / 12) afin de neutraliser la dérive d'arrondi : la somme des
+        // forfaits mensuels (moisÉligibles × 41,667) diffère de quelques millièmes du forfait
+        // annuel légal. L'éligibilité se juge sur la valeur mensuelle (réduite) — cohérente avec
+        // l'éligibilité pré-déduction pour tous les cas (un salarié éligible reste ≤ SMIG après
+        // le forfait mensuel). Hors de ce mode, l'opération est sans effet (cumul inchangé).
+        if (parameters.SmigIrppExemptionMode == SmigIrppExemptionMode.SmigAnnualDeduction && months.Count > 0)
+        {
+            var monthlyForfait = R(SmigIrppExemptionCalculator.SmigAnnualDeductionAmount / 12m);
+            var eligibleMonths = months.Count(m =>
+                SmigIrppExemptionCalculator.IsEligibleForSmigAnnualDeduction(m.MonthlyNetTaxable, parameters.MonthlySmig));
+            if (eligibleMonths > 0)
+            {
+                var preDeductionCumul = R(cumulNetTaxable + eligibleMonths * monthlyForfait);
+                var annualForfait = R(SmigIrppExemptionCalculator.SmigAnnualDeductionAmount * eligibleMonths / 12m);
+                cumulNetTaxable = R(Math.Max(0m, preDeductionCumul - annualForfait));
+            }
+        }
 
         var cumulIrppWithheld = R(months.Sum(m => m.Irpp));
         var cumulCssWithheld = R(months.Sum(m => m.Css));

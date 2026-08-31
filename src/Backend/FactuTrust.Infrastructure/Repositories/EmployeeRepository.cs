@@ -67,6 +67,31 @@ public sealed class EmployeeRepository : IEmployeeRepository
             .ToListAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// R-29 : salariés actifs OU partis en cours du mois (TerminationDate dans le mois), avec un
+    /// contrat couvrant au moins un jour du mois. Contrairement au chemin prorata, on n'exige pas
+    /// que le contrat couvre la fin du mois : un départ mi-mois reçoit un bulletin plein mois.
+    /// </summary>
+    public async Task<IReadOnlyList<Employee>> GetActiveOrTerminatedInMonthAsync(
+        int year,
+        int month,
+        CancellationToken cancellationToken = default)
+    {
+        var monthStart = new DateTime(year, month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+
+        await using var context = _contextFactory.CreateContext();
+        return await context.Employees
+            .Include(e => e.Contracts)
+            .ThenInclude(c => c.Allowances)
+            .Where(e =>
+                e.Contracts.Any(c => c.StartDate <= monthEnd && (c.EndDate == null || c.EndDate >= monthStart))
+                && (e.IsActive
+                    || (e.TerminationDate.HasValue && e.TerminationDate >= monthStart && e.TerminationDate <= monthEnd)))
+            .OrderBy(e => e.LastName)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Employee>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

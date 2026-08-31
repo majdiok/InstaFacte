@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Entities.Payroll;
+using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 
@@ -26,6 +27,14 @@ public sealed class EmployeeLoanRepository : IEmployeeLoanRepository
         return await context.EmployeeLoans
             .Include(l => l.Installments)
             .FirstOrDefaultAsync(l => l.Id == id, cancellationToken);
+    }
+
+    public async Task<EmployeeLoan?> GetByInstallmentIdAsync(Guid installmentId, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.EmployeeLoans
+            .Include(l => l.Installments)
+            .FirstOrDefaultAsync(l => l.Installments.Any(i => i.Id == installmentId), cancellationToken);
     }
 
     public async Task<IReadOnlyList<EmployeeLoan>> ListByEmployeeAsync(Guid employeeId, CancellationToken cancellationToken = default)
@@ -61,6 +70,18 @@ public sealed class EmployeeLoanRepository : IEmployeeLoanRepository
         return await context.EmployeeLoans
             .Include(l => l.Installments)
             .Where(l => l.Installments.Any(i => i.SettledInPayrollRunId == payrollRunId))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>Plan §5.4 : tous les prêts non annulés avec leurs échéances (diagnostic conformité).</summary>
+    public async Task<IReadOnlyList<EmployeeLoan>> ListAllWithInstallmentsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.EmployeeLoans
+            .Include(l => l.Installments)
+            .Where(l => l.Status != EmployeeLoanStatus.Cancelled)
+            .OrderBy(l => l.CreatedAt)
             .ToListAsync(cancellationToken);
     }
 

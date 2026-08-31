@@ -3830,7 +3830,18 @@ public partial class TenantDbContext : DbContext
             entity.HasIndex(e => e.PieceRef);
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => new { e.JournalCode, e.EntryNumber, e.EntryDate });
-            entity.HasIndex(e => new { e.SourceEntityType, e.SourceEntityId });
+            // R-16/M2 : une seule écriture sourcing ACTIVE par entité source, pour les types de
+            // « comptabilisation aller » de la paie (PayrollRun, PayrollPayment,
+            // CnssContributionPayment). Index unique FILTRÉ : exclut les écritures extournées
+            // (IsReversed = 1), les écritures manuelles non sourcées (SourceEntityType/SourceEntityId
+            // NULL) ET les écritures d'annulation (*Cancelled), qui peuvent s'accumuler sur un même
+            // cycle rouvert plusieurs fois (chaque réouverture ajoute une extourne
+            // PayrollRunCancelled IsReversed = 0 pour le même runId). Limiter l'IN aux types « aller »
+            // préserve le cycle reopen→revalidation. Évite le doublon d'OD sur un recalcul/revalidation
+            // concurrent ; une violation lève DbUpdateException (→ HTTP 409 via le middleware).
+            entity.HasIndex(e => new { e.SourceEntityType, e.SourceEntityId })
+                  .IsUnique()
+                  .HasFilter("[IsReversed] = 0 AND [SourceEntityType] IN (N'PayrollRun', N'PayrollPayment', N'CnssContributionPayment')");
             entity.HasOne(e => e.AccountingPeriod)
                 .WithMany()
                 .HasForeignKey(e => e.AccountingPeriodId)

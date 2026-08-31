@@ -72,7 +72,13 @@ public sealed record PayrollLegalPreset
             cnssEmployeeRateRsa: CnssEmployeeRateRsa,
             cnssEmployerRateRsa: CnssEmployerRateRsa,
             garnishmentBrackets: garnishment,
-            cssEmployerRate: CssEmployerRate);
+            cssEmployerRate: CssEmployerRate,
+            // R-25 : la matrice quadrant (Cnss/Taxable) est l'interprétation légale correcte des
+            // indemnités ; elle devient le défaut des exercices matérialisés depuis les présets.
+            // Les exercices existants conservent leur réglage persisté (règle de non-réécriture).
+            enableAllowanceQuadrantMatrix: true,
+            // R-24 : l'assiette légale des taxes sur salaires est le brut total de la rémunération.
+            payrollTaxBaseMode: PayrollTaxBaseMode.TotalGross);
 
         if (result.IsFailure)
             return result;

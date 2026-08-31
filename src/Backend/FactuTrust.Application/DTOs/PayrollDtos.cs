@@ -159,6 +159,8 @@ public sealed record DependentParentClaimDto
 public sealed record CalculatePayrollRunResultDto
 {
     public int PayslipCount { get; init; }
+    /// <summary>R-29 : nombre de salariés partis en cours de mois inclus dans le cycle (bulletin final).</summary>
+    public int TerminatedInMonthCount { get; init; }
     public IReadOnlyList<PayrollCalculationWarningDto> Warnings { get; init; } = Array.Empty<PayrollCalculationWarningDto>();
 }
 
@@ -473,6 +475,8 @@ public sealed record PayrollParametersDto
     public string SmigIrppExemptionMode { get; init; } = null!;
     public string SmigIrppExemptionModeDisplay { get; init; } = null!;
     public decimal? SmigIrppExemptionRateOverride { get; init; }
+    public string PayrollTaxBaseMode { get; init; } = null!;
+    public string PayrollTaxBaseModeDisplay { get; init; } = null!;
     public IReadOnlyList<IrppBracketDto> IrppBrackets { get; init; } = Array.Empty<IrppBracketDto>();
     public decimal? CnssMonthlyCeiling { get; init; }
     public decimal? CnssDailyCeiling { get; init; }
@@ -515,6 +519,7 @@ public sealed record UpdatePayrollParametersDto
     public decimal MonthlySmig { get; init; }
     public string SmigIrppExemptionMode { get; init; } = "None";
     public decimal? SmigIrppExemptionRateOverride { get; init; }
+    public string PayrollTaxBaseMode { get; init; } = "Legacy";
     public IReadOnlyList<IrppBracketDto> IrppBrackets { get; init; } = Array.Empty<IrppBracketDto>();
     public decimal? CnssMonthlyCeiling { get; init; }
     public decimal? CnssDailyCeiling { get; init; }
@@ -834,7 +839,7 @@ public sealed record UpsertSocialFundSchemeDto
     public decimal FixedEmployerAmount { get; init; }
     public decimal? MonthlyEmployeeCap { get; init; }
     public string EmployeeAccountSce { get; init; } = "428.1";
-    public string EmployerAccountSce { get; init; } = "647";
+    public string EmployerAccountSce { get; init; } = "4538";
     public DateTime? EffectiveFrom { get; init; }
     public DateTime? EffectiveTo { get; init; }
 }

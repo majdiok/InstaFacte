@@ -45,7 +45,18 @@ public static class PayrollProrataCalculator
         if (suspendedWeekdays > 0)
         {
             reasons.Add(PayrollProrataReason.Suspension);
-            payrollWorkedDays = Math.Max(0m, payrollWorkedDays - suspendedWeekdays);
+
+            // R-23 : les jours ouvrables de suspension non payée sont exprimés en calendaire
+            // (lun-ven du mois), pas dans la convention 26 jours utilisée par payrollWorkedDays.
+            // Ils doivent donc être ramenés à cette convention par le même facteur
+            // MonthlyWorkingDays/fullMonthWorkdays que la présence embauche/départ ci-dessus,
+            // sous peine de sous-déduire systématiquement dans un mois ≠ 26 jours ouvrables
+            // (ex. mois à 22 jours ouvrables : 11 jours suspendus doivent peser 13/26, pas 11/26).
+            var suspendedPayrollDays = Math.Round(
+                MonthlyWorkingDays * suspendedWeekdays / fullMonthWorkdays,
+                2,
+                MidpointRounding.AwayFromZero);
+            payrollWorkedDays = Math.Max(0m, payrollWorkedDays - suspendedPayrollDays);
         }
 
         var nonWorkedDays = Math.Round(MonthlyWorkingDays - payrollWorkedDays, 2, MidpointRounding.AwayFromZero);

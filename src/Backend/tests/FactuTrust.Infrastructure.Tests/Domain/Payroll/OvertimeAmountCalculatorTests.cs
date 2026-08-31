@@ -78,9 +78,11 @@ public sealed class OvertimeAmountCalculatorTests
     [Fact]
     public void ComputeAmount_FortyHoursRegime_125Percent()
     {
-        // 1000 / 173,33 = 5,769 ; × 10 h × 1,25 = 72,113 (arrondi 3 déc. sur le taux horaire)
+        // R-37 (CAL-018) : diviseur 40 h exact = 520/3 (173,333...), et seul le montant final est
+        // arrondi. 1000 / (520/3) = 5,769230... × 10 × 1,25 = 72,115384... → 72,115 (et non
+        // 72,113 avec l'ancien diviseur tronqué 173,33 + taux horaire pré-arrondi).
         var amount = OvertimeAmountCalculator.ComputeAmount(1000m, 10m, 125m, regime: WeeklyWorkRegime.FortyHours);
-        Assert.Equal(72.113m, amount);
+        Assert.Equal(72.115m, amount);
     }
 
     [Fact]
