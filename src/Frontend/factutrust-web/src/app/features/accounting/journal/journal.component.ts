@@ -29,6 +29,18 @@ import { canDeleteDraftAccountingEntries, canEditDraftAccountingEntries, canVali
 import { AccountingJournalCatalogService } from '../shared/accounting-journal-catalog.service';
 import { AccountingJournalTab } from '../shared/accounting-journal-tabs.model';
 
+/** Types de source désignant une écriture générée par le module Paie.
+ *  Ces écritures ne sont ni supprimables ni extournables depuis la comptabilité —
+ *  la correction se fait via le cycle de paie (« Rouvrir » / « Annuler le paiement »). */
+const PAYROLL_SOURCE_TYPES = new Set<string>([
+  'PayrollRun',
+  'PayrollRunCancelled',
+  'PayrollPayment',
+  'PayrollPaymentCancelled',
+  'CnssContributionPayment',
+  'CnssContributionPaymentCancelled',
+]);
+
 type JournalFlatRow = {
   entryId: string;
   date: string;
@@ -42,6 +54,8 @@ type JournalFlatRow = {
   isDraft: boolean;
   isReversed: boolean;
   isReversal: boolean;
+  /** Source métier de l'écriture (ex. « PayrollRun ») — null pour les écritures manuelles. */
+  sourceEntityType: string | null;
   /** Référence de la pièce externe de l'écriture (facultative). */
   pieceRef: string | null;
   /** Nombre de pièces jointes (GED) de l'écriture. */
@@ -224,9 +238,13 @@ type JournalFlatRow = {
             <td class="journal-col-amount" data-label="Crédit">{{ r.credit | number : '1.3-3' }}</td>
             <td class="journal-col-narrow" data-label="Statut">
               @if (r.firstOfEntry) {
-                <span class="journal-badge" [class.journal-badge-draft]="r.isDraft" [class.journal-badge-valid]="!r.isDraft">
+                <span class="journal-badge" [class.journal-badge-draft]="r.isDraft" [class.journal-badge-valid]="!r.isDraft"
+                      [title]="isPayrollSourced(r.sourceEntityType) ? 'Écriture générée par le module Paie — corrigez via « Rouvrir le cycle » ou « Annuler le paiement ». Non supprimable ni extournable depuis la comptabilité.' : ''">
                   {{ r.isDraft ? 'Brouillon' : r.status === 2 ? 'Clôturée' : 'Validée' }}
                 </span>
+                @if (isPayrollSourced(r.sourceEntityType)) {
+                  <span class="journal-badge journal-badge-reversed" title="Écriture générée par le module Paie">Paie</span>
+                }
                 @if (r.isReversed) {
                   <span class="journal-badge journal-badge-reversed" title="Écriture extournée">Extournée</span>
                 }
@@ -259,7 +277,7 @@ type JournalFlatRow = {
                   Valider
                 </app-button>
               }
-              @if (r.firstOfEntry && r.isDraft && canDelete()) {
+              @if (r.firstOfEntry && r.isDraft && canDelete() && !isPayrollSourced(r.sourceEntityType)) {
                 <app-button
                   variant="danger"
                   size="sm"
@@ -272,7 +290,7 @@ type JournalFlatRow = {
                   [attr.aria-label]="'Supprimer l\\'écriture ' + r.journal + ' n° ' + r.piece"
                   title="Supprimer" />
               }
-              @if (r.firstOfEntry && !r.isDraft && !r.isReversed) {
+              @if (r.firstOfEntry && !r.isDraft && !r.isReversed && !isPayrollSourced(r.sourceEntityType)) {
                 <app-button
                   variant="secondary"
                   size="sm"
@@ -717,6 +735,11 @@ export class JournalComponent implements OnInit {
   readonly canDelete = computed(() => canDeleteDraftAccountingEntries(this.auth));
   readonly canEdit = computed(() => canEditDraftAccountingEntries(this.auth));
 
+  /** Vrai si l'écriture est générée par le module Paie (non modifiable depuis la comptabilité). */
+  isPayrollSourced(sourceEntityType: string | null | undefined): boolean {
+    return !!sourceEntityType && PAYROLL_SOURCE_TYPES.has(sourceEntityType);
+  }
+
   @ViewChild('dt') dt?: Table;
 
   fromStr = '';
@@ -838,6 +861,7 @@ export class JournalComponent implements OnInit {
               isDraft: e.isDraft,
               isReversed: e.isReversed,
               isReversal: !!e.reversesEntryId,
+              sourceEntityType: e.sourceEntityType ?? null,
               pieceRef: e.pieceRef ?? null,
               attachmentCount: e.attachmentCount ?? 0,
               firstOfEntry: first

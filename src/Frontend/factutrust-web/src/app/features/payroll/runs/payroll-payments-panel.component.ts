@@ -2,6 +2,7 @@ import { Component, OnInit, inject, input, output, signal } from '@angular/core'
 import { CommonModule } from '@angular/common';
 import { PayrollService, type PayrollPayment } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { PayrollAmountPipe, PayrollSectionComponent } from '../shared';
 
@@ -60,6 +61,7 @@ import { PayrollAmountPipe, PayrollSectionComponent } from '../shared';
 export class PayrollPaymentsPanelComponent implements OnInit {
   private readonly payroll = inject(PayrollService);
   private readonly toast = inject(ToastService);
+  private readonly confirmation = inject(ConfirmationService);
 
   runId = input.required<string>();
   canCancel = input(true);
@@ -86,10 +88,17 @@ export class PayrollPaymentsPanelComponent implements OnInit {
     });
   }
 
-  cancelOne(p: PayrollPayment): void {
-    const reason = window.prompt('Motif d\'annulation du paiement :');
-    if (!reason?.trim()) return;
-    this.payroll.cancelPayment(p.id, reason.trim()).subscribe({
+  async cancelOne(p: PayrollPayment): Promise<void> {
+    const reason = await this.confirmation.prompt({
+      header: 'Annuler le paiement',
+      message: 'Saisissez le motif d\'annulation du paiement :',
+      acceptLabel: 'Annuler le paiement',
+      rejectLabel: 'Conserver',
+      acceptButtonStyleClass: 'btn-danger',
+      required: true
+    });
+    if (!reason) return;
+    this.payroll.cancelPayment(p.id, reason).subscribe({
       next: () => {
         this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Paiement annulé.' });
         this.load();

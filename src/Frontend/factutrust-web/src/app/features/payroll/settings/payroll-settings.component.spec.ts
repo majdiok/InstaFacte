@@ -4,7 +4,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { of } from 'rxjs';
 import { PayrollSettingsComponent } from './payroll-settings.component';
-import { PayrollService, PayrollParameters } from '@core/services/payroll.service';
+import { PayrollService, PayrollParameters, type PayrollLegalPreset } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 
 describe('PayrollSettingsComponent', () => {
@@ -46,19 +46,60 @@ describe('PayrollSettingsComponent', () => {
     ]
   };
 
+  /** Preset légal corrigé (RSNA 9.68/17.07, SMIG 554.736) — diverge volontairement des `params` obsolètes. */
+  const legalPreset: PayrollLegalPreset = {
+    fiscalYear: 2026,
+    label: 'LF 2026',
+    cnssEmployeeRate: 9.68,
+    cnssEmployerRate: 17.07,
+    cssRate: 0.5,
+    monthlySmig: 554.736,
+    irppBrackets: [
+      { lowerBound: 0, rate: 0 },
+      { lowerBound: 5000, rate: 26 },
+      { lowerBound: 20000, rate: 28 },
+      { lowerBound: 30000, rate: 32 },
+      { lowerBound: 50000, rate: 35 }
+    ]
+  };
+
   beforeEach(() => {
     payrollSpy = jasmine.createSpyObj('PayrollService', [
       'getParameters',
       'updateParameters',
       'getGarnishmentBrackets',
       'updateGarnishmentBrackets',
-      'listSocialFunds'
+      'listSocialFunds',
+      'getFeatureFlags',
+      'getLegalPreset'
     ]);
     payrollSpy.getParameters.and.returnValue(of({ success: true, data: { ...params, irppBrackets: params.irppBrackets.map(b => ({ ...b })) } }));
     payrollSpy.updateParameters.and.returnValue(of({ success: true, data: null }));
     payrollSpy.getGarnishmentBrackets.and.returnValue(of({ success: true, data: [] }));
     payrollSpy.updateGarnishmentBrackets.and.returnValue(of({ success: true, data: null }));
     payrollSpy.listSocialFunds.and.returnValue(of({ success: true, data: [] }));
+    payrollSpy.getLegalPreset.and.returnValue(of({ success: true, data: { ...legalPreset, irppBrackets: legalPreset.irppBrackets.map(b => ({ ...b })) } }));
+    payrollSpy.getFeatureFlags.and.returnValue(of({
+      success: true,
+      data: {
+        statutorySickLeaveEnabled: false,
+        statutoryMaternityLeaveEnabled: false,
+        statutoryPaternityLeaveEnabled: false,
+        terminationIndemnityEnabled: false,
+        hrDocumentsEnabled: false,
+        annualBonusesEnabled: false,
+        publicHolidaysEnabled: false,
+        civpEnhancementsEnabled: false,
+        cnssCeilingsEnabled: false,
+        legalPresetsHistoryEnabled: false,
+        payrollAccountProfile: 'Legacy',
+        payrollAccountProfileEffectiveDate: null,
+        payrollInKindOffsetAccount: '4386',
+        payrollDisbursementEntriesEnabled: false,
+        payrollDetailedSalarySplitEnabled: false,
+        payrollStrictSettlementEnabled: true
+      }
+    }));
     toastSpy = jasmine.createSpyObj('ToastService', ['add']);
 
     TestBed.configureTestingModule({
@@ -109,5 +150,49 @@ describe('PayrollSettingsComponent', () => {
     p.irppBrackets.length = 0;
     fixture.componentInstance.save();
     expect(payrollSpy.updateParameters).not.toHaveBeenCalled();
+  });
+
+  it('shows the preset drift banner when tenant params diverge from the legal preset', () => {
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.preset-drift-banner')).toBeTruthy();
+    expect(root.textContent).toContain('CNSS salarié');
+    // Le bouton de rechargement est un app-button (label passé en @Input, non rendu en texte) ;
+    // on vérifie plutôt la présence de l'action de rechargement et son déclencheur câblé.
+    const actions = root.querySelector('.preset-drift-banner__actions');
+    expect(actions).toBeTruthy();
+    expect(actions?.querySelector('app-button')).toBeTruthy();
+  });
+
+  it('hides the preset drift banner when tenant params match the legal preset', () => {
+    payrollSpy.getLegalPreset.and.returnValue(of({
+      success: true,
+      data: {
+        fiscalYear: 2026,
+        label: 'LF 2026',
+        cnssEmployeeRate: 9.18,
+        cnssEmployerRate: 16.57,
+        cssRate: 0.5,
+        monthlySmig: 528.32,
+        irppBrackets: [{ lowerBound: 0, rate: 0 }, { lowerBound: 5000, rate: 15 }]
+      }
+    }));
+    fixture.componentInstance.load();
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.preset-drift-banner')).toBeNull();
+  });
+
+  it('offers the conformant SmigAnnualDeduction mode and drops art. 21 from SmigPortion label', () => {
+    const opts = fixture.componentInstance.smigExemptionModeOptions;
+    expect(opts.some(o => o.value === 'SmigAnnualDeduction')).toBeTrue();
+    const smigPortion = opts.find(o => o.value === 'SmigPortion')!;
+    expect(smigPortion.label).not.toContain('art. 21');
+  });
+
+  it('reloadLegalPreset recharges the legal defaults and notifies the user', () => {
+    payrollSpy.getLegalPreset.calls.reset();
+    fixture.componentInstance.reloadLegalPreset();
+    expect(payrollSpy.getLegalPreset).toHaveBeenCalledWith(2026);
+    expect(fixture.componentInstance.params()?.cnssEmployeeRate).toBe(9.68);
+    expect(toastSpy.add).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'info', summary: 'Preset LF' }));
   });
 });

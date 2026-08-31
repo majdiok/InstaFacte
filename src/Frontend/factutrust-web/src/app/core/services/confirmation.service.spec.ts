@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { NgbModal, NgbModalRef } from '@ng-bootstrap/ng-bootstrap';
 import { ConfirmationService } from './confirmation.service';
 import { ConfirmModalComponent } from '@shared/components/confirm-modal/confirm-modal.component';
+import { PromptModalComponent } from '@shared/components/confirm-modal/prompt-modal.component';
 
 describe('ConfirmationService', () => {
   let service: ConfirmationService;
@@ -93,5 +94,53 @@ describe('ConfirmationService', () => {
     await Promise.resolve();
 
     expect(reject).toHaveBeenCalled();
+  });
+
+  it('prompt opens the prompt modal with size md by default and forwards the config', () => {
+    const promptRef = {
+      componentInstance: {
+        message: '', header: '', icon: '', placeholder: '',
+        acceptLabel: '', rejectLabel: '', acceptButtonStyleClass: '',
+        required: true, maxLength: 500
+      } as PromptModalComponent,
+      result: Promise.resolve('motif'),
+      close: jasmine.createSpy('close'),
+      dismiss: jasmine.createSpy('dismiss')
+    };
+    modal.open.and.returnValue(promptRef as unknown as NgbModalRef);
+
+    service.prompt({ message: 'Motif ?', placeholder: 'Motif', acceptLabel: 'Annuler', size: 'md' });
+
+    expect(modal.open).toHaveBeenCalledWith(PromptModalComponent, jasmine.objectContaining({ size: 'md' }));
+    expect(promptRef.componentInstance.placeholder).toBe('Motif');
+    expect(promptRef.componentInstance.acceptLabel).toBe('Annuler');
+  });
+
+  it('prompt resolves to the entered value when the modal closes', async () => {
+    const promptRef = {
+      componentInstance: {} as PromptModalComponent,
+      result: Promise.resolve('motif rejet'),
+      close: jasmine.createSpy('close'),
+      dismiss: jasmine.createSpy('dismiss')
+    };
+    modal.open.and.returnValue(promptRef as unknown as NgbModalRef);
+
+    const result = await service.prompt({ message: 'Motif ?' });
+
+    expect(result).toBe('motif rejet');
+  });
+
+  it('prompt resolves to null when the modal is dismissed', async () => {
+    const promptRef = {
+      componentInstance: {} as PromptModalComponent,
+      result: Promise.reject('dismiss'),
+      close: jasmine.createSpy('close'),
+      dismiss: jasmine.createSpy('dismiss')
+    };
+    modal.open.and.returnValue(promptRef as unknown as NgbModalRef);
+
+    const result = await service.prompt({ message: 'Motif ?' });
+
+    expect(result).toBeNull();
   });
 });

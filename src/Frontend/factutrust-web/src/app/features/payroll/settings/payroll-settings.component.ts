@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SelectModule } from 'primeng/select';
@@ -7,7 +7,7 @@ import { InputSwitchModule } from 'primeng/inputswitch';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TabsModule } from 'primeng/tabs';
-import { PayrollService, PayrollParameters, PayrollGarnishmentBracket } from '@core/services/payroll.service';
+import { PayrollService, PayrollParameters, PayrollGarnishmentBracket, PayrollFeatureFlags, PayrollLegalPreset } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 import { TooltipModule } from 'primeng/tooltip';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -41,6 +41,67 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
       <p-inputNumber id="fiscalYear" [(ngModel)]="fiscalYear" (ngModelChange)="load()" [useGrouping]="false" [min]="2000" [max]="2100" styleClass="w-8rem" />
       <app-button type="button" variant="secondary" label="Recharger défauts LF" icon="pi pi-refresh" (clicked)="reloadLegalPreset()" class="ml-3" />
     </div>
+
+    @if (featureFlags()) {
+      <div class="sce-config-card mb-3" role="status" aria-live="polite">
+        <div class="sce-config-card__title">
+          <i class="pi pi-info-circle"></i>
+          Comptabilisation de la paie — configuration SCE effective
+        </div>
+        <div class="sce-config-card__grid">
+          <div>
+            <span class="sce-config-card__label">Profil de comptabilisation</span>
+            <span class="sce-config-card__value">
+              {{ featureFlags()?.payrollAccountProfile === 'Sce2026' ? 'SCE 2026 (comptes normalisés)' : 'Legacy (historique)' }}
+            </span>
+          </div>
+          <div>
+            <span class="sce-config-card__label">Date d'effet du bascule</span>
+            <span class="sce-config-card__value">
+              {{ featureFlags()?.payrollAccountProfileEffectiveDate ? (featureFlags()?.payrollAccountProfileEffectiveDate | date:'dd/MM/yyyy') : '— (appliqué à tous les cycles)' }}
+            </span>
+          </div>
+          <div>
+            <span class="sce-config-card__label">Compte de compensation avantage en nature</span>
+            <span class="sce-config-card__value">{{ featureFlags()?.payrollInKindOffsetAccount || '4386' }}</span>
+          </div>
+          <div>
+            <span class="sce-config-card__label">Règlement strict (avances/prêts/saisies)</span>
+            <span class="sce-config-card__value">{{ featureFlags()?.payrollStrictSettlementEnabled ? 'Activé' : 'Désactivé' }}</span>
+          </div>
+          <div>
+            <span class="sce-config-card__label">Écritures de décaissement (avances/prêts)</span>
+            <span class="sce-config-card__value">{{ featureFlags()?.payrollDisbursementEntriesEnabled ? 'Activé' : 'Désactivé' }}</span>
+          </div>
+          <div>
+            <span class="sce-config-card__label">Ventilation détaillée des salaires (640)</span>
+            <span class="sce-config-card__value">{{ featureFlags()?.payrollDetailedSalarySplitEnabled ? 'Activé' : 'Désactivé' }}</span>
+          </div>
+        </div>
+        <p class="sce-config-card__note">
+          Configuration globale gérée par l'administrateur (appsettings). Pour modifier le profil SCE ou planifier
+          un bascule, contactez l'administrateur. Les comptes SCE par régime de fonds social
+          (part salarié / part employeur) sont configurés ci-dessous par régime.
+        </p>
+      </div>
+    }
+
+    @if (presetDrift().length > 0) {
+      <div class="preset-drift-banner mb-3" role="alert" aria-live="polite">
+        <div class="preset-drift-banner__title">
+          <i class="pi pi-exclamation-triangle"></i>
+          Écart preset légal — les paramètres de l'exercice {{ fiscalYear }} divergent du défaut LF
+        </div>
+        <ul class="preset-drift-banner__list">
+          @for (d of presetDrift(); track d.label) {
+            <li><strong>{{ d.label }}</strong> : tenant {{ d.current }} → LF {{ d.expected }}</li>
+          }
+        </ul>
+        <div class="preset-drift-banner__actions">
+          <app-button type="button" variant="secondary" label="Recharger défauts LF" icon="pi pi-refresh" (clicked)="reloadLegalPreset()" />
+        </div>
+      </div>
+    }
 
     @if (params()) {
       <form (ngSubmit)="save()">
@@ -246,7 +307,7 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
             <app-form-section title="Exonération IRPP SMIG" icon="pi-shield" variant="compact">
               <div class="payroll-form-row payroll-form-row--cols-2">
                 <div class="payroll-form-group">
-                  <label for="smigExemptionMode">Exonération IRPP SMIG (art. 21)</label>
+                  <label for="smigExemptionMode">Exonération IRPP SMIG</label>
                   <p-select
                     inputId="smigExemptionMode"
                     [(ngModel)]="params()!.smigIrppExemptionMode"
@@ -273,12 +334,23 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
                   </div>
                 }
               </div>
+              @if (params()!.smigIrppExemptionMode === 'SmigPortion') {
+                <p class="sce-warn-panel" role="alert">
+                  <i class="pi pi-exclamation-triangle"></i>
+                  Ce mode n'a pas de base légale vérifiée et sous-déclare l'IRPP pour l'ensemble des salariés
+                  lorsqu'il est actif. Pour la conformité, préférez le mode « Déduction annuelle 500 TND (SMIG/SMAG) »
+                  qui applique une déduction annuelle supplémentaire de 500 TND à l'assiette imposable des salariés
+                  payés au SMIG/SMAG.
+                </p>
+              }
             </app-form-section>
 
             <p class="payroll-info-panel">
-              L'article 21 du code de l'IRPP (LF 2019) exonère l'IRPP sur la part du salaire ne dépassant pas le SMIG.
-              Le mode « Portion SMIG exonérée » s'applique à tous les salariés ; « Exonération totale » ne concerne que les salaires de base ≤ SMIG.
-              La CSS n'est pas impactée. Voir la documentation paie pour le détail des formules.
+              La déduction annuelle de 500 TND (mode conforme) s'applique à l'assiette imposable des salariés payés
+              au SMIG/SMAG et s'intègre naturellement à la projection mensuelle et à la régularisation IRPP.
+              Le mode « Portion SMIG exonérée » est conservé pour les tenants qui l'utilisent mais n'a pas de base
+              légale vérifiée ; le mode « Exonération totale » ne concerne que les salaires de base ≤ SMIG.
+              La CSS n'est pas impactée.
             </p>
             <p class="payroll-info-panel">Le taux TFP appliqué aux cycles de paie de cet exercice suit ce paramètre ; recalculez les cycles en brouillon pour l'appliquer.</p>
             <p class="payroll-info-panel">
@@ -338,6 +410,28 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
     .w-full { width: 100%; }
     .w-8rem { width: 8rem; }
     .form-actions { display: flex; gap: var(--spacing-3); }
+    .sce-config-card { background: var(--surface-ground, #f8fafc); border: 1px solid var(--surface-border, #e2e8f0); border-radius: 8px; padding: var(--spacing-3); }
+    .sce-config-card__title { display: flex; align-items: center; gap: var(--spacing-2); font-weight: 600; margin-bottom: var(--spacing-2); }
+    .sce-config-card__title i { color: var(--primary-color, #2563eb); }
+    .sce-config-card__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: var(--spacing-2) var(--spacing-4); }
+    .sce-config-card__label { display: block; font-size: .75rem; color: var(--text-color-secondary, #64748b); }
+    .sce-config-card__value { display: block; font-weight: 600; }
+    .sce-config-card__note { margin: var(--spacing-2) 0 0; font-size: .8rem; color: var(--text-color-secondary, #64748b); }
+    .sce-warn-panel {
+      display: flex; gap: var(--spacing-2); align-items: flex-start;
+      margin: var(--spacing-2) 0 0; padding: var(--spacing-2) var(--spacing-3);
+      background: var(--color-warning-50, #fffbeb); border: 1px solid var(--color-warning-300, #fcd34d);
+      border-radius: var(--radius-md, 0.5rem); font-size: .85rem; color: var(--color-warning-800, #92400e);
+    }
+    .sce-warn-panel i { color: var(--color-warning-600, #d97706); flex-shrink: 0; margin-top: 2px; }
+    .preset-drift-banner {
+      background: var(--color-warning-50, #fffbeb); border: 1px solid var(--color-warning-300, #fcd34d);
+      border-radius: 8px; padding: var(--spacing-3);
+    }
+    .preset-drift-banner__title { display: flex; align-items: center; gap: var(--spacing-2); font-weight: 600; color: var(--color-warning-800, #92400e); margin-bottom: var(--spacing-2); }
+    .preset-drift-banner__title i { color: var(--color-warning-600, #d97706); }
+    .preset-drift-banner__list { margin: 0 0 var(--spacing-2); padding-left: var(--spacing-4); font-size: .85rem; color: var(--color-warning-900, #78350f); }
+    .preset-drift-banner__actions { display: flex; justify-content: flex-end; }
   `]
 })
 export class PayrollSettingsComponent implements OnInit {
@@ -346,14 +440,59 @@ export class PayrollSettingsComponent implements OnInit {
   fiscalYear = new Date().getFullYear();
   params = signal<PayrollParameters | null>(null);
   garnishmentBrackets = signal<GarnishmentBracketFormRow[]>([]);
+  /** Configuration SCE de comptabilisation paie (lecture seule — plan §5.3). */
+  featureFlags = signal<PayrollFeatureFlags | null>(null);
+  /** Preset légal officiel de l'exercice (pour la bannière de dérive preset vs tenant). */
+  legalPreset = signal<PayrollLegalPreset | null>(null);
   readonly smigExemptionModeOptions = [
     { label: 'Désactivée', value: 'None' },
-    { label: 'Portion SMIG exonérée (art. 21)', value: 'SmigPortion' },
+    { label: 'Déduction annuelle 500 TND (SMIG/SMAG)', value: 'SmigAnnualDeduction' },
+    { label: 'Portion SMIG exonérée', value: 'SmigPortion' },
     { label: 'Exonération totale si salaire ≤ SMIG', value: 'FullIfBelow' }
   ];
 
+  /** Écarts entre les paramètres persistés du tenant et le preset légal de l'exercice (plan §4 WS-3). */
+  presetDrift = computed<PresetDriftItem[]>(() => {
+    const p = this.params();
+    const preset = this.legalPreset();
+    if (!p || !preset) return [];
+    const drift: PresetDriftItem[] = [];
+    const rate = (label: string, current: number, expected: number, unit = '%') => {
+      if (Math.abs(current - expected) > 0.0001) {
+        drift.push({ label, current: `${current.toFixed(2)} ${unit}`, expected: `${expected.toFixed(2)} ${unit}` });
+      }
+    };
+    rate('CNSS salarié', p.cnssEmployeeRate, preset.cnssEmployeeRate);
+    rate('CNSS employeur', p.cnssEmployerRate, preset.cnssEmployerRate);
+    rate('CSS', p.cssRate, preset.cssRate);
+    rate('SMIG mensuel', p.monthlySmig, preset.monthlySmig, 'TND');
+    const pb = [...preset.irppBrackets].sort((a, b) => a.lowerBound - b.lowerBound);
+    const cb = [...p.irppBrackets].sort((a, b) => a.lowerBound - b.lowerBound);
+    const bracketsDiffer = cb.length !== pb.length
+      || cb.some((b, i) => Math.abs(b.lowerBound - pb[i].lowerBound) > 0.01 || Math.abs(b.rate - pb[i].rate) > 0.0001);
+    if (bracketsDiffer) {
+      drift.push({ label: 'Barème IRPP', current: `${cb.length} tranche(s)`, expected: `${pb.length} tranche(s) LF` });
+    }
+    return drift;
+  });
+
   ngOnInit(): void {
     this.load();
+    this.loadFeatureFlags();
+  }
+
+  private loadFeatureFlags(): void {
+    this.payroll.getFeatureFlags().subscribe({
+      next: res => this.featureFlags.set(res.data ?? null),
+      error: () => this.featureFlags.set(null)
+    });
+  }
+
+  private loadLegalPreset(): void {
+    this.payroll.getLegalPreset(this.fiscalYear).subscribe({
+      next: res => this.legalPreset.set(res.data ?? null),
+      error: () => this.legalPreset.set(null)
+    });
   }
 
   load(): void {
@@ -378,6 +517,7 @@ export class PayrollSettingsComponent implements OnInit {
       error: () => this.toast.add({ severity: 'error', summary: 'Paramètres', detail: 'Paramètres introuvables.' })
     });
     this.loadGarnishmentBrackets();
+    this.loadLegalPreset();
   }
 
   private loadGarnishmentBrackets(): void {
@@ -496,4 +636,10 @@ export class PayrollSettingsComponent implements OnInit {
 interface GarnishmentBracketFormRow {
   lowerBoundMonthlyNet: number;
   seizableFractionPercent: number;
+}
+
+interface PresetDriftItem {
+  label: string;
+  current: string;
+  expected: string;
 }

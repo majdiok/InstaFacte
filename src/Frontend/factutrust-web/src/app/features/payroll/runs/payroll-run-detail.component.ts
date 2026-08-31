@@ -7,6 +7,7 @@ import { TagModule } from 'primeng/tag';
 import { PayrollService, PayrollRunDetail, PayslipDetail } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { canRunPayroll, canValidatePayroll, canManagePayrollEmployees, canExportPayroll, canPayPayroll, isCompanyPayrollReadOnly, isPayrollConsultMode, PAYROLL_FIRM_MANAGED_COMPANY_BANNER, PAYROLL_FIRM_CONSULT_BANNER } from '@core/utils/payroll-access';
 import { PayrollConsultBannerComponent } from '../shared/payroll-consult-banner.component';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -50,23 +51,23 @@ import { FirmGovernanceService } from '@core/services/firm-governance.service';
     @if (run()) {
       <app-page-header [title]="run()!.label" [subtitle]="run()!.statusDisplay">
         @if (canRun() && (run()!.status === 'Draft' || run()!.status === 'Calculated')) {
-          <app-button variant="primary" icon="pi-calculator" iconPos="left" (click)="calculate()">Calculer</app-button>
+          <app-button variant="primary" icon="pi-calculator" iconPos="left" [disabled]="actionInProgress()" (click)="calculate()">Calculer</app-button>
         }
         @if (canValidate() && run()!.status === 'Calculated') {
-          <app-button variant="primary" icon="pi-check" iconPos="left" (click)="validate()">Valider</app-button>
+          <app-button variant="primary" icon="pi-check" iconPos="left" [disabled]="actionInProgress()" (click)="validate()">Valider</app-button>
         }
         @if (canValidate() && run()!.status === 'Validated') {
-          <app-button variant="outline" icon="pi-replay" iconPos="left" (click)="reopen()">Rouvrir</app-button>
-          <app-button variant="primary" icon="pi-lock" iconPos="left" (click)="close()">Clôturer</app-button>
+          <app-button variant="outline" icon="pi-replay" iconPos="left" [disabled]="actionInProgress()" (click)="reopen()">Rouvrir</app-button>
+          <app-button variant="primary" icon="pi-lock" iconPos="left" [disabled]="actionInProgress()" (click)="close()">Clôturer</app-button>
         }
         @if (showBankTransferExport()) {
-          <app-button variant="outline" icon="pi-building-columns" iconPos="left" (click)="openBankTransfer()">Export virement</app-button>
+          <app-button variant="outline" icon="pi-building-columns" iconPos="left" [disabled]="actionInProgress()" (click)="openBankTransfer()">Export virement</app-button>
         }
         @if (showRecordPayment()) {
-          <app-button variant="primary" icon="pi-wallet" iconPos="left" (click)="recordPaymentVisible.set(true)">Régler la paie</app-button>
+          <app-button variant="primary" icon="pi-wallet" iconPos="left" [disabled]="actionInProgress()" (click)="recordPaymentVisible.set(true)">Régler la paie</app-button>
         }
         @if (showCancelAllPayments()) {
-          <app-button variant="outline" icon="pi-times" iconPos="left" (click)="cancelAllPayments()">Annuler tous les paiements</app-button>
+          <app-button variant="outline" icon="pi-times" iconPos="left" [disabled]="actionInProgress()" (click)="cancelAllPayments()">Annuler tous les paiements</app-button>
         }
       </app-page-header>
 
@@ -290,6 +291,7 @@ export class PayrollRunDetailComponent implements OnInit {
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
   private readonly firmGovernance = inject(FirmGovernanceService);
+  private readonly confirmation = inject(ConfirmationService);
 
   run = signal<PayrollRunDetail | null>(null);
   selectedPayslip = signal<PayslipDetail | null>(null);
@@ -299,6 +301,8 @@ export class PayrollRunDetailComponent implements OnInit {
   runId = '';
   routeBase = signal('/payroll');
   firmInternal = signal(false);
+  /** Verrou les boutons de workflow pendant un appel (R-30 : évite le double-clic). */
+  actionInProgress = signal(false);
 
   canRun = computed(() => canRunPayroll(this.auth));
   canValidate = computed(() => canValidatePayroll(this.auth));
@@ -377,20 +381,32 @@ export class PayrollRunDetailComponent implements OnInit {
     this.reload();
   }
 
-  cancelAllPayments(): void {
-    const reason = window.prompt('Motif d\'annulation de tous les paiements :');
-    if (!reason?.trim()) return;
-    this.payroll.cancelAllRunPayments(this.runId, reason.trim()).subscribe({
+  async cancelAllPayments(): Promise<void> {
+    if (this.actionInProgress()) return;
+    const reason = await this.confirmation.prompt({
+      header: 'Annuler tous les paiements',
+      message: 'Saisissez le motif d\'annulation de tous les paiements du cycle :',
+      acceptLabel: 'Annuler les paiements',
+      rejectLabel: 'Conserver les paiements',
+      acceptButtonStyleClass: 'btn-danger',
+      required: true
+    });
+    if (!reason) return;
+    this.actionInProgress.set(true);
+    this.payroll.cancelAllRunPayments(this.runId, reason).subscribe({
       next: () => {
+        this.actionInProgress.set(false);
         this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Tous les paiements ont été annulés.' });
         this.reload();
       },
-      error: err =>
+      error: err => {
+        this.actionInProgress.set(false);
         this.toast.add({
           severity: 'error',
           summary: 'Paie',
           detail: err?.error?.message ?? 'Annulation impossible.'
-        })
+        });
+      }
     });
   }
 
@@ -408,9 +424,11 @@ export class PayrollRunDetailComponent implements OnInit {
   }
 
   calculate(): void {
-    if (!this.canRun()) return;
+    if (!this.canRun() || this.actionInProgress()) return;
+    this.actionInProgress.set(true);
     this.payroll.calculateRun(this.runId).subscribe({
       next: res => {
+        this.actionInProgress.set(false);
         const warnings = res.data?.warnings ?? [];
         if (warnings.length > 0) {
           this.toast.add({
@@ -424,19 +442,35 @@ export class PayrollRunDetailComponent implements OnInit {
         }
         this.reload();
       },
-      error: err => this.toast.add({
-        severity: 'error',
-        summary: 'Paie',
-        detail: err?.error?.message ?? 'Calcul impossible.'
-      })
+      error: err => {
+        this.actionInProgress.set(false);
+        this.toast.add({
+          severity: 'error',
+          summary: 'Paie',
+          detail: err?.error?.message ?? 'Calcul impossible.'
+        });
+      }
     });
   }
 
   validate(): void {
-    if (!this.canValidate()) return;
+    if (!this.canValidate() || this.actionInProgress()) return;
+    this.confirmation.confirm({
+      header: 'Valider le cycle',
+      message: 'Confirmer la validation du cycle de paie ? Les écritures comptables seront générées et les avances/échéances soldées.',
+      acceptLabel: 'Valider',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'btn-primary',
+      accept: () => this.executeValidate()
+    });
+  }
+
+  private executeValidate(): void {
+    this.actionInProgress.set(true);
     const year = this.run()?.year;
     this.payroll.validateRun(this.runId).subscribe({
       next: () => {
+        this.actionInProgress.set(false);
         this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Cycle validé.' });
         if (this.firmInternal() && year != null) {
           this.firmGovernance.syncCollaboratorCosts(year, false).subscribe({
@@ -454,23 +488,50 @@ export class PayrollRunDetailComponent implements OnInit {
         }
         this.reload();
       },
-      error: err => this.toast.add({ severity: 'error', summary: 'Paie', detail: err?.error?.message ?? 'Validation impossible.' })
+      error: err => {
+        this.actionInProgress.set(false);
+        this.toast.add({ severity: 'error', summary: 'Paie', detail: err?.error?.message ?? 'Validation impossible.' });
+      }
     });
   }
 
   reopen(): void {
-    if (!this.canValidate()) return;
+    if (!this.canValidate() || this.actionInProgress()) return;
+    this.confirmation.confirm({
+      header: 'Rouvrir le cycle',
+      message: 'Confirmer la réouverture du cycle ? Les écritures seront extournées et les avances/échéances dé-soldées.',
+      acceptLabel: 'Rouvrir',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'btn-primary',
+      accept: () => this.executeReopen()
+    });
+  }
+
+  private executeReopen(): void {
+    this.actionInProgress.set(true);
     this.payroll.reopenRun(this.runId).subscribe({
-      next: () => { this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Cycle rouvert.' }); this.reload(); },
-      error: err => this.toast.add({ severity: 'error', summary: 'Paie', detail: err?.error?.message ?? 'Réouverture impossible.' })
+      next: () => { this.actionInProgress.set(false); this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Cycle rouvert.' }); this.reload(); },
+      error: err => { this.actionInProgress.set(false); this.toast.add({ severity: 'error', summary: 'Paie', detail: err?.error?.message ?? 'Réouverture impossible.' }); }
     });
   }
 
   close(): void {
-    if (!this.canValidate()) return;
+    if (!this.canValidate() || this.actionInProgress()) return;
+    this.confirmation.confirm({
+      header: 'Clôturer le cycle',
+      message: 'Confirmer la clôture définitive du cycle ? Cette opération est IRRÉVERSIBLE : la période sera verrouillée et ne pourra plus être rouverte.',
+      acceptLabel: 'Clôturer',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'btn-danger',
+      accept: () => this.executeClose()
+    });
+  }
+
+  private executeClose(): void {
+    this.actionInProgress.set(true);
     this.payroll.closeRun(this.runId).subscribe({
-      next: () => { this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Cycle clôturé.' }); this.reload(); },
-      error: err => this.toast.add({ severity: 'error', summary: 'Paie', detail: err?.error?.message ?? 'Clôture impossible.' })
+      next: () => { this.actionInProgress.set(false); this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Cycle clôturé.' }); this.reload(); },
+      error: err => { this.actionInProgress.set(false); this.toast.add({ severity: 'error', summary: 'Paie', detail: err?.error?.message ?? 'Clôture impossible.' }); }
     });
   }
 
