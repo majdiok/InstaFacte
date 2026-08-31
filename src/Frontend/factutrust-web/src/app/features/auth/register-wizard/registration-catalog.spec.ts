@@ -322,7 +322,7 @@ describe('registration-catalog', () => {
           { id: AppModule.Forecasting, code: 'forecasting', labelFr: 'Prévisions IA', isCore: false }
         ],
         moduleDependencies: [
-          { moduleId: AppModule.Forecasting, requiresModuleId: AppModule.Stock }
+          { moduleId: AppModule.Forecasting, requiredModuleId: AppModule.Stock }
         ]
       };
     }

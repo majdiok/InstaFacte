@@ -100,10 +100,14 @@ export interface RemoteSectorModuleDto {
   isCore: boolean;
 }
 
-/** `{ moduleId, requiresModuleId }` — `moduleId` cannot be enabled without `requiresModuleId`. */
+/**
+ * Backend `SectorModuleDependencyDto`: `requiredModuleId` is the prerequisite — enabling
+ * `moduleId` auto-pulls `requiredModuleId`. (The backend emits `requiredModuleId`, not
+ * `requiresModuleId`.)
+ */
 export interface RemoteModuleDependencyDto {
   moduleId: number;
-  requiresModuleId: number;
+  requiredModuleId: number;
 }
 
 export interface SectorCatalogDto {
@@ -529,8 +533,8 @@ export class RegistrationCatalogService {
     const remote = this.remoteCatalog();
     if (!remote || !Array.isArray(remote.moduleDependencies)) return [];
     return remote.moduleDependencies
-      .filter(d => this.isValidModuleId(d.moduleId) && this.isValidModuleId(d.requiresModuleId))
-      .map(d => ({ moduleId: d.moduleId, requiresModuleId: d.requiresModuleId }));
+      .filter(d => this.isValidModuleId(d.moduleId) && this.isValidModuleId(d.requiredModuleId))
+      .map(d => ({ moduleId: d.moduleId, requiresModuleId: d.requiredModuleId }));
   }
 
   private closeDependencies(set: Set<AppModule>): void {

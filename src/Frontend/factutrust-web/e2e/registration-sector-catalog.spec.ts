@@ -56,7 +56,7 @@ function fakeCatalogPayload() {
         { id: AppModuleId.Forecasting, code: 'forecasting', labelFr: 'Prévisions IA', isCore: false }
       ],
       moduleDependencies: [
-        { moduleId: AppModuleId.Forecasting, requiresModuleId: AppModuleId.Stock }
+        { moduleId: AppModuleId.Forecasting, requiredModuleId: AppModuleId.Stock }
       ]
     }
   };
