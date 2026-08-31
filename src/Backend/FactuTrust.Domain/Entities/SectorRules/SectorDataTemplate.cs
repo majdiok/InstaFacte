@@ -1,0 +1,57 @@
+using FactuTrust.Domain.Common;
+
+namespace FactuTrust.Domain.Entities.SectorRules;
+
+/// <summary>
+/// Master-DB backed data template header (Phase 2, plan §WP-B5/§WP-B6): a named, versioned set of
+/// <see cref="SectorDataTemplateItem"/> rows applied additively to a tenant DB when its
+/// segment/domain matches (null = applies to every segment/domain). The static catalog has none
+/// — templates only exist once authored via the admin CRUD.
+/// </summary>
+public sealed class SectorDataTemplate : Entity
+{
+    public string Code { get; private set; } = null!;
+    public string? SegmentCode { get; private set; }
+    public string? DomainCode { get; private set; }
+    public string LabelFr { get; private set; } = null!;
+    public string? DescriptionFr { get; private set; }
+    public int Version { get; private set; } = 1;
+    public int SortOrder { get; private set; }
+    public bool IsActive { get; private set; } = true;
+
+    private SectorDataTemplate() { }
+
+    public static SectorDataTemplate Create(
+        string code,
+        string? segmentCode,
+        string? domainCode,
+        string labelFr,
+        string? descriptionFr,
+        int version,
+        int sortOrder)
+    {
+        return new SectorDataTemplate
+        {
+            Code = code,
+            SegmentCode = segmentCode,
+            DomainCode = domainCode,
+            LabelFr = labelFr,
+            DescriptionFr = descriptionFr,
+            Version = version,
+            SortOrder = sortOrder,
+            IsActive = true
+        };
+    }
+
+    public void UpdateDetails(string labelFr, string? descriptionFr, int version, int sortOrder)
+    {
+        LabelFr = labelFr;
+        DescriptionFr = descriptionFr;
+        Version = version;
+        SortOrder = sortOrder;
+    }
+
+    public void Deactivate() => IsActive = false;
+
+    public void Reactivate() => IsActive = true;
+}
