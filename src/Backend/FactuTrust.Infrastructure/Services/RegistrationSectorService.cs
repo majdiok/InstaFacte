@@ -156,6 +156,50 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
                 string.Join(",", droppedValues));
         }
 
+        // Phase 2 (plan §WP-B4): auto-pull the transitive closure of any DB-defined module
+        // dependency edges (e.g. Stock → Purchases) so the operator never has to know about
+        // implicit prerequisites. Each auto-added module then flows through the exact same
+        // plan-ceiling intersection below as a user-requested one — a plan that denies the
+        // required module still wins. Honoraires can never be pulled in this way (it is
+        // firm-native and CRUD validation forbids it as a dependency target — WP-B5).
+        var dependencyEdges = _catalogProvider.GetSnapshot().ModuleDependencies;
+        if (dependencyEdges.Count > 0)
+        {
+            var requiredModulesByModuleId = dependencyEdges
+                .ToLookup(edge => edge.ModuleId, edge => edge.RequiredModuleId);
+
+            var autoAddedModules = new List<AppModule>();
+            var pending = new Queue<AppModule>(candidateSet);
+            while (pending.Count > 0)
+            {
+                var current = pending.Dequeue();
+                foreach (var requiredModuleId in requiredModulesByModuleId[(int)current])
+                {
+                    if (!Enum.IsDefined(typeof(AppModule), requiredModuleId))
+                        continue;
+
+                    var requiredModule = (AppModule)requiredModuleId;
+                    if (requiredModule == AppModule.Honoraires)
+                        continue;
+
+                    if (candidateSet.Add(requiredModule))
+                    {
+                        autoAddedModules.Add(requiredModule);
+                        pending.Enqueue(requiredModule);
+                    }
+                }
+            }
+
+            if (autoAddedModules.Count > 0)
+            {
+                _logger.LogInformation(
+                    "RegistrationSectorService.ApplyModuleSelectionAsync: auto-pulled {Count} dependency module id(s) for user {UserId}: {Values}",
+                    autoAddedModules.Count,
+                    userId,
+                    string.Join(",", autoAddedModules.Select(m => (int)m)));
+            }
+        }
+
         // Plan-intersection (review fix — plan §review item 2): the downstream resolution
         // pipeline (EffectivePermissionsCalculator.Compute / EffectivePermissionService) is
         // role- and grant-based only — it never re-checks IPlanResolver, and
