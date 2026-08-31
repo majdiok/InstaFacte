@@ -420,6 +420,8 @@ public static class DependencyInjection
         services.AddScoped<IRegistrationSectorService, RegistrationSectorService>();
         // Phase 2 — backoffice admin CRUD over the sector-rule tables (plan §WP-B5).
         services.AddScoped<ISectorRuleAdminService, FactuTrust.Infrastructure.Services.SectorRules.SectorRuleAdminService>();
+        // Phase 2 — application additive des modèles de données sectoriels aux bases tenant (plan §WP-B6).
+        services.AddScoped<ISectorDataTemplateApplier, FactuTrust.Infrastructure.Services.SectorRules.SectorDataTemplateApplier>();
         services.AddScoped<IPlatformTenantQueryService, PlatformTenantQueryService>();
         services.AddScoped<ISubscriptionAdminService, SubscriptionAdminService>();
         services.AddScoped<IPlatformMfaService, TotpPlatformMfaService>();

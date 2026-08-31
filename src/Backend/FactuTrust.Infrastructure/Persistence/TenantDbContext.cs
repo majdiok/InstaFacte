@@ -216,6 +216,9 @@ public partial class TenantDbContext : DbContext
     public DbSet<FixedAssetEvent> FixedAssetEvents => Set<FixedAssetEvent>();
     public DbSet<FixedAssetSettings> FixedAssetSettings => Set<FixedAssetSettings>();
 
+    // Sector data templates — applied-tracking (plan §WP-B6)
+    public DbSet<AppliedSectorTemplate> AppliedSectorTemplates => Set<AppliedSectorTemplate>();
+
     // AI Assistant
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<ConversationMessage> ConversationMessages => Set<ConversationMessage>();
@@ -473,6 +476,7 @@ public partial class TenantDbContext : DbContext
         ConfigureDepreciationScheduleLine(builder);
         ConfigureFixedAssetEvent(builder);
         ConfigureFixedAssetSettings(builder);
+        ConfigureAppliedSectorTemplate(builder);
         ConfigureLoan(builder);
         ConfigureLoanScheduleLine(builder);
         ConfigureNctNoteOverride(builder);
@@ -4417,6 +4421,22 @@ public partial class TenantDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.FiscalYearStartMonth).HasDefaultValue(FactuTrust.Domain.Entities.FixedAssetSettings.DefaultFiscalYearStartMonth);
             entity.Property(e => e.FiscalYearLabelFormat).HasMaxLength(10).IsRequired().HasDefaultValue(FactuTrust.Domain.Entities.FixedAssetSettings.LabelFormatNn1);
+        });
+    }
+
+    /// <summary>
+    /// Suivi des modèles de données sectoriels déjà appliqués à ce tenant (plan §WP-B6) —
+    /// <see cref="Services.SectorRules.SectorDataTemplateApplier"/> consulte cette table pour ne
+    /// jamais réappliquer le même (code, version). Table purement additive, jamais purgée.
+    /// </summary>
+    private static void ConfigureAppliedSectorTemplate(ModelBuilder builder)
+    {
+        builder.Entity<AppliedSectorTemplate>(entity =>
+        {
+            entity.ToTable("AppliedSectorTemplates");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TemplateCode).HasMaxLength(50).IsRequired();
+            entity.HasIndex(e => new { e.TemplateCode, e.Version }).IsUnique();
         });
     }
 
