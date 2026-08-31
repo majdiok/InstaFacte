@@ -22,17 +22,20 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
 
     private readonly MasterDbContext _db;
     private readonly IPlanResolver _planResolver;
+    private readonly ISectorCatalogProvider _catalogProvider;
     private readonly RegistrationSectorOptions _options;
     private readonly ILogger<RegistrationSectorService> _logger;
 
     public RegistrationSectorService(
         MasterDbContext db,
         IPlanResolver planResolver,
+        ISectorCatalogProvider catalogProvider,
         IOptions<RegistrationSectorOptions> options,
         ILogger<RegistrationSectorService> logger)
     {
         _db = db;
         _planResolver = planResolver;
+        _catalogProvider = catalogProvider;
         _options = options.Value;
         _logger = logger;
     }
@@ -54,19 +57,39 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
                 Error.Validation("CompanySegment", "Type de société requis lorsque le domaine est fourni."));
         }
 
-        if (normalizedSegment is not null && !CompanySegments.IsKnown(normalizedSegment))
+        var snapshot = _catalogProvider.GetSnapshot();
+        var segmentSnapshot = normalizedSegment is null
+            ? null
+            : snapshot.Segments.FirstOrDefault(s => string.Equals(s.Code, normalizedSegment, StringComparison.Ordinal));
+
+        if (normalizedSegment is not null && segmentSnapshot is null)
         {
             return Result.Failure<SectorProfile?>(
                 Error.Validation("CompanySegment", "Type de société invalide."));
         }
 
-        if (normalizedDomain is not null && !BusinessDomains.IsKnown(normalizedDomain))
+        if (normalizedDomain is not null && !snapshot.Domains.Any(d => string.Equals(d.Code, normalizedDomain, StringComparison.Ordinal)))
         {
             return Result.Failure<SectorProfile?>(
                 Error.Validation("BusinessDomain", "Domaine d'activité invalide."));
         }
 
-        var profile = SectorConfigurationCatalog.Resolve(normalizedSegment, normalizedDomain);
+        // Phase 2 (plan §WP-B4, D4): only enforced when the active snapshot comes from the DB
+        // AND the segment has an explicit, non-empty domain link list — an empty list (or the
+        // static snapshot, which always lists every domain) means "no restriction", preserving
+        // Phase 1 behavior and protecting against an admin accidentally bricking registration by
+        // pruning every link.
+        if (normalizedDomain is not null
+            && snapshot.Source == SectorRuleSource.Db
+            && segmentSnapshot is not null
+            && segmentSnapshot.DomainCodes.Count > 0
+            && !segmentSnapshot.DomainCodes.Contains(normalizedDomain, StringComparer.Ordinal))
+        {
+            return Result.Failure<SectorProfile?>(
+                Error.Validation("BusinessDomain", "Domaine d'activité non disponible pour ce type de société."));
+        }
+
+        var profile = snapshot.Resolve(normalizedSegment, normalizedDomain);
         return Result.Success(profile);
     }
 

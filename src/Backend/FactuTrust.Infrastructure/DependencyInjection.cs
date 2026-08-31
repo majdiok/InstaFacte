@@ -410,6 +410,13 @@ public static class DependencyInjection
         services.AddScoped<IEmailMessageQueryService, EmailMessageQueryService>();
         services.AddScoped<SendEmailJob>();
         services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+        // Phase 2 — moteur de règles sectorielles en base (plan §WP-B2). Static provider is a
+        // process-lifetime singleton (zero-alloc snapshot); DB provider is scoped (uses the
+        // per-request MasterDbContext); the composite (registered as ISectorCatalogProvider) picks
+        // between them per the UseDbRules flag and never throws.
+        services.AddSingleton<FactuTrust.Infrastructure.Services.SectorCatalog.StaticSectorCatalogProvider>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.SectorCatalog.DbSectorCatalogProvider>();
+        services.AddScoped<ISectorCatalogProvider, FactuTrust.Infrastructure.Services.SectorCatalog.CompositeSectorCatalogProvider>();
         services.AddScoped<IRegistrationSectorService, RegistrationSectorService>();
         services.AddScoped<IPlatformTenantQueryService, PlatformTenantQueryService>();
         services.AddScoped<ISubscriptionAdminService, SubscriptionAdminService>();

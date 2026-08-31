@@ -9,6 +9,9 @@ public sealed record SectorCatalogDto
     public required IReadOnlyList<SectorSegmentDto> Segments { get; init; }
     public required IReadOnlyList<SectorDomainDto> Domains { get; init; }
     public required IReadOnlyList<SectorModuleDto> Modules { get; init; }
+
+    /// <summary>Phase 2 (plan §WP-B4) — empty with the static provider; populated once dependencies are authored via the admin CRUD.</summary>
+    public IReadOnlyList<SectorModuleDependencyDto> ModuleDependencies { get; init; } = Array.Empty<SectorModuleDependencyDto>();
 }
 
 public sealed record SectorSegmentDto
@@ -21,6 +24,9 @@ public sealed record SectorSegmentDto
     public required IReadOnlyList<int> CoreModuleIds { get; init; }
     public required IReadOnlyList<int> RecommendedModuleIds { get; init; }
     public string? DefaultWarehouseName { get; init; }
+
+    /// <summary>Phase 2 (plan §WP-B4) — domains explicitly available for this segment; the static provider always lists every domain (no restriction).</summary>
+    public IReadOnlyList<string> DomainCodes { get; init; } = Array.Empty<string>();
 }
 
 public sealed record SectorDomainDto
@@ -39,4 +45,11 @@ public sealed record SectorModuleDto
     public required string Code { get; init; }
     public required string LabelFr { get; init; }
     public required bool IsCore { get; init; }
+}
+
+/// <summary>Phase 2 (plan §WP-B4) — a dependency edge: selecting <see cref="ModuleId"/> auto-pulls <see cref="RequiredModuleId"/>.</summary>
+public sealed record SectorModuleDependencyDto
+{
+    public required int ModuleId { get; init; }
+    public required int RequiredModuleId { get; init; }
 }
