@@ -24,6 +24,7 @@ import {
 import { TenantInvoicesTabComponent } from './tenant-invoices-tab.component';
 import { TenantModulesTabComponent } from './tenant-modules-tab.component';
 import { TenantModalSettingsTabComponent } from './tenant-modal-settings-tab.component';
+import { TenantSectorTabComponent } from './tenant-sector-tab.component';
 import { FtSkeletonComponent } from '@core/ui/skeleton/ft-skeleton.component';
 
 @Component({
@@ -43,6 +44,7 @@ import { FtSkeletonComponent } from '@core/ui/skeleton/ft-skeleton.component';
     TenantInvoicesTabComponent,
     TenantModulesTabComponent,
     TenantModalSettingsTabComponent,
+    TenantSectorTabComponent,
     FtSkeletonComponent
   ],
   template: `
@@ -105,6 +107,9 @@ import { FtSkeletonComponent } from '@core/ui/skeleton/ft-skeleton.component';
           @if (canSeeAiConfig()) {
             <p-tab [value]="3"><i class="pi pi-microchip-ai"></i><span>Configuration IA</span></p-tab>
           }
+          @if (canSeeSectorConfig()) {
+            <p-tab [value]="4"><i class="pi pi-sitemap"></i><span>Configuration sectorielle</span></p-tab>
+          }
         </p-tablist>
         <p-tabpanels>
         <p-tabpanel [value]="0">
@@ -129,6 +134,10 @@ import { FtSkeletonComponent } from '@core/ui/skeleton/ft-skeleton.component';
                 <dd [attr.title]="d.website ?? undefined">{{ d.website ?? '—' }}</dd>
                 <dt>Régime fiscal</dt>
                 <dd>{{ d.taxRegimeDisplay }}</dd>
+                @if (d.companySegment || d.businessDomain) {
+                  <dt>Secteur</dt>
+                  <dd>{{ d.companySegment ?? '—' }} @if (d.businessDomain) { / {{ d.businessDomain }} }</dd>
+                }
               </dl>
             </p-card>
 
@@ -199,6 +208,17 @@ import { FtSkeletonComponent } from '@core/ui/skeleton/ft-skeleton.component';
         @if (canSeeAiConfig()) {
           <p-tabpanel [value]="3">
             <app-tenant-modal-settings-tab [tenantId]="d.tenantId" />
+          </p-tabpanel>
+        }
+        @if (canSeeSectorConfig()) {
+          <p-tabpanel [value]="4">
+            <app-tenant-sector-tab
+              [tenantId]="d.tenantId"
+              [companyName]="d.companyName"
+              [companySegment]="d.companySegment ?? null"
+              [businessDomain]="d.businessDomain ?? null"
+              (changed)="load(d.tenantId)"
+            />
           </p-tabpanel>
         }
         </p-tabpanels>
@@ -455,6 +475,8 @@ export class PlatformTenantDetailPageComponent implements OnInit {
   /** Visible si l'admin a la permission de gérer les plans (donc les overrides modules). */
   readonly canSeeModules = computed(() => this.permissions.has(PlatformPermission.PlansManage));
   readonly canSeeAiConfig = computed(() => this.permissions.has(PlatformPermission.AiManage));
+  /** WP-F8 — visible si l'admin peut au moins consulter les règles sectorielles. */
+  readonly canSeeSectorConfig = computed(() => this.permissions.has(PlatformPermission.SectorRulesRead));
   /** Lien direct vers la page Dunning si l'utilisateur a la permission `invoice:issue`. */
   readonly canSeeDunningLink = computed(() => this.permissions.has(PlatformPermission.InvoiceIssue));
 
@@ -544,6 +566,9 @@ export class PlatformTenantDetailPageComponent implements OnInit {
   }
 
   private clampTabIndex(index: number): number {
+    if (index === 4 && !this.canSeeSectorConfig()) {
+      return 0;
+    }
     if (index === 3 && !this.canSeeAiConfig()) {
       return 0;
     }
@@ -557,6 +582,9 @@ export class PlatformTenantDetailPageComponent implements OnInit {
   }
 
   private tabIndexFromQuery(raw: string | null): number {
+    if (raw === 'sector' && this.canSeeSectorConfig()) {
+      return 4;
+    }
     if (raw === 'ai' && this.canSeeAiConfig()) {
       return 3;
     }
@@ -577,6 +605,8 @@ export class PlatformTenantDetailPageComponent implements OnInit {
         return 'modules';
       case 3:
         return 'ai';
+      case 4:
+        return 'sector';
       default:
         return 'overview';
     }
