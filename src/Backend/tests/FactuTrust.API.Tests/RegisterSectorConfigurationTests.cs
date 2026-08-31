@@ -101,10 +101,17 @@ public sealed class RegisterDtoSectorSerializationTests
 /// </summary>
 public sealed class PublicSectorCatalogControllerTests
 {
+    private static PublicSectorCatalogController NewController(bool enabled = true)
+    {
+        return new PublicSectorCatalogController(
+            Options.Create(new RegistrationSectorOptions { Enabled = enabled }),
+            new FactuTrust.Infrastructure.Services.SectorCatalog.StaticSectorCatalogProvider());
+    }
+
     [Fact]
     public void Get_returns_6_segments_and_10_domains_when_enabled()
     {
-        var controller = new PublicSectorCatalogController(Options.Create(new RegistrationSectorOptions { Enabled = true }));
+        var controller = NewController();
 
         var result = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(controller.Get());
         // PublicSectorCatalogController lives in namespace FactuTrust.API.Controllers, where an
@@ -122,9 +129,63 @@ public sealed class PublicSectorCatalogControllerTests
     [Fact]
     public void Get_returns_404_when_flag_disabled()
     {
-        var controller = new PublicSectorCatalogController(Options.Create(new RegistrationSectorOptions { Enabled = false }));
+        var controller = NewController(enabled: false);
 
         Assert.IsType<Microsoft.AspNetCore.Mvc.NotFoundResult>(controller.Get());
+    }
+
+    [Fact]
+    public void Get_includes_domainCodes_and_empty_moduleDependencies_with_static_provider()
+    {
+        var controller = NewController();
+
+        var result = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(controller.Get());
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<SectorCatalogDto>>(result.Value);
+
+        Assert.NotNull(body.Data);
+        Assert.All(body.Data!.Segments, s => Assert.Equal(10, s.DomainCodes.Count));
+        Assert.Empty(body.Data.ModuleDependencies);
+    }
+
+    [Fact]
+    public void Get_response_is_backward_compatible_superset()
+    {
+        // Phase 1 shape: no DomainCodes/ModuleDependencies members. Deserializing a Phase 2
+        // response into this narrower record proves the extra members are purely additive.
+        var controller = NewController();
+        var result = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(controller.Get());
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<SectorCatalogDto>>(result.Value);
+
+        var json = JsonSerializer.Serialize(body.Data, ApiJsonOptions);
+        var legacyShape = JsonSerializer.Deserialize<LegacySectorCatalogDto>(json, ApiJsonOptions);
+
+        Assert.NotNull(legacyShape);
+        Assert.Equal(6, legacyShape!.Segments.Count);
+        Assert.Equal(10, legacyShape.Domains.Count);
+    }
+
+    private static readonly JsonSerializerOptions ApiJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    private sealed record LegacySectorCatalogDto
+    {
+        public required IReadOnlyList<LegacySectorSegmentDto> Segments { get; init; }
+        public required IReadOnlyList<object> Domains { get; init; }
+        public required IReadOnlyList<object> Modules { get; init; }
+    }
+
+    private sealed record LegacySectorSegmentDto
+    {
+        public required string Code { get; init; }
+        public required string LabelFr { get; init; }
+        public required string DescriptionFr { get; init; }
+        public required string IconKey { get; init; }
+        public required int SortOrder { get; init; }
+        public required IReadOnlyList<int> CoreModuleIds { get; init; }
+        public required IReadOnlyList<int> RecommendedModuleIds { get; init; }
+        public string? DefaultWarehouseName { get; init; }
     }
 }
 
@@ -285,6 +346,40 @@ public sealed class RegisterSectorConfigurationSqlTests : IClassFixture<Channels
     }
 
     [Fact]
+    public async Task Login_after_sector_registration_returns_companySegment_and_businessDomain_in_userDto()
+    {
+        if (!ShouldRun) return;
+
+        // Phase 2 (§WP-B8): the register response AND a subsequent login must surface the tenant's
+        // persisted sector classification on the UserDto (propagated from the tenant row).
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var unique = Guid.NewGuid().ToString("N")[..12];
+        var dto = BuildDto(
+            unique,
+            segment: CompanySegments.Commerce,
+            domain: BusinessDomains.Autre,
+            enabledModules: new[] { (int)AppModule.Stock });
+
+        var registerResponse = await client.PostAsJsonAsync("/api/auth/register", dto, TenantUsersTestSupport.ApiJsonOptions);
+        var registerBody = await registerResponse.Content.ReadFromJsonAsync<FactuTrust.Application.DTOs.ApiResponse<AuthResponseDto>>(TenantUsersTestSupport.ApiJsonOptions);
+        Assert.Equal(HttpStatusCode.Created, registerResponse.StatusCode);
+        Assert.NotNull(registerBody?.Data);
+        Assert.Equal(CompanySegments.Commerce, registerBody!.Data!.User.CompanySegment);
+        Assert.Equal(BusinessDomains.Autre, registerBody.Data.User.BusinessDomain);
+
+        var loginResponse = await client.PostAsJsonAsync(
+            "/api/auth/login",
+            new LoginDto { Email = dto.Email, Password = dto.Password },
+            TenantUsersTestSupport.ApiJsonOptions);
+        var loginBody = await loginResponse.Content.ReadFromJsonAsync<FactuTrust.Application.DTOs.ApiResponse<AuthResponseDto>>(TenantUsersTestSupport.ApiJsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+        Assert.NotNull(loginBody?.Data);
+        Assert.Equal(CompanySegments.Commerce, loginBody!.Data!.User.CompanySegment);
+        Assert.Equal(BusinessDomains.Autre, loginBody.Data.User.BusinessDomain);
+    }
+
+    [Fact]
     public async Task Register_with_flag_disabled_ignores_sector_fields_and_persists_null_classification()
     {
         if (!ShouldRun) return;
@@ -427,6 +522,11 @@ public sealed class RegisterSectorConfigurationSqlTests : IClassFixture<Channels
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.NotNull(body?.Data);
+
+        // Firm tenants are firm-native (Honoraires) and never get a sector classification — the
+        // propagated UserDto fields must be null (§WP-B8 regression guard).
+        Assert.Null(body!.Data!.User.CompanySegment);
+        Assert.Null(body.Data.User.BusinessDomain);
 
         var (segment, domain) = await GetTenantSectorClassificationAsync(_factory, body!.Data!.User.TenantId);
         Assert.Null(segment);

@@ -21,6 +21,7 @@ export const FR_LABELS = {
   'nav.migrations': 'Migrations',
   'nav.storefronts': 'Vitrines 3D',
   'nav.plans': 'Plans & abonnements',
+  'nav.sectorRules': 'Règles sectorielles',
   'nav.coupons': 'Coupons',
   'nav.invoices': 'Factures plateforme',
   'nav.payments': 'Paiements',

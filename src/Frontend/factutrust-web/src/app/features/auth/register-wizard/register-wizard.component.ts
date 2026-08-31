@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -92,9 +92,29 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   currentStep = signal(0);
   /** Once the user manually toggles a module, recommendation auto-recompute stops overwriting their choices. */
   modulesTouched = signal(false);
+  /** True right after a segment change auto-cleared an invalid `businessDomain` (plan WP-F2). */
+  domainClearedNotice = signal(false);
+  /** Module ids auto-enabled as hard dependencies by the last toggle (plan WP-F3). Cleared on the next toggle/reset. */
+  lastAutoEnabled = signal<AppModule[]>([]);
+  private autoEnabledHintTimer: ReturnType<typeof setTimeout> | null = null;
 
   private loadingMessageTimer: ReturnType<typeof setInterval> | null = null;
   private loadingStartedAt = 0;
+
+  /**
+   * Late-arriving remote catalog (plan WP-F1): if the fetch resolves to `'remote'`
+   * after the user already picked a segment/domain but hasn't manually touched a
+   * module toggle, recompute the recommendation once so Step 3 reflects real rules.
+   * Fires at most once (loadState only transitions idle → loading → remote|fallback).
+   * Note: `registrationWizardV2: false` serves the legacy 3-step form
+   * (`features/auth/register/`), which never injects `RegistrationCatalogService` —
+   * zero catalog HTTP traffic on that path.
+   */
+  private readonly reactToRemoteCatalog = effect(() => {
+    if (this.catalog.loadState() === 'remote' && !this.modulesTouched()) {
+      this.onProfileChanged();
+    }
+  });
 
   readonly stepsMeta: WizardStepMeta[] = [
     {
@@ -217,12 +237,41 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       this.form.get('confirmPassword')?.updateValueAndValidity();
     });
 
-    this.form.get('companySegment')?.valueChanges.subscribe(() => this.onProfileChanged());
-    this.form.get('businessDomain')?.valueChanges.subscribe(() => this.onProfileChanged());
+    this.form.get('companySegment')?.valueChanges.subscribe((newSegment: string) => {
+      const domainControl = this.form.get('businessDomain');
+      const currentDomain = domainControl?.value;
+      const allowedDomains = this.catalog.domainsForSegment(newSegment);
+      const stillAllowed = !currentDomain || allowedDomains.some(d => d.code === currentDomain);
+
+      if (!stillAllowed) {
+        // { emitEvent: false } avoids a second businessDomain valueChanges → onProfileChanged()
+        // round-trip; onProfileChanged() is called once explicitly below.
+        domainControl?.setValue('', { emitEvent: false });
+        domainControl?.markAsUntouched();
+        domainControl?.updateValueAndValidity({ emitEvent: false });
+        this.domainClearedNotice.set(true);
+      } else {
+        this.domainClearedNotice.set(false);
+      }
+
+      this.onProfileChanged();
+    });
+    this.form.get('businessDomain')?.valueChanges.subscribe(() => {
+      this.domainClearedNotice.set(false);
+      this.onProfileChanged();
+    });
+
+    // Fetch the live sector catalog once; no-op if the frontend kill-switch is off or
+    // a fetch already ran this session (see RegistrationCatalogService.load()).
+    this.catalog.load();
   }
 
   ngOnDestroy(): void {
     this.clearLoadingMessageTimer();
+    if (this.autoEnabledHintTimer) {
+      clearTimeout(this.autoEnabledHintTimer);
+      this.autoEnabledHintTimer = null;
+    }
   }
 
   /** Recomputes recommended modules on segment/domain change, unless the user already customized their selection. */
@@ -236,12 +285,39 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
     this.modulesTouched.set(true);
     const control = this.form.get('enabledModules');
     const current: AppModule[] = control?.value ?? [];
-    const next = current.includes(moduleId) ? current.filter(m => m !== moduleId) : [...current, moduleId];
+    const isEnabling = !current.includes(moduleId);
+
+    if (!isEnabling) {
+      // Turning a module off is a no-op while another enabled module still requires it (plan WP-F3).
+      if (this.catalog.dependentsOf(moduleId, current).length > 0) {
+        return;
+      }
+      control?.setValue(current.filter(m => m !== moduleId));
+      this.setAutoEnabledHint([]);
+      return;
+    }
+
+    const required = this.catalog.requiredBy(moduleId).filter(id => !current.includes(id));
+    const next = [...current, moduleId, ...required];
     control?.setValue(next);
+    this.setAutoEnabledHint(required);
+  }
+
+  /** Shows the "activé automatiquement" hint on newly-auto-enabled dependencies for a few seconds. */
+  private setAutoEnabledHint(ids: AppModule[]): void {
+    if (this.autoEnabledHintTimer) {
+      clearTimeout(this.autoEnabledHintTimer);
+      this.autoEnabledHintTimer = null;
+    }
+    this.lastAutoEnabled.set(ids);
+    if (ids.length > 0) {
+      this.autoEnabledHintTimer = setTimeout(() => this.lastAutoEnabled.set([]), 6000);
+    }
   }
 
   resetModulesToRecommendations(): void {
     this.modulesTouched.set(false);
+    this.setAutoEnabledHint([]);
     const recommended = this.catalog.recommendedModules(this.selectedSegment(), this.selectedDomain());
     this.form.get('enabledModules')?.setValue(recommended);
   }

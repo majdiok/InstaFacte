@@ -1,7 +1,11 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { StepConfigurationComponent } from './step-configuration.component';
 import { AppModule } from '@core/models/app-module';
+import { environment } from '@environments/environment';
+import { SectorCatalogDto, ApiResponse } from '../../registration-catalog';
 
 describe('StepConfigurationComponent', () => {
   let component: StepConfigurationComponent;
@@ -10,7 +14,8 @@ describe('StepConfigurationComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [StepConfigurationComponent, ReactiveFormsModule]
+      imports: [StepConfigurationComponent, ReactiveFormsModule],
+      providers: [provideHttpClient(), provideHttpClientTesting()]
     }).compileComponents();
 
     fb = TestBed.inject(FormBuilder);
@@ -92,5 +97,79 @@ describe('StepConfigurationComponent', () => {
     const button: HTMLButtonElement = fixture.nativeElement.querySelector('.btn-reset');
     button.click();
     expect(emitted).toBeTrue();
+  });
+
+  describe('module dependency locking (plan WP-F3)', () => {
+    const CATALOG_URL = `${environment.apiUrl}/public/sector-catalog`;
+
+    function fakeCatalog(): SectorCatalogDto {
+      return {
+        segments: [
+          {
+            code: 'commerce',
+            labelFr: 'Commerce',
+            descriptionFr: 'Négoce et distribution.',
+            iconKey: 'shopping-cart',
+            sortOrder: 0,
+            coreModuleIds: [],
+            recommendedModuleIds: [AppModule.Forecasting, AppModule.Stock],
+            domainCodes: []
+          }
+        ],
+        domains: [],
+        modules: [
+          { id: AppModule.Stock, code: 'stock', labelFr: 'Stock', isCore: false },
+          { id: AppModule.Forecasting, code: 'forecasting', labelFr: 'Prévisions IA', isCore: false }
+        ],
+        moduleDependencies: [
+          { moduleId: AppModule.Forecasting, requiredModuleId: AppModule.Stock }
+        ]
+      };
+    }
+
+    function loadRemoteCatalog(): void {
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(CATALOG_URL).flush({ success: true, data: fakeCatalog() } as ApiResponse<SectorCatalogDto>);
+      fixture.detectChanges();
+    }
+
+    it('isLockedByDependency is true for a module required by another currently-enabled module', () => {
+      loadRemoteCatalog();
+      component.form.get('enabledModules')?.setValue([AppModule.Forecasting, AppModule.Stock]);
+
+      expect(component.isLockedByDependency(AppModule.Stock)).toBeTrue();
+      expect(component.isLockedByDependency(AppModule.Forecasting)).toBeFalse();
+    });
+
+    it('dependencyLockLabel names the enabled module(s) that require it', () => {
+      loadRemoteCatalog();
+      component.form.get('enabledModules')?.setValue([AppModule.Forecasting, AppModule.Stock]);
+
+      expect(component.dependencyLockLabel(AppModule.Stock)).toBe('Requis par Prévisions IA');
+    });
+
+    it('renders a disabled, tooltip-bearing switch for a locked module', () => {
+      loadRemoteCatalog();
+      component.form.get('enabledModules')?.setValue([AppModule.Forecasting, AppModule.Stock]);
+      fixture.detectChanges();
+
+      const lockedCard: HTMLElement = fixture.nativeElement.querySelector('.mod-card.locked-dep');
+      expect(lockedCard).toBeTruthy();
+      expect(lockedCard.querySelector('.mod-badge.dep')?.textContent).toContain('Requis par');
+    });
+
+    it('wasAutoEnabled/autoEnabledHintLabel surface the dependency hint for a just-auto-enabled module', () => {
+      loadRemoteCatalog();
+      component.autoEnabledIds = [AppModule.Stock];
+      component.form.get('enabledModules')?.setValue([AppModule.Forecasting, AppModule.Stock]);
+      fixture.detectChanges();
+
+      expect(component.wasAutoEnabled(AppModule.Stock)).toBeTrue();
+      expect(component.autoEnabledHintLabel(AppModule.Stock)).toContain('Activé automatiquement');
+
+      const hint: HTMLElement = fixture.nativeElement.querySelector('.dep-hint');
+      expect(hint).toBeTruthy();
+    });
   });
 });

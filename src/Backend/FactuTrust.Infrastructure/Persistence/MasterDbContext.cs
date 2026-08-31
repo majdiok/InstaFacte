@@ -126,6 +126,17 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     public DbSet<ChannelExternalRoute> ChannelExternalRoutes => Set<ChannelExternalRoute>();
     public DbSet<ChannelLinkCodePointer> ChannelLinkCodePointers => Set<ChannelLinkCodePointer>();
 
+    // Phase 2 — moteur de règles sectorielles en base (plan §WP-B1)
+    public DbSet<Domain.Entities.SectorRules.SectorSegment> SectorSegments => Set<Domain.Entities.SectorRules.SectorSegment>();
+    public DbSet<Domain.Entities.SectorRules.SectorDomain> SectorDomains => Set<Domain.Entities.SectorRules.SectorDomain>();
+    public DbSet<Domain.Entities.SectorRules.SectorSegmentDomain> SectorSegmentDomains => Set<Domain.Entities.SectorRules.SectorSegmentDomain>();
+    public DbSet<Domain.Entities.SectorRules.SectorModuleRule> SectorModuleRules => Set<Domain.Entities.SectorRules.SectorModuleRule>();
+    public DbSet<Domain.Entities.SectorRules.SectorModuleDependency> SectorModuleDependencies => Set<Domain.Entities.SectorRules.SectorModuleDependency>();
+    public DbSet<Domain.Entities.SectorRules.SectorDefaultSetting> SectorDefaultSettings => Set<Domain.Entities.SectorRules.SectorDefaultSetting>();
+    public DbSet<Domain.Entities.SectorRules.SectorDataTemplate> SectorDataTemplates => Set<Domain.Entities.SectorRules.SectorDataTemplate>();
+    public DbSet<Domain.Entities.SectorRules.SectorDataTemplateItem> SectorDataTemplateItems => Set<Domain.Entities.SectorRules.SectorDataTemplateItem>();
+    public DbSet<Domain.Entities.SectorRules.SectorRuleSetStamp> SectorRuleSetStamps => Set<Domain.Entities.SectorRules.SectorRuleSetStamp>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -1330,6 +1341,108 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(e => e.ActorDisplayName).HasMaxLength(Domain.Entities.Exchange.ExchangeAuditEvent.ActorDisplayNameMaxLength).IsRequired();
             entity.Property(e => e.PayloadJson).HasMaxLength(Domain.Entities.Exchange.ExchangeAuditEvent.PayloadMaxLength);
             entity.Property(e => e.EventType).HasConversion<int>();
+        });
+
+        // Phase 2 — moteur de règles sectorielles en base (plan §WP-B1). Foreign keys between
+        // these tables are enforced at the SQL level by the hand-written migration only (no EF
+        // navigation properties, same convention as ChannelExternalRoute's TenantId/UserId) so the
+        // model stays simple to hand-edit alongside the migration/snapshot.
+        builder.Entity<Domain.Entities.SectorRules.SectorSegment>(entity =>
+        {
+            entity.ToTable("SectorSegments");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Code).IsUnique();
+            entity.Property(e => e.Code).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.LabelFr).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.DescriptionFr).HasMaxLength(300).IsRequired();
+            entity.Property(e => e.IconKey).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.DefaultWarehouseName).HasMaxLength(100);
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+        });
+
+        builder.Entity<Domain.Entities.SectorRules.SectorDomain>(entity =>
+        {
+            entity.ToTable("SectorDomains");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Code).IsUnique();
+            entity.Property(e => e.Code).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.LabelFr).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+        });
+
+        builder.Entity<Domain.Entities.SectorRules.SectorSegmentDomain>(entity =>
+        {
+            entity.ToTable("SectorSegmentDomains");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.SegmentId, e.DomainId }).IsUnique();
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+        });
+
+        builder.Entity<Domain.Entities.SectorRules.SectorModuleRule>(entity =>
+        {
+            entity.ToTable("SectorModuleRules");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.RuleKind, e.SegmentId, e.DomainId, e.ModuleId }).IsUnique();
+            entity.Property(e => e.RuleKind).HasConversion<int>();
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+        });
+
+        builder.Entity<Domain.Entities.SectorRules.SectorModuleDependency>(entity =>
+        {
+            entity.ToTable("SectorModuleDependencies");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.ModuleId, e.RequiredModuleId }).IsUnique();
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+        });
+
+        builder.Entity<Domain.Entities.SectorRules.SectorDefaultSetting>(entity =>
+        {
+            entity.ToTable("SectorDefaultSettings");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.SegmentCode, e.DomainCode, e.SettingKey }).IsUnique();
+            entity.Property(e => e.SegmentCode).HasMaxLength(50);
+            entity.Property(e => e.DomainCode).HasMaxLength(50);
+            entity.Property(e => e.SettingKey).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ValueType).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+        });
+
+        builder.Entity<Domain.Entities.SectorRules.SectorDataTemplate>(entity =>
+        {
+            entity.ToTable("SectorDataTemplates");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Code).IsUnique();
+            entity.Property(e => e.Code).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.SegmentCode).HasMaxLength(50);
+            entity.Property(e => e.DomainCode).HasMaxLength(50);
+            entity.Property(e => e.LabelFr).HasMaxLength(150).IsRequired();
+            entity.Property(e => e.DescriptionFr).HasMaxLength(300);
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+        });
+
+        builder.Entity<Domain.Entities.SectorRules.SectorDataTemplateItem>(entity =>
+        {
+            entity.ToTable("SectorDataTemplateItems");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.TemplateId);
+            entity.Property(e => e.ItemKind).HasMaxLength(30).IsRequired();
+            entity.Property(e => e.PayloadJson).IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+        });
+
+        builder.Entity<Domain.Entities.SectorRules.SectorRuleSetStamp>(entity =>
+        {
+            entity.ToTable("SectorRuleSetStamps");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
         });
     }
 }

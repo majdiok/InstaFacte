@@ -137,7 +137,43 @@ export const TENANTS_FR = {
     'Le détail vitrine arrive avec le Lot D5 (signalements + historique).',
 
   // ----- Pagination --------------------------------------------------------
-  'pagination.template': '{first}–{last} sur {totalRecords}'
+  'pagination.template': '{first}–{last} sur {totalRecords}',
+
+  // ----- Phase 2 (WP-F8) — Configuration sectorielle -------------------------
+  // ATTENTION : « Secteur » désigne ici le secteur d'activité (commerce, BTP…), à ne jamais
+  // confondre avec le filtre « Segment » de facturation (payant/non payant) déjà existant.
+  'sector.tab.label': 'Configuration sectorielle',
+  'sector.card.title': 'Configuration sectorielle actuelle',
+  'sector.card.subtitle': 'Secteur d’activité et domaine utilisés pour déterminer les modules recommandés et les modèles de données.',
+  'sector.segment': 'Secteur',
+  'sector.domain': 'Domaine',
+  'sector.lastChange': 'Dernière reconfiguration',
+  'sector.lastChange.unknown': 'Inconnue',
+  'sector.action.modify': 'Modifier',
+  'sector.empty.title': 'Aucun profil sectoriel',
+  'sector.empty.desc': 'Cette entreprise n’a pas encore été classifiée (créée avant Phase 2, ou onboarding non finalisé).',
+  'sector.picker.newSegment': 'Nouveau secteur',
+  'sector.picker.newDomain': 'Nouveau domaine',
+  'sector.action.preview': 'Prévisualiser la reconfiguration',
+  'sector.action.apply': 'Appliquer la reconfiguration',
+  'sector.action.cancel': 'Annuler',
+  'sector.preview.title': 'Prévisualisation — {from} → {to}',
+  'sector.preview.computedAt': 'Calculée le {date} · règles version {version}',
+  'sector.diff.modulesEnabled': 'Modules à activer',
+  'sector.diff.modulesDisabled': 'Modules à désactiver',
+  'sector.diff.modulesDisabled.warning':
+    'La désactivation masque le module sans supprimer les données. Il peut être réactivé manuellement à tout moment.',
+  'sector.diff.templates': 'Modèles de données à appliquer',
+  'sector.diff.settings': 'Paramètres',
+  'sector.diff.warnings': 'Avertissements',
+  'sector.diff.none': 'Aucun changement',
+  'sector.audit.note': 'Chaque reconfiguration est journalisée dans l’audit plateforme.',
+  'sector.confirm.checkbox':
+    'J’ai vérifié la prévisualisation ci-dessus et je comprends que les modules désactivés seront masqués (sans perte de données).',
+  'sector.confirm.tenantWarning': 'Cette action modifie la configuration de {tenant}.',
+  'sector.toast.apply.success': 'Reconfiguration sectorielle appliquée',
+  'sector.toast.preview.error': 'Impossible de calculer la prévisualisation',
+  'sector.readonly.hint': 'Vous n’avez pas la permission de modifier la configuration sectorielle.'
 } as const satisfies Record<string, string>;
 
 export type TenantsFrKey = keyof typeof TENANTS_FR;

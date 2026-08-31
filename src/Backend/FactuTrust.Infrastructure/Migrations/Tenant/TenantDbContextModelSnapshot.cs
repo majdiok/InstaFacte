@@ -340,6 +340,43 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.ToTable("AccountingYearLocks", (string)null);
                 });
 
+            modelBuilder.Entity("FactuTrust.Domain.Entities.AppliedSectorTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("AppliedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TemplateCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TemplateCode", "Version")
+                        .IsUnique();
+
+                    b.ToTable("AppliedSectorTemplates", (string)null);
+                });
+
             modelBuilder.Entity("FactuTrust.Domain.Entities.AuditLog", b =>
                 {
                     b.Property<Guid>("Id")

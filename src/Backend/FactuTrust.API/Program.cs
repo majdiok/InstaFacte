@@ -645,6 +645,11 @@ using (var scope = app.Services.CreateScope())
 
             await DatabaseSeeder.SeedFiscalCalendarRulesAsync(context);
 
+            // Phase 2 — moteur de règles sectorielles en base (plan §WP-B3). No-ops once
+            // SectorSegments has any row, so this only does real work on the very first boot
+            // against a fresh master DB (or right after this migration lands).
+            await FactuTrust.Infrastructure.Persistence.Seeds.SectorRuleSeeder.SeedIfEmptyAsync(context);
+
             logger.LogInformation("Database seeding completed successfully.");
         }
         catch (Exception ex)

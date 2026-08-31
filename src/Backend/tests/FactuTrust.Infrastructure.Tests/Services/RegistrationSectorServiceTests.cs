@@ -33,6 +33,7 @@ public sealed class RegistrationSectorServiceTests
         return new RegistrationSectorService(
             db,
             planResolver,
+            new FactuTrust.Infrastructure.Services.SectorCatalog.StaticSectorCatalogProvider(),
             Options.Create(new RegistrationSectorOptions { Enabled = enabled }),
             NullLogger<RegistrationSectorService>.Instance);
     }

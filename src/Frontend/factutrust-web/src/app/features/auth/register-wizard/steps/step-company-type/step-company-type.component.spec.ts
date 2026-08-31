@@ -1,8 +1,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { environment } from '@environments/environment';
+import { AppModule } from '@core/models/app-module';
 import { StepCompanyTypeComponent } from './step-company-type.component';
-import { SEGMENT_OPTIONS, DOMAIN_OPTIONS } from '../../registration-catalog';
+import { SEGMENT_OPTIONS, DOMAIN_OPTIONS, SectorCatalogDto, ApiResponse } from '../../registration-catalog';
 
 describe('StepCompanyTypeComponent', () => {
   let component: StepCompanyTypeComponent;
@@ -12,7 +16,7 @@ describe('StepCompanyTypeComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [StepCompanyTypeComponent, ReactiveFormsModule],
-      providers: [FormBuilder, provideNoopAnimations()]
+      providers: [FormBuilder, provideNoopAnimations(), provideHttpClient(), provideHttpClientTesting()]
     }).compileComponents();
 
     fb = TestBed.inject(FormBuilder);
@@ -98,5 +102,89 @@ describe('StepCompanyTypeComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('.field-error')).not.toBeNull();
+  });
+
+  describe('remote catalog filtering (plan WP-F2)', () => {
+    const CATALOG_URL = `${environment.apiUrl}/public/sector-catalog`;
+
+    function fakeCatalog(): SectorCatalogDto {
+      return {
+        segments: [
+          {
+            code: 'commerce',
+            labelFr: 'Commerce',
+            descriptionFr: 'Négoce et distribution.',
+            iconKey: 'shopping-cart',
+            sortOrder: 0,
+            coreModuleIds: [],
+            recommendedModuleIds: [],
+            defaultWarehouseName: 'Magasin principal',
+            domainCodes: ['alimentation-agroalimentaire', 'artisanat']
+          },
+          {
+            code: 'association',
+            labelFr: 'Association',
+            descriptionFr: 'Organismes à but non lucratif.',
+            iconKey: 'heart-handshake',
+            sortOrder: 1,
+            coreModuleIds: [],
+            recommendedModuleIds: [],
+            defaultWarehouseName: null,
+            domainCodes: []
+          }
+        ],
+        domains: [
+          { code: 'alimentation-agroalimentaire', labelFr: 'Alimentation & Agroalimentaire', sortOrder: 0, additionalModuleIds: [] },
+          { code: 'artisanat', labelFr: 'Artisanat', sortOrder: 1, additionalModuleIds: [] },
+          { code: 'autre', labelFr: 'Autre domaine', sortOrder: 2, additionalModuleIds: [] }
+        ],
+        modules: [{ id: AppModule.Stock, code: 'stock', labelFr: 'Stock', isCore: false }],
+        moduleDependencies: []
+      };
+    }
+
+    function loadRemoteCatalog(): void {
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(CATALOG_URL).flush({ success: true, data: fakeCatalog() } as ApiResponse<SectorCatalogDto>);
+      fixture.detectChanges();
+    }
+
+    it('shows the disabled placeholder when no segment is selected yet', () => {
+      loadRemoteCatalog();
+      expect(component.domainsDisabled).toBeTrue();
+      expect(fixture.nativeElement.querySelector('.dom-grid--placeholder')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.dom-grid')).toBeNull();
+    });
+
+    it('filters the domain list to the selected segment, ordered, with "autre" appended', () => {
+      loadRemoteCatalog();
+      component.selectSegment('commerce');
+      fixture.detectChanges();
+
+      expect(component.domainsDisabled).toBeFalse();
+      expect(component.domains.map(d => d.code)).toEqual([
+        'alimentation-agroalimentaire', 'artisanat', 'autre'
+      ]);
+      const items = fixture.nativeElement.querySelectorAll('.dom-item');
+      expect(items.length).toBe(3);
+    });
+
+    it('shows the "no specific domain" hint when a segment has an empty domainCodes list', () => {
+      loadRemoteCatalog();
+      component.selectSegment('association');
+      fixture.detectChanges();
+
+      expect(component.showNoSpecificDomainHint).toBeTrue();
+      expect(component.domains.map(d => d.code)).toEqual(['autre']);
+    });
+
+    it('shows the domain-cleared notice when @Input domainClearedNotice is true', () => {
+      loadRemoteCatalog();
+      component.domainClearedNotice = true;
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.domain-notice')).not.toBeNull();
+    });
   });
 });

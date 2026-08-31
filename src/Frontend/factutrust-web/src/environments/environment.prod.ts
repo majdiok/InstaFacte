@@ -34,7 +34,8 @@ export const environment = {
     invoiceProductSearchV2: true,
     /** Trésorerie prévisionnelle par IA. OFF tant que la migration tenant n'est pas appliquée. */
     treasuryCashForecast: false,
-    registrationWizardV2: true
+    registrationWizardV2: true,
+    sectorCatalogHttp: true
   },
   productOnboardingEnabled: true
 };

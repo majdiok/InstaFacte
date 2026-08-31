@@ -72,6 +72,12 @@ const DOCS_URL = 'https://docs.instafact.tn/admin';
             Plans
           </a>
         }
+        @if (canSeeSectorRules()) {
+          <a routerLink="/sector-rules" routerLinkActive="active">
+            <i class="pi pi-sitemap" aria-hidden="true"></i>
+            {{ t('nav.sectorRules') }}
+          </a>
+        }
         @if (canSeeCoupons()) {
           <a routerLink="/coupons" routerLinkActive="active">
             <i class="pi pi-tag" aria-hidden="true"></i>
@@ -318,6 +324,9 @@ export class PlatformShellComponent implements OnInit {
   readonly canSeeAdmins = computed(() => this.permissions.has(PlatformPermission.AdminsRead));
   readonly canSeeSecurity = computed(() => this.permissions.has(PlatformPermission.SecurityRead));
   readonly canSeePlans = computed(() => this.permissions.has(PlatformPermission.PlansManage));
+  readonly canSeeSectorRules = computed(() =>
+    this.permissions.has(PlatformPermission.SectorRulesRead)
+  );
   readonly canSeeCoupons = computed(() => this.permissions.has(PlatformPermission.CouponsManage));
   readonly canSeeCredits = computed(() => this.permissions.has(PlatformPermission.CreditsManage));
   readonly canSeeInvoices = computed(() => this.permissions.has(PlatformPermission.InvoiceRead));

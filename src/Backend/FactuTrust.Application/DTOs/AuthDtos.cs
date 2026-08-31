@@ -131,6 +131,15 @@ public sealed record UserDto
     public int ProductOnboardingVersion { get; init; }
 
     public ProductOnboardingChecklistDto? ProductOnboardingChecklist { get; init; }
+
+    /// <summary>
+    /// Phase 2 — tenant sector classification propagated from the tenant row (plan §WP-B8, D8).
+    /// Nullable + additive: null for legacy/firm tenants; old frontends ignore the new field.
+    /// </summary>
+    public string? CompanySegment { get; init; }
+
+    /// <summary>Phase 2 — tenant business domain (plan §WP-B8, D8). Nullable + additive.</summary>
+    public string? BusinessDomain { get; init; }
 }
 
 /// <summary>

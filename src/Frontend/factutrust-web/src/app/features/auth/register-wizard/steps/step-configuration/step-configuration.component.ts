@@ -3,13 +3,14 @@ import { CommonModule } from '@angular/common';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { FormsModule } from '@angular/forms';
+import { TooltipModule } from 'primeng/tooltip';
 import { AppModule } from '@core/models/app-module';
 import { ModuleCatalogEntry, RegistrationCatalogService } from '../../registration-catalog';
 
 @Component({
   selector: 'app-step-configuration',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, InputSwitchModule],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, InputSwitchModule, TooltipModule],
   templateUrl: './step-configuration.component.html',
   styleUrl: './step-configuration.component.scss'
 })
@@ -17,6 +18,8 @@ export class StepConfigurationComponent {
   @Input({ required: true }) form!: FormGroup;
   @Input() segment: string | null = '';
   @Input() domain: string | null = '';
+  /** Modules just auto-enabled as a hard dependency of the last toggle (plan WP-F3, wizard's `lastAutoEnabled`). */
+  @Input() autoEnabledIds: AppModule[] = [];
 
   @Output() moduleToggled = new EventEmitter<AppModule>();
   @Output() resetToRecommendations = new EventEmitter<void>();
@@ -51,6 +54,27 @@ export class StepConfigurationComponent {
     return this.enabledModuleIds().includes(id);
   }
 
+  /** A module required (transitively) by another currently-enabled module cannot be turned off (plan WP-F3). */
+  isLockedByDependency(id: AppModule): boolean {
+    return this.catalog.dependentsOf(id, this.enabledModuleIds()).length > 0;
+  }
+
+  dependencyLockLabel(id: AppModule): string {
+    const dependents = this.catalog.dependentsOf(id, this.enabledModuleIds());
+    const labels = dependents.map(d => this.catalog.moduleLabel(d)).join(', ');
+    return `Requis par ${labels}`;
+  }
+
+  wasAutoEnabled(id: AppModule): boolean {
+    return this.autoEnabledIds.includes(id);
+  }
+
+  autoEnabledHintLabel(id: AppModule): string {
+    const dependents = this.catalog.dependentsOf(id, this.enabledModuleIds());
+    const labels = dependents.map(d => this.catalog.moduleLabel(d)).join(', ');
+    return labels ? `Activé automatiquement (requis par ${labels})` : 'Activé automatiquement';
+  }
+
   toggleModule(id: AppModule): void {
     this.moduleToggled.emit(id);
   }
@@ -59,3 +83,4 @@ export class StepConfigurationComponent {
     this.resetToRecommendations.emit();
   }
 }
+

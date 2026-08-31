@@ -34,6 +34,17 @@ export interface User {
   /** AppModule enum values enabled for this user */
   enabledModuleIds?: number[];
   effectivePermissions?: string[];
+  /**
+   * Sector-aware registration profile (Phase 2 sector rules). Absent on sessions
+   * created before this field existed or on legacy/non-sector-wizard signups —
+   * consumers must treat it as optional and fail closed (hide, don't show).
+   * Intentionally NOT added to the `getStoredUser()` session-purge guard below:
+   * these two fields are onboarding-gating hints only, never a security control,
+   * so an absent/stale value must not force a re-login like a missing
+   * `enabledModuleIds`/`effectivePermissions` does.
+   */
+  companySegment?: string | null;
+  businessDomain?: string | null;
   productOnboardingStatus?: ProductOnboardingStatus;
   productOnboardingVersion?: number;
   productOnboardingChecklist?: ProductOnboardingChecklist;

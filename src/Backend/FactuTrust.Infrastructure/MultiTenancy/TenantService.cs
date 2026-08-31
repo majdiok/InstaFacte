@@ -30,6 +30,7 @@ public sealed class TenantService : ITenantService
     private readonly IMemoryCache _cache;
     private readonly ILogger<TenantService> _logger;
     private readonly TenantDatabaseProvisioner _provisioner;
+    private readonly ISectorDataTemplateApplier? _sectorTemplateApplier;
 
     public TenantService(
         MasterDbContext masterContext,
@@ -37,7 +38,8 @@ public sealed class TenantService : ITenantService
         IConfiguration configuration,
         IMemoryCache cache,
         ILogger<TenantService> logger,
-        TenantDatabaseProvisioner provisioner)
+        TenantDatabaseProvisioner provisioner,
+        ISectorDataTemplateApplier? sectorTemplateApplier = null)
     {
         _masterContext = masterContext;
         _protector = dataProtectionProvider.CreateProtector("TenantConnectionStrings");
@@ -45,6 +47,7 @@ public sealed class TenantService : ITenantService
         _cache = cache;
         _logger = logger;
         _provisioner = provisioner;
+        _sectorTemplateApplier = sectorTemplateApplier;
     }
 
     public async Task<string?> GetConnectionStringAsync(Guid tenantId, CancellationToken cancellationToken = default)
@@ -103,6 +106,10 @@ public sealed class TenantService : ITenantService
         sw.Restart();
         await SeedWithholdingTaxSystemTypesAsync(tenantConnectionString, cancellationToken);
         LogProvisionStep("SeedWithholding", sw.ElapsedMilliseconds, tenantId, databaseName);
+
+        sw.Restart();
+        await ApplySectorDataTemplatesAsync(tenantId, tenantConnectionString, cancellationToken);
+        LogProvisionStep("SectorTemplates", sw.ElapsedMilliseconds, tenantId, databaseName);
 
         var encryptedConnectionString = _protector.Protect(tenantConnectionString);
 
@@ -334,6 +341,45 @@ public sealed class TenantService : ITenantService
         await context.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Created default passenger client '{ClientName}' for new tenant", DefaultPassengerClient.Name);
+    }
+
+    /// <summary>
+    /// Applique les modèles de données sectoriels correspondant à la classification du tenant
+    /// (plan §WP-B6). Additif uniquement, jamais bloquant : un échec est journalisé (sans PII) et
+    /// n'empêche pas la création du tenant — le modèle pourra être réappliqué plus tard (WP-B7).
+    /// Aucun effet quand <see cref="_sectorTemplateApplier"/> est absent (DI non configurée, ex.
+    /// tests instanciant <see cref="TenantService"/> directement) ou quand le tenant n'a pas encore
+    /// de classification sectorielle (dossiers comptables : <see cref="CreateAccountingFirmDatabaseAsync"/>
+    /// ne l'appelle pas du tout).
+    /// </summary>
+    private async Task ApplySectorDataTemplatesAsync(Guid tenantId, string connectionString, CancellationToken cancellationToken)
+    {
+        if (_sectorTemplateApplier is null)
+            return;
+
+        try
+        {
+            var tenant = await _masterContext.Tenants
+                .AsNoTracking()
+                .Where(t => t.Id == tenantId)
+                .Select(t => new { t.CompanySegment, t.BusinessDomain })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (tenant is null)
+                return;
+
+            await _sectorTemplateApplier.ApplyAsync(
+                tenantId,
+                connectionString,
+                tenant.CompanySegment,
+                tenant.BusinessDomain,
+                dryRun: false,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Sector template application failed for tenant {TenantId}", tenantId);
+        }
     }
 
     private async Task SeedWithholdingTaxSystemTypesAsync(string connectionString, CancellationToken cancellationToken)

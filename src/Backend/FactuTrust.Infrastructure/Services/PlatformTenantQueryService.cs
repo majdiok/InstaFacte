@@ -133,7 +133,10 @@ public sealed class PlatformTenantQueryService : IPlatformTenantQueryService
                 CreatedAt = r.Tenant.CreatedAt,
                 LastActivityAt = r.Tenant.UpdatedAt ?? r.Tenant.CreatedAt,
                 MrrTnd = PlatformSubscriptionMetricsHelper.ComputeRowMrrTnd(
-                    r.Sub?.Plan, r.Sub?.Status, monthlyPrice, annualPrice)
+                    r.Sub?.Plan, r.Sub?.Status, monthlyPrice, annualPrice),
+                // Phase 2 (§WP-B8) — sector classification propagation
+                CompanySegment = r.Tenant.CompanySegment,
+                BusinessDomain = r.Tenant.BusinessDomain
             };
         }).ToList();
 
@@ -298,7 +301,10 @@ public sealed class PlatformTenantQueryService : IPlatformTenantQueryService
             SubscriptionStatus = subscription?.Status,
             SubscriptionStatusDisplay = subscription?.Status.ToDisplayString(),
             SubscriptionEndDate = subscription?.EndDate,
-            IsPayingSubscriber = PlatformSubscriptionSegmentHelper.IsPayingSubscriber(subscription?.Plan, subscription?.Status)
+            IsPayingSubscriber = PlatformSubscriptionSegmentHelper.IsPayingSubscriber(subscription?.Plan, subscription?.Status),
+            // Phase 2 (§WP-B8) — sector classification propagation
+            CompanySegment = tenant.CompanySegment,
+            BusinessDomain = tenant.BusinessDomain
         };
     }
 

@@ -1,7 +1,8 @@
 import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks } from '@angular/core/testing';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { provideRouter, Router } from '@angular/router';
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { of, throwError, NEVER } from 'rxjs';
 import { RegisterWizardComponent } from './register-wizard.component';
@@ -54,6 +55,8 @@ describe('RegisterWizardComponent', () => {
         FormBuilder,
         provideRouter([]),
         provideNoopAnimations(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: AuthService, useValue: authServiceSpy },
         { provide: WarehouseContextService, useValue: warehouseContextSpy },
         { provide: ErrorHandlerService, useValue: errorHandlerSpy }
@@ -68,6 +71,10 @@ describe('RegisterWizardComponent', () => {
     warehouseContext = TestBed.inject(WarehouseContextService) as jasmine.SpyObj<WarehouseContextService>;
     errorHandler = TestBed.inject(ErrorHandlerService) as jasmine.SpyObj<ErrorHandlerService>;
 
+    // ngOnInit() below fires catalog.load() — the sector-catalog request is registered
+    // with HttpTestingController but intentionally left unflushed in tests that don't
+    // exercise it: loadState stays 'loading' and the service keeps serving the static
+    // fallback (remoteCatalog stays null), matching pre-Phase-2 behavior exactly.
     fixture.detectChanges();
   });
 
@@ -241,6 +248,187 @@ describe('RegisterWizardComponent', () => {
       expect(component.form.get('enabledModules')?.value).toEqual(
         component.catalog.recommendedModules('commerce', 'artisanat')
       );
+    });
+  });
+
+  describe('module dependency handling (plan WP-F3)', () => {
+    function loadDependencyCatalog(): void {
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(`${component.environment.apiUrl}/public/sector-catalog`).flush({
+        success: true,
+        data: {
+          segments: [
+            { code: 'commerce', labelFr: 'Commerce', descriptionFr: '', iconKey: 'x', sortOrder: 0, coreModuleIds: [], recommendedModuleIds: [], domainCodes: [] }
+          ],
+          domains: [],
+          modules: [
+            { id: AppModule.Stock, code: 'stock', labelFr: 'Stock', isCore: false },
+            { id: AppModule.Forecasting, code: 'forecasting', labelFr: 'Prévisions IA', isCore: false }
+          ],
+          moduleDependencies: [
+            { moduleId: AppModule.Forecasting, requiredModuleId: AppModule.Stock }
+          ]
+        }
+      });
+    }
+
+    it('auto-enables a hard dependency when enabling a module that requires it, and records it in lastAutoEnabled', () => {
+      loadDependencyCatalog();
+      expect(component.form.get('enabledModules')?.value ?? []).not.toContain(AppModule.Stock);
+
+      component.onModuleToggled(AppModule.Forecasting);
+
+      const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
+      expect(enabled).toContain(AppModule.Forecasting);
+      expect(enabled).toContain(AppModule.Stock);
+      expect(component.lastAutoEnabled()).toEqual([AppModule.Stock]);
+    });
+
+    it('does not re-add a required module that is already enabled, and reports no auto-enabled ids', () => {
+      loadDependencyCatalog();
+      component.form.get('enabledModules')?.setValue([AppModule.Stock]);
+
+      component.onModuleToggled(AppModule.Forecasting);
+
+      const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
+      expect(enabled.filter(id => id === AppModule.Stock).length).toBe(1);
+      expect(component.lastAutoEnabled()).toEqual([]);
+    });
+
+    it('refuses to disable a module while another enabled module still requires it', () => {
+      loadDependencyCatalog();
+      component.form.get('enabledModules')?.setValue([AppModule.Forecasting, AppModule.Stock]);
+
+      component.onModuleToggled(AppModule.Stock);
+
+      const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
+      expect(enabled).toContain(AppModule.Stock);
+    });
+
+    it('allows disabling a module once its dependent has also been disabled', () => {
+      loadDependencyCatalog();
+      component.form.get('enabledModules')?.setValue([AppModule.Forecasting, AppModule.Stock]);
+
+      component.onModuleToggled(AppModule.Forecasting);
+      component.onModuleToggled(AppModule.Stock);
+
+      const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
+      expect(enabled).not.toContain(AppModule.Stock);
+      expect(enabled).not.toContain(AppModule.Forecasting);
+    });
+
+    it('resetModulesToRecommendations clears the auto-enabled hint', () => {
+      loadDependencyCatalog();
+      component.onModuleToggled(AppModule.Forecasting);
+      expect(component.lastAutoEnabled().length).toBeGreaterThan(0);
+
+      component.resetModulesToRecommendations();
+      expect(component.lastAutoEnabled()).toEqual([]);
+    });
+  });
+
+  describe('domain clearing on segment change (plan WP-F2)', () => {
+    it('clears businessDomain and sets domainClearedNotice when the new segment (remote catalog) no longer offers it', () => {
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(`${component.environment.apiUrl}/public/sector-catalog`).flush({
+        success: true,
+        data: {
+          segments: [
+            { code: 'commerce', labelFr: 'Commerce', descriptionFr: '', iconKey: 'x', sortOrder: 0, coreModuleIds: [], recommendedModuleIds: [], domainCodes: ['artisanat'] },
+            { code: 'association', labelFr: 'Association', descriptionFr: '', iconKey: 'x', sortOrder: 1, coreModuleIds: [], recommendedModuleIds: [], domainCodes: ['autre'] }
+          ],
+          domains: [
+            { code: 'artisanat', labelFr: 'Artisanat', sortOrder: 0, additionalModuleIds: [] },
+            { code: 'autre', labelFr: 'Autre domaine', sortOrder: 1, additionalModuleIds: [] }
+          ],
+          modules: [],
+          moduleDependencies: []
+        }
+      });
+
+      component.form.patchValue({ companySegment: 'commerce', businessDomain: 'artisanat' });
+      expect(component.form.get('businessDomain')?.value).toBe('artisanat');
+      expect(component.domainClearedNotice()).toBeFalse();
+
+      component.form.get('companySegment')?.setValue('association');
+      expect(component.form.get('businessDomain')?.value).toBe('');
+      expect(component.form.get('businessDomain')?.touched).toBeFalse();
+      expect(component.domainClearedNotice()).toBeTrue();
+    });
+
+    it('does not clear businessDomain when it stays valid for the new segment', () => {
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(`${component.environment.apiUrl}/public/sector-catalog`).flush({
+        success: true,
+        data: {
+          segments: [
+            { code: 'commerce', labelFr: 'Commerce', descriptionFr: '', iconKey: 'x', sortOrder: 0, coreModuleIds: [], recommendedModuleIds: [], domainCodes: ['autre'] },
+            { code: 'services', labelFr: 'Services', descriptionFr: '', iconKey: 'x', sortOrder: 1, coreModuleIds: [], recommendedModuleIds: [], domainCodes: ['autre'] }
+          ],
+          domains: [
+            { code: 'autre', labelFr: 'Autre domaine', sortOrder: 0, additionalModuleIds: [] }
+          ],
+          modules: [],
+          moduleDependencies: []
+        }
+      });
+
+      component.form.patchValue({ companySegment: 'commerce', businessDomain: 'autre' });
+      component.form.get('companySegment')?.setValue('services');
+
+      expect(component.form.get('businessDomain')?.value).toBe('autre');
+      expect(component.domainClearedNotice()).toBeFalse();
+    });
+  });
+
+  describe('late remote catalog re-run (plan WP-F1)', () => {
+    it('recomputes enabledModules once loadState becomes "remote", when the user has not touched module toggles', () => {
+      component.form.patchValue({ companySegment: 'commerce', businessDomain: 'artisanat' });
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(`${component.environment.apiUrl}/public/sector-catalog`).flush({
+        success: true,
+        data: {
+          segments: [
+            { code: 'commerce', labelFr: 'Commerce', descriptionFr: '', iconKey: 'x', sortOrder: 0, coreModuleIds: [], recommendedModuleIds: [AppModule.Stock], domainCodes: [] }
+          ],
+          domains: [],
+          modules: [{ id: AppModule.Stock, code: 'stock', labelFr: 'Stock', isCore: false }],
+          moduleDependencies: []
+        }
+      });
+      fixture.detectChanges();
+
+      expect(component.form.get('enabledModules')?.value).toEqual(
+        component.catalog.recommendedModules('commerce', 'artisanat')
+      );
+      expect(component.form.get('enabledModules')?.value).toContain(AppModule.Stock);
+    });
+
+    it('does not overwrite a manually-touched module selection when the remote catalog arrives late', () => {
+      component.form.patchValue({ companySegment: 'commerce', businessDomain: 'artisanat' });
+      component.onModuleToggled(AppModule.CRM);
+      const before = component.form.get('enabledModules')?.value;
+
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(`${component.environment.apiUrl}/public/sector-catalog`).flush({
+        success: true,
+        data: {
+          segments: [
+            { code: 'commerce', labelFr: 'Commerce', descriptionFr: '', iconKey: 'x', sortOrder: 0, coreModuleIds: [], recommendedModuleIds: [AppModule.Stock], domainCodes: [] }
+          ],
+          domains: [],
+          modules: [{ id: AppModule.Stock, code: 'stock', labelFr: 'Stock', isCore: false }],
+          moduleDependencies: []
+        }
+      });
+      fixture.detectChanges();
+
+      expect(component.form.get('enabledModules')?.value).toEqual(before);
     });
   });
 

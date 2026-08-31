@@ -410,7 +410,20 @@ public static class DependencyInjection
         services.AddScoped<IEmailMessageQueryService, EmailMessageQueryService>();
         services.AddScoped<SendEmailJob>();
         services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+        // Phase 2 — moteur de règles sectorielles en base (plan §WP-B2). Static provider is a
+        // process-lifetime singleton (zero-alloc snapshot); DB provider is scoped (uses the
+        // per-request MasterDbContext); the composite (registered as ISectorCatalogProvider) picks
+        // between them per the UseDbRules flag and never throws.
+        services.AddSingleton<FactuTrust.Infrastructure.Services.SectorCatalog.StaticSectorCatalogProvider>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.SectorCatalog.DbSectorCatalogProvider>();
+        services.AddScoped<ISectorCatalogProvider, FactuTrust.Infrastructure.Services.SectorCatalog.CompositeSectorCatalogProvider>();
         services.AddScoped<IRegistrationSectorService, RegistrationSectorService>();
+        // Phase 2 — backoffice admin CRUD over the sector-rule tables (plan §WP-B5).
+        services.AddScoped<ISectorRuleAdminService, FactuTrust.Infrastructure.Services.SectorRules.SectorRuleAdminService>();
+        // Phase 2 — application additive des modèles de données sectoriels aux bases tenant (plan §WP-B6).
+        services.AddScoped<ISectorDataTemplateApplier, FactuTrust.Infrastructure.Services.SectorRules.SectorDataTemplateApplier>();
+        // Phase 2 — re-configuration sectorielle d'un tenant existant depuis le backoffice (plan §WP-B7).
+        services.AddScoped<ITenantSectorReconfigurationService, FactuTrust.Infrastructure.Services.SectorRules.TenantSectorReconfigurationService>();
         services.AddScoped<IPlatformTenantQueryService, PlatformTenantQueryService>();
         services.AddScoped<ISubscriptionAdminService, SubscriptionAdminService>();
         services.AddScoped<IPlatformMfaService, TotpPlatformMfaService>();

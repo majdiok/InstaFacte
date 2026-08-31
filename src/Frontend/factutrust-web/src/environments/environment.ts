@@ -65,7 +65,9 @@ export const environment = {
      */
     treasuryCashForecast: true,
     /** Sector-aware 4-step registration wizard at /auth/register. Set false to serve the legacy 3-step form. */
-    registrationWizardV2: true
+    registrationWizardV2: true,
+    /** Phase 2 sector rules: fetch GET /api/public/sector-catalog once per session. 404/error/off ⇒ silent static fallback. */
+    sectorCatalogHttp: true
   },
   /** First-login product tour + checklist. Mirror of ProductOnboarding:Enabled. */
   productOnboardingEnabled: true
