@@ -3,6 +3,8 @@ using FactuTrust.API.Authorization;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Auth;
+using FactuTrust.Infrastructure.Services.SectorCatalog;
+using FactuTrust.Infrastructure.Services.SectorRules;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -26,11 +28,19 @@ namespace FactuTrust.API.Controllers;
 public sealed class PlatformSectorRulesController : ControllerBase
 {
     private readonly ISectorRuleAdminService _service;
+    private readonly StaticSectorCatalogProvider _staticCatalogProvider;
+    private readonly DbSectorCatalogProvider _dbCatalogProvider;
     private readonly ILogger<PlatformSectorRulesController> _logger;
 
-    public PlatformSectorRulesController(ISectorRuleAdminService service, ILogger<PlatformSectorRulesController> logger)
+    public PlatformSectorRulesController(
+        ISectorRuleAdminService service,
+        StaticSectorCatalogProvider staticCatalogProvider,
+        DbSectorCatalogProvider dbCatalogProvider,
+        ILogger<PlatformSectorRulesController> logger)
     {
         _service = service;
+        _staticCatalogProvider = staticCatalogProvider;
+        _dbCatalogProvider = dbCatalogProvider;
         _logger = logger;
     }
 
@@ -70,6 +80,45 @@ public sealed class PlatformSectorRulesController : ControllerBase
             Forced = result.Forced
         };
         return Ok(ApiResponse<SectorRuleSeedResultDto>.Ok(dto, "Règles sectorielles synchronisées depuis le catalogue."));
+    }
+
+    // ---------- Parity (plan §WP-B9) ----------
+
+    /// <summary>
+    /// Machine-checkable proof that the DB rule set reproduces the static catalog before the
+    /// <c>UseDbRules</c> flag flips. Instantiates <see cref="DbSectorCatalogProvider"/> DIRECTLY
+    /// (not the composite) so it inspects the DB even while <c>UseDbRules=false</c>. Compares every
+    /// observable surface — segment/domain sets, labels, sort orders, warehouse names, the segment↔
+    /// domain links, and all 66 resolved <c>SectorProfile</c>s — and returns <c>IsMatch</c> + a flat
+    /// <c>Differences</c> list.
+    /// </summary>
+    [HttpGet("parity")]
+    [Authorize(Policy = "perm:" + PlatformPermissions.SectorRulesRead)]
+    [ProducesResponseType(typeof(ApiResponse<SectorRuleParityDto>), StatusCodes.Status200OK)]
+    public IActionResult GetParity()
+    {
+        var staticSnapshot = _staticCatalogProvider.GetSnapshot();
+        var dbSnapshot = _dbCatalogProvider.GetSnapshot();
+
+        var parity = SectorRuleParityChecker.Check(staticSnapshot, dbSnapshot);
+
+        var dto = new SectorRuleParityDto
+        {
+            IsMatch = parity.IsMatch,
+            DbVersion = dbSnapshot.Version,
+            Differences = parity.Differences
+        };
+
+        var message = parity.IsMatch
+            ? "Règles BDD conformes au catalogue statique."
+            : "Écarts détectés entre le catalogue statique et les règles BDD.";
+
+        if (!parity.IsMatch)
+            _logger.LogWarning(
+                "Sector rules parity mismatch: {Count} difference(s) detected against the static catalog (dbVersion={DbVersion}).",
+                parity.Differences.Count, dbSnapshot.Version);
+
+        return Ok(ApiResponse<SectorRuleParityDto>.Ok(dto, message));
     }
 
     // ---------- Segments ----------

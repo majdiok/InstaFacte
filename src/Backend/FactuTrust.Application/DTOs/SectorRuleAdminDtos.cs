@@ -218,3 +218,21 @@ public sealed record SectorRuleSeedResultDto
     public required long NewVersion { get; init; }
     public required bool Forced { get; init; }
 }
+
+
+/// <summary>
+/// Phase 2 — parity check result (plan §WP-B9): machine-checkable proof that the DB rule set
+/// reproduces the static catalog before the <c>UseDbRules</c> flag flips. Surfaces whether the two
+/// rule sets match and a flat list of human-readable difference strings.
+/// </summary>
+public sealed record SectorRuleParityDto
+{
+    /// <summary>True when no observable divergence was detected between the static and DB snapshots.</summary>
+    public required bool IsMatch { get; init; }
+
+    /// <summary>Version stamp of the DB rule set (<c>0</c> when the rule tables are empty/unseeded).</summary>
+    public required long DbVersion { get; init; }
+
+    /// <summary>Flat, human-readable difference strings (empty when <see cref="IsMatch"/> is true).</summary>
+    public required IReadOnlyList<string> Differences { get; init; }
+}
