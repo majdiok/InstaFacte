@@ -1,33 +1,40 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output, computed, inject, signal } from '@angular/core';
+import { forkJoin } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
-import { SelectModule } from 'primeng/select';
 import { MessageService } from 'primeng/api';
 
 import { PlatformSectorRulesService } from '@core/services/platform-sector-rules.service';
 import { PlatformPermissionsService } from '@core/services/platform-permissions.service';
 import { PlatformPermission } from '@core/models/platform.models';
-import type { ModuleDependencyDto, SectorDomainDto, SectorModuleRuleDto, SectorSegmentDto } from '@core/models/sector-rules.models';
+import type {
+  ModuleDependencyDto,
+  SectorModuleRuleDto,
+  SectorDomainDto,
+  SectorSegmentDto
+} from '@core/models/sector-rules.models';
 import { CORE_MODULE_IDS, MODULE_CATALOG, SECTOR_ELIGIBLE_MODULES, moduleLabel } from '@core/models/module-catalog';
 
 import { FtBadgeComponent } from '@core/ui/badge/ft-badge.component';
 
 import { SECTOR_RULES_FR } from './sector-rules.i18n.fr';
 
-type RuleTarget = { kind: 'segment'; code: string; label: string } | { kind: 'domain'; code: string; label: string };
+type RuleTarget = { kind: 'segment'; id: string; code: string; label: string } | { kind: 'domain'; id: string; code: string; label: string };
 
 /**
  * Phase 2 (WP-F7) — Onglet « Règles de modules ».
  *
  * Sélecteur segment/domaine + tableau des règles actuelles + dialogue d'édition avec chips
- * togglables et aperçu en direct (mockup `rules-admin-module-rule-dialog.html`).
+ * togglables et aperçu en direct (mockup `rules-admin-module-rule-dialog.html`). Les règles sont
+ * individually des lignes CRUD backend (`ruleKind` chaîne + `segmentId`/`domainId` GUID) : la
+ * sauvegarde calcule un diff (créations POST + désactivations DELETE) plutôt qu'un envoi groupé.
  */
 @Component({
   selector: 'app-sector-module-rules-tab',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, ButtonModule, DialogModule, SelectModule, FtBadgeComponent],
+  imports: [FormsModule, ButtonModule, DialogModule, FtBadgeComponent],
   template: `
     <section class="rules-section">
       <div class="section-head">
@@ -37,14 +44,14 @@ type RuleTarget = { kind: 'segment'; code: string; label: string } | { kind: 'do
         </div>
       </div>
       <div class="chips-grid">
-        @for (seg of segments; track seg.code) {
+        @for (seg of segments; track seg.id) {
           <div class="target-card">
             <div class="target-head">
-              <strong>{{ seg.label }}</strong>
+              <strong>{{ seg.labelFr }}</strong>
               <code class="cell-mono">{{ seg.code }}</code>
             </div>
             <div class="target-modules">
-              @for (id of segmentModuleIds(seg.code); track id) {
+              @for (id of segmentModuleIds(seg.id); track id) {
                 <ft-badge tone="accent" size="sm">{{ moduleLabel(id) }}</ft-badge>
               } @empty {
                 <span class="muted">{{ t('common.none') }}</span>
@@ -71,14 +78,14 @@ type RuleTarget = { kind: 'segment'; code: string; label: string } | { kind: 'do
         </div>
       </div>
       <div class="chips-grid">
-        @for (dom of domains; track dom.code) {
+        @for (dom of domains; track dom.id) {
           <div class="target-card">
             <div class="target-head">
-              <strong>{{ dom.label }}</strong>
+              <strong>{{ dom.labelFr }}</strong>
               <code class="cell-mono">{{ dom.code }}</code>
             </div>
             <div class="target-modules">
-              @for (id of domainModuleIds(dom.code); track id) {
+              @for (id of domainModuleIds(dom.id); track id) {
                 <ft-badge tone="info" size="sm">{{ moduleLabel(id) }}</ft-badge>
               } @empty {
                 <span class="muted">{{ t('common.none') }}</span>
@@ -244,12 +251,12 @@ export class SectorModuleRulesTabComponent {
   readonly selection = signal<Set<number>>(new Set());
   dialogVisible = false;
 
-  segmentModuleIds(segmentCode: string): number[] {
-    return this.moduleRules.filter(r => r.ruleKind === 0 && r.segmentCode === segmentCode && r.isActive).map(r => r.moduleId);
+  segmentModuleIds(segmentId: string): number[] {
+    return this.moduleRules.filter(r => r.ruleKind === 'SegmentBase' && r.segmentId === segmentId && r.isActive).map(r => r.moduleId);
   }
 
-  domainModuleIds(domainCode: string): number[] {
-    return this.moduleRules.filter(r => r.ruleKind === 1 && r.domainCode === domainCode && r.isActive).map(r => r.moduleId);
+  domainModuleIds(domainId: string): number[] {
+    return this.moduleRules.filter(r => r.ruleKind === 'DomainOverlay' && r.domainId === domainId && r.isActive).map(r => r.moduleId);
   }
 
   dialogTitle(): string {
@@ -259,14 +266,14 @@ export class SectorModuleRulesTabComponent {
   }
 
   openSegmentDialog(seg: SectorSegmentDto): void {
-    this.target.set({ kind: 'segment', code: seg.code, label: seg.label });
-    this.selection.set(new Set(this.segmentModuleIds(seg.code)));
+    this.target.set({ kind: 'segment', id: seg.id, code: seg.code, label: seg.labelFr });
+    this.selection.set(new Set(this.segmentModuleIds(seg.id)));
     this.dialogVisible = true;
   }
 
   openDomainDialog(dom: SectorDomainDto): void {
-    this.target.set({ kind: 'domain', code: dom.code, label: dom.label });
-    this.selection.set(new Set(this.domainModuleIds(dom.code)));
+    this.target.set({ kind: 'domain', id: dom.id, code: dom.code, label: dom.labelFr });
+    this.selection.set(new Set(this.domainModuleIds(dom.id)));
     this.dialogVisible = true;
   }
 
@@ -289,7 +296,7 @@ export class SectorModuleRulesTabComponent {
       next.delete(moduleId);
       // Retire en cascade les modules qui dépendent de celui qu'on vient de décocher.
       for (const dep of this.dependencies) {
-        if (dep.requiresModuleId === moduleId && next.has(dep.moduleId)) {
+        if (dep.requiredModuleId === moduleId && next.has(dep.moduleId)) {
           next.delete(dep.moduleId);
         }
       }
@@ -298,7 +305,7 @@ export class SectorModuleRulesTabComponent {
       // Ajoute automatiquement les prérequis de ce module.
       for (const dep of this.dependencies) {
         if (dep.moduleId === moduleId) {
-          next.add(dep.requiresModuleId);
+          next.add(dep.requiredModuleId);
         }
       }
     }
@@ -307,29 +314,56 @@ export class SectorModuleRulesTabComponent {
 
   dependencyNote(): string | null {
     const sel = this.selection();
-    const relevant = this.dependencies.find(d => sel.has(d.moduleId) || sel.has(d.requiresModuleId));
+    const relevant = this.dependencies.find(d => sel.has(d.moduleId) || sel.has(d.requiredModuleId));
     if (!relevant) return null;
     return SECTOR_RULES_FR['rules.dialog.dependency.note']
       .replace('{module}', moduleLabel(relevant.moduleId))
-      .replace('{requires}', moduleLabel(relevant.requiresModuleId));
+      .replace('{requires}', moduleLabel(relevant.requiredModuleId));
   }
 
   save(): void {
     const tgt = this.target();
     if (!tgt) return;
     this.busy.set(true);
-    const moduleIds = [...this.selection()];
-    const call =
-      tgt.kind === 'segment' ? this.api.saveSegmentRules(tgt.code, moduleIds) : this.api.saveDomainOverlay(tgt.code, moduleIds);
-    call.subscribe({
-      next: res => {
+
+    const isSegment = tgt.kind === 'segment';
+    const currentRules = this.moduleRules.filter(
+      r => r.isActive && (isSegment ? r.ruleKind === 'SegmentBase' && r.segmentId === tgt.id : r.ruleKind === 'DomainOverlay' && r.domainId === tgt.id)
+    );
+    const currentIds = new Set(currentRules.map(r => r.moduleId));
+    const selected = this.selection();
+    const orderedSelected = [...selected];
+
+    const toAdd = orderedSelected.filter(id => !currentIds.has(id));
+    const toRemove = currentRules.filter(r => !selected.has(r.moduleId));
+
+    const adds = toAdd.map(id =>
+      this.api.createModuleRule({
+        ruleKind: isSegment ? 'SegmentBase' : 'DomainOverlay',
+        segmentId: isSegment ? tgt.id : null,
+        domainId: isSegment ? null : tgt.id,
+        moduleId: id,
+        sortOrder: orderedSelected.indexOf(id)
+      })
+    );
+    const removes = toRemove.map(r => this.api.deactivateModuleRule(r.id));
+
+    if (adds.length === 0 && removes.length === 0) {
+      this.busy.set(false);
+      this.dialogVisible = false;
+      return;
+    }
+
+    forkJoin([...adds, ...removes]).subscribe({
+      next: results => {
         this.busy.set(false);
-        if (res.success) {
+        if (results.every(r => r.success)) {
           this.dialogVisible = false;
           this.toast.add({ severity: 'success', summary: SECTOR_RULES_FR['rules.toast.save.success'], detail: tgt.label });
           this.changed.emit();
         } else {
-          this.toastError(res.message);
+          const failed = results.find(r => !r.success);
+          this.toastError(failed?.message);
         }
       },
       error: err => {

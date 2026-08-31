@@ -60,7 +60,7 @@ import { SECTOR_RULES_FR } from './sector-rules.i18n.fr';
       <ng-template pTemplate="body" let-row>
         <tr>
           <td>{{ moduleLabel(row.moduleId) }}</td>
-          <td>{{ moduleLabel(row.requiresModuleId) }}</td>
+          <td>{{ moduleLabel(row.requiredModuleId) }}</td>
           <td class="col-actions">
             <p-button
               icon="pi pi-trash"
@@ -134,7 +134,7 @@ export class SectorModuleDependenciesTabComponent {
   add(): void {
     if (!this.canAdd() || this.newModuleId == null || this.newRequiresModuleId == null) return;
     this.busy.set(true);
-    this.api.createDependency({ moduleId: this.newModuleId, requiresModuleId: this.newRequiresModuleId }).subscribe({
+    this.api.createModuleDependency({ moduleId: this.newModuleId, requiredModuleId: this.newRequiresModuleId }).subscribe({
       next: res => {
         this.busy.set(false);
         if (res.success) {
@@ -164,7 +164,7 @@ export class SectorModuleDependenciesTabComponent {
     if (!this.deleteTarget) return;
     const row = this.deleteTarget;
     this.busy.set(true);
-    this.api.deleteDependency(row.id).subscribe({
+    this.api.deactivateModuleDependency(row.id).subscribe({
       next: res => {
         this.busy.set(false);
         this.deleteVisible = false;

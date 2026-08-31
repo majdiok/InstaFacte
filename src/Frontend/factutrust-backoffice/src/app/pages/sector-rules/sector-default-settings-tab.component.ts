@@ -12,11 +12,12 @@ import { PlatformSectorRulesService } from '@core/services/platform-sector-rules
 import { PlatformPermissionsService } from '@core/services/platform-permissions.service';
 import { PlatformPermission } from '@core/models/platform.models';
 import type {
-  SaveSectorDefaultSettingRequest,
+  CreateSectorDefaultSettingRequest,
   SectorDefaultSettingDto,
   SectorDomainDto,
   SectorSegmentDto,
-  SectorSettingValueType
+  SectorSettingValueType,
+  UpdateSectorDefaultSettingRequest
 } from '@core/models/sector-rules.models';
 
 import { FtEmptyStateComponent } from '@core/ui/empty-state/ft-empty-state.component';
@@ -57,7 +58,7 @@ const VALUE_TYPE_OPTIONS: { label: string; value: SectorSettingValueType }[] = [
           <td>{{ row.domainCode || t('common.none') }}</td>
           <td><code class="cell-mono">{{ row.settingKey }}</code></td>
           <td>{{ row.valueType }}</td>
-          <td>{{ row.value }}</td>
+          <td>{{ row.settingValue }}</td>
           <td class="col-actions">
             <p-button icon="pi pi-pencil" [text]="true" [disabled]="!canManage()" [pTooltip]="t('settings.action.edit')" (onClick)="openEdit(row)" />
           </td>
@@ -72,18 +73,24 @@ const VALUE_TYPE_OPTIONS: { label: string; value: SectorSettingValueType }[] = [
       </ng-template>
     </p-table>
 
-    <p-dialog [header]="t('settings.add.title')" [(visible)]="formVisible" [modal]="true" [draggable]="false" [style]="{ width: 'min(28rem, 94vw)' }">
+    <p-dialog
+      [header]="editing() ? t('settings.form.title.edit') : t('settings.add.title')"
+      [(visible)]="formVisible"
+      [modal]="true"
+      [draggable]="false"
+      [style]="{ width: 'min(28rem, 94vw)' }"
+    >
       <div class="dialog-field">
         <label class="field-label" for="setSegment">{{ t('settings.form.segment') }}</label>
-        <p-select inputId="setSegment" [options]="segmentOptions" [(ngModel)]="form.segmentCode" optionLabel="label" optionValue="value" [showClear]="true" styleClass="w-full" />
+        <p-select inputId="setSegment" [options]="segmentOptions" [(ngModel)]="form.segmentCode" optionLabel="label" optionValue="value" [showClear]="true" [disabled]="!!editing()" styleClass="w-full" />
       </div>
       <div class="dialog-field">
         <label class="field-label" for="setDomain">{{ t('settings.form.domain') }}</label>
-        <p-select inputId="setDomain" [options]="domainOptions" [(ngModel)]="form.domainCode" optionLabel="label" optionValue="value" [showClear]="true" styleClass="w-full" />
+        <p-select inputId="setDomain" [options]="domainOptions" [(ngModel)]="form.domainCode" optionLabel="label" optionValue="value" [showClear]="true" [disabled]="!!editing()" styleClass="w-full" />
       </div>
       <div class="dialog-field">
         <label class="field-label" for="setKey">{{ t('settings.form.key') }}</label>
-        <input id="setKey" pInputText [(ngModel)]="form.settingKey" class="w-full" autocomplete="off" />
+        <input id="setKey" pInputText [(ngModel)]="form.settingKey" [disabled]="!!editing()" class="w-full" autocomplete="off" />
       </div>
       <div class="dialog-field">
         <label class="field-label" for="setType">{{ t('settings.form.type') }}</label>
@@ -91,7 +98,7 @@ const VALUE_TYPE_OPTIONS: { label: string; value: SectorSettingValueType }[] = [
       </div>
       <div class="dialog-field">
         <label class="field-label" for="setValue">{{ t('settings.form.value') }}</label>
-        <input id="setValue" pInputText [(ngModel)]="form.value" class="w-full" autocomplete="off" />
+        <input id="setValue" pInputText [(ngModel)]="form.settingValue" class="w-full" autocomplete="off" />
       </div>
       <ng-template pTemplate="footer">
         <p-button [label]="t('common.cancel')" [text]="true" severity="secondary" (onClick)="formVisible = false" [disabled]="busy()" />
@@ -129,15 +136,16 @@ export class SectorDefaultSettingsTabComponent {
   }
 
   get segmentOptions() {
-    return this.segments.map(s => ({ label: s.label, value: s.code }));
+    return this.segments.map(s => ({ label: s.labelFr, value: s.code }));
   }
 
   get domainOptions() {
-    return this.domains.map(d => ({ label: d.label, value: d.code }));
+    return this.domains.map(d => ({ label: d.labelFr, value: d.code }));
   }
 
   readonly canManage = computed(() => this.permissions.has(PlatformPermission.SectorRulesManage));
   readonly busy = signal(false);
+  readonly editing = signal<SectorDefaultSettingDto | null>(null);
   formVisible = false;
 
   form: {
@@ -145,56 +153,82 @@ export class SectorDefaultSettingsTabComponent {
     domainCode: string | null;
     settingKey: string;
     valueType: SectorSettingValueType;
-    value: string;
+    settingValue: string;
   } = this.blankForm();
 
   private blankForm() {
-    return { segmentCode: null, domainCode: null, settingKey: '', valueType: 'string' as SectorSettingValueType, value: '' };
+    return { segmentCode: null, domainCode: null, settingKey: '', valueType: 'string' as SectorSettingValueType, settingValue: '' };
   }
 
-  readonly canSubmit = computed(() => this.form.settingKey.trim().length > 0);
+  readonly canSubmit = computed(() => {
+    const valueOk = this.form.settingValue.trim().length > 0;
+    // En édition la clé est immuable ; on ne la valide qu'à la création.
+    if (this.editing()) return valueOk;
+    return valueOk && this.form.settingKey.trim().length > 0;
+  });
 
   openCreate(): void {
+    this.editing.set(null);
     this.form = this.blankForm();
     this.formVisible = true;
   }
 
   openEdit(row: SectorDefaultSettingDto): void {
+    this.editing.set(row);
     this.form = {
       segmentCode: row.segmentCode,
-      domainCode: row.domainCode ?? null,
+      domainCode: row.domainCode,
       settingKey: row.settingKey,
       valueType: row.valueType,
-      value: row.value
+      settingValue: row.settingValue
     };
     this.formVisible = true;
   }
 
   submit(): void {
+    const editing = this.editing();
     this.busy.set(true);
-    const request: SaveSectorDefaultSettingRequest = {
-      segmentCode: this.form.segmentCode,
-      domainCode: this.form.domainCode,
-      settingKey: this.form.settingKey.trim(),
-      valueType: this.form.valueType,
-      value: this.form.value
-    };
-    this.api.saveDefaultSetting(request).subscribe({
-      next: res => {
-        this.busy.set(false);
-        if (res.success) {
-          this.formVisible = false;
-          this.toast.add({ severity: 'success', summary: SECTOR_RULES_FR['settings.toast.save.success'] });
-          this.changed.emit();
-        } else {
-          this.toastError(res.message);
-        }
-      },
-      error: err => {
-        this.busy.set(false);
-        this.toastError((err as { error?: { message?: string } })?.error?.message);
-      }
-    });
+    if (editing) {
+      // Segment/domaine/clé sont immuables côté backend : on ne renvoie que la valeur + type + ordre.
+      const request: UpdateSectorDefaultSettingRequest = {
+        settingValue: this.form.settingValue.trim(),
+        valueType: this.form.valueType,
+        sortOrder: editing.sortOrder
+      };
+      this.api.updateSetting(editing.id, request).subscribe({
+        next: res => this.handleSaveResult(res),
+        error: err => this.handleSaveError(err)
+      });
+    } else {
+      const request: CreateSectorDefaultSettingRequest = {
+        segmentCode: this.form.segmentCode,
+        domainCode: this.form.domainCode,
+        settingKey: this.form.settingKey.trim(),
+        settingValue: this.form.settingValue.trim(),
+        valueType: this.form.valueType,
+        sortOrder: 0
+      };
+      this.api.createSetting(request).subscribe({
+        next: res => this.handleSaveResult(res),
+        error: err => this.handleSaveError(err)
+      });
+    }
+  }
+
+  private handleSaveResult(res: { success: boolean; message: string | null }): void {
+    this.busy.set(false);
+    if (res.success) {
+      this.formVisible = false;
+      this.toast.add({ severity: 'success', summary: SECTOR_RULES_FR['settings.toast.save.success'] });
+      this.changed.emit();
+    } else {
+      this.toastError(res.message);
+    }
+  }
+
+  private handleSaveError(err: unknown): void {
+    this.busy.set(false);
+    this.toastError((err as { error?: { message?: string } })?.error?.message);
   }
 
   private toastError(message?: string | null): void {

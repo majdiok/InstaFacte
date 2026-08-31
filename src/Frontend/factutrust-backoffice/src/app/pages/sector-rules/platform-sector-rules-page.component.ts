@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { TabsModule } from 'primeng/tabs';
@@ -37,7 +36,6 @@ import { SectorDataTemplatesTabComponent } from './sector-data-templates-tab.com
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    DatePipe,
     FormsModule,
     ButtonModule,
     TabsModule,
@@ -81,11 +79,7 @@ import { SectorDataTemplatesTabComponent } from './sector-data-templates-tab.com
         <i class="pi pi-database" aria-hidden="true"></i>
         <span>
           <strong>Règles actives : </strong>
-          {{ rs.useDbRules ? t('banner.source.db') : t('banner.source.code') }}
-          — {{ t('banner.version').replace('{version}', rs.version.toString()) }}
-          @if (rs.updatedAtUtc) {
-            , {{ t('banner.updated').replace('{date}', (rs.updatedAtUtc | date: 'dd/MM/yyyy')!).replace('{who}', rs.updatedBy || t('banner.updated.unknown')) }}
-          }
+          {{ t('banner.version').replace('{version}', rs.version.toString()) }}
         </span>
       </div>
 
@@ -119,23 +113,23 @@ import { SectorDataTemplatesTabComponent } from './sector-data-templates-tab.com
               [segments]="rs.segments"
               [domains]="rs.domains"
               [moduleRules]="rs.moduleRules"
-              [dependencies]="rs.dependencies"
+              [dependencies]="rs.moduleDependencies"
               (changed)="reload()"
             />
           </p-tabpanel>
           <p-tabpanel [value]="4">
-            <app-sector-module-dependencies-tab [dependencies]="rs.dependencies" (changed)="reload()" />
+            <app-sector-module-dependencies-tab [dependencies]="rs.moduleDependencies" (changed)="reload()" />
           </p-tabpanel>
           <p-tabpanel [value]="5">
             <app-sector-default-settings-tab
-              [defaultSettings]="rs.defaultSettings"
+              [defaultSettings]="rs.settings"
               [segments]="rs.segments"
               [domains]="rs.domains"
               (changed)="reload()"
             />
           </p-tabpanel>
           <p-tabpanel [value]="6">
-            <app-sector-data-templates-tab [dataTemplates]="rs.dataTemplates" (changed)="reload()" />
+            <app-sector-data-templates-tab [dataTemplates]="rs.templates" (changed)="reload()" />
           </p-tabpanel>
         </p-tabpanels>
       </p-tabs>

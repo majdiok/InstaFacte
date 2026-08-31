@@ -5,8 +5,6 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputSwitchModule } from 'primeng/inputswitch';
-import { SelectModule } from 'primeng/select';
 import { MessageService, MenuItem } from 'primeng/api';
 
 import { PlatformSectorRulesService } from '@core/services/platform-sector-rules.service';
@@ -27,21 +25,14 @@ import { FtConfirmActionComponent } from '@core/ui/confirm-action/ft-confirm-act
 
 import { SECTOR_RULES_FR } from './sector-rules.i18n.fr';
 
-const TONE_OPTIONS = [
-  { label: 'Accent', value: 'accent' },
-  { label: 'Succès', value: 'success' },
-  { label: 'Info', value: 'info' },
-  { label: 'Avertissement', value: 'warning' },
-  { label: 'Neutre', value: 'neutral' }
-];
-
 /**
  * Phase 2 (WP-F7) — Onglet « Segments » de la page Règles sectorielles.
  *
- * Table CRUD sur `SectorSegmentDto`. Reçoit `segments`/`moduleRules` en entrée (dump complet
- * chargé une fois par la page parente) et émet `changed` après toute mutation réussie pour que
- * la page recharge le dump entier — plus simple et plus sûr que du patch local sur des volumes
- * de données de configuration (quelques dizaines de lignes au plus).
+ * Table CRUD sur `SectorSegmentDto` (champs backend camelCase : `labelFr`, `descriptionFr`,
+ * `iconKey`). Reçoit `segments`/`moduleRules` en entrée (dump complet chargé une fois par la
+ * page parente) et émet `changed` après toute mutation réussie pour que la page recharge le
+ * dump entier. La désactivation est un soft-delete backend (DELETE) ; il n'existe pas d'endpoint
+ * de réactivation, donc seule l'action « Désactiver » est proposée sur les segments actifs.
  */
 @Component({
   selector: 'app-sector-segments-tab',
@@ -54,8 +45,6 @@ const TONE_OPTIONS = [
     DialogModule,
     InputTextModule,
     InputNumberModule,
-    InputSwitchModule,
-    SelectModule,
     FtBadgeComponent,
     FtEmptyStateComponent,
     FtCellActionsMenuComponent,
@@ -82,9 +71,9 @@ const TONE_OPTIONS = [
       <ng-template pTemplate="body" let-row>
         <tr>
           <td><code class="cell-mono">{{ row.code }}</code></td>
-          <td>{{ row.label }}</td>
+          <td>{{ row.labelFr }}</td>
           <td>
-            @for (id of recommendedModuleIds(row.code); track id) {
+            @for (id of recommendedModuleIds(row.id); track id) {
               <ft-badge tone="accent" size="sm">{{ moduleLabel(id) }}</ft-badge>
             } @empty {
               <span class="muted">{{ t('common.none') }}</span>
@@ -133,28 +122,15 @@ const TONE_OPTIONS = [
       </div>
       <div class="dialog-field">
         <label class="field-label" for="segLabel">{{ t('segments.form.label') }}</label>
-        <input id="segLabel" pInputText [(ngModel)]="form.label" class="w-full" autocomplete="off" />
+        <input id="segLabel" pInputText [(ngModel)]="form.labelFr" class="w-full" autocomplete="off" />
       </div>
       <div class="dialog-field">
-        <label class="field-label" for="segSubtitle">{{ t('segments.form.subtitle') }}</label>
-        <input id="segSubtitle" pInputText [(ngModel)]="form.subtitle" class="w-full" autocomplete="off" />
+        <label class="field-label" for="segDescription">{{ t('segments.form.description') }}</label>
+        <input id="segDescription" pInputText [(ngModel)]="form.descriptionFr" class="w-full" autocomplete="off" />
       </div>
-      <div class="dialog-row">
-        <div class="dialog-field">
-          <label class="field-label" for="segIcon">{{ t('segments.form.icon') }}</label>
-          <input id="segIcon" pInputText [(ngModel)]="form.icon" class="w-full" autocomplete="off" placeholder="pi pi-shop" />
-        </div>
-        <div class="dialog-field">
-          <label class="field-label" for="segTone">{{ t('segments.form.tone') }}</label>
-          <p-select
-            inputId="segTone"
-            [options]="toneOptions"
-            [(ngModel)]="form.tone"
-            optionLabel="label"
-            optionValue="value"
-            styleClass="w-full"
-          />
-        </div>
+      <div class="dialog-field">
+        <label class="field-label" for="segIcon">{{ t('segments.form.icon') }}</label>
+        <input id="segIcon" pInputText [(ngModel)]="form.iconKey" class="w-full" autocomplete="off" placeholder="pi pi-shop" />
       </div>
       <div class="dialog-row">
         <div class="dialog-field">
@@ -166,12 +142,6 @@ const TONE_OPTIONS = [
           <input id="segWarehouse" pInputText [(ngModel)]="form.defaultWarehouseName" class="w-full" autocomplete="off" />
         </div>
       </div>
-      @if (editing()) {
-        <div class="dialog-field switch-field">
-          <p-inputSwitch [(ngModel)]="form.isActive" />
-          <label class="field-label">{{ t('segments.form.active') }}</label>
-        </div>
-      }
       <ng-template pTemplate="footer">
         <p-button [label]="t('common.cancel')" [text]="true" severity="secondary" (onClick)="formVisible = false" [disabled]="busy()" />
         <p-button
@@ -205,9 +175,8 @@ const TONE_OPTIONS = [
       .dialog-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; }
       .field-label { font-size: 0.85rem; font-weight: 600; color: var(--ft-text-muted, #8b949e); }
       .field-hint { font-size: 0.78rem; color: var(--ft-text-muted, #8b949e); }
-      .switch-field { flex-direction: row; align-items: center; gap: 0.6rem; }
       .w-full { width: 100%; }
-      :host ::ng-deep .p-dialog .p-select, :host ::ng-deep .p-dialog .p-inputnumber { width: 100%; }
+      :host ::ng-deep .p-dialog .p-inputnumber { width: 100%; }
     `
   ]
 })
@@ -220,7 +189,6 @@ export class SectorSegmentsTabComponent implements OnChanges {
   @Input({ required: true }) moduleRules: SectorModuleRuleDto[] = [];
   @Output() changed = new EventEmitter<void>();
 
-  protected readonly toneOptions = TONE_OPTIONS;
   protected readonly moduleLabel = moduleLabel;
 
   protected t(key: keyof typeof SECTOR_RULES_FR): string {
@@ -237,13 +205,11 @@ export class SectorSegmentsTabComponent implements OnChanges {
 
   form: {
     code: string;
-    label: string;
-    subtitle: string;
-    icon: string;
-    tone: string;
+    labelFr: string;
+    descriptionFr: string;
+    iconKey: string;
     sortOrder: number;
     defaultWarehouseName: string;
-    isActive: boolean;
   } = this.blankForm();
 
   ngOnChanges(): void {
@@ -253,24 +219,27 @@ export class SectorSegmentsTabComponent implements OnChanges {
   private blankForm() {
     return {
       code: '',
-      label: '',
-      subtitle: '',
-      icon: '',
-      tone: 'accent',
+      labelFr: '',
+      descriptionFr: '',
+      iconKey: '',
       sortOrder: (this.segments?.length ?? 0) + 1,
-      defaultWarehouseName: '',
-      isActive: true
+      defaultWarehouseName: ''
     };
   }
 
-  recommendedModuleIds(segmentCode: string): number[] {
+  recommendedModuleIds(segmentId: string): number[] {
     return this.moduleRules
-      .filter(r => r.ruleKind === 0 && r.segmentCode === segmentCode && r.isActive)
+      .filter(r => r.ruleKind === 'SegmentBase' && r.segmentId === segmentId && r.isActive)
       .map(r => r.moduleId);
   }
 
   readonly canSubmit = computed(() => {
-    return this.form.code.trim().length > 0 && this.form.label.trim().length > 0;
+    const labelOk = this.form.labelFr.trim().length > 0;
+    const descOk = this.form.descriptionFr.trim().length > 0;
+    const iconOk = this.form.iconKey.trim().length > 0;
+    // En édition le code est immuable ; on ne le valide qu'à la création.
+    if (this.editing()) return labelOk && descOk && iconOk;
+    return labelOk && descOk && iconOk && this.form.code.trim().length > 0;
   });
 
   openCreate(): void {
@@ -283,34 +252,34 @@ export class SectorSegmentsTabComponent implements OnChanges {
     this.editing.set(row);
     this.form = {
       code: row.code,
-      label: row.label,
-      subtitle: row.subtitle ?? '',
-      icon: row.icon ?? '',
-      tone: row.tone ?? 'accent',
+      labelFr: row.labelFr,
+      descriptionFr: row.descriptionFr,
+      iconKey: row.iconKey,
       sortOrder: row.sortOrder,
-      defaultWarehouseName: row.defaultWarehouseName ?? '',
-      isActive: row.isActive
+      defaultWarehouseName: row.defaultWarehouseName ?? ''
     };
     this.formVisible = true;
   }
 
   rowActions(row: SectorSegmentDto): MenuItem[] {
-    return [
+    const actions: MenuItem[] = [
       {
         label: SECTOR_RULES_FR['segments.action.edit'],
         icon: 'pi pi-pencil',
         disabled: !this.canManage(),
         command: () => this.openEdit(row)
-      },
-      {
-        label: row.isActive
-          ? SECTOR_RULES_FR['segments.action.deactivate']
-          : SECTOR_RULES_FR['segments.action.activate'],
-        icon: row.isActive ? 'pi pi-ban' : 'pi pi-check',
-        disabled: !this.canManage(),
-        command: () => (row.isActive ? this.openDeactivate(row) : this.reactivate(row))
       }
     ];
+    // Pas d'endpoint de réactivation côté backend : on ne propose que la désactivation.
+    if (row.isActive) {
+      actions.push({
+        label: SECTOR_RULES_FR['segments.action.deactivate'],
+        icon: 'pi pi-ban',
+        disabled: !this.canManage(),
+        command: () => this.openDeactivate(row)
+      });
+    }
+    return actions;
   }
 
   private openDeactivate(row: SectorSegmentDto): void {
@@ -327,7 +296,7 @@ export class SectorSegmentsTabComponent implements OnChanges {
         this.busy.set(false);
         this.deactivateVisible = false;
         if (res.success) {
-          this.toast.add({ severity: 'success', summary: SECTOR_RULES_FR['segments.toast.deactivate.success'], detail: row.label });
+          this.toast.add({ severity: 'success', summary: SECTOR_RULES_FR['segments.toast.deactivate.success'], detail: row.labelFr });
           this.changed.emit();
         } else {
           this.toastError(res.message);
@@ -336,35 +305,7 @@ export class SectorSegmentsTabComponent implements OnChanges {
       error: err => {
         this.busy.set(false);
         this.deactivateVisible = false;
-        this.toastError(err?.error?.message);
-      }
-    });
-  }
-
-  private reactivate(row: SectorSegmentDto): void {
-    this.busy.set(true);
-    const request: UpdateSectorSegmentRequest = {
-      label: row.label,
-      subtitle: row.subtitle,
-      icon: row.icon,
-      tone: row.tone,
-      sortOrder: row.sortOrder,
-      defaultWarehouseName: row.defaultWarehouseName,
-      isActive: true
-    };
-    this.api.updateSegment(row.id, request).subscribe({
-      next: res => {
-        this.busy.set(false);
-        if (res.success) {
-          this.toast.add({ severity: 'success', summary: SECTOR_RULES_FR['segments.toast.update.success'], detail: row.label });
-          this.changed.emit();
-        } else {
-          this.toastError(res.message);
-        }
-      },
-      error: err => {
-        this.busy.set(false);
-        this.toastError(err?.error?.message);
+        this.toastError((err as { error?: { message?: string } })?.error?.message);
       }
     });
   }
@@ -374,13 +315,11 @@ export class SectorSegmentsTabComponent implements OnChanges {
     this.busy.set(true);
     if (editing) {
       const request: UpdateSectorSegmentRequest = {
-        label: this.form.label.trim(),
-        subtitle: this.form.subtitle.trim() || null,
-        icon: this.form.icon.trim() || null,
-        tone: this.form.tone || null,
+        labelFr: this.form.labelFr.trim(),
+        descriptionFr: this.form.descriptionFr.trim(),
+        iconKey: this.form.iconKey.trim(),
         sortOrder: this.form.sortOrder,
-        defaultWarehouseName: this.form.defaultWarehouseName.trim() || null,
-        isActive: this.form.isActive
+        defaultWarehouseName: this.form.defaultWarehouseName.trim() || null
       };
       this.api.updateSegment(editing.id, request).subscribe({
         next: res => this.handleSaveResult(res, SECTOR_RULES_FR['segments.toast.update.success']),
@@ -389,10 +328,9 @@ export class SectorSegmentsTabComponent implements OnChanges {
     } else {
       const request: CreateSectorSegmentRequest = {
         code: this.form.code.trim(),
-        label: this.form.label.trim(),
-        subtitle: this.form.subtitle.trim() || null,
-        icon: this.form.icon.trim() || null,
-        tone: this.form.tone || null,
+        labelFr: this.form.labelFr.trim(),
+        descriptionFr: this.form.descriptionFr.trim(),
+        iconKey: this.form.iconKey.trim(),
         sortOrder: this.form.sortOrder,
         defaultWarehouseName: this.form.defaultWarehouseName.trim() || null
       };
@@ -407,7 +345,7 @@ export class SectorSegmentsTabComponent implements OnChanges {
     this.busy.set(false);
     if (res.success) {
       this.formVisible = false;
-      this.toast.add({ severity: 'success', summary: successSummary, detail: this.form.label });
+      this.toast.add({ severity: 'success', summary: successSummary, detail: this.form.labelFr });
       this.changed.emit();
     } else {
       this.toastError(res.message);

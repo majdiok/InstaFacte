@@ -4,14 +4,16 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputNumberModule } from 'primeng/inputnumber';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
 
 import { PlatformSectorRulesService } from '@core/services/platform-sector-rules.service';
 import { PlatformPermissionsService } from '@core/services/platform-permissions.service';
 import { PlatformPermission } from '@core/models/platform.models';
-import type { SaveSectorDataTemplateRequest, SectorDataTemplateDto } from '@core/models/sector-rules.models';
+import type {
+  SectorDataTemplateDto,
+  UpdateSectorDataTemplateRequest
+} from '@core/models/sector-rules.models';
 
 import { FtEmptyStateComponent } from '@core/ui/empty-state/ft-empty-state.component';
 
@@ -20,16 +22,16 @@ import { SECTOR_RULES_FR } from './sector-rules.i18n.fr';
 /**
  * Phase 2 (WP-F7) — Onglet « Modèles de données ».
  *
- * v1 : lecture de la liste + édition des métadonnées (libellé, code) uniquement. L'édition fine
- * des `items` (numérotation de documents, plan comptable, paramètres) est hors scope v1 — les
- * modèles sont peuplés par le seeder backend (WP-B6) ; ce tab permet surtout d'auditer leur
- * contenu (dialogue détail en lecture).
+ * v1 : lecture de la liste + édition des métadonnées (`labelFr`) uniquement. L'édition fine des
+ * `items` (numérotation de documents, plan comptable, paramètres) est hors scope v1 — les modèles
+ * sont peuplés par le seeder backend (WP-B6) ; ce tab permet surtout d'auditer leur contenu
+ * (dialogue détail en lecture) et de corriger le libellé via `PUT /templates/{id}`.
  */
 @Component({
   selector: 'app-sector-data-templates-tab',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, TableModule, ButtonModule, DialogModule, InputTextModule, InputNumberModule, TooltipModule, FtEmptyStateComponent],
+  imports: [FormsModule, TableModule, ButtonModule, DialogModule, InputTextModule, TooltipModule, FtEmptyStateComponent],
   template: `
     <p-table [value]="dataTemplates" styleClass="p-datatable-sm ft-table" [tableStyle]="{ 'min-width': '45rem' }" responsiveLayout="scroll">
       <ng-template pTemplate="header">
@@ -45,7 +47,7 @@ import { SECTOR_RULES_FR } from './sector-rules.i18n.fr';
       <ng-template pTemplate="body" let-row>
         <tr>
           <td><code class="cell-mono">{{ row.code }}</code></td>
-          <td>{{ row.label }}</td>
+          <td>{{ row.labelFr }}</td>
           <td>{{ row.segmentCode || t('common.none') }}</td>
           <td>{{ row.domainCode || t('common.none') }}</td>
           <td>{{ row.items.length }}</td>
@@ -67,12 +69,16 @@ import { SECTOR_RULES_FR } from './sector-rules.i18n.fr';
       @if (detail(); as d) {
         <div class="dialog-field">
           <label class="field-label" for="tplLabel">{{ t('templates.col.label') }}</label>
-          <input id="tplLabel" pInputText [(ngModel)]="form.label" class="w-full" autocomplete="off" />
+          <input id="tplLabel" pInputText [(ngModel)]="form.labelFr" class="w-full" autocomplete="off" />
+        </div>
+        <div class="dialog-field">
+          <label class="field-label">{{ t('templates.dialog.version') }}</label>
+          <span class="muted">v{{ d.version }}</span>
         </div>
         <div class="dialog-field">
           <label class="field-label">{{ t('templates.col.items') }}</label>
           <ul class="items-list">
-            @for (item of d.items; track $index) {
+            @for (item of d.items; track item.id) {
               <li>
                 <span class="item-kind">{{ item.itemKind }}</span>
                 <code class="item-payload">{{ item.payloadJson }}</code>
@@ -97,11 +103,11 @@ import { SECTOR_RULES_FR } from './sector-rules.i18n.fr';
       .dialog-field { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.85rem; }
       .field-label { font-size: 0.85rem; font-weight: 600; color: var(--ft-text-muted, #8b949e); }
       .w-full { width: 100%; }
+      .muted { color: var(--ft-text-muted, #8b949e); }
       .items-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; max-height: 16rem; overflow-y: auto; }
       .items-list li { display: flex; flex-direction: column; gap: 0.15rem; border: 1px solid var(--ft-border, #30363d); border-radius: 6px; padding: 0.5rem; }
       .item-kind { font-size: 0.75rem; color: var(--ft-accent, #58a6ff); font-weight: 600; }
       .item-payload { font-size: 0.72rem; color: var(--ft-text-muted, #8b949e); word-break: break-all; }
-      .muted { color: var(--ft-text-muted, #8b949e); }
     `
   ]
 })
@@ -122,7 +128,7 @@ export class SectorDataTemplatesTabComponent {
 
   readonly detail = signal<SectorDataTemplateDto | null>(null);
   detailVisible = false;
-  form = { label: '' };
+  form = { labelFr: '' };
 
   dialogTitle(): string {
     const d = this.detail();
@@ -131,7 +137,7 @@ export class SectorDataTemplatesTabComponent {
 
   openDetail(row: SectorDataTemplateDto): void {
     this.detail.set(row);
-    this.form = { label: row.label };
+    this.form = { labelFr: row.labelFr };
     this.detailVisible = true;
   }
 
@@ -139,15 +145,16 @@ export class SectorDataTemplatesTabComponent {
     const d = this.detail();
     if (!d) return;
     this.busy.set(true);
-    const request: SaveSectorDataTemplateRequest = {
-      code: d.code,
-      label: this.form.label.trim(),
-      segmentCode: d.segmentCode,
-      domainCode: d.domainCode,
+    // Code/segment/domaine immuables côté backend (hors UpdateSectorDataTemplateRequest) :
+    // on renvoie le libellé édité + la version/ordre courants + les items existants (audit).
+    const request: UpdateSectorDataTemplateRequest = {
+      labelFr: this.form.labelFr.trim(),
+      descriptionFr: d.descriptionFr,
+      version: d.version,
       sortOrder: d.sortOrder,
-      items: d.items
+      items: d.items.map(i => ({ itemKind: i.itemKind, payloadJson: i.payloadJson, sortOrder: i.sortOrder }))
     };
-    this.api.saveDataTemplate(request).subscribe({
+    this.api.updateTemplate(d.id, request).subscribe({
       next: res => {
         this.busy.set(false);
         if (res.success) {

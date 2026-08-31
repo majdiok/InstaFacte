@@ -9,14 +9,18 @@ import { MessageService } from 'primeng/api';
 import { PlatformSectorRulesService } from '@core/services/platform-sector-rules.service';
 import { PlatformPermissionsService } from '@core/services/platform-permissions.service';
 import { PlatformPermission } from '@core/models/platform.models';
-import type { SectorDomainDto, SectorSegmentDto, SegmentDomainLinkDto } from '@core/models/sector-rules.models';
+import type {
+  SectorDomainDto,
+  SectorSegmentDomainDto,
+  SectorSegmentDto
+} from '@core/models/sector-rules.models';
 
 import { SECTOR_RULES_FR } from './sector-rules.i18n.fr';
 
 /** Code du domaine « Autre » — toujours disponible, non modifiable (cf. mockup associations). */
 const OTHER_DOMAIN_CODE = 'autre';
 
-/** Phase 2 (WP-F7) — Onglet « Associations » : matrice domaines × segments. */
+/** Phase 2 (WP-F7) — Onglet « Associations » : matrice domaines × segments (liens GUID). */
 @Component({
   selector: 'app-sector-segment-domains-tab',
   standalone: true,
@@ -29,22 +33,22 @@ const OTHER_DOMAIN_CODE = 'autre';
         <thead>
           <tr>
             <th scope="col" class="col-domain">{{ t('assoc.col.domain') }}</th>
-            @for (seg of segments; track seg.code) {
+            @for (seg of segments; track seg.id) {
               <th scope="col" class="col-segment">
-                <span>{{ seg.label }}</span>
+                <span>{{ seg.labelFr }}</span>
                 <span class="order-hint">Ordre {{ seg.sortOrder }}</span>
               </th>
             }
           </tr>
         </thead>
         <tbody>
-          @for (dom of domains; track dom.code) {
+          @for (dom of domains; track dom.id) {
             <tr>
               <th scope="row" class="row-domain">
-                {{ dom.label }}
+                {{ dom.labelFr }}
                 <code class="cell-mono">{{ dom.code }}</code>
               </th>
-              @for (seg of segments; track seg.code) {
+              @for (seg of segments; track seg.id) {
                 <td class="cell-checkbox">
                   @if (dom.code === otherDomainCode) {
                     <p-checkbox
@@ -57,8 +61,8 @@ const OTHER_DOMAIN_CODE = 'autre';
                   } @else {
                     <p-checkbox
                       [binary]="true"
-                      [ngModel]="isChecked(seg.code, dom.code)"
-                      (ngModelChange)="toggle(seg.code, dom.code, $event)"
+                      [ngModel]="isChecked(seg.id, dom.id)"
+                      (ngModelChange)="toggle(seg.id, dom.id, $event)"
                       [disabled]="!canManage()"
                     />
                   }
@@ -105,7 +109,7 @@ export class SectorSegmentDomainsTabComponent implements OnChanges {
 
   @Input({ required: true }) segments: SectorSegmentDto[] = [];
   @Input({ required: true }) domains: SectorDomainDto[] = [];
-  @Input({ required: true }) segmentDomains: SegmentDomainLinkDto[] = [];
+  @Input({ required: true }) segmentDomains: SectorSegmentDomainDto[] = [];
   @Output() changed = new EventEmitter<void>();
 
   protected readonly otherDomainCode = OTHER_DOMAIN_CODE;
@@ -117,56 +121,80 @@ export class SectorSegmentDomainsTabComponent implements OnChanges {
   readonly canManage = computed(() => this.permissions.has(PlatformPermission.SectorRulesManage));
   readonly busy = signal(false);
 
-  /** État local (modifiable) : segmentCode -> Set<domainCode>. */
+  /** État local (modifiable) : segmentId -> Set<domainId>. */
   private state = new Map<string, Set<string>>();
   /** Snapshot initial pour calculer `dirty()` et le diff à sauvegarder. */
   private baseline = new Map<string, Set<string>>();
+  /** Lookup `segmentId|domainId` -> id du lien actif (pour la suppression ciblée). */
+  private linkIdByPair = new Map<string, string>();
   readonly version = signal(0);
 
   ngOnChanges(): void {
-    this.state = new Map(this.segmentDomains.map(l => [l.segmentCode, new Set(l.domainCodes)]));
-    this.baseline = new Map(this.segmentDomains.map(l => [l.segmentCode, new Set(l.domainCodes)]));
+    const autreDomainId = this.domains.find(d => d.code === OTHER_DOMAIN_CODE)?.id;
+
+    const activeLinks = this.segmentDomains.filter(l => l.isActive);
+    this.linkIdByPair = new Map(activeLinks.map(l => [`${l.segmentId}|${l.domainId}`, l.id]));
+
+    this.state = new Map<string, Set<string>>();
+    this.baseline = new Map<string, Set<string>>();
+    for (const seg of this.segments) {
+      const linked = new Set<string>(activeLinks.filter(l => l.segmentId === seg.id).map(l => l.domainId));
+      // « Autre domaine » est toujours disponible pour tous les segments (verrouillé).
+      if (autreDomainId) linked.add(autreDomainId);
+      this.state.set(seg.id, new Set(linked));
+      this.baseline.set(seg.id, new Set(linked));
+    }
     this.version.update(v => v + 1);
   }
 
-  isChecked(segmentCode: string, domainCode: string): boolean {
+  isChecked(segmentId: string, domainId: string): boolean {
     this.version();
-    return this.state.get(segmentCode)?.has(domainCode) ?? false;
+    return this.state.get(segmentId)?.has(domainId) ?? false;
   }
 
-  toggle(segmentCode: string, domainCode: string, checked: boolean): void {
-    const set = this.state.get(segmentCode) ?? new Set<string>();
+  toggle(segmentId: string, domainId: string, checked: boolean): void {
+    const set = this.state.get(segmentId) ?? new Set<string>();
     if (checked) {
-      set.add(domainCode);
+      set.add(domainId);
     } else {
-      set.delete(domainCode);
+      set.delete(domainId);
     }
-    this.state.set(segmentCode, set);
+    this.state.set(segmentId, set);
     this.version.update(v => v + 1);
   }
 
   readonly dirty = computed(() => {
     this.version();
     for (const seg of this.segments) {
-      const current = [...(this.state.get(seg.code) ?? new Set())].sort().join(',');
-      const original = [...(this.baseline.get(seg.code) ?? new Set())].sort().join(',');
+      const current = [...(this.state.get(seg.id) ?? new Set())].sort().join(',');
+      const original = [...(this.baseline.get(seg.id) ?? new Set())].sort().join(',');
       if (current !== original) return true;
     }
     return false;
   });
 
   save(): void {
-    const requests = this.segments
-      .filter(seg => {
-        const current = [...(this.state.get(seg.code) ?? new Set())].sort().join(',');
-        const original = [...(this.baseline.get(seg.code) ?? new Set())].sort().join(',');
-        return current !== original;
-      })
-      .map(seg => {
-        const codes = new Set(this.state.get(seg.code) ?? new Set<string>());
-        codes.add(OTHER_DOMAIN_CODE);
-        return this.api.setSegmentDomains(seg.code, [...codes]);
-      });
+    const requests = this.segments.flatMap(seg => {
+      const current = this.baseline.get(seg.id) ?? new Set<string>();
+      const selected = this.state.get(seg.id) ?? new Set<string>();
+
+      const toAdd = [...selected].filter(did => !current.has(did));
+      const toRemove = [...current].filter(did => !selected.has(did));
+
+      const adds = toAdd.map(did =>
+        this.api.createSegmentDomain({
+          segmentId: seg.id,
+          domainId: did,
+          sortOrder: this.domainSortHint(did)
+        })
+      );
+      const removes = toRemove
+        .map(did => this.linkIdByPair.get(`${seg.id}|${did}`))
+        .filter((id): id is string => !!id)
+        .map(id => this.api.deactivateSegmentDomain(id));
+
+      return [...adds, ...removes];
+    });
 
     if (requests.length === 0) return;
 
@@ -187,6 +215,12 @@ export class SectorSegmentDomainsTabComponent implements OnChanges {
         this.toastError((err as { error?: { message?: string } })?.error?.message);
       }
     });
+  }
+
+  /** Ordre d'affichage stable pour un nouveau lien : position du domaine dans le catalogue. */
+  private domainSortHint(domainId: string): number {
+    const idx = this.domains.findIndex(d => d.id === domainId);
+    return idx >= 0 ? idx + 1 : 0;
   }
 
   private toastError(message?: string | null): void {

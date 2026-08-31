@@ -5,8 +5,6 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputSwitchModule } from 'primeng/inputswitch';
-import { SelectModule } from 'primeng/select';
 import { MessageService, MenuItem } from 'primeng/api';
 
 import { PlatformSectorRulesService } from '@core/services/platform-sector-rules.service';
@@ -24,14 +22,6 @@ import { FtCellActionsMenuComponent } from '@core/ui/table-cells/ft-cell-actions
 
 import { SECTOR_RULES_FR } from './sector-rules.i18n.fr';
 
-const TONE_OPTIONS = [
-  { label: 'Accent', value: 'accent' },
-  { label: 'Succès', value: 'success' },
-  { label: 'Info', value: 'info' },
-  { label: 'Avertissement', value: 'warning' },
-  { label: 'Neutre', value: 'neutral' }
-];
-
 /** Phase 2 (WP-F7) — Onglet « Domaines » de la page Règles sectorielles. */
 @Component({
   selector: 'app-sector-domains-tab',
@@ -44,8 +34,6 @@ const TONE_OPTIONS = [
     DialogModule,
     InputTextModule,
     InputNumberModule,
-    InputSwitchModule,
-    SelectModule,
     FtBadgeComponent,
     FtEmptyStateComponent,
     FtCellActionsMenuComponent
@@ -67,7 +55,7 @@ const TONE_OPTIONS = [
       <ng-template pTemplate="body" let-row>
         <tr>
           <td><code class="cell-mono">{{ row.code }}</code></td>
-          <td>{{ row.label }}</td>
+          <td>{{ row.labelFr }}</td>
           <td>{{ row.sortOrder }}</td>
           <td>
             @if (row.isActive) {
@@ -106,28 +94,12 @@ const TONE_OPTIONS = [
       </div>
       <div class="dialog-field">
         <label class="field-label" for="domLabel">{{ t('domains.form.label') }}</label>
-        <input id="domLabel" pInputText [(ngModel)]="form.label" class="w-full" autocomplete="off" />
-      </div>
-      <div class="dialog-row">
-        <div class="dialog-field">
-          <label class="field-label" for="domIcon">{{ t('domains.form.icon') }}</label>
-          <input id="domIcon" pInputText [(ngModel)]="form.icon" class="w-full" autocomplete="off" />
-        </div>
-        <div class="dialog-field">
-          <label class="field-label" for="domTone">{{ t('domains.form.tone') }}</label>
-          <p-select inputId="domTone" [options]="toneOptions" [(ngModel)]="form.tone" optionLabel="label" optionValue="value" styleClass="w-full" />
-        </div>
+        <input id="domLabel" pInputText [(ngModel)]="form.labelFr" class="w-full" autocomplete="off" />
       </div>
       <div class="dialog-field">
         <label class="field-label" for="domOrder">{{ t('domains.form.order') }}</label>
         <p-inputNumber inputId="domOrder" [(ngModel)]="form.sortOrder" [min]="0" styleClass="w-full" />
       </div>
-      @if (editing()) {
-        <div class="dialog-field switch-field">
-          <p-inputSwitch [(ngModel)]="form.isActive" />
-          <label class="field-label">{{ t('domains.form.active') }}</label>
-        </div>
-      }
       <ng-template pTemplate="footer">
         <p-button [label]="t('common.cancel')" [text]="true" severity="secondary" (onClick)="formVisible = false" [disabled]="busy()" />
         <p-button
@@ -147,12 +119,10 @@ const TONE_OPTIONS = [
       .col-actions { text-align: right; width: 3rem; }
       .cell-mono { font-size: 0.85rem; }
       .dialog-field { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.85rem; }
-      .dialog-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; }
       .field-label { font-size: 0.85rem; font-weight: 600; color: var(--ft-text-muted, #8b949e); }
       .field-hint { font-size: 0.78rem; color: var(--ft-text-muted, #8b949e); }
-      .switch-field { flex-direction: row; align-items: center; gap: 0.6rem; }
       .w-full { width: 100%; }
-      :host ::ng-deep .p-dialog .p-select, :host ::ng-deep .p-dialog .p-inputnumber { width: 100%; }
+      :host ::ng-deep .p-dialog .p-inputnumber { width: 100%; }
     `
   ]
 })
@@ -163,8 +133,6 @@ export class SectorDomainsTabComponent {
 
   @Input({ required: true }) domains: SectorDomainDto[] = [];
   @Output() changed = new EventEmitter<void>();
-
-  protected readonly toneOptions = TONE_OPTIONS;
 
   protected t(key: keyof typeof SECTOR_RULES_FR): string {
     return SECTOR_RULES_FR[key];
@@ -179,10 +147,14 @@ export class SectorDomainsTabComponent {
   form = this.blankForm();
 
   private blankForm() {
-    return { code: '', label: '', icon: '', tone: 'accent', sortOrder: (this.domains?.length ?? 0) + 1, isActive: true };
+    return { code: '', labelFr: '', sortOrder: (this.domains?.length ?? 0) + 1 };
   }
 
-  readonly canSubmit = computed(() => this.form.code.trim().length > 0 && this.form.label.trim().length > 0);
+  readonly canSubmit = computed(() => {
+    const labelOk = this.form.labelFr.trim().length > 0;
+    if (this.editing()) return labelOk;
+    return labelOk && this.form.code.trim().length > 0;
+  });
 
   openCreate(): void {
     this.editing.set(null);
@@ -192,40 +164,35 @@ export class SectorDomainsTabComponent {
 
   private openEdit(row: SectorDomainDto): void {
     this.editing.set(row);
-    this.form = { code: row.code, label: row.label, icon: row.icon ?? '', tone: row.tone ?? 'accent', sortOrder: row.sortOrder, isActive: row.isActive };
+    this.form = { code: row.code, labelFr: row.labelFr, sortOrder: row.sortOrder };
     this.formVisible = true;
   }
 
   rowActions(row: SectorDomainDto): MenuItem[] {
-    return [
+    const actions: MenuItem[] = [
       {
         label: SECTOR_RULES_FR['domains.action.edit'],
         icon: 'pi pi-pencil',
         disabled: !this.canManage(),
         command: () => this.openEdit(row)
-      },
-      {
-        label: row.isActive ? SECTOR_RULES_FR['domains.action.deactivate'] : SECTOR_RULES_FR['domains.action.activate'],
-        icon: row.isActive ? 'pi pi-ban' : 'pi pi-check',
-        disabled: !this.canManage(),
-        command: () => (row.isActive ? this.deactivate(row) : this.reactivate(row))
       }
     ];
+    // Pas d'endpoint de réactivation côté backend : on ne propose que la désactivation.
+    if (row.isActive) {
+      actions.push({
+        label: SECTOR_RULES_FR['domains.action.deactivate'],
+        icon: 'pi pi-ban',
+        disabled: !this.canManage(),
+        command: () => this.deactivate(row)
+      });
+    }
+    return actions;
   }
 
   private deactivate(row: SectorDomainDto): void {
     this.busy.set(true);
     this.api.deactivateDomain(row.id).subscribe({
-      next: res => this.handleSaveResult(res, SECTOR_RULES_FR['domains.toast.deactivate.success'], row.label),
-      error: err => this.handleSaveError(err)
-    });
-  }
-
-  private reactivate(row: SectorDomainDto): void {
-    this.busy.set(true);
-    const request: UpdateSectorDomainRequest = { label: row.label, icon: row.icon, tone: row.tone, sortOrder: row.sortOrder, isActive: true };
-    this.api.updateDomain(row.id, request).subscribe({
-      next: res => this.handleSaveResult(res, SECTOR_RULES_FR['domains.toast.update.success'], row.label),
+      next: res => this.handleSaveResult(res, SECTOR_RULES_FR['domains.toast.deactivate.success'], row.labelFr),
       error: err => this.handleSaveError(err)
     });
   }
@@ -235,26 +202,21 @@ export class SectorDomainsTabComponent {
     this.busy.set(true);
     if (editing) {
       const request: UpdateSectorDomainRequest = {
-        label: this.form.label.trim(),
-        icon: this.form.icon.trim() || null,
-        tone: this.form.tone || null,
-        sortOrder: this.form.sortOrder,
-        isActive: this.form.isActive
+        labelFr: this.form.labelFr.trim(),
+        sortOrder: this.form.sortOrder
       };
       this.api.updateDomain(editing.id, request).subscribe({
-        next: res => this.handleSaveResult(res, SECTOR_RULES_FR['domains.toast.update.success'], this.form.label, true),
+        next: res => this.handleSaveResult(res, SECTOR_RULES_FR['domains.toast.update.success'], this.form.labelFr, true),
         error: err => this.handleSaveError(err)
       });
     } else {
       const request: CreateSectorDomainRequest = {
         code: this.form.code.trim(),
-        label: this.form.label.trim(),
-        icon: this.form.icon.trim() || null,
-        tone: this.form.tone || null,
+        labelFr: this.form.labelFr.trim(),
         sortOrder: this.form.sortOrder
       };
       this.api.createDomain(request).subscribe({
-        next: res => this.handleSaveResult(res, SECTOR_RULES_FR['domains.toast.create.success'], this.form.label, true),
+        next: res => this.handleSaveResult(res, SECTOR_RULES_FR['domains.toast.create.success'], this.form.labelFr, true),
         error: err => this.handleSaveError(err)
       });
     }
