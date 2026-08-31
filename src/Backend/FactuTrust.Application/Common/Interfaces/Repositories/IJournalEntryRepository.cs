@@ -30,6 +30,16 @@ public interface IJournalEntryRepository
     /// </summary>
     Task<bool> ExistsActiveBySourceTypeAsync(string sourceEntityType, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Toutes les écritures NON extournées (<c>!IsReversed</c>) dont le <c>SourceEntityType</c> figure
+    /// dans <paramref name="sourceTypes"/>, avec leurs lignes, triées par date d'écriture puis numéro.
+    /// Lecture seule utilisée par le diagnostic de conformité paie (plan §5.4) : inventaire des
+    /// imputations erronées, détection des doublons actifs par source, cycles sans écriture.
+    /// </summary>
+    Task<IReadOnlyList<JournalEntry>> ListActiveBySourceTypesAsync(
+        IReadOnlyCollection<string> sourceTypes,
+        CancellationToken cancellationToken = default);
+
     Task<JournalEntry?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -40,23 +40,23 @@ public sealed class IrppRegularizationCalculatorTests
     {
         var months = ConstantYear(2000m);
 
-        // Bulletin mensuel de référence (cf. PayrollCalculatorTests) :
-        // CNSS 183,600 → base 1816,400 → frais pro plafonnés 166,667 → net imposable 1649,733
-        // annualisé 19796,796 → IRPP 3199,199/12 = 266,600 ; CSS 98,984/12 = 8,249.
-        Assert.Equal(1649.733m, months[0].MonthlyNetTaxable);
-        Assert.Equal(266.600m, months[0].Irpp);
-        Assert.Equal(8.249m, months[0].Css);
+        // Bulletin mensuel de référence (preset 2026 corrigé : CNSS 9,68 %) :
+        // CNSS 193,600 → base 1806,400 → frais pro plafonnés 166,667 → net imposable 1639,733
+        // annualisé 19676,796 → IRPP 3169,199/12 = 264,100 ; CSS 98,384/12 = 8,199.
+        Assert.Equal(1639.733m, months[0].MonthlyNetTaxable);
+        Assert.Equal(264.100m, months[0].Irpp);
+        Assert.Equal(8.199m, months[0].Css);
 
         var result = IrppRegularizationCalculator.Compute(months, Params());
 
         Assert.Equal(12, result.MonthsCounted);
-        Assert.Equal(19796.796m, result.CumulNetTaxable);   // 1649,733 × 12
-        Assert.Equal(3199.200m, result.CumulIrppWithheld);  // 266,600 × 12
-        Assert.Equal(3199.199m, result.IrppDue);            // 750 + 9796,796 × 25 %
+        Assert.Equal(19676.796m, result.CumulNetTaxable);   // 1639,733 × 12
+        Assert.Equal(3169.200m, result.CumulIrppWithheld);  // 264,100 × 12
+        Assert.Equal(3169.199m, result.IrppDue);            // 750 + 9676,796 × 25 %
         Assert.Equal(-0.001m, result.IrppDelta);            // résidu d'arrondi au millime
 
-        Assert.Equal(98.988m, result.CumulCssWithheld);     // 8,249 × 12
-        Assert.Equal(98.984m, result.CssDue);               // 19796,796 × 0,5 %
+        Assert.Equal(98.388m, result.CumulCssWithheld);     // 8,199 × 12
+        Assert.Equal(98.384m, result.CssDue);               // 19676,796 × 0,5 %
         Assert.Equal(-0.004m, result.CssDelta);
 
         // À rémunération constante, la retenue mensuelle est déjà juste.
@@ -98,16 +98,16 @@ public sealed class IrppRegularizationCalculatorTests
         var result = IrppRegularizationCalculator.Compute(months, Params());
 
         Assert.Equal(3, result.MonthsCounted);
-        Assert.Equal(4949.199m, result.CumulNetTaxable);  // 1649,733 × 3
+        Assert.Equal(4919.199m, result.CumulNetTaxable);  // 1639,733 × 3
 
         // Le cumul reste sous la première tranche imposable (5 000) : aucun impôt dû.
         Assert.Equal(0m, result.IrppDue);
-        Assert.Equal(799.800m, result.CumulIrppWithheld); // 266,600 × 3
-        Assert.Equal(-799.800m, result.IrppDelta);
+        Assert.Equal(792.300m, result.CumulIrppWithheld); // 264,100 × 3
+        Assert.Equal(-792.300m, result.IrppDelta);
 
         // Sous le seuil, la CSS est également intégralement restituée.
         Assert.Equal(0m, result.CssDue);
-        Assert.Equal(-24.747m, result.CssDelta);          // 8,249 × 3
+        Assert.Equal(-24.597m, result.CssDelta);          // 8,199 × 3
     }
 
     [Fact]
@@ -174,7 +174,7 @@ public sealed class IrppRegularizationCalculatorTests
         var result = IrppRegularizationCalculator.Compute(withGap, Params());
 
         Assert.Equal(2, result.MonthsCounted);
-        Assert.Equal(3299.466m, result.CumulNetTaxable); // 1649,733 × 2
+        Assert.Equal(3279.466m, result.CumulNetTaxable); // 1639,733 × 2
     }
 
     private static PayrollYearParameters ParamsWithSmigMode(SmigIrppExemptionMode mode)

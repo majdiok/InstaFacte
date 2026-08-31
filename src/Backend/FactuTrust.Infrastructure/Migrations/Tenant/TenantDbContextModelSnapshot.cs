@@ -3458,7 +3458,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("Status");
 
-                    b.HasIndex("SourceEntityType", "SourceEntityId");
+                    b.HasIndex("SourceEntityType", "SourceEntityId")
+                        .IsUnique()
+                        .HasFilter("[IsReversed] = 0 AND [SourceEntityType] IN (N'PayrollRun', N'PayrollPayment', N'CnssContributionPayment', N'PayrollReclassification')");
 
                     b.HasIndex("JournalCode", "EntryNumber", "EntryDate");
 
@@ -4354,6 +4356,12 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Property<Guid?>("SettledInPayrollRunId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<decimal>("SettledAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)")
+                        .HasDefaultValue(0m);
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -4975,6 +4983,14 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<decimal?>("TotalPayrollTaxBase")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal?>("AppliedTfpRate")
+                        .HasPrecision(8, 4)
+                        .HasColumnType("decimal(8,4)");
+
                     b.Property<decimal>("TotalTfp")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
@@ -4997,7 +5013,8 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasColumnType("nvarchar(450)");
 
                     b.Property<int>("Version")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .IsConcurrencyToken();
 
                     b.Property<int>("Year")
                         .HasColumnType("int");
@@ -5086,6 +5103,16 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Property<decimal>("HeadOfFamilyAnnualDeduction")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
+
+                    b.Property<bool>("ApplyCnssCeilingToPayrollTaxes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<int>("PayrollTaxBaseMode")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.Property<bool>("IsIndustrialSector")
                         .ValueGeneratedOnAdd()
@@ -5258,6 +5285,12 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasColumnType("decimal(18,3)")
                         .HasDefaultValue(0m);
 
+                    b.Property<decimal>("SmigAnnualDeductionAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)")
+                        .HasDefaultValue(0m);
+
                     b.Property<decimal>("IrppRegularization")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(18, 3)
@@ -5295,11 +5328,30 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Property<Guid>("PayrollRunId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<decimal?>("PayrollTaxBase")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal?>("AppliedTfpRate")
+                        .HasPrecision(8, 4)
+                        .HasColumnType("decimal(8,4)");
+
                     b.Property<decimal>("ProfessionalExpenses")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
                     b.Property<decimal>("RegularizationDeferred")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<bool>("HasPartialDeductions")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<decimal>("PartialDeductionCarryOver")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)")
@@ -5332,6 +5384,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("EmployeeId", "Year", "Month");
 
+                    b.HasIndex("PayrollRunId", "EmployeeId")
+                        .IsUnique();
+
                     b.ToTable("Payslips", (string)null);
                 });
 
@@ -5354,6 +5409,27 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                     b.Property<string>("CreatedBy")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("DeductionKind")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("EarningKind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AccountSce")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid?>("SourceEntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("RequestedAmount")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal?>("CarriedOverAmount")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
 
                     b.Property<int>("Kind")
                         .HasColumnType("int");

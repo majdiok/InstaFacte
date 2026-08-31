@@ -83,6 +83,9 @@ public sealed class UpdatePayrollParametersCommandHandler : IRequestHandler<Upda
         if (!Enum.TryParse<SmigIrppExemptionMode>(dto.SmigIrppExemptionMode, true, out var smigExemptionMode))
             return Result.Failure(Error.Validation("SmigIrppExemptionMode", "Mode d'exonération IRPP SMIG invalide."));
 
+        if (!Enum.TryParse<PayrollTaxBaseMode>(dto.PayrollTaxBaseMode, true, out var payrollTaxBaseMode))
+            return Result.Failure(Error.Validation("PayrollTaxBaseMode", "Mode d'assiette des taxes sur salaires invalide."));
+
         var parameters = await _parameters.GetOrCreateForYearAsync(request.FiscalYear, cancellationToken);
 
         var ratesResult = parameters.UpdateRates(
@@ -114,7 +117,8 @@ public sealed class UpdatePayrollParametersCommandHandler : IRequestHandler<Upda
             enableAutomaticProrata: dto.EnableAutomaticProrata,
             smigIrppExemptionMode: smigExemptionMode,
             smigIrppExemptionRateOverride: dto.SmigIrppExemptionRateOverride,
-            cssEmployerRate: dto.CssEmployerRate);
+            cssEmployerRate: dto.CssEmployerRate,
+            payrollTaxBaseMode: payrollTaxBaseMode);
         if (ratesResult.IsFailure)
             return ratesResult;
 

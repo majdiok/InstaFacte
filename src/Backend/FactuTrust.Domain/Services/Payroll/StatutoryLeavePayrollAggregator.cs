@@ -174,14 +174,22 @@ public static class StatutoryLeavePayrollAggregator
         int waitingDays)
     {
         decimal priorIj = 0m;
+
+        // R-35 (CAL-016) : le plafond annuel de 180 jours IJ doit tenir compte de tout épisode
+        // qui *chevauche* l'exercice, pas seulement de ceux dont StartDate.Year == year — un
+        // congé maladie débuté en décembre de l'année précédente contribue des jours IJ à
+        // l'exercice courant et doit donc entrer dans le décompte du plafond de cet exercice.
+        // Seule la portion de l'épisode tombant dans l'exercice est comptée (proratisation
+        // calendaire, même convention que CountDaysInMonth/CountPriorDaysInEpisode).
         foreach (var leave in yearSickLeaves.Where(l =>
-                     l.IsApproved && l.Type == LeaveType.Sick && l.StartDate.Year == year && l.Id != currentLeave.Id))
+                     l.IsApproved && l.Type == LeaveType.Sick && OverlapsYear(l, year) && l.Id != currentLeave.Id))
         {
             if (leave.EndDate >= monthStart)
                 continue;
 
-            var waiting = Math.Min(leave.Days, waitingDays);
-            priorIj += Math.Max(0m, leave.Days - waiting);
+            var daysInYear = CountDaysOverlappingYear(leave, year);
+            var waiting = Math.Min(daysInYear, waitingDays);
+            priorIj += Math.Max(0m, daysInYear - waiting);
         }
 
         // Jours IJ de l'épisode courant avant le mois.
@@ -190,6 +198,30 @@ public static class StatutoryLeavePayrollAggregator
         priorIj += Math.Max(0m, priorInEpisode - waitingInEpisode);
 
         return priorIj;
+    }
+
+    private static bool OverlapsYear(LeaveRequest leave, int year) =>
+        leave.StartDate.Year <= year && leave.EndDate.Year >= year;
+
+    /// <summary>
+    /// Portion (proratisée au calendaire) des jours du congé qui tombe dans l'exercice
+    /// <paramref name="year"/> — utilisé pour le plafond annuel de 180 jours IJ (R-35).
+    /// </summary>
+    private static decimal CountDaysOverlappingYear(LeaveRequest leave, int year)
+    {
+        var yearStart = new DateTime(year, 1, 1);
+        var yearEnd = new DateTime(year, 12, 31);
+        var overlapStart = leave.StartDate > yearStart ? leave.StartDate : yearStart;
+        var overlapEnd = leave.EndDate < yearEnd ? leave.EndDate : yearEnd;
+        if (overlapEnd < overlapStart)
+            return 0m;
+
+        var totalCalendarDays = (leave.EndDate - leave.StartDate).Days + 1;
+        if (totalCalendarDays <= 0)
+            return 0m;
+
+        var overlapCalendarDays = (overlapEnd - overlapStart).Days + 1;
+        return R(leave.Days * overlapCalendarDays / totalCalendarDays);
     }
 
     private static decimal R(decimal value) => Math.Round(value, 3, MidpointRounding.AwayFromZero);

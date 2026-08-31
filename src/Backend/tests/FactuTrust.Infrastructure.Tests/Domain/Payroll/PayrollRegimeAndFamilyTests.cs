@@ -14,8 +14,8 @@ public sealed class PayrollRegimeAndFamilyTests
             weeklyRegime: WeeklyWorkRegime.FortyHours);
 
         Assert.True(result.IsSuccess);
-        // 1000 / 173,33 = 5,769 ; × 10 × 1,25 = 72,113
-        Assert.Equal(72.113m, result.Value.ComputedAmount);
+        // R-37 : diviseur 40 h exact 520/3 + arrondi final uniquement : 1000/(520/3)×10×1,25 = 72,115
+        Assert.Equal(72.115m, result.Value.ComputedAmount);
     }
 
     [Fact]

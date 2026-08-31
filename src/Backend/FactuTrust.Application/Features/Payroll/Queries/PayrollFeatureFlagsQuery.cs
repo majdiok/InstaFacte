@@ -16,6 +16,16 @@ public sealed record PayrollFeatureFlagsDto
     public bool CivpEnhancementsEnabled { get; init; }
     public bool CnssCeilingsEnabled { get; init; }
     public bool LegalPresetsHistoryEnabled { get; init; }
+
+    /// <summary>Configuration SCE de comptabilisation de la paie (plan §4 WS-1 / §5.3).
+    /// Lecture seule : <see cref="AccountingSettings"/> est une configuration globale (IOptions),
+    /// non persistée par tenant — la modification est réservée à l'administrateur (appsettings).</summary>
+    public string? PayrollAccountProfile { get; init; }
+    public DateTime? PayrollAccountProfileEffectiveDate { get; init; }
+    public string? PayrollInKindOffsetAccount { get; init; }
+    public bool PayrollDisbursementEntriesEnabled { get; init; }
+    public bool PayrollDetailedSalarySplitEnabled { get; init; }
+    public bool PayrollStrictSettlementEnabled { get; init; }
 }
 
 public sealed record GetPayrollFeatureFlagsQuery : IRequest<PayrollFeatureFlagsDto>;
@@ -41,6 +51,12 @@ public sealed class GetPayrollFeatureFlagsQueryHandler : IRequestHandler<GetPayr
             PublicHolidaysEnabled = _settings.PayrollPublicHolidaysEnabled,
             CivpEnhancementsEnabled = _settings.PayrollCivpEnhancementsEnabled,
             CnssCeilingsEnabled = _settings.PayrollCnssCeilingsEnabled,
-            LegalPresetsHistoryEnabled = _settings.PayrollLegalPresetsHistoryEnabled
+            LegalPresetsHistoryEnabled = _settings.PayrollLegalPresetsHistoryEnabled,
+            PayrollAccountProfile = _settings.PayrollAccountProfile.ToString(),
+            PayrollAccountProfileEffectiveDate = _settings.PayrollAccountProfileEffectiveDate,
+            PayrollInKindOffsetAccount = _settings.PayrollInKindOffsetAccount,
+            PayrollDisbursementEntriesEnabled = _settings.PayrollDisbursementEntriesEnabled,
+            PayrollDetailedSalarySplitEnabled = _settings.PayrollDetailedSalarySplitEnabled,
+            PayrollStrictSettlementEnabled = _settings.PayrollStrictSettlementEnabled
         });
 }

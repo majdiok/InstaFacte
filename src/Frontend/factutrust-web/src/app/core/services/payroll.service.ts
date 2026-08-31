@@ -116,6 +116,13 @@ export interface PayrollFeatureFlags {
   civpEnhancementsEnabled: boolean;
   cnssCeilingsEnabled: boolean;
   legalPresetsHistoryEnabled: boolean;
+  /** Configuration SCE de comptabilisation paie (lecture seule — config globale admin). Plan §5.3. */
+  payrollAccountProfile?: string | null;
+  payrollAccountProfileEffectiveDate?: string | null;
+  payrollInKindOffsetAccount?: string | null;
+  payrollDisbursementEntriesEnabled?: boolean;
+  payrollDetailedSalarySplitEnabled?: boolean;
+  payrollStrictSettlementEnabled?: boolean;
 }
 
 export interface PayrollCalculationWarning {

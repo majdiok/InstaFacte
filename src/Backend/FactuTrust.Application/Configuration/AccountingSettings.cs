@@ -1,3 +1,6 @@
+using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services.Payroll;
+
 namespace FactuTrust.Application.Configuration;
 
 /// <summary>
@@ -207,7 +210,94 @@ public sealed class AccountingSettings
     public string PayrollMutuelleEmployeeAccount { get; set; } = "428.1";
 
     /// <summary>Compte SCE pour les charges patronales mutuelle / caisse complémentaire.</summary>
+    [Obsolete("La part employeur des fonds sociaux/mutuelle est pilotée par le compte SCE figé sur la ligne "
+        + "(R-01/R-14) — la charge patronale agrégée reste au 647. Conservé pour compatibilité de configuration ; "
+        + "aucun chemin d'écriture ne le lit (suppression envisagée après audit des dossiers existants).")]
     public string PayrollMutuelleEmployerAccount { get; set; } = "647";
+
+    /// <summary>
+    /// Profil d'imputation comptable de la paie (Legacy | Sce2026). Repli <c>Legacy</c> par défaut :
+    /// le comportement historique est strictement préservé tant que le dossier ne bascule pas
+    /// explicitement. La sélection effective par cycle tient compte de
+    /// <see cref="PayrollAccountProfileEffectiveDate"/> (plan §5.3) : les cycles antérieurs à la
+    /// date restent en <c>Legacy</c> (la réouverture→revalidation régénère les mêmes comptes),
+    /// les cycles à partir de la date utilisent ce profil.
+    /// </summary>
+    public PayrollAccountProfile PayrollAccountProfile { get; set; } = PayrollAccountProfile.Legacy;
+
+    /// <summary>
+    /// Date de bascule du profil comptable paie (premier jour du mois d'effet). <c>null</c> = le
+    /// <see cref="PayrollAccountProfile"/> s'applique à tous les cycles sans frontière temporelle
+    /// (cas d'un nouveau dossier <c>Sce2026</c> dès le premier cycle).
+    /// </summary>
+    public DateTime? PayrollAccountProfileEffectiveDate { get; set; }
+
+    /// <summary>
+    /// Compte SCE de compensation des avantages en nature (retenue salarié) sous le profil Sce2026.
+    /// Défaut doctrinal 4386 « Autres charges à payer » (clearing bilantiel, réversible) ;
+    /// surchargeable par dossier. Le repli Legacy conserve le compte historique 421.
+    /// </summary>
+    public string PayrollInKindOffsetAccount { get; set; } = "4386";
+
+    /// <summary>
+    /// Résout le profil d'imputation comptable d'un cycle paie (plan §5.3). Avant la date de bascule
+    /// (<see cref="PayrollAccountProfileEffectiveDate"/>) → <c>Legacy</c> (la réouverture→revalidation
+    /// régénère les mêmes comptes qu'à l'origine) ; à partir de la date → <see cref="PayrollAccountProfile"/>.
+    /// Sans date de bascule, le profil configuré s'applique à tous les cycles. Source unique partagée
+    /// par la génération réelle (AccountingService) et la simulation du journal de paie.
+    /// </summary>
+    public PayrollAccountProfile ResolvePayrollAccountProfile(int year, int month)
+    {
+        var effective = PayrollAccountProfileEffectiveDate;
+        if (effective is null)
+            return PayrollAccountProfile;
+
+        // Dernier jour du mois du cycle.
+        var periodEnd = new DateTime(year, month, 1).AddMonths(1).AddDays(-1);
+        return periodEnd < effective.Value
+            ? PayrollAccountProfile.Legacy
+            : PayrollAccountProfile;
+    }
+
+    /// <summary>
+    /// Construit la carte de comptes SCE de l'OD de paie pour le profil résolu. La compensation
+    /// d'avantage en nature utilise <see cref="PayrollInKindOffsetAccount"/> (4386) sous SCE et le
+    /// compte historique 421 sous Legacy. Source unique partagée par la génération réelle
+    /// (AccountingService) et la simulation du journal de paie.
+    /// </summary>
+    public PayrollJournalEntryAccountMap BuildPayrollAccountMap(PayrollAccountProfile profile) => new()
+    {
+        LoansAccount = PayrollEmployeeLoansAccount,
+        GarnishmentsAccount = PayrollGarnishmentsAccount,
+        MutuelleEmployeeAccount = PayrollMutuelleEmployeeAccount,
+        MealVoucherEmployeeAccount = PayrollMealVoucherEmployeeAccount,
+        InKindBenefitOffsetAccount = profile == PayrollAccountProfile.Sce2026
+            ? PayrollInKindOffsetAccount
+            : PayrollJournalEntryBuilder.AdvancesAccount
+    };
+
+    /// <summary>
+    /// Génère l'écriture de décaissement (OD 421/421.1 → 532/5411) à la création d'une avance / au
+    /// décaissement d'un prêt. OFF par défaut : l'OD de décaissement reste manuelle (documentée dans
+    /// docs/payroll/treasury-link.md). Idempotente par source (<c>EmployeeAdvance</c>/<c>EmployeeLoan</c>).
+    /// </summary>
+    public bool PayrollDisbursementEntriesEnabled { get; set; }
+
+    /// <summary>
+    /// Ventile le débit 640 (rémunérations du personnel) en sous-comptes 6400/6401/6402/6403/6404
+    /// selon la nature du gain (<see cref="EarningKind"/>). OFF par défaut : non requis pour la
+    /// conformité SCE (ventilation optionnelle R-31).
+    /// </summary>
+    public bool PayrollDetailedSalarySplitEnabled { get; set; }
+
+    /// <summary>
+    /// Règle de solde stricte (R-06) : à la validation, une avance/échéance/saisie n'est soldée
+    /// que si une ligne de déduction figée du bulletin la référence (<c>SourceEntityId</c>) —
+    /// plus de solde forfaitaire tenant-wide. Un garde-fou anti-staleness bloque la validation
+    /// si une retenue a été créée/modifiée après le calcul du cycle. ON par défaut (plan §5) ;
+    /// OFF = repli incident sur le comportement historique (solde forfaitaire).
+    /// </summary>
+    public bool PayrollStrictSettlementEnabled { get; set; } = true;
 
     /// <summary>Compte SCE pour la part employée des tickets restaurant.</summary>
     public string PayrollMealVoucherEmployeeAccount { get; set; } = "428.2";

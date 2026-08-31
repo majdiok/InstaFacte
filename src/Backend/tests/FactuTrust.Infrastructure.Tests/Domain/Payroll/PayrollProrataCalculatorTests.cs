@@ -99,6 +99,10 @@ public sealed class PayrollProrataCalculatorTests
     [Fact]
     public void Compute_UnpaidSuspensionFiveWeekdays_ReducesWorkedDays()
     {
+        // R-23 (CAL-010) : mars 2026 compte 22 jours ouvrables (≠ 26). Les 5 jours ouvrables de
+        // suspension non payée (2-6 mars) doivent être ramenés à la convention 26 jours avant
+        // soustraction : 5 × 26 / 22 = 5,909... → 5,91 jours « paie » déduits (et non 5 bruts),
+        // sinon la retenue est systématiquement sous-évaluée dans les mois ≠ 26 jours ouvrables.
         var input = new PayrollProrataMonthInput
         {
             Year = 2026,
@@ -119,9 +123,19 @@ public sealed class PayrollProrataCalculatorTests
 
         var result = PayrollProrataCalculator.Compute(input);
 
-        Assert.Equal(21m, result.WorkedDays);
-        Assert.Equal(5m, result.NonWorkedDays);
-        Assert.Equal(500m, result.DeductionAmount);
+        var fullMonth = PayrollWorkingDaysCounter.CountWeekdaysInMonth(2026, 3);
+        Assert.Equal(22, fullMonth); // garde-fou : mars 2026 = 22 jours ouvrables
+
+        var suspendedPayrollDays = Math.Round(26m * 5m / fullMonth, 2, MidpointRounding.AwayFromZero);
+        var expectedWorked = 26m - suspendedPayrollDays;
+        var expectedNonWorked = Math.Round(26m - expectedWorked, 2, MidpointRounding.AwayFromZero);
+        var expectedDeduction = Math.Round(BaseSalary / 26m * expectedNonWorked, 3, MidpointRounding.AwayFromZero);
+
+        Assert.Equal(expectedWorked, result.WorkedDays);
+        Assert.Equal(expectedNonWorked, result.NonWorkedDays);
+        Assert.Equal(20.09m, result.WorkedDays);
+        Assert.Equal(5.91m, result.NonWorkedDays);
+        Assert.Equal(591.000m, result.DeductionAmount);
         Assert.Equal(PayrollProrataReason.Suspension, result.Reason);
     }
 

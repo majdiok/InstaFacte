@@ -429,13 +429,273 @@ public sealed class PayrollAccountingEntryTests
         }, ParamsWithCssEmployerRate(0.5m));
 
         var accountMap = new PayrollJournalEntryAccountMap();
+        // BuildLinesFromRun émet par défaut le profil Sce2026 (§5.3) : TFP/FOPROLOS sortent du 647
+        // pour des comptes de charge dédiés (6611/6612). La part CSS employeur reste au 647.
         var linesResult = PayrollJournalEntryBuilder.BuildLinesFromRun(run, "Paie 08/2026", accountMap);
         Assert.True(linesResult.IsSuccess);
+        var lines = linesResult.Value;
 
-        var employerDebit = linesResult.Value
+        var employerDebit = lines
             .Single(l => l.AccountNumber == PayrollJournalEntryBuilder.EmployerChargesAccount).Debit;
+        // Sce2026 : 647 = CNSS patronale + AT + CSS patronale (TFP/FOPROLOS exclus).
+        Assert.Equal(
+            run.TotalCnssEmployer + run.TotalWorkAccident + run.TotalCssEmployer,
+            employerDebit);
+
+        // TFP et FOPROLOS basculent vers leurs comptes de charge dédiés.
+        var tfpDebit = lines
+            .Single(l => l.AccountNumber == PayrollJournalEntryBuilder.TfpExpenseAccount).Debit;
+        var foprolosDebit = lines
+            .Single(l => l.AccountNumber == PayrollJournalEntryBuilder.FoprolosExpenseAccount).Debit;
+        Assert.Equal(run.TotalTfp, tfpDebit);
+        Assert.Equal(run.TotalFoprolos, foprolosDebit);
+
+        // La charge employeur totale est conservée (aucune double comptabilisation de la part CSS).
         Assert.Equal(
             run.TotalCnssEmployer + run.TotalTfp + run.TotalFoprolos + run.TotalWorkAccident + run.TotalCssEmployer,
-            employerDebit);
+            employerDebit + tfpDebit + foprolosDebit);
+    }
+
+    // ── WS-1 : table de passage SCE 2026 (plan §4.1.1) ──
+
+    [Fact]
+    public void BuildLines_Sce2026_RoutesTfpFoprolosToDedicatedAccountsAndTaxesPayableTo437()
+    {
+        var run = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        });
+
+        var result = PayrollJournalEntryBuilder.BuildLines(
+            run.TotalGross, run.TotalNet, run.TotalCnssEmployee, run.TotalCnssEmployer,
+            run.TotalIrpp, run.TotalCss, run.TotalTfp, run.TotalFoprolos,
+            run.TotalWorkAccident, run.TotalOtherDeductions, "Paie 08/2026",
+            totalIrppRegularization: 0m, totalCssRegularization: 0m, totalCssEmployer: run.TotalCssEmployer,
+            profile: PayrollAccountProfile.Sce2026);
+
+        Assert.True(result.IsSuccess);
+        var lines = result.Value;
+
+        // TFP / FOPROLOS → comptes de charge dédiés (6611 / 6612).
+        Assert.Equal(run.TotalTfp, lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.TfpExpenseAccount).Debit);
+        Assert.Equal(run.TotalFoprolos, lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.FoprolosExpenseAccount).Debit);
+
+        // 647 = CNSS patronale + AT + CSS patronale (TFP/FOPROLOS exclus).
+        Assert.Equal(
+            run.TotalCnssEmployer + run.TotalWorkAccident + run.TotalCssEmployer,
+            lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.EmployerChargesAccount).Debit);
+
+        // 437 = dette TFP + FOPROLOS + CSS patronale.
+        Assert.Equal(
+            run.TotalTfp + run.TotalFoprolos + run.TotalCssEmployer,
+            lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.PayrollTaxesPayableAccount).Credit);
+
+        // 432 = IRPP + CSS salariée uniquement (taxes patronales sorties du 432).
+        Assert.Equal(
+            run.TotalIrpp + run.TotalCss,
+            lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.StateWithholdingAccount).Credit);
+
+        // 453 inchangé (CNSS salariée + patronale + AT).
+        Assert.Equal(
+            run.TotalCnssEmployee + run.TotalCnssEmployer + run.TotalWorkAccident,
+            lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.SocialOrgAccount).Credit);
+
+        AssertCreateSucceeds(lines);
+    }
+
+    [Fact]
+    public void BuildLines_LegacyAndSce2026_BothBalanceAndConserveEmployerChargeTotal()
+    {
+        var run = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        });
+
+        var legacy = PayrollJournalEntryBuilder.BuildLines(
+            run.TotalGross, run.TotalNet, run.TotalCnssEmployee, run.TotalCnssEmployer,
+            run.TotalIrpp, run.TotalCss, run.TotalTfp, run.TotalFoprolos,
+            run.TotalWorkAccident, run.TotalOtherDeductions, "Paie 08/2026",
+            totalCssEmployer: run.TotalCssEmployer, profile: PayrollAccountProfile.Legacy).Value;
+        var sce = PayrollJournalEntryBuilder.BuildLines(
+            run.TotalGross, run.TotalNet, run.TotalCnssEmployee, run.TotalCnssEmployer,
+            run.TotalIrpp, run.TotalCss, run.TotalTfp, run.TotalFoprolos,
+            run.TotalWorkAccident, run.TotalOtherDeductions, "Paie 08/2026",
+            totalCssEmployer: run.TotalCssEmployer, profile: PayrollAccountProfile.Sce2026).Value;
+
+        var legacyTotalDebit = legacy.Sum(l => l.Debit);
+        var sceTotalDebit = sce.Sum(l => l.Debit);
+
+        // Les deux profils s'équilibrent et conservent la charge employeur totale (R-02/R-03) :
+        // le 647 SCE + 6611 + 6612 == 647 Legacy.
+        Assert.Equal(legacyTotalDebit, sceTotalDebit);
+        Assert.Equal(legacy.Sum(l => l.Credit), sce.Sum(l => l.Credit));
+
+        var legacyEmployer = legacy.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.EmployerChargesAccount).Debit;
+        var sceEmployer = sce.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.EmployerChargesAccount).Debit;
+        var sceTfp = sce.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.TfpExpenseAccount).Debit;
+        var sceFoprolos = sce.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.FoprolosExpenseAccount).Debit;
+        Assert.Equal(legacyEmployer, sceEmployer + sceTfp + sceFoprolos);
+    }
+
+    [Fact]
+    public void BuildLines_Sce2026_TerminationIndemnity_RoutedTo64602()
+    {
+        var run = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        });
+
+        var result = PayrollJournalEntryBuilder.BuildLines(
+            run.TotalGross, run.TotalNet, run.TotalCnssEmployee, run.TotalCnssEmployer,
+            run.TotalIrpp, run.TotalCss, run.TotalTfp, run.TotalFoprolos,
+            run.TotalWorkAccident, run.TotalOtherDeductions, "Paie 08/2026",
+            totalCssEmployer: run.TotalCssEmployer, totalTerminationIndemnities: 500m,
+            profile: PayrollAccountProfile.Sce2026);
+
+        Assert.True(result.IsSuccess);
+        var lines = result.Value;
+
+        // Indemnité de rupture → 64602 (SCE), le brut restant au 640.
+        Assert.Equal(500m, lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.TerminationIndemnityAccount).Debit);
+        Assert.Equal(run.TotalGross - 500m, lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.SalaryAccount).Debit);
+        // Le 641 (indemnités ordinaires) n'est pas émis sous SCE pour la rupture.
+        Assert.DoesNotContain(lines, l => l.AccountNumber == PayrollJournalEntryBuilder.IndemnityAccount);
+
+        AssertCreateSucceeds(lines);
+    }
+
+    [Fact]
+    public void BuildLines_Legacy_TerminationIndemnity_StaysOn641()
+    {
+        var run = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        });
+
+        var result = PayrollJournalEntryBuilder.BuildLines(
+            run.TotalGross, run.TotalNet, run.TotalCnssEmployee, run.TotalCnssEmployer,
+            run.TotalIrpp, run.TotalCss, run.TotalTfp, run.TotalFoprolos,
+            run.TotalWorkAccident, run.TotalOtherDeductions, "Paie 08/2026",
+            totalCssEmployer: run.TotalCssEmployer, totalTerminationIndemnities: 500m,
+            profile: PayrollAccountProfile.Legacy);
+
+        Assert.True(result.IsSuccess);
+        var lines = result.Value;
+
+        // Legacy : la rupture reste au 641, le compte 64602 n'est pas émis.
+        Assert.Equal(500m, lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.IndemnityAccount).Debit);
+        Assert.DoesNotContain(lines, l => l.AccountNumber == PayrollJournalEntryBuilder.TerminationIndemnityAccount);
+
+        AssertCreateSucceeds(lines);
+    }
+
+    [Fact]
+    public void BuildLinesFromRun_MutuelleCustomAccounts_BothPartsCreditSchemeAccounts()
+    {
+        // R-14 : un régime de fonds social avec des comptes SCE personnalisés (salarié + employeur)
+        // doit piloter l'écriture — les deux parts atterrissent sur les comptes du régime, non les
+        // défauts génériques (428.1 / 4538). Le compte SCE salarié est figé sur la ligne de bulletin
+        // par PayrollCalculator puis lu par BuildLinesFromRun.
+        const string customEmployeeAccount = "428.5";
+        const string customEmployerAccount = "4539";
+
+        var run = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m,
+            DeductionLines =
+            [
+                new("Mutuelle salarié", 80m, DeductionKind.MutuelleEmployee, AccountSce: customEmployeeAccount)
+            ],
+            EmployerChargeLines =
+            [
+                new("Mutuelle employeur", 120m, customEmployerAccount)
+            ]
+        });
+
+        // La ligne de bulletin figée porte bien le compte SCE salarié personnalisé.
+        Assert.Contains(run.Payslips.SelectMany(p => p.Lines),
+            l => l.DeductionKind == DeductionKind.MutuelleEmployee && l.AccountSce == customEmployeeAccount);
+
+        var accountMap = new PayrollJournalEntryAccountMap();
+        var linesResult = PayrollJournalEntryBuilder.BuildLinesFromRun(run, "Paie 08/2026", accountMap);
+        Assert.True(linesResult.IsSuccess);
+        var lines = linesResult.Value;
+
+        // Part salarié → crédit sur le compte SCE du régime (non 428.1).
+        Assert.Equal(80m, lines.Single(l => l.AccountNumber == customEmployeeAccount).Credit);
+        Assert.DoesNotContain(lines, l => l.AccountNumber == accountMap.MutuelleEmployeeAccount && l.Credit > 0);
+
+        // Part employeur → crédit sur le compte SCE du régime (non 4538).
+        Assert.Equal(120m, lines.Single(l => l.AccountNumber == customEmployerAccount).Credit);
+        Assert.DoesNotContain(lines, l =>
+            l.AccountNumber == PayrollJournalEntryBuilder.SocialFundEmployerPayableAccount && l.Credit == 120m);
+
+        AssertCreateSucceeds(lines);
+    }
+
+    [Fact]
+    public void BuildLines_Sce2026_InKindBenefit_RoutedTo6404()
+    {
+        var run = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        });
+
+        var result = PayrollJournalEntryBuilder.BuildLines(
+            run.TotalGross, run.TotalNet, run.TotalCnssEmployee, run.TotalCnssEmployer,
+            run.TotalIrpp, run.TotalCss, run.TotalTfp, run.TotalFoprolos,
+            run.TotalWorkAccident, run.TotalOtherDeductions, "Paie 08/2026",
+            totalCssEmployer: run.TotalCssEmployer, totalInKindBenefits: 300m,
+            profile: PayrollAccountProfile.Sce2026);
+
+        Assert.True(result.IsSuccess);
+        var lines = result.Value;
+
+        // H2 : avantage en nature → 6404 (SCE), le brut restant au 640.
+        Assert.Equal(300m, lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.InKindBenefitExpenseAccount).Debit);
+        Assert.Equal(run.TotalGross - 300m, lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.SalaryAccount).Debit);
+        // Pas d'indemnité de rupture sur ce cycle.
+        Assert.DoesNotContain(lines, l => l.AccountNumber == PayrollJournalEntryBuilder.TerminationIndemnityAccount);
+
+        AssertCreateSucceeds(lines);
+    }
+
+    [Fact]
+    public void BuildLines_Legacy_InKindBenefit_StaysIn640()
+    {
+        // Legacy : l'avantage en nature reste dans le brut au 640 (pas de 6404) — comportement historique.
+        var run = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        });
+
+        var result = PayrollJournalEntryBuilder.BuildLines(
+            run.TotalGross, run.TotalNet, run.TotalCnssEmployee, run.TotalCnssEmployer,
+            run.TotalIrpp, run.TotalCss, run.TotalTfp, run.TotalFoprolos,
+            run.TotalWorkAccident, run.TotalOtherDeductions, "Paie 08/2026",
+            totalCssEmployer: run.TotalCssEmployer, totalInKindBenefits: 300m,
+            profile: PayrollAccountProfile.Legacy);
+
+        Assert.True(result.IsSuccess);
+        var lines = result.Value;
+
+        Assert.DoesNotContain(lines, l => l.AccountNumber == PayrollJournalEntryBuilder.InKindBenefitExpenseAccount);
+        Assert.Equal(run.TotalGross, lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.SalaryAccount).Debit);
+
+        AssertCreateSucceeds(lines);
     }
 }

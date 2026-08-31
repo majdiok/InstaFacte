@@ -963,6 +963,13 @@ public sealed class UpdateDraftJournalEntryCommandHandler : IRequestHandler<Upda
             return Result.Failure(Error.Validation("Period",
                 "La période de cette écriture est clôturée."));
 
+        // G2b (R-07/R-08) : absolu, y compris pour le cabinet — une écriture générée par le module
+        // Paie se corrige via le workflow paie (« Rouvrir le cycle » / « Annuler le paiement »),
+        // jamais par édition manuelle du brouillon.
+        if (PayrollSourcedEntryGuard.IsSystemSource(entry.SourceEntityType))
+            return Result.Failure(Error.Validation("Source",
+                "Cette écriture est générée par le module Paie ; elle ne peut pas être modifiée manuellement. Utilisez « Rouvrir le cycle » ou « Annuler le paiement »."));
+
         if (isAccountingFirm)
             return null;
 
@@ -1013,6 +1020,12 @@ public sealed class DeleteDraftJournalEntryCommandHandler : IRequestHandler<Dele
         // C4 : même verrou que la modification — la période close fige aussi ses brouillons résiduels.
         if (entry.AccountingPeriod?.IsClosed == true)
             return Result.Failure(Error.Validation("Period", "La période de cette écriture est clôturée."));
+
+        // C4b (R-07/R-08) : absolu, y compris pour le cabinet — un brouillon d'écriture paie se
+        // supprime via le workflow (réouverture du cycle), jamais directement.
+        if (PayrollSourcedEntryGuard.IsSystemSource(entry.SourceEntityType))
+            return Result.Failure(Error.Validation("Source",
+                "Cette écriture est générée par le module Paie ; elle ne peut pas être supprimée manuellement. Utilisez « Rouvrir le cycle » ou « Annuler le paiement »."));
 
         // C5 : la suppression d'un brouillon d'extourne doit restaurer l'écriture d'origine
         // (marquée IsReversed dès la création de l'extourne), sinon elle resterait verrouillée

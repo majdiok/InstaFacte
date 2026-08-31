@@ -49,6 +49,9 @@ public sealed class AccountingService : IAccountingService
     public const string SourceCnssContributionPayment = "CnssContributionPayment";
     public const string SourceCnssContributionPaymentCancelled = "CnssContributionPaymentCancelled";
 
+    /// <summary>Clé d'idempotence de l'OD de reclassement SCE paie (plan §5.2.1), sur l'id du cycle.</summary>
+    public const string SourcePayrollReclassification = "PayrollReclassification";
+
     /// <summary>Clé d'idempotence du 2ᵉ volet d'un effet (encaissement/paiement à échéance), sur l'id du paiement.</summary>
     public const string SourceEffetSettlement = "EffetSettlement";
 
@@ -721,6 +724,14 @@ public sealed class AccountingService : IAccountingService
 
         if (original.IsReversed)
             return Result.Failure<Guid>(Error.Validation("Extourne", "Cette écriture a déjà été extournée."));
+
+        // R-07/R-08 : une écriture générée par le module Paie ne s'extourne pas manuellement —
+        // elle se corrige via le workflow paie (« Rouvrir le cycle » / « Annuler le paiement »).
+        if (PayrollSourcedEntryGuard.IsSystemSource(original.SourceEntityType))
+        {
+            return Result.Failure<Guid>(Error.Validation("Extourne",
+                "Cette écriture est générée par le module Paie — utilisez « Rouvrir le cycle » ou « Annuler le paiement »."));
+        }
 
         // Contre-passer dans la période de l'écriture d'origine si elle est encore ouverte ;
         // sinon, repli sur la date du jour (une période clôturée ne peut recevoir d'écriture).
@@ -2053,10 +2064,27 @@ public sealed class AccountingService : IAccountingService
         return Result.Success(affected);
     }
 
+    /// <summary>
+    /// Résout le profil d'imputation comptable d'un cycle paie (plan §5.3). Avant la date de bascule
+    /// (<see cref="AccountingSettings.PayrollAccountProfileEffectiveDate"/>) → <c>Legacy</c> (la
+    /// réouverture→revalidation régénère les mêmes comptes qu'à l'origine) ; à partir de la date →
+    /// <see cref="AccountingSettings.PayrollAccountProfile"/>. Sans date de bascule, le profil
+    /// configuré s'applique à tous les cycles. Délégué à <see cref="AccountingSettings.ResolvePayrollAccountProfile"/>
+    /// (source unique partagée avec la simulation du journal de paie).
+    /// </summary>
+    private PayrollAccountProfile ResolvePayrollAccountProfile(int year, int month)
+        => _settings.ResolvePayrollAccountProfile(year, month);
+
     public async Task<Result> GeneratePayrollRunEntryAsync(PayrollRun payrollRun, CancellationToken cancellationToken = default)
     {
+        // R-18 (lifecycle) : un cycle validé sans écriture est pire qu'un échec explicite. On bloque
+        // plutôt que de laisser une validation muette (le semis NCT01 rend le cas marginal).
         if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
-            return Result.Success();
+        {
+            return Result.Failure(Error.Validation(
+                "ChartOfAccounts",
+                "Aucun plan comptable — impossible de générer l'écriture de paie."));
+        }
 
         // Idempotence : une écriture active suffit. Une écriture extournée (cycle rouvert) ne doit
         // pas bloquer la régénération, sinon la comptabilité resterait figée sur les anciens montants.
@@ -2081,13 +2109,25 @@ public sealed class AccountingService : IAccountingService
         var hasTypedDeductions = payrollRun.Payslips.Any(p =>
             p.Lines.Any(l => l.Kind == PayslipLineKind.Deduction && l.DeductionKind.HasValue));
 
-        var accountMap = new PayrollJournalEntryAccountMap
-        {
-            LoansAccount = _settings.PayrollEmployeeLoansAccount,
-            GarnishmentsAccount = _settings.PayrollGarnishmentsAccount,
-            MutuelleEmployeeAccount = _settings.PayrollMutuelleEmployeeAccount,
-            MealVoucherEmployeeAccount = _settings.PayrollMealVoucherEmployeeAccount
-        };
+        // Profil d'imputation par cycle (plan §5.3) : avant la date de bascule → Legacy (la
+        // réouverture→revalidation régénère les mêmes comptes), à partir de la date → profil configuré.
+        var profile = ResolvePayrollAccountProfile(payrollRun.Year, payrollRun.Month);
+
+        var accountMap = _settings.BuildPayrollAccountMap(profile);
+
+        // H2 : la ventilation des gains par nature (rupture → 64602, avantage en nature → 6404) ne doit
+        // pas dépendre de la présence de retenues typées. Un cycle de rupture (ou d'avantage en nature)
+        // sans avance/prêt/saisie/mutuelle tombait auparavant sur le chemin agrégé qui passait
+        // totalTerminationIndemnities = 0 → indemnité de rupture au 640. On dérive désormais les
+        // montants des lignes figées des bulletins et on les passe aussi au chemin agrégé. Pour un
+        // vrai cycle Legacy (EarningKind null) les résolveurs renvoient 0 → comportement historique
+        // préservé byte-à-byte.
+        var terminationFromRun = payrollRun.Payslips.Count > 0
+            ? PayrollJournalEntryBuilder.ResolveTerminationIndemnities(payrollRun, profile)
+            : 0m;
+        var inKindFromRun = payrollRun.Payslips.Count > 0
+            ? PayrollJournalEntryBuilder.ResolveInKindBenefits(payrollRun)
+            : 0m;
 
         var auxiliaryCredits = _settings.PayrollEmployeeAuxiliaryEnabled && payrollRun.Payslips.Count > 0
             ? payrollRun.Payslips
@@ -2102,7 +2142,7 @@ public sealed class AccountingService : IAccountingService
             : null;
 
         var linesResult = hasTypedDeductions
-            ? PayrollJournalEntryBuilder.BuildLinesFromRun(payrollRun, label, accountMap, auxiliaryCredits)
+            ? PayrollJournalEntryBuilder.BuildLinesFromRun(payrollRun, label, accountMap, auxiliaryCredits, profile)
             : _settings.PayrollEmployeeAuxiliaryEnabled && auxiliaryCredits is { Count: > 0 }
                 ? PayrollJournalEntryBuilder.BuildLines(
                     payrollRun.TotalGross,
@@ -2119,7 +2159,10 @@ public sealed class AccountingService : IAccountingService
                     auxiliaryCredits,
                     payrollRun.TotalIrppRegularization,
                     payrollRun.TotalCssRegularization,
-                    payrollRun.TotalCssEmployer)
+                    payrollRun.TotalCssEmployer,
+                    terminationFromRun,
+                    inKindFromRun,
+                    profile)
                 : PayrollJournalEntryBuilder.BuildLines(
                     payrollRun.TotalGross,
                     payrollRun.TotalNet,
@@ -2134,7 +2177,10 @@ public sealed class AccountingService : IAccountingService
                     label,
                     payrollRun.TotalIrppRegularization,
                     payrollRun.TotalCssRegularization,
-                    payrollRun.TotalCssEmployer);
+                    payrollRun.TotalCssEmployer,
+                    terminationFromRun,
+                    inKindFromRun,
+                    profile);
         if (linesResult.IsFailure)
             return Result.Failure(linesResult.Error);
 
@@ -2155,7 +2201,9 @@ public sealed class AccountingService : IAccountingService
             SourcePayrollRun,
             payrollRun.Id,
             lines,
-            currency);
+            currency,
+            pieceRef: $"PAIE-{payrollRun.Year}-{payrollRun.Month:D2}",
+            pieceDate: entryDate);
 
         if (create.IsFailure)
             return Result.Failure(create.Error);
@@ -2172,7 +2220,20 @@ public sealed class AccountingService : IAccountingService
         string reason,
         CancellationToken cancellationToken = default)
     {
+        // R-18 (lifecycle) : symétrique de la génération — on échoue plutôt que de silencieusement
+        // ignorer une réouverture sur un dossier sans plan comptable.
         if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
+        {
+            return Result.Failure(Error.Validation(
+                "ChartOfAccounts",
+                "Aucun plan comptable — impossible d'extourner l'écriture de paie."));
+        }
+
+        // R-19 : anti-double-extourne. Une écriture d'annulation active (cycle rouvert) ne doit pas
+        // être recréée — sinon une double réouverture produirait deux écritures d'annulation.
+        var existingReversal = await _journalEntries.GetBySourceAsync(
+            SourcePayrollRunCancelled, payrollRunId, cancellationToken);
+        if (existingReversal is not null)
             return Result.Success();
 
         var original = await _journalEntries.GetActiveBySourceAsync(SourcePayrollRun, payrollRunId, cancellationToken);
@@ -2237,6 +2298,46 @@ public sealed class AccountingService : IAccountingService
         await _journalEntries.AddAsync(reversal, cancellationToken);
         original.MarkReversedBy(reversal.Id);
         await _journalEntries.UpdateAsync(original, cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> EnsurePayrollRunEntryPostedAsync(
+        Guid payrollRunId,
+        string validatedBy,
+        CancellationToken cancellationToken = default)
+    {
+        // R-33 (lifecycle) : à la clôture d'un cycle en mode Brouillard, l'OD encore au brouillon est
+        // validée — un cycle clôturé ne doit pas laisser une écriture brouillon modifiable et dont le
+        // cycle n'est plus reopenable. No-op si l'écriture est déjà validée ou inexistante.
+        var entry = await _journalEntries.GetActiveBySourceAsync(SourcePayrollRun, payrollRunId, cancellationToken);
+        if (entry is null || !entry.IsDraft)
+            return Result.Success();
+
+        var result = entry.Validate(validatedBy);
+        if (result.IsFailure)
+            return result;
+
+        await _journalEntries.UpdateAsync(entry, cancellationToken);
+
+        if (_audit is not null)
+        {
+            try
+            {
+                await _audit.LogAsync(
+                    action: "PayrollRunEntryAutoPosted",
+                    entityType: "JournalEntry",
+                    entityId: entry.Id,
+                    oldValues: null,
+                    newValues: new { entry.JournalCode, entry.EntryNumber, payrollRunId },
+                    cancellationToken: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // L'audit ne doit jamais faire échouer la clôture.
+                _logger.LogError(ex, "Failed to log audit event for auto-posted payroll run OD {EntryId}", entry.Id);
+            }
+        }
+
         return Result.Success();
     }
 
@@ -2332,7 +2433,9 @@ public sealed class AccountingService : IAccountingService
             SourcePayrollPayment,
             payment.Id,
             lines,
-            currency);
+            currency,
+            pieceRef: $"PAIE-PAY-{payrollRun.Year}-{payrollRun.Month:D2}",
+            pieceDate: date);
 
         if (create.IsFailure)
             return Result.Failure(create.Error);
@@ -2467,7 +2570,9 @@ public sealed class AccountingService : IAccountingService
             SourceCnssContributionPayment,
             payment.Id,
             linesResult.Value,
-            currency);
+            currency,
+            pieceRef: $"CNSS-{payment.Year}-{payment.Month:D2}",
+            pieceDate: date);
 
         if (create.IsFailure)
             return Result.Failure(create.Error);
@@ -2555,5 +2660,160 @@ public sealed class AccountingService : IAccountingService
         original.MarkReversedBy(reversal.Id);
         await _journalEntries.UpdateAsync(original, cancellationToken);
         return Result.Success();
+    }
+
+    /// <summary>
+    /// OD de reclassement SCE paie (plan §5.2.1 / WS-5). Une seule écriture de correction par cycle,
+    /// déterministe depuis les totaux figés + lignes de l'OD legacy. Idempotente : refuse de
+    /// s'exécuter deux fois tant qu'une écriture active existe.
+    /// </summary>
+    public async Task<Result<Guid>> GeneratePayrollReclassificationEntryAsync(
+        PayrollRun payrollRun,
+        CancellationToken cancellationToken = default)
+    {
+        if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
+        {
+            return Result.Failure<Guid>(Error.Validation(
+                "ChartOfAccounts",
+                "Aucun plan comptable — impossible de générer l'OD de reclassement."));
+        }
+
+        static decimal R(decimal v) => Math.Round(v, 3, MidpointRounding.AwayFromZero);
+
+        // Idempotence / refus du double reclassement : une écriture active suffit à refuser.
+        var existing = await _journalEntries.GetActiveBySourceAsync(
+            SourcePayrollReclassification, payrollRun.Id, cancellationToken);
+        if (existing is not null)
+        {
+            return Result.Failure<Guid>(Error.Validation(
+                "ReclassementPayrollRun",
+                $"Un reclassement existe déjà pour le cycle {payrollRun.Month:D2}/{payrollRun.Year} (écriture #{existing.EntryNumber}). " +
+                "Extournez-le d'abord pour en générer un nouveau."));
+        }
+
+        // L'OD legacy (SourcePayrollRun) est la source de vérité pour les montants effectivement
+        // comptabilisés sur 641 (indemnités) et 421 (compensation AN) — non portés par les totaux.
+        var legacy = await _journalEntries.GetActiveBySourceAsync(
+            SourcePayrollRun, payrollRun.Id, cancellationToken);
+        if (legacy is null)
+        {
+            return Result.Failure<Guid>(Error.Validation(
+                "PayrollRunEntry",
+                $"Aucune écriture de paie active pour le cycle {payrollRun.Month:D2}/{payrollRun.Year} — " +
+                "rien à reclasser. Génère d'abord l'écriture manquante si besoin."));
+        }
+
+        var tfp = R(payrollRun.TotalTfp);
+        var foprolos = R(payrollRun.TotalFoprolos);
+        var cssPat = R(payrollRun.TotalCssEmployer);
+
+        // M1 : les montants à reclasser se déduisent des lignes figées des bulletins (EarningKind),
+        // non des sommes brutes des comptes legacy. Sous Legacy, le 641 mêlait indemnités ordinaires
+        // ET indemnités de rupture, et le 421 mêlait la compensation d'avantage en nature ET les
+        // avances (« autres retenues »). Reclasser l'intégralité du 641 → 640 laissait la rupture au
+        // 640 (au lieu de 64602) ; reclasser l'intégralité du 421 → 4386 corrompait la créance d'avance.
+        // On sépare donc à partir des bulletins :
+        //  - rupture (EarningKind.TerminationIndemnity, repli libellé « Indemnité ») : 641 → 64602 ;
+        //  - indemnités ordinaires (le reliquat du 641) : 641 → 640 ;
+        //  - compensation AN (retenue typée InKindBenefitOffset) : 421 → 4386, les avances restent au 421.
+        var indemnites641 = R(legacy.Lines.Where(l => l.AccountNumber == PayrollJournalEntryBuilder.IndemnityAccount)
+            .Sum(l => l.DebitAmount.Amount));
+        var posted421Credits = R(legacy.Lines.Where(l => l.AccountNumber == PayrollJournalEntryBuilder.AdvancesAccount)
+            .Sum(l => l.CreditAmount.Amount));
+
+        var terminationFromRun = payrollRun.Payslips.Count > 0
+            ? R(PayrollJournalEntryBuilder.ResolveTerminationIndemnities(payrollRun, PayrollAccountProfile.Sce2026))
+            : 0m;
+        var inKindOffsetFromRun = payrollRun.Payslips.Count > 0
+            ? R(PayrollJournalEntryBuilder.ResolveInKindBenefitOffset(payrollRun))
+            : 0m;
+
+        // On ne peut pas reclasser plus que ce qui est effectivement comptabilisé au 641 / au 421.
+        var terminationToReclass = R(Math.Min(terminationFromRun, indemnites641));
+        var ordinaryToReclass = R(Math.Max(0m, indemnites641 - terminationToReclass));
+        var inKindOffsetToReclass = R(Math.Min(inKindOffsetFromRun, posted421Credits));
+
+        var label = $"Reclassement paie {payrollRun.Month:D2}/{payrollRun.Year} (migration SCE)";
+        var lines = new List<JournalLineInput>();
+        var suffix = $"{payrollRun.Month:D2}/{payrollRun.Year}";
+
+        void Pair(string debitAccount, string creditAccount, decimal amount, string lineLabel)
+        {
+            if (amount == 0m) return;
+            lines.Add(new JournalLineInput(debitAccount, $"{lineLabel} — Reclassement {suffix}", amount, 0, null, ThirdPartyKind.None));
+            lines.Add(new JournalLineInput(creditAccount, $"{lineLabel} — Reclassement {suffix}", 0, amount, null, ThirdPartyKind.None));
+        }
+
+        // TFP/FOPROLOS : 647 → 6611/6612 (charges) et 432 → 437 (dette).
+        Pair(PayrollJournalEntryBuilder.TfpExpenseAccount, PayrollJournalEntryBuilder.EmployerChargesAccount, tfp, "TFP");
+        Pair(PayrollJournalEntryBuilder.FoprolosExpenseAccount, PayrollJournalEntryBuilder.EmployerChargesAccount, foprolos, "FOPROLOS");
+        Pair(PayrollJournalEntryBuilder.StateWithholdingAccount, PayrollJournalEntryBuilder.PayrollTaxesPayableAccount,
+            R(tfp + foprolos + cssPat), "Taxes sur salaires + CSS patronale");
+
+        // Indemnités ordinaires : 641 → 640.
+        Pair(PayrollJournalEntryBuilder.SalaryAccount, PayrollJournalEntryBuilder.IndemnityAccount, ordinaryToReclass, "Indemnités ordinaires");
+
+        // Indemnités de rupture : 641 → 64602.
+        Pair(PayrollJournalEntryBuilder.TerminationIndemnityAccount, PayrollJournalEntryBuilder.IndemnityAccount,
+            terminationToReclass, "Indemnités de rupture");
+
+        // Compensation avantage en nature : 421 (crédit fictif) → 4386 (à payer). Les avances restent au 421.
+        Pair(PayrollJournalEntryBuilder.AdvancesAccount, PayrollJournalEntryBuilder.InKindBenefitOffsetPayableAccount,
+            inKindOffsetToReclass, "Compensation avantage en nature");
+
+        if (lines.Count < 2)
+        {
+            return Result.Failure<Guid>(Error.Validation(
+                "ReclassementPayrollRun",
+                $"Aucun écart d'imputation à reclasser pour le cycle {payrollRun.Month:D2}/{payrollRun.Year}."));
+        }
+
+        var accountValidation = await ValidateAccountsExistAsync(lines, "PayrollReclassification", cancellationToken);
+        if (accountValidation.IsFailure)
+            return Result.Failure<Guid>(accountValidation.Error);
+
+        var entryDate = new DateTime(payrollRun.Year, payrollRun.Month, 1).AddMonths(1).AddDays(-1);
+        var periodResult = await _periodService.EnsureOpenPeriodAsync(entryDate, cancellationToken);
+        if (periodResult.IsFailure)
+        {
+            // Période close : on date la correction au premier jour ouvert (pratique « exercice antérieur »).
+            entryDate = DateTime.UtcNow.Date;
+            periodResult = await _periodService.EnsureOpenPeriodAsync(entryDate, cancellationToken);
+        }
+        if (periodResult.IsFailure)
+            return Result.Failure<Guid>(periodResult.Error);
+
+        var period = periodResult.Value;
+        var currency = Money.DefaultCurrency;
+        var pieceRef = $"RECLASS-{payrollRun.Year}-{payrollRun.Month:D2}";
+
+        var n = await _journalEntries.ReserveNextEntryNumberAsync("JOD", entryDate.Year, cancellationToken);
+        var create = JournalEntry.Create(
+            n,
+            "JOD",
+            entryDate,
+            label,
+            period.Id,
+            true,
+            SourcePayrollReclassification,
+            payrollRun.Id,
+            lines,
+            currency,
+            pieceRef: pieceRef,
+            pieceDate: new DateTime(payrollRun.Year, payrollRun.Month, 1).AddMonths(1).AddDays(-1));
+
+        if (create.IsFailure)
+            return Result.Failure<Guid>(create.Error);
+
+        var entry = create.Value;
+        entry.MarkInitialStatus(NewEntryStatus);
+        entry.SetAuditInfo("system", false);
+        await _journalEntries.AddAsync(entry, cancellationToken);
+
+        _logger.LogInformation(
+            "Generated payroll reclassification entry #{EntryNumber} for run {Year}-{Month:D2} ({LineCount} lines)",
+            entry.EntryNumber, payrollRun.Year, payrollRun.Month, lines.Count);
+
+        return Result.Success(entry.Id);
     }
 }

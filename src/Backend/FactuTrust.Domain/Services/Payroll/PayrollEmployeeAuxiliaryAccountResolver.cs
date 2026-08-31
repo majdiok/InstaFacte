@@ -15,12 +15,15 @@ public static class PayrollEmployeeAuxiliaryAccountResolver
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(employeeNumber);
 
+        // R-15 : un compte auxiliaire SCE doit être strictement numérique. L'ancien repli
+        // alphanumérique émettait des lettres (ex. 42500AB12) — refusé. On n'accepte que les
+        // chiffres du matricule ; à défaut, on lève (les appelants de validation renvoient un
+        // Result explicite plutôt que de produire un compte invalide).
         var digits = new string(employeeNumber.Where(char.IsDigit).ToArray());
         if (digits.Length == 0)
-            digits = new string(employeeNumber.Where(char.IsLetterOrDigit).ToArray());
-
-        if (digits.Length == 0)
-            throw new ArgumentException("Le matricule salarié doit contenir au moins un caractère alphanumérique.", nameof(employeeNumber));
+            throw new ArgumentException(
+                "Le matricule salarié doit contenir au moins un chiffre pour générer le compte auxiliaire 425 ; "
+                + "les caractères alphabétiques ne sont pas acceptés en SCE.", nameof(employeeNumber));
 
         var suffixLength = MaxAccountNumberLength - PersonnelPayableParentAccount.Length;
         if (suffixLength <= 0)
@@ -32,4 +35,11 @@ public static class PayrollEmployeeAuxiliaryAccountResolver
 
         return PersonnelPayableParentAccount + suffix;
     }
+
+    /// <summary>
+    /// R-15 : indique si le matricule contient au moins un chiffre (précondition de <see cref="Resolve"/>),
+    /// sans lever. Utilisé par la validation pour produire un message d'erreur métier nominatif.
+    /// </summary>
+    public static bool CanResolve(string employeeNumber)
+        => !string.IsNullOrWhiteSpace(employeeNumber) && employeeNumber.Any(char.IsDigit);
 }

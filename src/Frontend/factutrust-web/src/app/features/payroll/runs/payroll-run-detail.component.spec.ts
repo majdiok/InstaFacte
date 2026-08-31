@@ -8,6 +8,7 @@ import { PayrollRunDetailComponent } from './payroll-run-detail.component';
 import { PayrollService, type PayrollRunDetail } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 
 describe('PayrollRunDetailComponent', () => {
@@ -57,8 +58,10 @@ describe('PayrollRunDetailComponent', () => {
           getPayslip: jasmine.createSpy('getPayslip'),
           downloadPayslipPdf: jasmine.createSpy('downloadPayslipPdf'),
           getBankTransferPreview: jasmine.createSpy('getBankTransferPreview'),
-          exportBankTransfer: jasmine.createSpy('exportBankTransfer')
+          exportBankTransfer: jasmine.createSpy('exportBankTransfer'),
+          cancelAllRunPayments: jasmine.createSpy('cancelAllRunPayments')
         } },
+        { provide: ConfirmationService, useValue: jasmine.createSpyObj('ConfirmationService', ['confirm', 'prompt']) },
         { provide: ToastService, useValue: jasmine.createSpyObj('ToastService', ['add']) },
         { provide: AuthService, useValue: {
           hasPermission: (p: string) => perms.includes(p),
@@ -129,5 +132,53 @@ describe('PayrollRunDetailComponent', () => {
   it('hides treasury banner when status is Calculated', () => {
     setup([PERMISSIONS.payroll.read], { status: 'Calculated' });
     expect((fixture.nativeElement as HTMLElement).querySelector('.treasury-banner')).toBeNull();
+  });
+
+  it('validate opens a confirmation dialog and only validates after accept', () => {
+    setup([PERMISSIONS.payroll.validate]);
+    const confirmSpy = TestBed.inject(ConfirmationService) as jasmine.SpyObj<ConfirmationService>;
+    const payroll = TestBed.inject(PayrollService) as jasmine.SpyObj<PayrollService>;
+    payroll.validateRun.and.returnValue(of({ success: true, data: null }));
+    confirmSpy.confirm.and.callFake((cfg: { accept?: () => void }) => cfg.accept?.());
+
+    fixture.componentInstance.validate();
+
+    expect(confirmSpy.confirm).toHaveBeenCalledTimes(1);
+    expect(payroll.validateRun).toHaveBeenCalledWith('run-1');
+  });
+
+  it('Clôturer confirmation warns the operation is irreversible', () => {
+    setup([PERMISSIONS.payroll.validate], { status: 'Validated', statusDisplay: 'Validé' });
+    const confirmSpy = TestBed.inject(ConfirmationService) as jasmine.SpyObj<ConfirmationService>;
+
+    fixture.componentInstance.close();
+
+    expect(confirmSpy.confirm).toHaveBeenCalledTimes(1);
+    const cfg = confirmSpy.confirm.calls.mostRecent().args[0] as { message: string; acceptButtonStyleClass: string };
+    expect(cfg.message).toContain('IRRÉVERSIBLE');
+    expect(cfg.acceptButtonStyleClass).toContain('btn-danger');
+  });
+
+  it('cancelAllPayments aborts when the prompt returns no reason', async () => {
+    setup([PERMISSIONS.payroll.read]);
+    const confirmSpy = TestBed.inject(ConfirmationService) as jasmine.SpyObj<ConfirmationService>;
+    const payroll = TestBed.inject(PayrollService);
+    confirmSpy.prompt.and.resolveTo(null);
+
+    await fixture.componentInstance.cancelAllPayments();
+
+    expect(payroll.cancelAllRunPayments).not.toHaveBeenCalled();
+  });
+
+  it('cancelAllPayments cancels run payments with the entered reason', async () => {
+    setup([PERMISSIONS.payroll.read]);
+    const confirmSpy = TestBed.inject(ConfirmationService) as jasmine.SpyObj<ConfirmationService>;
+    const payroll = TestBed.inject(PayrollService) as jasmine.SpyObj<PayrollService>;
+    confirmSpy.prompt.and.resolveTo('motif rejet');
+    payroll.cancelAllRunPayments.and.returnValue(of({ success: true, data: null }));
+
+    await fixture.componentInstance.cancelAllPayments();
+
+    expect(payroll.cancelAllRunPayments).toHaveBeenCalledWith('run-1', 'motif rejet');
   });
 });

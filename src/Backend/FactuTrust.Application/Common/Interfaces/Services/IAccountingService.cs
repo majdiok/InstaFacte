@@ -133,6 +133,16 @@ public interface IAccountingService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// R-33 (lifecycle) : valide (poste) l'écriture OD d'un cycle encore au brouillon. Appelé à la
+    /// clôture en mode Brouillard pour qu'un cycle clôturé ne laisse pas une OD brouillon modifiable
+    /// et non reopenable. No-op si l'écriture est déjà validée ou inexistante.
+    /// </summary>
+    Task<Result> EnsurePayrollRunEntryPostedAsync(
+        Guid payrollRunId,
+        string validatedBy,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Écriture de décaissement paie (débit 421 / crédit trésorerie) sur enregistrement d'un paiement.
     /// </summary>
     Task<Result> GeneratePayrollPaymentEntryAsync(
@@ -157,5 +167,19 @@ public interface IAccountingService
     Task<Result> ReverseCnssContributionPaymentEntryAsync(
         Guid cnssContributionPaymentId,
         string reason,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// OD de reclassement SCE d'un cycle paie (plan §5.2.1 / WS-5) : UNE écriture de correction par
+    /// période, journal JOD, libellé « Reclassement paie MM/YYYY (migration SCE) ». Débit 6611/6612
+    /// &amp; crédit 647 (TFP/FOPROLOS), débit 432 &amp; crédit 437 (TFP+FOPROLOS+CSS pat), 640↔641
+    /// (indemnités ordinaires) et 421↔4386 (compensation avantage en nature). Montants déterministes
+    /// issus des totaux figés du cycle + lignes de l'OD legacy. Idempotente par
+    /// <c>SourceEntityType="PayrollReclassification"</c> + <c>SourceEntityId=runId</c> : refuse de
+    /// s'exécuter deux fois tant qu'une écriture active existe. À exécuter dans une transaction
+    /// (<c>ITenantUnitOfWork</c>). Retourne l'id de l'écriture créée.
+    /// </summary>
+    Task<Result<Guid>> GeneratePayrollReclassificationEntryAsync(
+        PayrollRun payrollRun,
         CancellationToken cancellationToken = default);
 }

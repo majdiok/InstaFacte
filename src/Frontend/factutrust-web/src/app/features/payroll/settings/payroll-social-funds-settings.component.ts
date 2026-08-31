@@ -143,6 +143,10 @@ const BASE_OPTIONS = [
           <input pInputText [(ngModel)]="formEmployerAccount" class="w-full" />
         </div>
       </div>
+      <p class="payroll-info-text mt-1">
+        Comptes effectifs : ces comptes pilote désormais l'écriture de paie (crédit part salarié / crédit dette
+        employeur). Défauts doctrinaux : salarié « 428.1 », employeur « 4538 » (fonds social à payer — non « 647 »).
+      </p>
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Effet à partir du</label>
@@ -189,7 +193,7 @@ export class PayrollSocialFundsSettingsComponent implements OnInit {
   formFixedEmployer = 0;
   formMonthlyCap: number | null = null;
   formEmployeeAccount = '428.1';
-  formEmployerAccount = '647';
+  formEmployerAccount = '4538';
   formEffectiveFrom: Date | null = null;
   formEffectiveTo: Date | null = null;
 
@@ -220,7 +224,7 @@ export class PayrollSocialFundsSettingsComponent implements OnInit {
     this.formFixedEmployer = 0;
     this.formMonthlyCap = null;
     this.formEmployeeAccount = '428.1';
-    this.formEmployerAccount = '647';
+    this.formEmployerAccount = '4538';
     this.formEffectiveFrom = null;
     this.formEffectiveTo = null;
     this.dialogVisible = true;

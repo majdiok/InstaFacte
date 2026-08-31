@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
 import { ConfirmModalComponent } from '@shared/components/confirm-modal/confirm-modal.component';
+import { PromptModalComponent } from '@shared/components/confirm-modal/prompt-modal.component';
 
 export interface Confirmation {
   message?: string;
@@ -23,6 +24,21 @@ export interface AlertConfig {
   size?: 'sm' | 'md' | 'lg';
   /** Scrollable body for long content (ng-bootstrap). */
   scrollable?: boolean;
+}
+
+export interface PromptConfig {
+  message?: string;
+  header?: string;
+  icon?: string;
+  placeholder?: string;
+  acceptLabel?: string;
+  rejectLabel?: string;
+  acceptButtonStyleClass?: string;
+  /** When true (default), the accept button is disabled until a non-empty value is entered. */
+  required?: boolean;
+  maxLength?: number;
+  /** Modal width (default `md`). */
+  size?: 'sm' | 'md' | 'lg';
 }
 
 /**
@@ -136,5 +152,47 @@ export class ConfirmationService {
       () => {},
       () => {}
     ).catch(() => {});
+  }
+
+  /**
+   * Affiche une modale de saisie texte (remplace `window.prompt`). Retourne la valeur saisie
+   * (trimée) à la confirmation, ou `null` en cas d'annulation / fermeture.
+   *
+   * @example
+   * const reason = await confirmationService.prompt({
+   *   header: 'Annuler les paiements',
+   *   message: 'Motif d\\'annulation :',
+   *   acceptLabel: 'Annuler les paiements',
+   *   acceptButtonStyleClass: 'btn-danger',
+   *   required: true
+   * });
+   * if (!reason) return;
+   */
+  prompt(config: PromptConfig): Promise<string | null> {
+    const ref = this.modal.open(PromptModalComponent, {
+      container: 'body',
+      centered: true,
+      backdrop: 'static',
+      keyboard: true,
+      size: config.size ?? 'md',
+      windowClass: 'confirm-modal-window',
+      modalDialogClass: 'confirm-modal-dialog',
+      scrollable: false
+    });
+
+    ref.componentInstance.message = config.message ?? '';
+    ref.componentInstance.header = config.header ?? 'Saisie';
+    ref.componentInstance.icon = config.icon ?? '';
+    ref.componentInstance.placeholder = config.placeholder ?? '';
+    ref.componentInstance.acceptLabel = config.acceptLabel ?? 'Confirmer';
+    ref.componentInstance.rejectLabel = config.rejectLabel ?? 'Annuler';
+    ref.componentInstance.acceptButtonStyleClass = config.acceptButtonStyleClass ?? 'btn-primary';
+    ref.componentInstance.required = config.required ?? true;
+    ref.componentInstance.maxLength = config.maxLength ?? 500;
+
+    return ref.result.then(
+      v => (typeof v === 'string' ? v : null),
+      () => null
+    );
   }
 }

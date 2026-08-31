@@ -1,6 +1,7 @@
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
+using FactuTrust.Domain.Services.Payroll;
 
 namespace FactuTrust.Domain.Entities.Payroll;
 
@@ -57,7 +58,7 @@ public sealed class PayrollRun : AggregateRoot
     public decimal TotalIrppRegularization { get; private set; }
     /// <summary>Somme des régularisations CSS annuelles, même convention de signe.</summary>
     public decimal TotalCssRegularization { get; private set; }
-    /// <summary>Somme des exonérations IRPP SMIG (art. 21) appliquées sur le cycle.</summary>
+    /// <summary>Somme des exonérations/déductions IRPP SMIG appliquées sur le cycle.</summary>
     public decimal TotalIrppSmigExemption { get; private set; }
 
     private readonly List<Payslip> _payslips = new();
@@ -128,6 +129,36 @@ public sealed class PayrollRun : AggregateRoot
         IncrementVersion();
         AddDomainEvent(new PayrollRunValidatedEvent(Id, Year, Month));
         return Result.Success();
+    }
+
+    /// <summary>
+    /// R-15 : fige le compte auxiliaire 425 de chaque bulletin à la validation (et non plus
+    /// paresseusement au paiement/OD). Le compte devient déterministe et traçable : un changement
+    /// de matricule entre validation et paiement n'a plus d'effet. Renvoie un échec nominatif si un
+    /// matricule ne contient aucun chiffre (compte SCE strictement numérique). En cas de succès,
+    /// retourne la liste des bulletins dont le compte vient d'être figé (à persister).
+    /// </summary>
+    public Result<IReadOnlyList<Payslip>> FreezeEmployeeAuxiliaryAccounts()
+    {
+        var frozen = new List<Payslip>();
+        foreach (var payslip in _payslips)
+        {
+            if (!string.IsNullOrWhiteSpace(payslip.EmployeeAuxiliaryAccount))
+                continue; // déjà figé (cycle recalculé conserve le compte existant)
+
+            if (!PayrollEmployeeAuxiliaryAccountResolver.CanResolve(payslip.EmployeeNumber))
+            {
+                return Result.Failure<IReadOnlyList<Payslip>>(Error.Validation(
+                    "EmployeeNumber",
+                    $"Le matricule « {payslip.EmployeeNumber} » du salarié {payslip.EmployeeName} ne contient "
+                    + "aucun chiffre : impossible de générer le compte auxiliaire 425 (SCE strictement numérique)."));
+            }
+
+            payslip.EnsureAuxiliaryAccount(PayrollEmployeeAuxiliaryAccountResolver.Resolve(payslip.EmployeeNumber));
+            frozen.Add(payslip);
+        }
+
+        return Result.Success<IReadOnlyList<Payslip>>(frozen);
     }
 
     public Result Close()

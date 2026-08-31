@@ -1,9 +1,11 @@
+using FactuTrust.Domain.Enums;
+
 namespace FactuTrust.Domain.Services.Payroll;
 
 /// <summary>
 /// Ligne de prime/indemnité (contrat récurrent ou variable mensuelle) pour agrégation et affichage bulletin.
 /// </summary>
-public sealed record AllowanceLineInput(string Label, decimal Amount, bool Taxable, bool SubjectToCnss);
+public sealed record AllowanceLineInput(string Label, decimal Amount, bool Taxable, bool SubjectToCnss, EarningKind? Kind = null);
 
 /// <summary>
 /// Résultat de l'agrégation des primes en buckets de calcul (matrice 4 quadrants ou modèle simplifié).
@@ -51,10 +53,18 @@ public static class AllowanceBucketAggregator
         }
         else
         {
+            // R-25 : mode legacy (matrice quadrant désactivée). Historiquement tout ce qui n'était
+            // pas (imposable + CNSS) tombait en nonTaxable, ce qui sous-taxait silencieusement les
+            // indemnités imposables mais non soumises à la CNSS (Taxable=true, Cnss=false). On
+            // corrige ce cas en l'orientant vers taxableOnly ; les indemnités non imposables
+            // (Taxable=false, Cnss=true ou false) restent en nonTaxable — seul le cas imposable
+            // est corrigé pour ne pas changer la base CNSS des exercices déjà paramétrés en legacy.
             foreach (var allowance in lineList)
             {
                 if (allowance.Taxable && allowance.SubjectToCnss)
                     taxableCnssable += allowance.Amount;
+                else if (allowance.Taxable)
+                    taxableOnly += allowance.Amount;
                 else
                     nonTaxable += allowance.Amount;
             }

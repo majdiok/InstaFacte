@@ -232,10 +232,31 @@ public sealed class PayrollRunRepository : IPayrollRunRepository
     public async Task UpdateScalarAsync(PayrollRun run, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
-        // Attach the passed instance (which carries any domain events) and mark only the run row
-        // as modified. The run is loaded without payslips for status transitions, so no cascade flood.
-        context.PayrollRuns.Attach(run);
-        context.Entry(run).State = EntityState.Modified;
+        // Load the existing row in the same context so EF keeps the original concurrency token
+        // (Version) value from the database. Then copy scalar values from the detached aggregate.
+        // This avoids the cascade flood that would come from re-attaching the whole run graph.
+        var tracked = await context.PayrollRuns.FirstOrDefaultAsync(r => r.Id == run.Id, cancellationToken);
+        if (tracked is null)
+            return;
+        context.Entry(tracked).CurrentValues.SetValues(run);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// R-15 : persiste les bulletins figés (compte auxiliaire 425) à la validation. Attache chaque
+    /// bulletin passé et le marque modifié — seuls les bulletins réellement figés sont transmis.
+    /// </summary>
+    public async Task UpdatePayslipsAsync(IReadOnlyCollection<Payslip> payslips, CancellationToken cancellationToken = default)
+    {
+        if (payslips.Count == 0)
+            return;
+
+        await using var context = _contextFactory.CreateContext();
+        foreach (var payslip in payslips)
+        {
+            context.Payslips.Attach(payslip);
+            context.Entry(payslip).State = EntityState.Modified;
+        }
         await context.SaveChangesAsync(cancellationToken);
     }
 }

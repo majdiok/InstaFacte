@@ -167,6 +167,11 @@ public partial class TenantDbContext
             entity.Property(r => r.ParametersFiscalYear).IsRequired();
             entity.Property(r => r.ValidatedBy).HasMaxLength(450);
 
+            // R-16/M2 : jeton de concurrence — deux validateurs/recalculs concurrents sur le même
+            // cycle se soldent par un DbUpdateConcurrencyException (→ HTTP 409 via le middleware)
+            // plutôt que par une dernière-écriture-gagne silencieuse. Version vient de AggregateRoot.
+            entity.Property(r => r.Version).IsConcurrencyToken();
+
             entity.Property(r => r.TotalGross).HasPrecision(18, 3);
             entity.Property(r => r.TotalCnssEmployee).HasPrecision(18, 3);
             entity.Property(r => r.TotalIrpp).HasPrecision(18, 3);
@@ -224,6 +229,9 @@ public partial class TenantDbContext
             entity.Property(p => p.Css).HasPrecision(18, 3);
             entity.Property(p => p.IrppBeforeSmigExemption).HasPrecision(18, 3).HasDefaultValue(0m);
             entity.Property(p => p.IrppSmigExemption).HasPrecision(18, 3).HasDefaultValue(0m);
+            // R-12 : forfait mensuel de la déduction annuelle SMIG (0 hors du mode SmigAnnualDeduction
+            // et sur les bulletins antérieurs à son introduction).
+            entity.Property(p => p.SmigAnnualDeductionAmount).HasPrecision(18, 3).HasDefaultValue(0m);
             entity.Property(p => p.OtherDeductions).HasPrecision(18, 3);
             entity.Property(p => p.NonTaxableAllowances).HasPrecision(18, 3);
             // Régularisation annuelle : défaut 0 pour que les bulletins déjà émis conservent
@@ -231,6 +239,9 @@ public partial class TenantDbContext
             entity.Property(p => p.IrppRegularization).HasPrecision(18, 3).HasDefaultValue(0m);
             entity.Property(p => p.CssRegularization).HasPrecision(18, 3).HasDefaultValue(0m);
             entity.Property(p => p.RegularizationDeferred).HasPrecision(18, 3).HasDefaultValue(0m);
+            // R-22 : trace du report de retenues faute de net suffisant (défaut false/0).
+            entity.Property(p => p.HasPartialDeductions).IsRequired().HasDefaultValue(false);
+            entity.Property(p => p.PartialDeductionCarryOver).HasPrecision(18, 3).HasDefaultValue(0m);
             entity.Property(p => p.NetSalary).HasPrecision(18, 3);
             entity.Property(p => p.ProrataWorkedDays).HasPrecision(6, 2).HasDefaultValue(0m);
             entity.Property(p => p.ProrataNonWorkedDays).HasPrecision(6, 2).HasDefaultValue(0m);
@@ -255,6 +266,9 @@ public partial class TenantDbContext
 
             entity.HasIndex(p => p.PayrollRunId);
             entity.HasIndex(p => new { p.EmployeeId, p.Year, p.Month });
+            // R-16/M2 : un seul bulletin par salarié et par cycle (intégrité — empêche le doublon
+            // sur un recalcul concurrent ou un bug de wiring). Index unique ajouté après coup.
+            entity.HasIndex(p => new { p.PayrollRunId, p.EmployeeId }).IsUnique();
         });
     }
 
@@ -273,6 +287,15 @@ public partial class TenantDbContext
             entity.Property(l => l.Rate).HasPrecision(8, 4);
             entity.Property(l => l.Amount).HasPrecision(18, 3);
             entity.Property(l => l.DeductionKind);
+
+            // M1 — imputation SCE 2026 : nature du gain, compte SCE cible, et chaînage vers la
+            // retenue source (avance/prêt/saisie) pour le règlement figé par le bulletin (§4 WS-2).
+            // Toutes nullable : null = lignes historiques (Legacy).
+            entity.Property(l => l.EarningKind);
+            entity.Property(l => l.AccountSce).HasMaxLength(20);
+            entity.Property(l => l.SourceEntityId);
+            entity.Property(l => l.RequestedAmount).HasPrecision(18, 3);
+            entity.Property(l => l.CarriedOverAmount).HasPrecision(18, 3);
 
             entity.HasIndex(l => l.PayslipId);
         });
@@ -314,6 +337,9 @@ public partial class TenantDbContext
             // true = comportement historique (assiette plafonnée comme la CNSS). Les exercices
             // existants le conservent ; les présets légaux positionnent false à la création.
             entity.Property(p => p.ApplyCnssCeilingToPayrollTaxes).IsRequired().HasDefaultValue(true);
+            // R-24 : assiette des taxes sur salaires. Legacy (défaut) = base CNSS ; TotalGross = brut
+            // total (assiette légale). Les exercices existants conservent Legacy via le défaut de colonne.
+            entity.Property(p => p.PayrollTaxBaseMode).IsRequired().HasDefaultValue(PayrollTaxBaseMode.Legacy);
             entity.Property(p => p.TfpRateIndustry).HasPrecision(8, 4);
             entity.Property(p => p.TfpRateOther).HasPrecision(8, 4);
             entity.Property(p => p.FoprolosRate).HasPrecision(8, 4);
@@ -417,6 +443,9 @@ public partial class TenantDbContext
             entity.Property(a => a.Reason).HasMaxLength(500);
             entity.Property(a => a.IsSettled).IsRequired();
             entity.Property(a => a.SettledInPayrollRunId);
+            // R-22 : cumul des montants déjà retenus (règlement partiel). Défaut 0 — les avances
+            // antérieures n'ont jamais été partiellement soldées, SettledAmount vaut 0 ou Amount.
+            entity.Property(a => a.SettledAmount).HasPrecision(18, 3).HasDefaultValue(0m);
 
             entity.HasIndex(a => new { a.EmployeeId, a.IsSettled });
         });

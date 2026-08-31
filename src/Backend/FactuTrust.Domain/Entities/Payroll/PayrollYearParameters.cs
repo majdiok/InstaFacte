@@ -89,10 +89,20 @@ public sealed class PayrollYearParameters : AggregateRoot
     /// </summary>
     public bool ApplyCnssCeilingToPayrollTaxes { get; private set; } = true;
 
+    /// <summary>
+    /// Assiette des taxes sur salaires (TFP/FOPROLOS/CSS patronale) — R-24.
+    /// <c>Legacy</c> reproduit le comportement historique (assiette CNSS plafonnée ou non selon
+    /// <see cref="ApplyCnssCeilingToPayrollTaxes"/>) ; <c>TotalGross</c> applique l'assiette légale
+    /// = brut total de la rémunération. Les exercices existants conservent <c>Legacy</c> ; les
+    /// présets légaux matérialisent <c>TotalGross</c>. Sans indemnités hors CNSS, les deux modes
+    /// coïncident (le brut total égale le brut CNSS).
+    /// </summary>
+    public PayrollTaxBaseMode PayrollTaxBaseMode { get; private set; } = PayrollTaxBaseMode.Legacy;
+
     /// <summary>SMIG mensuel indicatif (TND), pour contrôle de cohérence. Optionnel.</summary>
     public decimal MonthlySmig { get; private set; }
 
-    /// <summary>Mode d'exonération IRPP SMIG (art. 21). Désactivé par défaut.</summary>
+    /// <summary>Mode d'exonération/déduction IRPP SMIG. Désactivé par défaut.</summary>
     public SmigIrppExemptionMode SmigIrppExemptionMode { get; private set; }
 
     /// <summary>
@@ -166,7 +176,8 @@ public sealed class PayrollYearParameters : AggregateRoot
         bool enableAutomaticProrata = false,
         SmigIrppExemptionMode smigIrppExemptionMode = SmigIrppExemptionMode.None,
         decimal? smigIrppExemptionRateOverride = null,
-        decimal cssEmployerRate = 0m)
+        decimal cssEmployerRate = 0m,
+        PayrollTaxBaseMode payrollTaxBaseMode = PayrollTaxBaseMode.Legacy)
     {
         if (fiscalYear is < 2000 or > 2100)
             return Result.Failure<PayrollYearParameters>(Error.Validation("FiscalYear", "L'exercice doit être compris entre 2000 et 2100."));
@@ -242,7 +253,8 @@ public sealed class PayrollYearParameters : AggregateRoot
             SmigIrppExemptionRateOverride = smigIrppExemptionRateOverride.HasValue
                 ? Round(smigIrppExemptionRateOverride.Value)
                 : null,
-            MealVoucherDailyExemptionCap = Round(mealVoucherDailyExemptionCap)
+            MealVoucherDailyExemptionCap = Round(mealVoucherDailyExemptionCap),
+            PayrollTaxBaseMode = payrollTaxBaseMode
         };
         entity._irppBrackets.AddRange(brackets);
         foreach (var gBracket in garnishment)
@@ -281,7 +293,8 @@ public sealed class PayrollYearParameters : AggregateRoot
         bool enableAutomaticProrata = false,
         SmigIrppExemptionMode smigIrppExemptionMode = SmigIrppExemptionMode.None,
         decimal? smigIrppExemptionRateOverride = null,
-        decimal cssEmployerRate = 0m)
+        decimal cssEmployerRate = 0m,
+        PayrollTaxBaseMode payrollTaxBaseMode = PayrollTaxBaseMode.Legacy)
     {
         var rates = new[]
         {
@@ -335,6 +348,7 @@ public sealed class PayrollYearParameters : AggregateRoot
         SmigIrppExemptionRateOverride = smigIrppExemptionRateOverride.HasValue
             ? Round(smigIrppExemptionRateOverride.Value)
             : null;
+        PayrollTaxBaseMode = payrollTaxBaseMode;
         IncrementVersion();
         return Result.Success();
     }
@@ -414,6 +428,17 @@ public sealed class PayrollYearParameters : AggregateRoot
     public void SetApplyCnssCeilingToPayrollTaxes(bool apply)
     {
         ApplyCnssCeilingToPayrollTaxes = apply;
+        IncrementVersion();
+    }
+
+    /// <summary>
+    /// Force le mode d'assiette des taxes sur salaires (R-24). Principalement utilisé pour
+    /// simuler un exercice legacy en tests de non-régression (les exercices en base conservent
+    /// <c>Legacy</c> via la valeur par défaut de la colonne).
+    /// </summary>
+    public void SetPayrollTaxBaseMode(PayrollTaxBaseMode mode)
+    {
+        PayrollTaxBaseMode = mode;
         IncrementVersion();
     }
 

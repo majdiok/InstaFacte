@@ -109,10 +109,16 @@ public sealed class PayrollComputation
     public decimal AnnualNetTaxable { get; init; }
     public decimal Irpp { get; init; }
     public decimal Css { get; init; }
-    /// <summary>IRPP brut avant exonération SMIG (art. 21).</summary>
+    /// <summary>IRPP brut avant exonération/déduction SMIG.</summary>
     public decimal IrppBeforeSmigExemption { get; init; }
-    /// <summary>Montant de l'exonération IRPP SMIG appliquée.</summary>
+    /// <summary>Montant de l'exonération IRPP SMIG appliquée (mode SmigPortion / FullIfBelow).</summary>
     public decimal IrppSmigExemption { get; init; }
+    /// <summary>
+    /// Forfait mensuel de la déduction annuelle SMIG (500 TND/an ÷ 12) appliqué sur la base
+    /// imposable (mode <c>SmigAnnualDeduction</c>, R-12). Nul hors de ce mode. Traçable jusqu'au
+    /// bulletin pour audit de conformité.
+    /// </summary>
+    public decimal SmigAnnualDeductionAmount { get; init; }
     public decimal OtherDeductions { get; init; }
     public decimal NonTaxableAllowances { get; init; }
 
@@ -124,6 +130,14 @@ public sealed class PayrollComputation
     public decimal RegularizationDeferred { get; init; }
     /// <summary>Vrai si le rappel a dû être écrêté au net disponible.</summary>
     public bool IsRegularizationCapped { get; init; }
+
+    /// <summary>
+    /// R-22 : vrai si au moins une retenue (pré- ou post-impôt) n'a pas pu être prélevée
+    /// intégralement faute de net suffisant et a été partiellement reportée au mois suivant.
+    /// </summary>
+    public bool HasPartialDeductions { get; init; }
+    /// <summary>R-22 : total des retenues reportées au mois suivant (pré- + post-impôt).</summary>
+    public decimal PartialDeductionCarryOver { get; init; }
 
     public decimal NetSalary { get; init; }
 
@@ -160,6 +174,16 @@ public sealed class PayrollComputationLine
     public decimal? Rate { get; init; }
     public decimal Amount { get; init; }
     public DeductionKind? DeductionKind { get; init; }
+    /// <summary>Nature du gain, pour ventilation comptable SCE (indemnités de rupture, avantage en nature…).</summary>
+    public EarningKind? EarningKind { get; init; }
+    /// <summary>Compte SCE figé (ex. compte du régime de fonds social). Null si non applicable.</summary>
+    public string? AccountSce { get; init; }
+    /// <summary>Identifiant de l'entité source (avance, prêt, saisie, enrôlement…) figé au calcul.</summary>
+    public Guid? SourceEntityId { get; init; }
+    /// <summary>Montant initialement demandé (saisies). Null si non applicable.</summary>
+    public decimal? RequestedAmount { get; init; }
+    /// <summary>Solde reporté au mois suivant (saisies). Null si non applicable.</summary>
+    public decimal? CarriedOverAmount { get; init; }
 }
 
 /// <summary>Ligne de retenue typée en entrée du calculateur.</summary>
@@ -167,7 +191,12 @@ public sealed record DeductionLineInput(
     string Label,
     decimal Amount,
     DeductionKind Kind,
-    Guid? SourceEntityId = null);
+    Guid? SourceEntityId = null,
+    decimal? RequestedAmount = null,
+    decimal? CarriedOverAmount = null,
+    /// <summary>Compte SCE du régime figé sur la ligne (mutuelle part salarié — R-14).
+    /// Null → le builder utilise le compte paramétré par défaut (ex. 428.1).</summary>
+    string? AccountSce = null);
 
 /// <summary>Charge patronale complémentaire (mutuelle employeur…).</summary>
 public sealed record EmployerChargeLineInput(

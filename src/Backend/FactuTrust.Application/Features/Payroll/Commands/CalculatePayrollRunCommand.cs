@@ -1,3 +1,4 @@
+using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
@@ -39,6 +40,7 @@ public sealed class CalculatePayrollRunCommandHandler
     private readonly StatutoryIjClaimSyncService _ijClaimSync;
     private readonly AnnualBonusSyncService _annualBonusSync;
     private readonly ITerminationSettlementRepository _terminationSettlements;
+    private readonly ITenantUnitOfWork _unitOfWork;
     private readonly AccountingSettings _settings;
 
     public CalculatePayrollRunCommandHandler(
@@ -63,7 +65,8 @@ public sealed class CalculatePayrollRunCommandHandler
         StatutoryIjClaimSyncService ijClaimSync,
         AnnualBonusSyncService annualBonusSync,
         ITerminationSettlementRepository terminationSettlements,
-        IOptions<AccountingSettings> settings)
+        IOptions<AccountingSettings> settings,
+        ITenantUnitOfWork unitOfWork)
     {
         _runs = runs;
         _employees = employees;
@@ -87,9 +90,20 @@ public sealed class CalculatePayrollRunCommandHandler
         _annualBonusSync = annualBonusSync;
         _terminationSettlements = terminationSettlements;
         _settings = settings.Value;
+        _unitOfWork = unitOfWork;
     }
 
-    public async Task<Result<CalculatePayrollRunResultDto>> Handle(
+    public Task<Result<CalculatePayrollRunResultDto>> Handle(
+        CalculatePayrollRunCommand request,
+        CancellationToken cancellationToken)
+        // R-28 : le calcul (purge des bulletins, synchro primes/IJ, écriture du cycle) est atomique.
+        // ExecuteAsync est réentrante (rejoint une transaction ambiante) et annule (rollback) sur
+        // Result en échec — les synchros préalables sont donc annulées si le calcul échoue.
+        => _unitOfWork.ExecuteAsync(
+            ct => ExecuteCoreAsync(request, ct),
+            cancellationToken);
+
+    private async Task<Result<CalculatePayrollRunResultDto>> ExecuteCoreAsync(
         CalculatePayrollRunCommand request,
         CancellationToken cancellationToken)
     {
@@ -105,11 +119,26 @@ public sealed class CalculatePayrollRunCommandHandler
 
         await _annualBonusSync.SyncForMonthAsync(run.Year, run.Month, cancellationToken);
 
+        var warnings = new List<PayrollCalculationWarningDto>();
+
         var employees = parameters.EnableAutomaticProrata
             ? await _employees.GetEligibleForPayrollMonthAsync(run.Year, run.Month, cancellationToken)
-            : await _employees.GetActiveWithContractsAsync(cancellationToken);
+            : await _employees.GetActiveOrTerminatedInMonthAsync(run.Year, run.Month, cancellationToken);
         var employeeIds = employees.Select(e => e.Id).ToList();
         var referenceDate = new DateTime(run.Year, run.Month, 1).AddMonths(1).AddDays(-1);
+
+        // R-29 : dénombrement des salariés partis en cours de mois (bulletin final plein mois).
+        var terminatedInMonthCount = employees.Count(e =>
+            !e.IsActive && e.TerminationDate.HasValue
+            && e.TerminationDate.Value.Year == run.Year && e.TerminationDate.Value.Month == run.Month);
+        if (terminatedInMonthCount > 0)
+        {
+            warnings.Add(new PayrollCalculationWarningDto
+            {
+                Code = "TerminatedInMonth",
+                Message = $"{terminatedInMonthCount} salarié(s) parti(s) en cours de mois — bulletin final intégré au cycle (vérifiez le solde de tout compte)."
+            });
+        }
 
         // Preflight non-cumul parents à charge (blocage strict si conflit CIN).
         var allActiveParentClaims = await _dependentParents.ListAllActiveAsync(cancellationToken);
@@ -124,8 +153,6 @@ public sealed class CalculatePayrollRunCommandHandler
         var cinIndex = allActiveParentClaims
             .GroupBy(c => c.ParentCin, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().EmployeeId, StringComparer.Ordinal);
-
-        var warnings = new List<PayrollCalculationWarningDto>();
 
         var leaves = await _leaves.ListForMonthAsync(run.Year, run.Month, cancellationToken);
         var yearSickLeaves = _settings.PayrollStatutorySickLeaveEnabled
@@ -176,9 +203,9 @@ public sealed class CalculatePayrollRunCommandHandler
         var payslips = new List<Payslip>();
         foreach (var employee in employees)
         {
-            var contract = parameters.EnableAutomaticProrata
-                ? employee.GetContractForPayrollMonth(run.Year, run.Month)
-                : employee.GetActiveContract(referenceDate);
+            // R-29 : contrat couvrant au moins un jour du mois — inclut les départs mi-mois
+            // (leur contrat s'arrête en cours de mois) pour un bulletin final plein mois.
+            var contract = employee.GetContractForPayrollMonth(run.Year, run.Month);
             if (contract is null)
                 continue;
 
@@ -205,7 +232,9 @@ public sealed class CalculatePayrollRunCommandHandler
             if (request.Dto.SettleOutstandingAdvances)
             {
                 var outstanding = await _advances.ListOutstandingAsync(employee.Id, cancellationToken);
-                advanceTotal = outstanding.Sum(a => a.Amount);
+                // R-22 : on ne retient que le reliquat des avances partiellement soldées (un cycle
+                // antérieur au net insuffisant peut n'avoir retenu qu'une partie de l'avance).
+                advanceTotal = outstanding.Sum(a => a.RemainingAmount);
             }
 
             var input = _inputBuilder.Build(
@@ -262,6 +291,7 @@ public sealed class CalculatePayrollRunCommandHandler
         return Result.Success(new CalculatePayrollRunResultDto
         {
             PayslipCount = payslips.Count,
+            TerminatedInMonthCount = terminatedInMonthCount,
             Warnings = warnings
         });
     }

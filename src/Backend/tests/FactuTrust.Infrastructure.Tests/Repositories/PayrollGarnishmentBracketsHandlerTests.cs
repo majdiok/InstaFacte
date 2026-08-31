@@ -31,7 +31,8 @@ public sealed class PayrollGarnishmentBracketsHandlerTests : IDisposable
         Assert.True(result.IsSuccess);
         Assert.Equal(3, result.Value.Count);
         Assert.Equal(0m, result.Value[0].LowerBoundMonthlyNet);
-        Assert.Equal(528.320m, result.Value[1].LowerBoundMonthlyNet);
+        // R-11 : borne indexée sur le SMIG 2026 (554,736, décret n° 2026-67).
+        Assert.Equal(554.736m, result.Value[1].LowerBoundMonthlyNet);
         Assert.Equal(0.333m, result.Value[1].SeizableFraction);
     }
 

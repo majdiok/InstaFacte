@@ -125,7 +125,8 @@ public sealed class PayrollParametersRepositoryTests : IDisposable
         var ordered = parameters.GarnishmentBrackets.OrderBy(b => b.LowerBoundMonthlyNet).ToList();
         Assert.Equal(0m, ordered[0].LowerBoundMonthlyNet);
         Assert.Equal(0m, ordered[0].SeizableFraction);
-        Assert.Equal(528.320m, ordered[1].LowerBoundMonthlyNet);
+        // R-11 : bornes indexées sur le SMIG de l'exercice (554,736 en 2026, décret n° 2026-67).
+        Assert.Equal(554.736m, ordered[1].LowerBoundMonthlyNet);
         Assert.Equal(0.333m, ordered[1].SeizableFraction);
     }
 

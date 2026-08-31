@@ -79,6 +79,9 @@ public sealed class MassUpdateDraftEntriesCommandHandler
                 // Une extourne doit rester le miroir de son origine : jamais éditée en masse.
                 if (entry.ReversesEntryId is not null)
                     return Result.Failure(Error.Validation("Extourne", "Extourne ignorée."));
+                // R-07/R-08 : les écritures paie sont exclues de l'édition de masse (même cabinet).
+                if (PayrollSourcedEntryGuard.IsSystemSource(entry.SourceEntityType))
+                    return Result.Failure(Error.Validation("Source", "Écriture paie ignorée."));
 
                 if (newJournal is not null)
                 {
@@ -141,7 +144,8 @@ public sealed class MassDeleteDraftEntriesCommandHandler
         foreach (var id in request.Ids.Distinct())
         {
             var entry = await _journalEntries.GetByIdAsync(id, cancellationToken);
-            if (entry is null || !entry.IsDraft || entry.AccountingPeriod?.IsClosed == true || entry.ReversesEntryId is not null)
+            if (entry is null || !entry.IsDraft || entry.AccountingPeriod?.IsClosed == true || entry.ReversesEntryId is not null
+                || PayrollSourcedEntryGuard.IsSystemSource(entry.SourceEntityType))
             {
                 skipped++;
                 continue;
