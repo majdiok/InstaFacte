@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, OnInit, Output, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
@@ -17,6 +17,7 @@ import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { scheduleBadgeStatus } from '../recurring-contracts.ui-utils';
+import { DraftAdjustDialogComponent } from '../components/draft-adjust-dialog.component';
 
 /** Onglet « Échéances » : calendrier prévisionnel (endpoint phase 2, tolérant 404). */
 @Component({
@@ -24,7 +25,8 @@ import { scheduleBadgeStatus } from '../recurring-contracts.ui-utils';
   standalone: true,
   imports: [
     CommonModule, RouterModule, TableModule,
-    ButtonComponent, EmptyStateComponent, StatusBadgeComponent, SkeletonTableComponent
+    ButtonComponent, EmptyStateComponent, StatusBadgeComponent, SkeletonTableComponent,
+    DraftAdjustDialogComponent
   ],
   template: `
     <div class="section-header">
@@ -98,7 +100,7 @@ import { scheduleBadgeStatus } from '../recurring-contracts.ui-utils';
                         variant="ghost"
                         size="sm"
                         icon="pi-file-edit"
-                        [routerLink]="['/invoices/new/draft', e.invoiceDraftId]">
+                        (clicked)="openAdjust(e)">
                         Ajuster
                       </app-button>
                     }
@@ -112,6 +114,13 @@ import { scheduleBadgeStatus } from '../recurring-contracts.ui-utils';
         </p-table>
       </div>
     }
+
+    <app-draft-adjust-dialog
+      [(visible)]="adjustVisible"
+      [billingRunId]="adjustRunId"
+      (saved)="onDraftMutated()"
+      (issued)="onDraftMutated()">
+    </app-draft-adjust-dialog>
   `,
   styles: [`
     .section-header {
@@ -138,6 +147,8 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
   @Input({ required: true }) contract!: RecurringContractDetail;
   /** Incrémenté par la page parente après une action (suspendre, renouveler…) pour recharger. */
   @Input() refreshToken = 0;
+  /** Notifie la fiche contrat pour recharger détail / Services / Historique / KPI. */
+  @Output() draftChanged = new EventEmitter<void>();
 
   private readonly service = inject(RecurringContractService);
   private readonly auth = inject(AuthService);
@@ -149,6 +160,8 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
   readonly loading = signal(true);
   readonly generating = signal(false);
   readonly issuingId = signal<string | null>(null);
+  adjustVisible = false;
+  adjustRunId: string | null = null;
   private initialized = false;
 
   readonly canGenerate = computed(() =>
@@ -188,6 +201,11 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
     });
   }
 
+  onDraftMutated(): void {
+    this.load();
+    this.draftChanged.emit();
+  }
+
   generateNow(): void {
     this.generating.set(true);
     this.service.triggerBilling(this.contract.id).subscribe({
@@ -206,6 +224,12 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
         this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.errorHandler.extractErrorMessage(err) });
       }
     });
+  }
+
+  openAdjust(entry: ContractScheduleEntry): void {
+    if (!entry.billingRunId) return;
+    this.adjustRunId = entry.billingRunId;
+    this.adjustVisible = true;
   }
 
   confirmIssue(entry: ContractScheduleEntry): void {
@@ -233,6 +257,7 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
           detail: `Facture ${issued.invoiceNumber} émise.`
         });
         this.load();
+        this.draftChanged.emit();
       },
       error: err => {
         this.issuingId.set(null);

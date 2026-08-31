@@ -194,6 +194,36 @@ internal sealed class RecurringContractTestHarness
         await ctx.SaveChangesAsync();
     }
 
+    /// <summary>Persiste un brouillon de facture avec les lignes fournies (pour tests d'ajustement).</summary>
+    public async Task<InvoiceDraft> SeedInvoiceDraftAsync(
+        IReadOnlyList<DraftInvoiceLine> lines,
+        bool converted = false,
+        bool expired = false)
+    {
+        var draft = InvoiceDraft.Create(InvoiceType.Standard);
+        draft.UpdateMetadata(new DraftMetadata
+        {
+            Type = InvoiceType.Standard,
+            IssueDate = DateTime.UtcNow.Date,
+            Currency = "TND"
+        });
+        draft.UpdateLines(lines.ToList());
+        if (converted)
+            draft.MarkAsConverted(Guid.NewGuid());
+
+        await using var ctx = Factory.CreateContext();
+        ctx.InvoiceDrafts.Add(draft);
+        await ctx.SaveChangesAsync();
+
+        if (expired)
+        {
+            ctx.Entry(draft).Property(d => d.ExpiresAt).CurrentValue = DateTime.UtcNow.AddDays(-1);
+            await ctx.SaveChangesAsync();
+        }
+
+        return draft;
+    }
+
     public async Task<Company> SeedCompanyAsync(
         string name = "Société Test",
         string? bankName = "BIAT",

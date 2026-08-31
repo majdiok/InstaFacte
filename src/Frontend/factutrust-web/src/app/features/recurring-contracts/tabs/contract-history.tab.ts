@@ -18,6 +18,7 @@ import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { runBadgeStatus } from '../recurring-contracts.ui-utils';
+import { DraftAdjustDialogComponent } from '../components/draft-adjust-dialog.component';
 
 /**
  * Onglet « Historique » : chronologie des facturations (endpoint existant) et des
@@ -28,7 +29,8 @@ import { runBadgeStatus } from '../recurring-contracts.ui-utils';
   standalone: true,
   imports: [
     CommonModule, RouterModule, TableModule, TooltipModule,
-    ButtonComponent, StatusBadgeComponent, SkeletonTableComponent
+    ButtonComponent, StatusBadgeComponent, SkeletonTableComponent,
+    DraftAdjustDialogComponent
   ],
   template: `
     <section class="ft-card-block">
@@ -84,7 +86,7 @@ import { runBadgeStatus } from '../recurring-contracts.ui-utils';
                       </app-button>
                       <app-button
                         variant="ghost" size="sm" icon="pi-file-edit" [iconOnly]="true"
-                        [routerLink]="['/invoices/new/draft', r.invoiceDraftId]"
+                        (clicked)="openAdjust(r)"
                         ariaLabel="Ajuster le brouillon">
                       </app-button>
                     }
@@ -138,6 +140,13 @@ import { runBadgeStatus } from '../recurring-contracts.ui-utils';
         </ul>
       }
     </section>
+
+    <app-draft-adjust-dialog
+      [(visible)]="adjustVisible"
+      [billingRunId]="adjustRunId"
+      (saved)="onDraftMutated()"
+      (issued)="onDraftMutated()">
+    </app-draft-adjust-dialog>
   `,
   styles: [`
     :host { display: flex; flex-direction: column; gap: var(--spacing-4); }
@@ -253,6 +262,8 @@ export class ContractHistoryTabComponent implements OnInit, OnChanges {
   @Input({ required: true }) contract!: RecurringContractDetail;
   @Input() refreshToken = 0;
   @Output() createAmend = new EventEmitter<void>();
+  /** Notifie la fiche contrat pour recharger détail / Services / Échéances / KPI. */
+  @Output() draftChanged = new EventEmitter<void>();
 
   private readonly service = inject(RecurringContractService);
   private readonly auth = inject(AuthService);
@@ -265,6 +276,8 @@ export class ContractHistoryTabComponent implements OnInit, OnChanges {
   readonly loadingRuns = signal(true);
   readonly loadingAmendments = signal(true);
   readonly issuingId = signal<string | null>(null);
+  adjustVisible = false;
+  adjustRunId: string | null = null;
   private initialized = false;
 
   /** Avenant de lignes : réservé aux contrats actifs (backend AmendLines) + permission manage. */
@@ -292,7 +305,7 @@ export class ContractHistoryTabComponent implements OnInit, OnChanges {
     this.loadAmendments();
   }
 
-  private loadRuns(): void {
+  loadRuns(): void {
     this.loadingRuns.set(true);
     this.service.listBillingRuns(this.contract.id).subscribe({
       next: runs => {
@@ -305,6 +318,11 @@ export class ContractHistoryTabComponent implements OnInit, OnChanges {
         this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.errorHandler.extractErrorMessage(err) });
       }
     });
+  }
+
+  onDraftMutated(): void {
+    this.load();
+    this.draftChanged.emit();
   }
 
   private loadAmendments(): void {
@@ -320,6 +338,11 @@ export class ContractHistoryTabComponent implements OnInit, OnChanges {
         this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.errorHandler.extractErrorMessage(err) });
       }
     });
+  }
+
+  openAdjust(run: RecurringContractBillingRun): void {
+    this.adjustRunId = run.id;
+    this.adjustVisible = true;
   }
 
   confirmIssue(run: RecurringContractBillingRun): void {
@@ -346,6 +369,7 @@ export class ContractHistoryTabComponent implements OnInit, OnChanges {
           detail: `Facture ${issued.invoiceNumber} émise.`
         });
         this.loadRuns();
+        this.draftChanged.emit();
       },
       error: err => {
         this.issuingId.set(null);

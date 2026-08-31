@@ -13,13 +13,15 @@ import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
+import { DraftAdjustDialogComponent } from '../../components/draft-adjust-dialog.component';
 
 @Component({
   selector: 'app-pending-drafts',
   standalone: true,
   imports: [
     CommonModule, RouterModule, TableModule,
-    PageHeaderComponent, BreadcrumbComponent, ButtonComponent, EmptyStateComponent, SkeletonTableComponent
+    PageHeaderComponent, BreadcrumbComponent, ButtonComponent, EmptyStateComponent, SkeletonTableComponent,
+    DraftAdjustDialogComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
@@ -97,7 +99,7 @@ import { PERMISSIONS } from '@core/config/permission-keys';
                       variant="ghost"
                       size="sm"
                       icon="pi-file-edit"
-                      [routerLink]="['/invoices/new/draft', d.invoiceDraftId]">
+                      (clicked)="openAdjust(d)">
                       Ajuster
                     </app-button>
                   }
@@ -115,6 +117,13 @@ import { PERMISSIONS } from '@core/config/permission-keys';
         </p-table>
       </div>
     }
+
+    <app-draft-adjust-dialog
+      [(visible)]="adjustVisible"
+      [billingRunId]="adjustRunId"
+      (saved)="reload()"
+      (issued)="reload()">
+    </app-draft-adjust-dialog>
   `,
   styles: [`
     .actions { display: flex; gap: var(--spacing-2); flex-wrap: wrap; }
@@ -149,6 +158,8 @@ export class PendingDraftsComponent implements OnInit {
   readonly loadError = signal(false);
   readonly generating = signal(false);
   readonly issuingId = signal<string | null>(null);
+  adjustVisible = false;
+  adjustRunId: string | null = null;
 
   readonly canTriggerBilling = computed(() => this.auth.hasPermission(PERMISSIONS.recurringContracts.triggerBilling));
   readonly canValidateInvoice = computed(() => this.auth.hasPermission(PERMISSIONS.invoices.create));
@@ -190,6 +201,11 @@ export class PendingDraftsComponent implements OnInit {
         });
       }
     });
+  }
+
+  openAdjust(draft: PendingRecurringDraft): void {
+    this.adjustRunId = draft.billingRunId;
+    this.adjustVisible = true;
   }
 
   confirmIssue(draft: PendingRecurringDraft): void {
