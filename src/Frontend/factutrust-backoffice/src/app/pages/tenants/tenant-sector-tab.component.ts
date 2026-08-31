@@ -24,8 +24,8 @@ import { PlatformPermission } from '@core/models/platform.models';
 import type {
   SectorDomainDto,
   SectorReconfigurationPreviewDto,
-  SectorSegmentDto,
-  SegmentDomainLinkDto
+  SectorSegmentDomainDto,
+  SectorSegmentDto
 } from '@core/models/sector-rules.models';
 import { moduleLabel } from '@core/models/module-catalog';
 
@@ -303,7 +303,7 @@ export class TenantSectorTabComponent implements OnInit, OnChanges {
   readonly catalogLoading = signal(true);
   private segments: SectorSegmentDto[] = [];
   private domains: SectorDomainDto[] = [];
-  private segmentDomains: SegmentDomainLinkDto[] = [];
+  private segmentDomains: SectorSegmentDomainDto[] = [];
 
   readonly pickerOpen = signal(false);
   pickedSegment: string | null = null;
@@ -345,22 +345,27 @@ export class TenantSectorTabComponent implements OnInit, OnChanges {
 
   segmentLabel(code: string | null): string {
     if (!code) return '—';
-    return this.segments.find(s => s.code === code)?.label ?? code;
+    return this.segments.find(s => s.code === code)?.labelFr ?? code;
   }
 
   domainLabel(code: string | null): string {
     if (!code) return '—';
-    return this.domains.find(d => d.code === code)?.label ?? code;
+    return this.domains.find(d => d.code === code)?.labelFr ?? code;
   }
 
   segmentOptions() {
-    return this.segments.filter(s => s.isActive).map(s => ({ label: s.label, value: s.code }));
+    return this.segments.filter(s => s.isActive).map(s => ({ label: s.labelFr, value: s.code }));
   }
 
   domainOptionsForSegment() {
     if (!this.pickedSegment) return [];
-    const allowed = new Set(this.segmentDomains.find(l => l.segmentCode === this.pickedSegment)?.domainCodes ?? []);
-    return this.domains.filter(d => d.isActive && allowed.has(d.code)).map(d => ({ label: d.label, value: d.code }));
+    // Liens GUID : segment sélectionné (par code) -> id -> domainId autorisés -> lignes domaines.
+    const segmentId = this.segments.find(s => s.code === this.pickedSegment)?.id;
+    if (!segmentId) return [];
+    const allowed = new Set(
+      this.segmentDomains.filter(l => l.segmentId === segmentId && l.isActive).map(l => l.domainId)
+    );
+    return this.domains.filter(d => d.isActive && allowed.has(d.id)).map(d => ({ label: d.labelFr, value: d.code }));
   }
 
   onSegmentPicked(): void {

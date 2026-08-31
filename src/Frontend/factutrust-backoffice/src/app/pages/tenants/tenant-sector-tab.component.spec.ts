@@ -7,7 +7,7 @@ import { PlatformSectorRulesService } from '@core/services/platform-sector-rules
 import { PlatformTenantSectorService } from '@core/services/platform-tenant-sector.service';
 import { PlatformPermissionsService } from '@core/services/platform-permissions.service';
 import { PlatformPermission } from '@core/models/platform.models';
-import type { SectorReconfigurationPreviewDto } from '@core/models/sector-rules.models';
+import type { SectorReconfigurationPreviewDto, SectorRuleSetAdminDto } from '@core/models/sector-rules.models';
 
 describe('TenantSectorTabComponent', () => {
   let fixture: ComponentFixture<TenantSectorTabComponent>;
@@ -16,27 +16,26 @@ describe('TenantSectorTabComponent', () => {
   let sectorApi: jasmine.SpyObj<PlatformTenantSectorService>;
   let permissions: jasmine.SpyObj<PlatformPermissionsService>;
 
-  const catalog = {
+  const catalog: SectorRuleSetAdminDto = {
     version: 12,
-    updatedAtUtc: null,
-    updatedBy: null,
-    useDbRules: true,
     segments: [
-      { id: 's1', code: 'commerce', label: 'Commerce & négoce', isActive: true, sortOrder: 1 },
-      { id: 's2', code: 'btp', label: 'BTP & construction', isActive: true, sortOrder: 3 }
+      { id: 'seg-commerce', code: 'commerce', labelFr: 'Commerce & négoce', descriptionFr: 'Commerce', iconKey: 'shopping-cart', sortOrder: 1, isActive: true },
+      { id: 'seg-btp', code: 'btp-construction', labelFr: 'BTP & Construction', descriptionFr: 'BTP', iconKey: 'hard-hat', sortOrder: 3, isActive: true }
     ],
     domains: [
-      { id: 'd1', code: 'vente-detail', label: 'Vente au détail', isActive: true, sortOrder: 1 },
-      { id: 'd2', code: 'construction', label: 'Construction & gros œuvre', isActive: true, sortOrder: 5 }
+      { id: 'dom-artisanat', code: 'artisanat', labelFr: 'Artisanat', sortOrder: 1, isActive: true },
+      { id: 'dom-autre', code: 'autre', labelFr: 'Autre domaine', sortOrder: 9, isActive: true }
     ],
     segmentDomains: [
-      { segmentCode: 'commerce', domainCodes: ['vente-detail', 'autre'] },
-      { segmentCode: 'btp', domainCodes: ['construction', 'autre'] }
+      { id: 'sd-1', segmentId: 'seg-commerce', domainId: 'dom-artisanat', sortOrder: 1, isActive: true },
+      { id: 'sd-2', segmentId: 'seg-commerce', domainId: 'dom-autre', sortOrder: 2, isActive: true },
+      { id: 'sd-3', segmentId: 'seg-btp', domainId: 'dom-artisanat', sortOrder: 1, isActive: true },
+      { id: 'sd-4', segmentId: 'seg-btp', domainId: 'dom-autre', sortOrder: 2, isActive: true }
     ],
     moduleRules: [],
-    dependencies: [],
-    defaultSettings: [],
-    dataTemplates: []
+    moduleDependencies: [],
+    settings: [],
+    templates: []
   };
 
   function setup(hasApplyPermission: boolean): void {
@@ -63,7 +62,7 @@ describe('TenantSectorTabComponent', () => {
     component.tenantId = 'tenant-1';
     component.companyName = 'Bâtiment Moderne du Sahel SARL';
     component.companySegment = 'commerce';
-    component.businessDomain = 'vente-detail';
+    component.businessDomain = 'artisanat';
     fixture.detectChanges();
   }
 
@@ -79,27 +78,27 @@ describe('TenantSectorTabComponent', () => {
     expect(component.pickerOpen()).toBeTrue();
   });
 
-  it('resolves segment/domain labels from the loaded catalog', () => {
+  it('resolves segment/domain labels from the loaded catalog (fallback to raw code)', () => {
     setup(true);
     expect(component.segmentLabel('commerce')).toBe('Commerce & négoce');
-    expect(component.domainLabel('vente-detail')).toBe('Vente au détail');
+    expect(component.domainLabel('artisanat')).toBe('Artisanat');
     expect(component.segmentLabel('unknown-code')).toBe('unknown-code');
   });
 
-  it('filters domain options by the segment associations', () => {
+  it('filters domain options by the GUID segment↔domain associations', () => {
     setup(true);
-    component.pickedSegment = 'btp';
+    component.pickedSegment = 'btp-construction';
     const options = component.domainOptionsForSegment();
-    expect(options.map(o => o.value)).toEqual(['construction', 'autre'].filter(c => catalog.domains.some(d => d.code === c)));
+    expect(options.map(o => o.value)).toEqual(['artisanat', 'autre']);
   });
 
   it('runPreview() populates preview() from the service response and renders module diff labels', () => {
     setup(true);
     const previewDto: SectorReconfigurationPreviewDto = {
       currentSegment: 'commerce',
-      currentDomain: 'vente-detail',
-      targetSegment: 'btp',
-      targetDomain: 'construction',
+      currentDomain: 'artisanat',
+      targetSegment: 'btp-construction',
+      targetDomain: 'autre',
       users: [
         { userId: 'u1', currentEnabledModuleIds: [9], targetEnabledModuleIds: [16], modulesToEnable: [16], modulesToDisable: [9] }
       ],
@@ -109,8 +108,8 @@ describe('TenantSectorTabComponent', () => {
     };
     sectorApi.preview.and.returnValue(of({ success: true, data: previewDto, message: null, errors: [] }) as never);
 
-    component.pickedSegment = 'btp';
-    component.pickedDomain = 'construction';
+    component.pickedSegment = 'btp-construction';
+    component.pickedDomain = 'autre';
     component.runPreview();
 
     expect(component.preview()).toEqual(previewDto);
@@ -122,16 +121,16 @@ describe('TenantSectorTabComponent', () => {
     setup(true);
     const previewDto: SectorReconfigurationPreviewDto = {
       currentSegment: 'commerce',
-      currentDomain: 'vente-detail',
-      targetSegment: 'btp',
-      targetDomain: 'construction',
+      currentDomain: 'artisanat',
+      targetSegment: 'btp-construction',
+      targetDomain: 'autre',
       users: [],
       templates: [],
       settings: [],
       warnings: []
     };
     sectorApi.preview.and.returnValue(of({ success: true, data: previewDto, message: null, errors: [] }) as never);
-    component.pickedSegment = 'btp';
+    component.pickedSegment = 'btp-construction';
     component.runPreview();
 
     expect(component.confirmed).toBeFalse();
