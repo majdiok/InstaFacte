@@ -251,6 +251,110 @@ describe('RegisterWizardComponent', () => {
     });
   });
 
+  describe('domain clearing on segment change (plan WP-F2)', () => {
+    it('clears businessDomain and sets domainClearedNotice when the new segment (remote catalog) no longer offers it', () => {
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(`${component.environment.apiUrl}/public/sector-catalog`).flush({
+        success: true,
+        data: {
+          segments: [
+            { code: 'commerce', labelFr: 'Commerce', descriptionFr: '', iconKey: 'x', sortOrder: 0, coreModuleIds: [], recommendedModuleIds: [], domainCodes: ['artisanat'] },
+            { code: 'association', labelFr: 'Association', descriptionFr: '', iconKey: 'x', sortOrder: 1, coreModuleIds: [], recommendedModuleIds: [], domainCodes: ['autre'] }
+          ],
+          domains: [
+            { code: 'artisanat', labelFr: 'Artisanat', sortOrder: 0, additionalModuleIds: [] },
+            { code: 'autre', labelFr: 'Autre domaine', sortOrder: 1, additionalModuleIds: [] }
+          ],
+          modules: [],
+          moduleDependencies: []
+        }
+      });
+
+      component.form.patchValue({ companySegment: 'commerce', businessDomain: 'artisanat' });
+      expect(component.form.get('businessDomain')?.value).toBe('artisanat');
+      expect(component.domainClearedNotice()).toBeFalse();
+
+      component.form.get('companySegment')?.setValue('association');
+      expect(component.form.get('businessDomain')?.value).toBe('');
+      expect(component.form.get('businessDomain')?.touched).toBeFalse();
+      expect(component.domainClearedNotice()).toBeTrue();
+    });
+
+    it('does not clear businessDomain when it stays valid for the new segment', () => {
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(`${component.environment.apiUrl}/public/sector-catalog`).flush({
+        success: true,
+        data: {
+          segments: [
+            { code: 'commerce', labelFr: 'Commerce', descriptionFr: '', iconKey: 'x', sortOrder: 0, coreModuleIds: [], recommendedModuleIds: [], domainCodes: ['autre'] },
+            { code: 'services', labelFr: 'Services', descriptionFr: '', iconKey: 'x', sortOrder: 1, coreModuleIds: [], recommendedModuleIds: [], domainCodes: ['autre'] }
+          ],
+          domains: [
+            { code: 'autre', labelFr: 'Autre domaine', sortOrder: 0, additionalModuleIds: [] }
+          ],
+          modules: [],
+          moduleDependencies: []
+        }
+      });
+
+      component.form.patchValue({ companySegment: 'commerce', businessDomain: 'autre' });
+      component.form.get('companySegment')?.setValue('services');
+
+      expect(component.form.get('businessDomain')?.value).toBe('autre');
+      expect(component.domainClearedNotice()).toBeFalse();
+    });
+  });
+
+  describe('late remote catalog re-run (plan WP-F1)', () => {
+    it('recomputes enabledModules once loadState becomes "remote", when the user has not touched module toggles', () => {
+      component.form.patchValue({ companySegment: 'commerce', businessDomain: 'artisanat' });
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(`${component.environment.apiUrl}/public/sector-catalog`).flush({
+        success: true,
+        data: {
+          segments: [
+            { code: 'commerce', labelFr: 'Commerce', descriptionFr: '', iconKey: 'x', sortOrder: 0, coreModuleIds: [], recommendedModuleIds: [AppModule.Stock], domainCodes: [] }
+          ],
+          domains: [],
+          modules: [{ id: AppModule.Stock, code: 'stock', labelFr: 'Stock', isCore: false }],
+          moduleDependencies: []
+        }
+      });
+      fixture.detectChanges();
+
+      expect(component.form.get('enabledModules')?.value).toEqual(
+        component.catalog.recommendedModules('commerce', 'artisanat')
+      );
+      expect(component.form.get('enabledModules')?.value).toContain(AppModule.Stock);
+    });
+
+    it('does not overwrite a manually-touched module selection when the remote catalog arrives late', () => {
+      component.form.patchValue({ companySegment: 'commerce', businessDomain: 'artisanat' });
+      component.onModuleToggled(AppModule.CRM);
+      const before = component.form.get('enabledModules')?.value;
+
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(`${component.environment.apiUrl}/public/sector-catalog`).flush({
+        success: true,
+        data: {
+          segments: [
+            { code: 'commerce', labelFr: 'Commerce', descriptionFr: '', iconKey: 'x', sortOrder: 0, coreModuleIds: [], recommendedModuleIds: [AppModule.Stock], domainCodes: [] }
+          ],
+          domains: [],
+          modules: [{ id: AppModule.Stock, code: 'stock', labelFr: 'Stock', isCore: false }],
+          moduleDependencies: []
+        }
+      });
+      fixture.detectChanges();
+
+      expect(component.form.get('enabledModules')?.value).toEqual(before);
+    });
+  });
+
   describe('onNifBlur', () => {
     it('should clean and normalize the NIF value on blur', () => {
       component.form.get('nif')?.setValue('1234567a/b/c/000_');

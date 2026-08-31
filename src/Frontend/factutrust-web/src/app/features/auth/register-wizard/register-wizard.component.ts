@@ -92,6 +92,8 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   currentStep = signal(0);
   /** Once the user manually toggles a module, recommendation auto-recompute stops overwriting their choices. */
   modulesTouched = signal(false);
+  /** True right after a segment change auto-cleared an invalid `businessDomain` (plan WP-F2). */
+  domainClearedNotice = signal(false);
 
   private loadingMessageTimer: ReturnType<typeof setInterval> | null = null;
   private loadingStartedAt = 0;
@@ -232,8 +234,29 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       this.form.get('confirmPassword')?.updateValueAndValidity();
     });
 
-    this.form.get('companySegment')?.valueChanges.subscribe(() => this.onProfileChanged());
-    this.form.get('businessDomain')?.valueChanges.subscribe(() => this.onProfileChanged());
+    this.form.get('companySegment')?.valueChanges.subscribe((newSegment: string) => {
+      const domainControl = this.form.get('businessDomain');
+      const currentDomain = domainControl?.value;
+      const allowedDomains = this.catalog.domainsForSegment(newSegment);
+      const stillAllowed = !currentDomain || allowedDomains.some(d => d.code === currentDomain);
+
+      if (!stillAllowed) {
+        // { emitEvent: false } avoids a second businessDomain valueChanges → onProfileChanged()
+        // round-trip; onProfileChanged() is called once explicitly below.
+        domainControl?.setValue('', { emitEvent: false });
+        domainControl?.markAsUntouched();
+        domainControl?.updateValueAndValidity({ emitEvent: false });
+        this.domainClearedNotice.set(true);
+      } else {
+        this.domainClearedNotice.set(false);
+      }
+
+      this.onProfileChanged();
+    });
+    this.form.get('businessDomain')?.valueChanges.subscribe(() => {
+      this.domainClearedNotice.set(false);
+      this.onProfileChanged();
+    });
 
     // Fetch the live sector catalog once; no-op if the frontend kill-switch is off or
     // a fetch already ran this session (see RegistrationCatalogService.load()).
