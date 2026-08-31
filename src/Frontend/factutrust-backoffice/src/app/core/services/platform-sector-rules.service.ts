@@ -5,13 +5,13 @@ import { environment } from '@environments/environment';
 import type { ApiResponse } from '@core/models/api-response.model';
 import type {
   CreateModuleDependencyRequest,
+  CreateSectorDataTemplateRequest,
+  CreateSectorDefaultSettingRequest,
   CreateSectorDomainRequest,
+  CreateSectorModuleRuleRequest,
+  CreateSectorSegmentDomainRequest,
   CreateSectorSegmentRequest,
   ModuleDependencyDto,
-  SaveDomainModuleOverlayRequest,
-  SaveSectorDataTemplateRequest,
-  SaveSectorDefaultSettingRequest,
-  SaveSegmentModuleRulesRequest,
   SectorDataTemplateDto,
   SectorDefaultSettingDto,
   SectorDomainDto,
@@ -19,18 +19,22 @@ import type {
   SectorRuleParityDto,
   SectorRuleSeedResultDto,
   SectorRuleSetAdminDto,
+  SectorSegmentDomainDto,
   SectorSegmentDto,
-  SegmentDomainLinkDto,
-  SetSegmentDomainsRequest,
+  UpdateSectorDataTemplateRequest,
+  UpdateSectorDefaultSettingRequest,
   UpdateSectorDomainRequest,
+  UpdateSectorModuleRuleRequest,
+  UpdateSectorSegmentDomainRequest,
   UpdateSectorSegmentRequest
 } from '@core/models/sector-rules.models';
 
 /**
  * Phase 2 (WP-F6) — Client HTTP pour `/api/platform/sector-rules/*`.
  *
- * Pattern copié de `platform-plans.service.ts` : service root-provided, une méthode par
- * ressource, chaque appel renvoie `Observable<ApiResponse<T>>`.
+ * Une méthode par ressource backend, chaque appel renvoie `Observable<ApiResponse<T>>`. Les ids
+ * sont des GUID (chaînes) ; les `DELETE` désactivent en douceur côté backend (soft-delete). Les
+ * dépendances de modules n'exposent que POST + DELETE (pas de PUT côté backend).
  */
 @Injectable({ providedIn: 'root' })
 export class PlatformSectorRulesService {
@@ -84,20 +88,25 @@ export class PlatformSectorRulesService {
     return this.http.delete<ApiResponse<unknown>>(`${this.base}/domains/${id}`);
   }
 
-  // ----- Associations segment ↔ domaine -----------------------------------
-  listSegmentDomains(): Observable<ApiResponse<SegmentDomainLinkDto[]>> {
-    return this.http.get<ApiResponse<SegmentDomainLinkDto[]>>(`${this.base}/segment-domains`);
+  // ----- Associations segment ↔ domaine (GUIDs) --------------------------
+  listSegmentDomains(): Observable<ApiResponse<SectorSegmentDomainDto[]>> {
+    return this.http.get<ApiResponse<SectorSegmentDomainDto[]>>(`${this.base}/segment-domains`);
   }
 
-  setSegmentDomains(
-    segmentCode: string,
-    domainCodes: string[]
-  ): Observable<ApiResponse<SegmentDomainLinkDto>> {
-    const request: SetSegmentDomainsRequest = { domainCodes };
-    return this.http.put<ApiResponse<SegmentDomainLinkDto>>(
-      `${this.base}/segment-domains/${segmentCode}`,
-      request
-    );
+  getSegmentDomain(id: string): Observable<ApiResponse<SectorSegmentDomainDto>> {
+    return this.http.get<ApiResponse<SectorSegmentDomainDto>>(`${this.base}/segment-domains/${id}`);
+  }
+
+  createSegmentDomain(request: CreateSectorSegmentDomainRequest): Observable<ApiResponse<SectorSegmentDomainDto>> {
+    return this.http.post<ApiResponse<SectorSegmentDomainDto>>(`${this.base}/segment-domains`, request);
+  }
+
+  updateSegmentDomain(id: string, request: UpdateSectorSegmentDomainRequest): Observable<ApiResponse<SectorSegmentDomainDto>> {
+    return this.http.put<ApiResponse<SectorSegmentDomainDto>>(`${this.base}/segment-domains/${id}`, request);
+  }
+
+  deactivateSegmentDomain(id: string): Observable<ApiResponse<unknown>> {
+    return this.http.delete<ApiResponse<unknown>>(`${this.base}/segment-domains/${id}`);
   }
 
   // ----- Règles de modules -------------------------------------------------
@@ -105,59 +114,79 @@ export class PlatformSectorRulesService {
     return this.http.get<ApiResponse<SectorModuleRuleDto[]>>(`${this.base}/module-rules`);
   }
 
-  saveSegmentRules(
-    segmentCode: string,
-    moduleIds: number[]
-  ): Observable<ApiResponse<SectorModuleRuleDto[]>> {
-    const request: SaveSegmentModuleRulesRequest = { moduleIds };
-    return this.http.put<ApiResponse<SectorModuleRuleDto[]>>(
-      `${this.base}/module-rules/segments/${segmentCode}`,
-      request
-    );
+  getModuleRule(id: string): Observable<ApiResponse<SectorModuleRuleDto>> {
+    return this.http.get<ApiResponse<SectorModuleRuleDto>>(`${this.base}/module-rules/${id}`);
   }
 
-  saveDomainOverlay(
-    domainCode: string,
-    moduleIds: number[]
-  ): Observable<ApiResponse<SectorModuleRuleDto[]>> {
-    const request: SaveDomainModuleOverlayRequest = { moduleIds };
-    return this.http.put<ApiResponse<SectorModuleRuleDto[]>>(
-      `${this.base}/module-rules/domains/${domainCode}`,
-      request
-    );
+  createModuleRule(request: CreateSectorModuleRuleRequest): Observable<ApiResponse<SectorModuleRuleDto>> {
+    return this.http.post<ApiResponse<SectorModuleRuleDto>>(`${this.base}/module-rules`, request);
   }
 
-  // ----- Dépendances entre modules -----------------------------------------
-  listDependencies(): Observable<ApiResponse<ModuleDependencyDto[]>> {
+  updateModuleRule(id: string, request: UpdateSectorModuleRuleRequest): Observable<ApiResponse<SectorModuleRuleDto>> {
+    return this.http.put<ApiResponse<SectorModuleRuleDto>>(`${this.base}/module-rules/${id}`, request);
+  }
+
+  deactivateModuleRule(id: string): Observable<ApiResponse<unknown>> {
+    return this.http.delete<ApiResponse<unknown>>(`${this.base}/module-rules/${id}`);
+  }
+
+  // ----- Dépendances entre modules (POST + DELETE only) -------------------
+  listModuleDependencies(): Observable<ApiResponse<ModuleDependencyDto[]>> {
     return this.http.get<ApiResponse<ModuleDependencyDto[]>>(`${this.base}/module-dependencies`);
   }
 
-  createDependency(request: CreateModuleDependencyRequest): Observable<ApiResponse<ModuleDependencyDto>> {
+  getModuleDependency(id: string): Observable<ApiResponse<ModuleDependencyDto>> {
+    return this.http.get<ApiResponse<ModuleDependencyDto>>(`${this.base}/module-dependencies/${id}`);
+  }
+
+  createModuleDependency(request: CreateModuleDependencyRequest): Observable<ApiResponse<ModuleDependencyDto>> {
     return this.http.post<ApiResponse<ModuleDependencyDto>>(`${this.base}/module-dependencies`, request);
   }
 
-  deleteDependency(id: string): Observable<ApiResponse<unknown>> {
+  deactivateModuleDependency(id: string): Observable<ApiResponse<unknown>> {
     return this.http.delete<ApiResponse<unknown>>(`${this.base}/module-dependencies/${id}`);
   }
 
   // ----- Paramètres par défaut ----------------------------------------------
-  listDefaultSettings(): Observable<ApiResponse<SectorDefaultSettingDto[]>> {
+  listSettings(): Observable<ApiResponse<SectorDefaultSettingDto[]>> {
     return this.http.get<ApiResponse<SectorDefaultSettingDto[]>>(`${this.base}/settings`);
   }
 
-  saveDefaultSetting(
-    request: SaveSectorDefaultSettingRequest
-  ): Observable<ApiResponse<SectorDefaultSettingDto>> {
+  getSetting(id: string): Observable<ApiResponse<SectorDefaultSettingDto>> {
+    return this.http.get<ApiResponse<SectorDefaultSettingDto>>(`${this.base}/settings/${id}`);
+  }
+
+  createSetting(request: CreateSectorDefaultSettingRequest): Observable<ApiResponse<SectorDefaultSettingDto>> {
     return this.http.post<ApiResponse<SectorDefaultSettingDto>>(`${this.base}/settings`, request);
   }
 
+  updateSetting(id: string, request: UpdateSectorDefaultSettingRequest): Observable<ApiResponse<SectorDefaultSettingDto>> {
+    return this.http.put<ApiResponse<SectorDefaultSettingDto>>(`${this.base}/settings/${id}`, request);
+  }
+
+  deactivateSetting(id: string): Observable<ApiResponse<unknown>> {
+    return this.http.delete<ApiResponse<unknown>>(`${this.base}/settings/${id}`);
+  }
+
   // ----- Modèles de données --------------------------------------------------
-  listDataTemplates(): Observable<ApiResponse<SectorDataTemplateDto[]>> {
+  listTemplates(): Observable<ApiResponse<SectorDataTemplateDto[]>> {
     return this.http.get<ApiResponse<SectorDataTemplateDto[]>>(`${this.base}/templates`);
   }
 
-  saveDataTemplate(request: SaveSectorDataTemplateRequest): Observable<ApiResponse<SectorDataTemplateDto>> {
+  getTemplate(id: string): Observable<ApiResponse<SectorDataTemplateDto>> {
+    return this.http.get<ApiResponse<SectorDataTemplateDto>>(`${this.base}/templates/${id}`);
+  }
+
+  createTemplate(request: CreateSectorDataTemplateRequest): Observable<ApiResponse<SectorDataTemplateDto>> {
     return this.http.post<ApiResponse<SectorDataTemplateDto>>(`${this.base}/templates`, request);
+  }
+
+  updateTemplate(id: string, request: UpdateSectorDataTemplateRequest): Observable<ApiResponse<SectorDataTemplateDto>> {
+    return this.http.put<ApiResponse<SectorDataTemplateDto>>(`${this.base}/templates/${id}`, request);
+  }
+
+  deactivateTemplate(id: string): Observable<ApiResponse<unknown>> {
+    return this.http.delete<ApiResponse<unknown>>(`${this.base}/templates/${id}`);
   }
 
   // ----- Seed / parity -------------------------------------------------------

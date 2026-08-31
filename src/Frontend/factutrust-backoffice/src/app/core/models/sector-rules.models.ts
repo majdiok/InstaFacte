@@ -1,13 +1,14 @@
 /**
  * Phase 2 (WP-F6) — DTOs pour le moteur de règles sectorielles en base.
  *
- * Tous les contrats `/api/platform/sector-rules/*` et
- * `/api/platform/tenants/{id}/sector-configuration/*` sont regroupés dans CE SEUL fichier afin
- * de localiser tout écart avec les DTOs backend (WP-B5/B7/B9) à un unique endroit lors de
- * l'intégration.
+ * Contrats ALIGNÉS sur le backend (WP-B5/B7/B9) :
+ * - `/api/platform/sector-rules/*` : CRUD admin GUID + dump complet `SectorRuleSetAdminDto`.
+ * - `/api/platform/tenants/{id}/sector-configuration/preview|apply` : reconfiguration tenant.
  *
- * Codes segment/domaine : kebab-case (ex: "commerce", "sante-paramedical"). Ids de module :
- * entiers `AppModule` (voir `core/models/module-catalog.ts`).
+ * Les champs sont exactement les noms PascalCase du backend sérialisés en camelCase par
+ * System.Text.Json (ex: `LabelFr` → `labelFr`). Les ids sont des GUID (chaînes). Les
+ * `ruleKind` sont des chaînes `"SegmentBase"` | `"DomainOverlay"` (pas d'entier). La
+ * dépendance utilise `requiredModuleId` (contrat backend, cf. commit de fixation web).
  */
 
 // ============================================================================
@@ -17,36 +18,30 @@
 export interface SectorSegmentDto {
   id: string;
   code: string;
-  label: string;
-  subtitle?: string | null;
-  icon?: string | null;
-  tone?: string | null;
-  isActive: boolean;
+  labelFr: string;
+  descriptionFr: string;
+  iconKey: string;
   sortOrder: number;
   /** Nom d'entrepôt par défaut suggéré pour ce segment (peut être vide). */
   defaultWarehouseName?: string | null;
-  /** Additif D4 — codes des domaines associés, dans l'ordre d'affichage. */
-  domainCodes?: string[];
+  isActive: boolean;
 }
 
 export interface CreateSectorSegmentRequest {
   code: string;
-  label: string;
-  subtitle?: string | null;
-  icon?: string | null;
-  tone?: string | null;
+  labelFr: string;
+  descriptionFr: string;
+  iconKey: string;
   sortOrder: number;
   defaultWarehouseName?: string | null;
 }
 
 export interface UpdateSectorSegmentRequest {
-  label: string;
-  subtitle?: string | null;
-  icon?: string | null;
-  tone?: string | null;
+  labelFr: string;
+  descriptionFr: string;
+  iconKey: string;
   sortOrder: number;
   defaultWarehouseName?: string | null;
-  isActive: boolean;
 }
 
 // ============================================================================
@@ -56,66 +51,71 @@ export interface UpdateSectorSegmentRequest {
 export interface SectorDomainDto {
   id: string;
   code: string;
-  label: string;
-  icon?: string | null;
-  tone?: string | null;
-  isActive: boolean;
+  labelFr: string;
   sortOrder: number;
+  isActive: boolean;
 }
 
 export interface CreateSectorDomainRequest {
   code: string;
-  label: string;
-  icon?: string | null;
-  tone?: string | null;
+  labelFr: string;
   sortOrder: number;
 }
 
 export interface UpdateSectorDomainRequest {
-  label: string;
-  icon?: string | null;
-  tone?: string | null;
+  labelFr: string;
+  sortOrder: number;
+}
+
+// ============================================================================
+// Associations segment ↔ domaine (GUIDs)
+// ============================================================================
+
+export interface SectorSegmentDomainDto {
+  id: string;
+  segmentId: string;
+  domainId: string;
   sortOrder: number;
   isActive: boolean;
 }
 
-// ============================================================================
-// Associations segment ↔ domaine
-// ============================================================================
-
-/** Vue « ordered list » pour un segment donné — utilisée par la matrice d'associations. */
-export interface SegmentDomainLinkDto {
-  segmentCode: string;
-  /** Codes de domaines associés, dans l'ordre d'affichage (autre pas nécessairement inclus). */
-  domainCodes: string[];
+export interface CreateSectorSegmentDomainRequest {
+  segmentId: string;
+  domainId: string;
+  sortOrder: number;
 }
 
-export interface SetSegmentDomainsRequest {
-  domainCodes: string[];
+export interface UpdateSectorSegmentDomainRequest {
+  sortOrder: number;
 }
 
 // ============================================================================
 // Règles de modules (base segment + surcouche domaine)
 // ============================================================================
 
-/** `RuleKind` backend : 0 = SegmentBase, 1 = DomainOverlay. */
-export type SectorModuleRuleKind = 0 | 1;
+/** `RuleKind` backend : chaîne `"SegmentBase"` (rattachée à un segment) ou `"DomainOverlay"` (surcouche d'un domaine). */
+export type SectorModuleRuleKind = 'SegmentBase' | 'DomainOverlay';
 
 export interface SectorModuleRuleDto {
   id: string;
   ruleKind: SectorModuleRuleKind;
-  segmentCode: string | null;
-  domainCode: string | null;
+  segmentId: string | null;
+  domainId: string | null;
   moduleId: number;
+  sortOrder: number;
   isActive: boolean;
 }
 
-export interface SaveSegmentModuleRulesRequest {
-  moduleIds: number[];
+export interface CreateSectorModuleRuleRequest {
+  ruleKind: SectorModuleRuleKind;
+  segmentId?: string | null;
+  domainId?: string | null;
+  moduleId: number;
+  sortOrder: number;
 }
 
-export interface SaveDomainModuleOverlayRequest {
-  moduleIds: number[];
+export interface UpdateSectorModuleRuleRequest {
+  sortOrder: number;
 }
 
 // ============================================================================
@@ -125,13 +125,13 @@ export interface SaveDomainModuleOverlayRequest {
 export interface ModuleDependencyDto {
   id: string;
   moduleId: number;
-  requiresModuleId: number;
+  requiredModuleId: number;
   isActive: boolean;
 }
 
 export interface CreateModuleDependencyRequest {
   moduleId: number;
-  requiresModuleId: number;
+  requiredModuleId: number;
 }
 
 // ============================================================================
@@ -143,19 +143,27 @@ export type SectorSettingValueType = 'string' | 'int' | 'bool' | 'json';
 export interface SectorDefaultSettingDto {
   id: string;
   segmentCode: string | null;
-  domainCode?: string | null;
+  domainCode: string | null;
   settingKey: string;
+  settingValue: string;
   valueType: SectorSettingValueType;
-  value: string;
+  sortOrder: number;
   isActive: boolean;
 }
 
-export interface SaveSectorDefaultSettingRequest {
-  segmentCode: string | null;
+export interface CreateSectorDefaultSettingRequest {
+  segmentCode?: string | null;
   domainCode?: string | null;
   settingKey: string;
-  valueType: SectorSettingValueType;
-  value: string;
+  settingValue: string;
+  valueType?: SectorSettingValueType;
+  sortOrder: number;
+}
+
+export interface UpdateSectorDefaultSettingRequest {
+  settingValue: string;
+  valueType?: SectorSettingValueType;
+  sortOrder: number;
 }
 
 // ============================================================================
@@ -165,9 +173,16 @@ export interface SaveSectorDefaultSettingRequest {
 export type SectorDataTemplateItemKind = 'document-numbering-scheme' | 'chart-account' | 'setting';
 
 export interface SectorDataTemplateItemDto {
-  id?: string;
-  itemKind: SectorDataTemplateItemKind;
+  id: string;
+  itemKind: string;
   /** JSON brut du payload — contrat exact dépend de `itemKind` (voir backend WP-B6). */
+  payloadJson: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface SectorDataTemplateItemRequest {
+  itemKind: SectorDataTemplateItemKind | string;
   payloadJson: string;
   sortOrder: number;
 }
@@ -175,21 +190,33 @@ export interface SectorDataTemplateItemDto {
 export interface SectorDataTemplateDto {
   id: string;
   code: string;
-  label: string;
   segmentCode: string | null;
   domainCode: string | null;
-  isActive: boolean;
+  labelFr: string;
+  descriptionFr: string | null;
+  version: number;
   sortOrder: number;
+  isActive: boolean;
   items: SectorDataTemplateItemDto[];
 }
 
-export interface SaveSectorDataTemplateRequest {
+export interface CreateSectorDataTemplateRequest {
   code: string;
-  label: string;
-  segmentCode: string | null;
-  domainCode: string | null;
+  segmentCode?: string | null;
+  domainCode?: string | null;
+  labelFr: string;
+  descriptionFr?: string | null;
+  version?: number;
   sortOrder: number;
-  items: SectorDataTemplateItemDto[];
+  items: SectorDataTemplateItemRequest[];
+}
+
+export interface UpdateSectorDataTemplateRequest {
+  labelFr: string;
+  descriptionFr?: string | null;
+  version?: number;
+  sortOrder: number;
+  items: SectorDataTemplateItemRequest[];
 }
 
 // ============================================================================
@@ -197,29 +224,23 @@ export interface SaveSectorDataTemplateRequest {
 // ============================================================================
 
 export interface SectorRuleSetAdminDto {
+  /** Stamp de version des règles en base. */
   version: number;
-  updatedAtUtc: string | null;
-  updatedBy: string | null;
-  /** Reflet de `Features:RegistrationSector:UseDbRules` côté backend (bannière de source). */
-  useDbRules: boolean;
   segments: SectorSegmentDto[];
   domains: SectorDomainDto[];
-  segmentDomains: SegmentDomainLinkDto[];
+  segmentDomains: SectorSegmentDomainDto[];
   moduleRules: SectorModuleRuleDto[];
-  dependencies: ModuleDependencyDto[];
-  defaultSettings: SectorDefaultSettingDto[];
-  dataTemplates: SectorDataTemplateDto[];
+  moduleDependencies: ModuleDependencyDto[];
+  settings: SectorDefaultSettingDto[];
+  templates: SectorDataTemplateDto[];
 }
 
 export interface SectorRuleSeedResultDto {
-  seededSegments: number;
-  seededDomains: number;
-  seededLinks: number;
-  seededModuleRules: number;
-  seededDependencies: number;
-  seededSettings: number;
-  seededTemplates: number;
-  version: number;
+  inserted: number;
+  updated: number;
+  skippedExisting: number;
+  newVersion: number;
+  forced: boolean;
 }
 
 export interface SectorRuleParityDto {
@@ -256,12 +277,11 @@ export interface UserModuleDiffDto {
   modulesToDisable: number[];
 }
 
-export type TemplateItemOutcomeStatus = 'created' | 'existing' | 'skipped';
-
+/** Issue de `TemplateItemOutcome` backend (WP-B6) : évaluation d'un item de modèle. */
 export interface TemplateItemOutcomeDto {
-  kind: SectorDataTemplateItemKind | string;
-  outcome: TemplateItemOutcomeStatus;
-  detail?: string | null;
+  templateCode: string;
+  itemKind: string;
+  outcome: string;
 }
 
 export interface TemplatePreviewDto {
