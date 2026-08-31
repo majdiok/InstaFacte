@@ -39,28 +39,28 @@ public sealed class PlatformTenantSectorConfigurationController : ControllerBase
 
     [HttpPost("preview")]
     [Authorize(Policy = "perm:" + PlatformPermissions.SectorRulesRead)]
-    [ProducesResponseType(typeof(ApiResponse<SectorReconfigurationPreviewDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<SectorReconfigurationPreviewDto>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiResponse<SectorReconfigurationPreviewDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(FactuTrust.Application.DTOs.ApiResponse<SectorReconfigurationPreviewDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(FactuTrust.Application.DTOs.ApiResponse<SectorReconfigurationPreviewDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(FactuTrust.Application.DTOs.ApiResponse<SectorReconfigurationPreviewDto>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Preview(Guid tenantId, [FromBody] SectorReconfigurationRequestDto request, CancellationToken cancellationToken)
     {
         TryGetActorId(out var actorId);
 
         var result = await _service.PreviewAsync(tenantId, request, actorId, cancellationToken);
         if (result.IsSuccess)
-            return Ok(ApiResponse<SectorReconfigurationPreviewDto>.Ok(result.Value));
+            return Ok(FactuTrust.Application.DTOs.ApiResponse<SectorReconfigurationPreviewDto>.Ok(result.Value));
         return MapFailure<SectorReconfigurationPreviewDto>(result.Error);
     }
 
     [HttpPost("apply")]
     [Authorize(Policy = "perm:" + PlatformPermissions.SectorRulesApply)]
-    [ProducesResponseType(typeof(ApiResponse<SectorReconfigurationApplyResultDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<SectorReconfigurationApplyResultDto>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiResponse<SectorReconfigurationApplyResultDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(FactuTrust.Application.DTOs.ApiResponse<SectorReconfigurationApplyResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(FactuTrust.Application.DTOs.ApiResponse<SectorReconfigurationApplyResultDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(FactuTrust.Application.DTOs.ApiResponse<SectorReconfigurationApplyResultDto>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Apply(Guid tenantId, [FromBody] SectorReconfigurationRequestDto request, CancellationToken cancellationToken)
     {
         if (!TryGetActorId(out var actorId))
-            return Unauthorized(ApiResponse<SectorReconfigurationApplyResultDto>.Fail("Non authentifié."));
+            return Unauthorized(FactuTrust.Application.DTOs.ApiResponse<SectorReconfigurationApplyResultDto>.Fail("Non authentifié."));
 
         var result = await _service.ApplyAsync(tenantId, request, actorId, cancellationToken);
         if (result.IsFailure)
@@ -74,7 +74,7 @@ public sealed class PlatformTenantSectorConfigurationController : ControllerBase
             "Platform admin {ActorId} applied sector reconfiguration for tenant {TenantId} (success={Success}, failed={Failed})",
             actorId, tenantId, successCount, failureCount);
 
-        return Ok(ApiResponse<SectorReconfigurationApplyResultDto>.Ok(result.Value, message));
+        return Ok(FactuTrust.Application.DTOs.ApiResponse<SectorReconfigurationApplyResultDto>.Ok(result.Value, message));
     }
 
     /// <summary>
@@ -85,7 +85,7 @@ public sealed class PlatformTenantSectorConfigurationController : ControllerBase
     private IActionResult MapFailure<T>(Error error)
     {
         if (string.Equals(error.Code, ITenantSectorReconfigurationService.TenantNotFoundCode, StringComparison.Ordinal))
-            return NotFound(ApiResponse<T>.Fail(error.Description, error.Code));
-        return BadRequest(ApiResponse<T>.Fail(error.Description, error.Code));
+            return NotFound(FactuTrust.Application.DTOs.ApiResponse<T>.Fail(error.Description, error.Code));
+        return BadRequest(FactuTrust.Application.DTOs.ApiResponse<T>.Fail(error.Description, error.Code));
     }
 }
