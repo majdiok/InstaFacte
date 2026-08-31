@@ -251,6 +251,83 @@ describe('RegisterWizardComponent', () => {
     });
   });
 
+  describe('module dependency handling (plan WP-F3)', () => {
+    function loadDependencyCatalog(): void {
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(`${component.environment.apiUrl}/public/sector-catalog`).flush({
+        success: true,
+        data: {
+          segments: [
+            { code: 'commerce', labelFr: 'Commerce', descriptionFr: '', iconKey: 'x', sortOrder: 0, coreModuleIds: [], recommendedModuleIds: [], domainCodes: [] }
+          ],
+          domains: [],
+          modules: [
+            { id: AppModule.Stock, code: 'stock', labelFr: 'Stock', isCore: false },
+            { id: AppModule.Forecasting, code: 'forecasting', labelFr: 'Prévisions IA', isCore: false }
+          ],
+          moduleDependencies: [
+            { moduleId: AppModule.Forecasting, requiresModuleId: AppModule.Stock }
+          ]
+        }
+      });
+    }
+
+    it('auto-enables a hard dependency when enabling a module that requires it, and records it in lastAutoEnabled', () => {
+      loadDependencyCatalog();
+      expect(component.form.get('enabledModules')?.value ?? []).not.toContain(AppModule.Stock);
+
+      component.onModuleToggled(AppModule.Forecasting);
+
+      const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
+      expect(enabled).toContain(AppModule.Forecasting);
+      expect(enabled).toContain(AppModule.Stock);
+      expect(component.lastAutoEnabled()).toEqual([AppModule.Stock]);
+    });
+
+    it('does not re-add a required module that is already enabled, and reports no auto-enabled ids', () => {
+      loadDependencyCatalog();
+      component.form.get('enabledModules')?.setValue([AppModule.Stock]);
+
+      component.onModuleToggled(AppModule.Forecasting);
+
+      const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
+      expect(enabled.filter(id => id === AppModule.Stock).length).toBe(1);
+      expect(component.lastAutoEnabled()).toEqual([]);
+    });
+
+    it('refuses to disable a module while another enabled module still requires it', () => {
+      loadDependencyCatalog();
+      component.form.get('enabledModules')?.setValue([AppModule.Forecasting, AppModule.Stock]);
+
+      component.onModuleToggled(AppModule.Stock);
+
+      const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
+      expect(enabled).toContain(AppModule.Stock);
+    });
+
+    it('allows disabling a module once its dependent has also been disabled', () => {
+      loadDependencyCatalog();
+      component.form.get('enabledModules')?.setValue([AppModule.Forecasting, AppModule.Stock]);
+
+      component.onModuleToggled(AppModule.Forecasting);
+      component.onModuleToggled(AppModule.Stock);
+
+      const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
+      expect(enabled).not.toContain(AppModule.Stock);
+      expect(enabled).not.toContain(AppModule.Forecasting);
+    });
+
+    it('resetModulesToRecommendations clears the auto-enabled hint', () => {
+      loadDependencyCatalog();
+      component.onModuleToggled(AppModule.Forecasting);
+      expect(component.lastAutoEnabled().length).toBeGreaterThan(0);
+
+      component.resetModulesToRecommendations();
+      expect(component.lastAutoEnabled()).toEqual([]);
+    });
+  });
+
   describe('domain clearing on segment change (plan WP-F2)', () => {
     it('clears businessDomain and sets domainClearedNotice when the new segment (remote catalog) no longer offers it', () => {
       const httpMock = TestBed.inject(HttpTestingController);

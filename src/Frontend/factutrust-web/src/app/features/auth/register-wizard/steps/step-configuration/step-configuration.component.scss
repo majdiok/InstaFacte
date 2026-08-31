@@ -78,6 +78,11 @@
     background: var(--color-neutral-50);
   }
 
+  &.locked-dep {
+    border-color: #dcdffd;
+    background: linear-gradient(180deg, #fdfdff, #f5f6ff);
+  }
+
   .mod-top {
     display: flex;
     align-items: flex-start;
@@ -123,6 +128,26 @@
     border-radius: 50px;
     padding: 0.18rem 0.5rem;
     width: fit-content;
+
+    &.dep {
+      color: #4f46e5;
+      background: #eef0fe;
+      border-color: #dcdffd;
+    }
+  }
+
+  .dep-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.3rem;
+    margin: 0;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #4f46e5;
+
+    i {
+      margin-top: 0.1rem;
+    }
   }
 }
 

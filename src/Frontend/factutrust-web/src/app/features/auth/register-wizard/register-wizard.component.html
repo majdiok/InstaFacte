@@ -107,6 +107,7 @@
                 [form]="form"
                 [segment]="selectedSegment()"
                 [domain]="selectedDomain()"
+                [autoEnabledIds]="lastAutoEnabled()"
                 (moduleToggled)="onModuleToggled($event)"
                 (resetToRecommendations)="resetModulesToRecommendations()">
               </app-step-configuration>

@@ -94,6 +94,9 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   modulesTouched = signal(false);
   /** True right after a segment change auto-cleared an invalid `businessDomain` (plan WP-F2). */
   domainClearedNotice = signal(false);
+  /** Module ids auto-enabled as hard dependencies by the last toggle (plan WP-F3). Cleared on the next toggle/reset. */
+  lastAutoEnabled = signal<AppModule[]>([]);
+  private autoEnabledHintTimer: ReturnType<typeof setTimeout> | null = null;
 
   private loadingMessageTimer: ReturnType<typeof setInterval> | null = null;
   private loadingStartedAt = 0;
@@ -265,6 +268,10 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.clearLoadingMessageTimer();
+    if (this.autoEnabledHintTimer) {
+      clearTimeout(this.autoEnabledHintTimer);
+      this.autoEnabledHintTimer = null;
+    }
   }
 
   /** Recomputes recommended modules on segment/domain change, unless the user already customized their selection. */
@@ -278,12 +285,39 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
     this.modulesTouched.set(true);
     const control = this.form.get('enabledModules');
     const current: AppModule[] = control?.value ?? [];
-    const next = current.includes(moduleId) ? current.filter(m => m !== moduleId) : [...current, moduleId];
+    const isEnabling = !current.includes(moduleId);
+
+    if (!isEnabling) {
+      // Turning a module off is a no-op while another enabled module still requires it (plan WP-F3).
+      if (this.catalog.dependentsOf(moduleId, current).length > 0) {
+        return;
+      }
+      control?.setValue(current.filter(m => m !== moduleId));
+      this.setAutoEnabledHint([]);
+      return;
+    }
+
+    const required = this.catalog.requiredBy(moduleId).filter(id => !current.includes(id));
+    const next = [...current, moduleId, ...required];
     control?.setValue(next);
+    this.setAutoEnabledHint(required);
+  }
+
+  /** Shows the "activé automatiquement" hint on newly-auto-enabled dependencies for a few seconds. */
+  private setAutoEnabledHint(ids: AppModule[]): void {
+    if (this.autoEnabledHintTimer) {
+      clearTimeout(this.autoEnabledHintTimer);
+      this.autoEnabledHintTimer = null;
+    }
+    this.lastAutoEnabled.set(ids);
+    if (ids.length > 0) {
+      this.autoEnabledHintTimer = setTimeout(() => this.lastAutoEnabled.set([]), 6000);
+    }
   }
 
   resetModulesToRecommendations(): void {
     this.modulesTouched.set(false);
+    this.setAutoEnabledHint([]);
     const recommended = this.catalog.recommendedModules(this.selectedSegment(), this.selectedDomain());
     this.form.get('enabledModules')?.setValue(recommended);
   }
