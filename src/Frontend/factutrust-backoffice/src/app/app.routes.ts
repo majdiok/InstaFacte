@@ -61,6 +61,14 @@ export const routes: Routes = [
           )
       },
       {
+        path: 'sector-rules',
+        canActivate: [platformPermissionGuard(PlatformPermission.SectorRulesRead)],
+        loadComponent: () =>
+          import('./pages/sector-rules/platform-sector-rules-page.component').then(
+            m => m.PlatformSectorRulesPageComponent
+          )
+      },
+      {
         path: 'coupons',
         canActivate: [platformPermissionGuard(PlatformPermission.CouponsManage)],
         loadComponent: () =>
