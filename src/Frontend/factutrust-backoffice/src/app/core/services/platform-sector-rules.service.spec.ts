@@ -9,6 +9,7 @@ describe('PlatformSectorRulesService', () => {
   let service: PlatformSectorRulesService;
   let httpMock: HttpTestingController;
   const base = `${environment.apiUrl}/platform/sector-rules`;
+  const ok = <T>(data: T) => ({ success: true, data, message: null, errors: [] });
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -24,103 +25,133 @@ describe('PlatformSectorRulesService', () => {
     service.getAll().subscribe();
     const req = httpMock.expectOne(base);
     expect(req.request.method).toBe('GET');
-    req.flush({ success: true, data: null, message: null, errors: [] });
+    req.flush(ok(null));
   });
 
-  it('listSegments()/createSegment()/updateSegment()/deactivateSegment() hit the right URLs and verbs', () => {
+  it('segments CRUD hits the right URLs and verbs with GUID ids', () => {
     service.listSegments().subscribe();
-    httpMock.expectOne(`${base}/segments`).flush({ success: true, data: [], message: null, errors: [] });
+    httpMock.expectOne(`${base}/segments`).flush(ok([]));
 
-    service.createSegment({ code: 'commerce', label: 'Commerce', sortOrder: 1 }).subscribe();
+    service.createSegment({ code: 'commerce', labelFr: 'Commerce', descriptionFr: 'Desc', iconKey: 'shopping-cart', sortOrder: 1 }).subscribe();
     const createReq = httpMock.expectOne(`${base}/segments`);
     expect(createReq.request.method).toBe('POST');
     expect(createReq.request.body.code).toBe('commerce');
-    createReq.flush({ success: true, data: null, message: null, errors: [] });
+    expect(createReq.request.body.labelFr).toBe('Commerce');
+    createReq.flush(ok(null));
 
-    service.updateSegment('id-1', { label: 'Commerce', sortOrder: 1, isActive: true }).subscribe();
-    const updateReq = httpMock.expectOne(`${base}/segments/id-1`);
+    service.updateSegment('11111111-1111-1111-1111-111111111111', { labelFr: 'Commerce', descriptionFr: 'Desc', iconKey: 'shopping-cart', sortOrder: 1 }).subscribe();
+    const updateReq = httpMock.expectOne(`${base}/segments/11111111-1111-1111-1111-111111111111`);
     expect(updateReq.request.method).toBe('PUT');
-    updateReq.flush({ success: true, data: null, message: null, errors: [] });
+    updateReq.flush(ok(null));
 
-    service.deactivateSegment('id-1').subscribe();
-    const deleteReq = httpMock.expectOne(`${base}/segments/id-1`);
+    service.deactivateSegment('11111111-1111-1111-1111-111111111111').subscribe();
+    const deleteReq = httpMock.expectOne(`${base}/segments/11111111-1111-1111-1111-111111111111`);
     expect(deleteReq.request.method).toBe('DELETE');
-    deleteReq.flush({ success: true, data: null, message: 'Segment désactivé.', errors: [] });
+    deleteReq.flush(ok(null));
   });
 
-  it('listDomains()/createDomain()/updateDomain()/deactivateDomain() hit the right URLs and verbs', () => {
+  it('domains CRUD hits the right URLs and verbs', () => {
     service.listDomains().subscribe();
-    httpMock.expectOne(`${base}/domains`).flush({ success: true, data: [], message: null, errors: [] });
+    httpMock.expectOne(`${base}/domains`).flush(ok([]));
 
-    service.createDomain({ code: 'vente-detail', label: 'Vente au détail', sortOrder: 1 }).subscribe();
-    const createReq = httpMock.expectOne(`${base}/domains`);
-    expect(createReq.request.method).toBe('POST');
-    createReq.flush({ success: true, data: null, message: null, errors: [] });
+    service.createDomain({ code: 'artisanat', labelFr: 'Artisanat', sortOrder: 1 }).subscribe();
+    expect(httpMock.expectOne(`${base}/domains`).request.method).toBe('POST');
 
-    service.updateDomain('id-2', { label: 'Vente au détail', sortOrder: 1, isActive: true }).subscribe();
-    expect(httpMock.expectOne(`${base}/domains/id-2`).request.method).toBe('PUT');
+    service.updateDomain('22222222-2222-2222-2222-222222222222', { labelFr: 'Artisanat', sortOrder: 1 }).subscribe();
+    expect(httpMock.expectOne(`${base}/domains/22222222-2222-2222-2222-222222222222`).request.method).toBe('PUT');
 
-    service.deactivateDomain('id-2').subscribe();
-    expect(httpMock.expectOne(`${base}/domains/id-2`).request.method).toBe('DELETE');
+    service.deactivateDomain('22222222-2222-2222-2222-222222222222').subscribe();
+    expect(httpMock.expectOne(`${base}/domains/22222222-2222-2222-2222-222222222222`).request.method).toBe('DELETE');
   });
 
-  it('listSegmentDomains()/setSegmentDomains() PUTs the domain codes for the segment', () => {
+  it('segment-domains CRUD hits the right URLs and verbs with GUID link ids', () => {
     service.listSegmentDomains().subscribe();
-    httpMock.expectOne(`${base}/segment-domains`).flush({ success: true, data: [], message: null, errors: [] });
+    httpMock.expectOne(`${base}/segment-domains`).flush(ok([]));
 
-    service.setSegmentDomains('commerce', ['vente-detail', 'autre']).subscribe();
-    const req = httpMock.expectOne(`${base}/segment-domains/commerce`);
-    expect(req.request.method).toBe('PUT');
-    expect(req.request.body.domainCodes).toEqual(['vente-detail', 'autre']);
+    service.createSegmentDomain({ segmentId: 's-1', domainId: 'd-1', sortOrder: 1 }).subscribe();
+    const createReq = httpMock.expectOne(`${base}/segment-domains`);
+    expect(createReq.request.method).toBe('POST');
+    expect(createReq.request.body.segmentId).toBe('s-1');
+    expect(createReq.request.body.domainId).toBe('d-1');
+    createReq.flush(ok(null));
+
+    service.updateSegmentDomain('sd-1', { sortOrder: 2 }).subscribe();
+    expect(httpMock.expectOne(`${base}/segment-domains/sd-1`).request.method).toBe('PUT');
+
+    service.deactivateSegmentDomain('sd-1').subscribe();
+    expect(httpMock.expectOne(`${base}/segment-domains/sd-1`).request.method).toBe('DELETE');
   });
 
-  it('listModuleRules()/saveSegmentRules()/saveDomainOverlay() hit the right URLs', () => {
+  it('module-rules CRUD hits the right URLs and verbs with ruleKind string', () => {
     service.listModuleRules().subscribe();
-    httpMock.expectOne(`${base}/module-rules`).flush({ success: true, data: [], message: null, errors: [] });
+    httpMock.expectOne(`${base}/module-rules`).flush(ok([]));
 
-    service.saveSegmentRules('commerce', [7, 6]).subscribe();
-    const segReq = httpMock.expectOne(`${base}/module-rules/segments/commerce`);
-    expect(segReq.request.method).toBe('PUT');
-    expect(segReq.request.body.moduleIds).toEqual([7, 6]);
+    service.createModuleRule({ ruleKind: 'SegmentBase', segmentId: 's-1', domainId: null, moduleId: 7, sortOrder: 0 }).subscribe();
+    const createReq = httpMock.expectOne(`${base}/module-rules`);
+    expect(createReq.request.method).toBe('POST');
+    expect(createReq.request.body.ruleKind).toBe('SegmentBase');
+    createReq.flush(ok(null));
 
-    service.saveDomainOverlay('vente-detail', [9]).subscribe();
-    const domReq = httpMock.expectOne(`${base}/module-rules/domains/vente-detail`);
-    expect(domReq.request.method).toBe('PUT');
+    service.updateModuleRule('mr-1', { sortOrder: 3 }).subscribe();
+    expect(httpMock.expectOne(`${base}/module-rules/mr-1`).request.method).toBe('PUT');
+
+    service.deactivateModuleRule('mr-1').subscribe();
+    expect(httpMock.expectOne(`${base}/module-rules/mr-1`).request.method).toBe('DELETE');
   });
 
-  it('listDependencies()/createDependency()/deleteDependency() hit the right URLs', () => {
-    service.listDependencies().subscribe();
-    httpMock.expectOne(`${base}/module-dependencies`).flush({ success: true, data: [], message: null, errors: [] });
+  it('module-dependencies expose POST + DELETE only (no PUT)', () => {
+    service.listModuleDependencies().subscribe();
+    httpMock.expectOne(`${base}/module-dependencies`).flush(ok([]));
 
-    service.createDependency({ moduleId: 6, requiresModuleId: 7 }).subscribe();
+    service.createModuleDependency({ moduleId: 6, requiredModuleId: 7 }).subscribe();
     const createReq = httpMock.expectOne(`${base}/module-dependencies`);
     expect(createReq.request.method).toBe('POST');
+    expect(createReq.request.body.requiredModuleId).toBe(7);
+    createReq.flush(ok(null));
 
-    service.deleteDependency('dep-1').subscribe();
+    service.deactivateModuleDependency('dep-1').subscribe();
     expect(httpMock.expectOne(`${base}/module-dependencies/dep-1`).request.method).toBe('DELETE');
   });
 
-  it('listDefaultSettings()/saveDefaultSetting() hit the right URLs', () => {
-    service.listDefaultSettings().subscribe();
-    httpMock.expectOne(`${base}/settings`).flush({ success: true, data: [], message: null, errors: [] });
+  it('settings CRUD hits the right URLs and verbs with settingValue', () => {
+    service.listSettings().subscribe();
+    httpMock.expectOne(`${base}/settings`).flush(ok([]));
 
-    service.saveDefaultSetting({ segmentCode: 'commerce', settingKey: 'DefaultWarehouseName', valueType: 'string', value: 'Magasin' }).subscribe();
-    expect(httpMock.expectOne(`${base}/settings`).request.method).toBe('POST');
+    service.createSetting({ segmentCode: 'commerce', settingKey: 'DefaultWarehouseName', settingValue: 'Magasin', valueType: 'string', sortOrder: 0 }).subscribe();
+    const createReq = httpMock.expectOne(`${base}/settings`);
+    expect(createReq.request.method).toBe('POST');
+    expect(createReq.request.body.settingValue).toBe('Magasin');
+    createReq.flush(ok(null));
+
+    service.updateSetting('set-1', { settingValue: 'Dépôt', valueType: 'string', sortOrder: 0 }).subscribe();
+    expect(httpMock.expectOne(`${base}/settings/set-1`).request.method).toBe('PUT');
+
+    service.deactivateSetting('set-1').subscribe();
+    expect(httpMock.expectOne(`${base}/settings/set-1`).request.method).toBe('DELETE');
   });
 
-  it('listDataTemplates()/saveDataTemplate() hit the right URLs', () => {
-    service.listDataTemplates().subscribe();
-    httpMock.expectOne(`${base}/templates`).flush({ success: true, data: [], message: null, errors: [] });
+  it('templates CRUD hits the right URLs and verbs with labelFr', () => {
+    service.listTemplates().subscribe();
+    httpMock.expectOne(`${base}/templates`).flush(ok([]));
 
-    service.saveDataTemplate({ code: 'btp-docs', label: 'Types de documents BTP', segmentCode: 'btp', domainCode: null, sortOrder: 1, items: [] }).subscribe();
-    expect(httpMock.expectOne(`${base}/templates`).request.method).toBe('POST');
+    service.createTemplate({ code: 'btp-docs', labelFr: 'Types de documents BTP', sortOrder: 1, items: [] }).subscribe();
+    const createReq = httpMock.expectOne(`${base}/templates`);
+    expect(createReq.request.method).toBe('POST');
+    expect(createReq.request.body.labelFr).toBe('Types de documents BTP');
+    createReq.flush(ok(null));
+
+    service.updateTemplate('tpl-1', { labelFr: 'Types de documents BTP', sortOrder: 1, items: [] }).subscribe();
+    expect(httpMock.expectOne(`${base}/templates/tpl-1`).request.method).toBe('PUT');
+
+    service.deactivateTemplate('tpl-1').subscribe();
+    expect(httpMock.expectOne(`${base}/templates/tpl-1`).request.method).toBe('DELETE');
   });
 
   it('seedFromCatalog() POSTs to seed-from-catalog with force query param', () => {
     service.seedFromCatalog(true).subscribe();
     const req = httpMock.expectOne(r => r.url === `${base}/seed-from-catalog` && r.params.get('force') === 'true');
     expect(req.request.method).toBe('POST');
-    req.flush({ success: true, data: null, message: null, errors: [] });
+    req.flush(ok(null));
   });
 
   it('seedFromCatalog() without force omits the query param', () => {

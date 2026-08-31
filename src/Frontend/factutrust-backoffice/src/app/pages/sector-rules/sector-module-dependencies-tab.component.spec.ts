@@ -13,7 +13,7 @@ describe('SectorModuleDependenciesTabComponent', () => {
   let toast: jasmine.SpyObj<MessageService>;
 
   beforeEach(async () => {
-    api = jasmine.createSpyObj('PlatformSectorRulesService', ['createDependency', 'deleteDependency']);
+    api = jasmine.createSpyObj('PlatformSectorRulesService', ['createModuleDependency', 'deactivateModuleDependency']);
     toast = jasmine.createSpyObj('MessageService', ['add']);
     const permissions = jasmine.createSpyObj('PlatformPermissionsService', ['has']);
     permissions.has.and.returnValue(true);
@@ -34,7 +34,7 @@ describe('SectorModuleDependenciesTabComponent', () => {
   });
 
   it('surfaces the backend French message via MessageService when the API rejects with a 400 cycle error', () => {
-    api.createDependency.and.returnValue(
+    api.createModuleDependency.and.returnValue(
       of({ success: false, data: null, message: 'Dépendance circulaire détectée entre modules.', errors: [] }) as never
     );
     component.newModuleId = 6;
@@ -48,7 +48,7 @@ describe('SectorModuleDependenciesTabComponent', () => {
   });
 
   it('surfaces the backend message from an HTTP error response body', () => {
-    api.createDependency.and.returnValue(
+    api.createModuleDependency.and.returnValue(
       throwError(() => ({ error: { message: 'Dépendance circulaire détectée entre modules.' } }))
     );
     component.newModuleId = 6;
