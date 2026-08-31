@@ -35,11 +35,15 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
     /// <item><c>IX_JournalEntries_SourceEntityType_SourceEntityId</c> UNIQUE FILTRÉ — R-16/M2 :
     /// remplace l'index non unique existant (créé en <c>AddAccountingModule</c>). Garantit une seule
     /// écriture sourcing ACTIVE par entité source, limitée aux types de comptabilisation « aller »
-    /// de la paie (<c>PayrollRun</c>, <c>PayrollPayment</c>, <c>CnssContributionPayment</c>). Le
+    /// de la paie (<c>PayrollRun</c>, <c>PayrollPayment</c>, <c>CnssContributionPayment</c>,
+    /// <c>PayrollReclassification</c>). L1 : <c>PayrollReclassification</c> est inclus pour rendre
+    /// l'idempotence du reclassement DB-backed (une seule OD de reclassement active par cycle). Le
     /// filtre exclut les écritures extournées (<c>IsReversed = 1</c>) ET les écritures d'annulation
     /// (<c>*Cancelled</c>) : celles-ci s'accumulent légitimement sur un cycle rouvert plusieurs
     /// fois (chaque réouverture ajoute une extourne <c>PayrollRunCancelled</c> IsReversed = 0 pour
-    /// le même runId), donc les exclure préserve le cycle reopen→revalidation.</item>
+    /// le même runId), donc les exclure préserve le cycle reopen→revalidation. Une garde préventive
+    /// (M3) abort la migration tôt avec un message actionnable si des doublons pré-existent, plutôt
+    /// qu'échouer sur le CREATE INDEX en plein milieu du schéma.</item>
     /// </list>
     ///
     /// <c>PayrollRuns.Version</c> est marqué <c>IsConcurrencyToken</c> (R-16/M2) : annotation de
@@ -58,6 +62,22 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // M3 : garde préventive anti-brique. Les index uniques créés plus bas (un bulletin au plus
+            // par (cycle, salarié) ; une écriture sourcing active au plus par entité source paie) ne
+            // peuvent être créés si des doublons pré-existent (race historique). Plutôt qu'échouer sur
+            // un CREATE INDEX générique en plein milieu de la migration (schéma à moitié appliqué), on
+            // abort tôt avec un message actionnable — la migration du tenant reste reportée jusqu'à
+            // résolution manuelle des doublons, sans altération des données comptables.
+            migrationBuilder.Sql(
+                @"IF EXISTS (SELECT 1 FROM [Payslips] GROUP BY [PayrollRunId], [EmployeeId] HAVING COUNT(*) > 1)
+    THROW 51000, N'Doublons de bulletins de paie (PayrollRunId, EmployeeId) détectés — supprimez ou consolidez les doublons avant d''appliquer la migration (index unique IX_Payslips_PayrollRunId_EmployeeId).', 1;");
+            migrationBuilder.Sql(
+                @"IF EXISTS (
+    SELECT 1 FROM [JournalEntries]
+    WHERE [IsReversed] = 0 AND [SourceEntityType] IN (N'PayrollRun', N'PayrollPayment', N'CnssContributionPayment', N'PayrollReclassification')
+    GROUP BY [SourceEntityType], [SourceEntityId] HAVING COUNT(*) > 1)
+    THROW 51001, N'Doublons d''écritures paie actives (SourceEntityType, SourceEntityId) détectés — extournez les doublons avant d''appliquer la migration (index unique IX_JournalEntries_SourceEntityType_SourceEntityId).', 1;");
+
             // R-24 : assiette des taxes patronales (Legacy = assiette CNSSable historique).
             migrationBuilder.AddColumn<int>(
                 name: "PayrollTaxBaseMode",
@@ -121,7 +141,7 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                 table: "JournalEntries",
                 columns: new[] { "SourceEntityType", "SourceEntityId" },
                 unique: true,
-                filter: "[IsReversed] = 0 AND [SourceEntityType] IN (N'PayrollRun', N'PayrollPayment', N'CnssContributionPayment')");
+                filter: "[IsReversed] = 0 AND [SourceEntityType] IN (N'PayrollRun', N'PayrollPayment', N'CnssContributionPayment', N'PayrollReclassification')");
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)

@@ -58,6 +58,7 @@ public static class PayrollJournalEntryBuilder
         decimal totalCssRegularization = 0m,
         decimal totalCssEmployer = 0m,
         decimal totalTerminationIndemnities = 0m,
+        decimal totalInKindBenefits = 0m,
         PayrollAccountProfile profile = PayrollAccountProfile.Legacy)
     {
         return BuildLines(
@@ -77,6 +78,7 @@ public static class PayrollJournalEntryBuilder
             totalCssRegularization,
             totalCssEmployer,
             totalTerminationIndemnities,
+            totalInKindBenefits,
             profile);
     }
 
@@ -100,6 +102,7 @@ public static class PayrollJournalEntryBuilder
         decimal totalCssRegularization = 0m,
         decimal totalCssEmployer = 0m,
         decimal totalTerminationIndemnities = 0m,
+        decimal totalInKindBenefits = 0m,
         PayrollAccountProfile profile = PayrollAccountProfile.Legacy)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
@@ -133,9 +136,14 @@ public static class PayrollJournalEntryBuilder
         var socialOrg = R(totalCnssEmployee + cnssEmployer + workAccident);
 
         // Indemnités de rupture : 641 en Legacy, 64602 en SCE. Les indemnités ordinaires restent
-        // dans le brut (640) — seul le libellé « Indemnité » (rupture) est isolé ici.
+        // dans le brut (640) — seul le libellé « Indemnité » (rupture) est isolé ici. Les avantages
+        // en nature (gain imposable) sortent du 640 vers 6404 sous SCE (le clearing 4386 est porté
+        // par la retenue typée InKindBenefitOffset ; en Legacy l'AN reste dans le brut au 640).
         var terminationIndemnities = R(Math.Min(totalTerminationIndemnities, gross));
-        var salaries = R(gross - terminationIndemnities);
+        var inKindBenefits = profile == PayrollAccountProfile.Sce2026
+            ? R(Math.Min(totalInKindBenefits, gross - terminationIndemnities))
+            : 0m;
+        var salaries = R(gross - terminationIndemnities - inKindBenefits);
         var indemnityAccount = profile == PayrollAccountProfile.Sce2026
             ? TerminationIndemnityAccount
             : IndemnityAccount;
@@ -143,6 +151,7 @@ public static class PayrollJournalEntryBuilder
         var lines = new List<JournalLineInput>();
         AddDebit(lines, SalaryAccount, entryLabel, salaries);
         AddDebit(lines, indemnityAccount, entryLabel, terminationIndemnities);
+        AddDebit(lines, InKindBenefitExpenseAccount, entryLabel, inKindBenefits);
 
         if (profile == PayrollAccountProfile.Sce2026)
         {
@@ -385,10 +394,10 @@ public static class PayrollJournalEntryBuilder
 
     /// <summary>
     /// Somme des indemnités de rupture. Sous SCE, <see cref="EarningKind.TerminationIndemnity"/> fait
-    /// foi ; repli par préfixe « Indemnité » uniquement pour les bulletions antérieurs
+    /// foi ; repli par préfixe « Indemnité » uniquement pour les bulletins antérieurs
     /// (<see cref="PayslipLine.EarningKind"/> null). En Legacy, le préfixe seul est utilisé (historique).
     /// </summary>
-    private static decimal ResolveTerminationIndemnities(PayrollRun payrollRun, PayrollAccountProfile profile) =>
+    public static decimal ResolveTerminationIndemnities(PayrollRun payrollRun, PayrollAccountProfile profile) =>
         payrollRun.Payslips
             .SelectMany(p => p.Lines)
             .Where(l => l.Kind == PayslipLineKind.Earning && IsTerminationIndemnity(l, profile))
@@ -409,10 +418,21 @@ public static class PayrollJournalEntryBuilder
     }
 
     /// <summary>Somme des avantages en nature (gain imposable) — débit 6404 sous SCE.</summary>
-    private static decimal ResolveInKindBenefits(PayrollRun payrollRun) =>
+    public static decimal ResolveInKindBenefits(PayrollRun payrollRun) =>
         payrollRun.Payslips
             .SelectMany(p => p.Lines)
             .Where(l => l.Kind == PayslipLineKind.Earning && IsInKindBenefit(l))
+            .Sum(l => l.Amount);
+
+    /// <summary>
+    /// Somme des compensations d'avantage en nature (retenue salarié typée
+    /// <see cref="DeductionKind.InKindBenefitOffset"/>) — crédit clearing (4386 sous SCE, 421 en Legacy).
+    /// Sert au reclassement à isoler la part AN du 421 des avances (R-09/M1).
+    /// </summary>
+    public static decimal ResolveInKindBenefitOffset(PayrollRun payrollRun) =>
+        payrollRun.Payslips
+            .SelectMany(p => p.Lines)
+            .Where(l => l.Kind == PayslipLineKind.Deduction && l.DeductionKind == DeductionKind.InKindBenefitOffset)
             .Sum(l => l.Amount);
 
     private static bool IsInKindBenefit(PayslipLine line) =>

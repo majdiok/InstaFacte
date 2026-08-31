@@ -37,7 +37,9 @@ public sealed class GeneratePayrollReclassificationCommandHandler
     {
         return await _unitOfWork.ExecuteAsync(async ct =>
         {
-            var run = await _runs.GetByIdAsync(request.RunId, ct);
+            // M1 : le reclassement dérive la ventilation des indemnités (rupture vs ordinaires) et la
+            // part de compensation d'avantage en nature des lignes figées des bulletins — payslips requis.
+            var run = await _runs.GetByIdWithPayslipsAsync(request.RunId, ct);
             if (run is null)
                 return Result.Failure<Guid>(Error.NotFound("PayrollRun", request.RunId));
 

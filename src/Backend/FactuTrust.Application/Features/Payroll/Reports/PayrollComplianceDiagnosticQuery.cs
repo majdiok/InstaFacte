@@ -1,5 +1,6 @@
 using System.Globalization;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Features.Accounting;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Payroll;
@@ -19,11 +20,6 @@ public sealed record PayrollComplianceDiagnosticQuery : IRequest<Result<PayrollC
 public sealed class PayrollComplianceDiagnosticQueryHandler
     : IRequestHandler<PayrollComplianceDiagnosticQuery, Result<PayrollComplianceDiagnosticDto>>
 {
-    // Types sources désignant une écriture paie — alignés sur AccountingService.SourcePayroll* /
-    // PayrollSourcedEntryGuard.PayrollSourceTypes (Infrastructure, non référençable depuis Application).
-    private static readonly string[] PayrollSourceTypes =
-        { "PayrollRun", "PayrollPayment", "CnssContributionPayment", "EmployeeAdvance", "EmployeeLoan" };
-
     private const string PayrollRunSource = "PayrollRun";
 
     private readonly IPayrollRunRepository _runs;
@@ -57,7 +53,7 @@ public sealed class PayrollComplianceDiagnosticQueryHandler
         var runById = runs.ToDictionary(r => r.Id);
         var periodByRun = runs.ToDictionary(r => r.Id, r => (r.Year, r.Month));
 
-        var entries = await _journalEntries.ListActiveBySourceTypesAsync(PayrollSourceTypes, cancellationToken);
+        var entries = await _journalEntries.ListActiveBySourceTypesAsync(PayrollSourcedEntryGuard.PayrollSourceTypes, cancellationToken);
         var runEntries = entries.Where(e => e.SourceEntityType == PayrollRunSource).ToList();
 
         var advances = await _advances.GetAllAsync(cancellationToken);
@@ -67,7 +63,7 @@ public sealed class PayrollComplianceDiagnosticQueryHandler
 
         var checks = new List<PayrollDiagnosticCheckDto>
         {
-            CheckMisclassification(runEntries, runById),
+            await CheckMisclassificationAsync(runEntries, runById, cancellationToken),
             CheckAuxiliaryBalances(runEntries, advances, loans),
             await CheckWronglySettledAsync(advances, loans, periodByRun, cancellationToken),
             CheckRunsWithoutEntry(runs, runEntries),
@@ -93,9 +89,10 @@ public sealed class PayrollComplianceDiagnosticQueryHandler
 
     // ── 1. Imputations erronées (641, TFP/FOPROLOS en 647/432, CSS pat en 432, AN en 421) ──
 
-    private static PayrollDiagnosticCheckDto CheckMisclassification(
+    private async Task<PayrollDiagnosticCheckDto> CheckMisclassificationAsync(
         List<JournalEntry> runEntries,
-        Dictionary<Guid, PayrollRun> runById)
+        Dictionary<Guid, PayrollRun> runById,
+        CancellationToken cancellationToken)
     {
         var findings = new List<PayrollDiagnosticFindingDto>();
 
@@ -106,15 +103,39 @@ public sealed class PayrollComplianceDiagnosticQueryHandler
 
             var lines = entry.Lines.ToList();
             var indemnites641 = R(lines.Where(l => l.AccountNumber == "641").Sum(l => l.DebitAmount.Amount));
-            var inKindOffset421 = R(lines.Where(l => l.AccountNumber == "421").Sum(l => l.CreditAmount.Amount));
+            var posted421Credits = R(lines.Where(l => l.AccountNumber == "421").Sum(l => l.CreditAmount.Amount));
             var tfp = R(run.TotalTfp);
             var foprolos = R(run.TotalFoprolos);
             var cssPat = R(run.TotalCssEmployer);
 
             var taxesIn647Or432 = tfp != 0m || foprolos != 0m;   // TFP/FOPROLOS bookés en 647/432 (Legacy)
             var cssPatIn432 = cssPat != 0m;                       // CSS patronale créditée en 432 (Legacy)
-            var has641 = indemnites641 != 0m;                     // indemnités ordinaires en 641
-            var hasInKind421 = inKindOffset421 != 0m;             // compensation AN créditée en 421
+            var has641Posted = indemnites641 != 0m;               // indemnités comptabilisées au 641
+            var has421Posted = posted421Credits != 0m;            // crédit 421 (avances et/ou compensation AN)
+
+            // Pas d'écart potentiel → on épargne la lecture des bulletins.
+            if (!taxesIn647Or432 && !cssPatIn432 && !has641Posted && !has421Posted)
+                continue;
+
+            // M1 : la ventilation (rupture vs ordinaires, part AN vs avances) se déduit des lignes
+            // figées des bulletins (EarningKind), non des sommes brutes des comptes legacy. Sous Legacy
+            // le 641 mêlait ordinaires et rupture, et le 421 mêlait compensation AN et avances. Sans
+            // payslips chargés (cycle sans bulletins / repli), on retombe sur 0 → ancien calcul brut.
+            var runWithPayslips = await _runs.GetByIdWithPayslipsAsync(runId, cancellationToken);
+            var terminationFromRun = runWithPayslips is null
+                ? 0m
+                : R(PayrollJournalEntryBuilder.ResolveTerminationIndemnities(runWithPayslips, PayrollAccountProfile.Sce2026));
+            var inKindOffsetFromRun = runWithPayslips is null
+                ? 0m
+                : R(PayrollJournalEntryBuilder.ResolveInKindBenefitOffset(runWithPayslips));
+
+            // On ne peut pas reclasser plus que ce qui est effectivement comptabilisé au 641 / au 421.
+            var terminationToReclass = R(Math.Min(terminationFromRun, indemnites641));
+            var ordinaryToReclass = R(Math.Max(0m, indemnites641 - terminationToReclass));
+            var inKindOffsetToReclass = R(Math.Min(inKindOffsetFromRun, posted421Credits));
+
+            var has641 = indemnites641 != 0m;               // indemnités à reclasser (ordinaires + rupture)
+            var hasInKind421 = inKindOffsetToReclass != 0m; // seule la part AN est erronée (les avances au 421 sont licites)
 
             if (!taxesIn647Or432 && !cssPatIn432 && !has641 && !hasInKind421)
                 continue;
@@ -124,13 +145,14 @@ public sealed class PayrollComplianceDiagnosticQueryHandler
             {
                 ["debit_6611"] = tfp,
                 ["debit_6612"] = foprolos,
-                ["credit_647"] = taxes,            // retrait de 647 du TFP/FOPROLOS
-                ["debit_432"] = R(taxes + cssPat), // retrait de 432 des taxes + CSS pat
+                ["credit_647"] = taxes,                  // retrait de 647 du TFP/FOPROLOS
+                ["debit_432"] = R(taxes + cssPat),       // retrait de 432 des taxes + CSS pat
                 ["credit_437"] = R(taxes + cssPat),
-                ["debit_640"] = indemnites641,     // reclassification des indemnités 641 → 640
+                ["debit_640"] = ordinaryToReclass,       // indemnités ordinaires 641 → 640
+                ["debit_64602"] = terminationToReclass,  // indemnités de rupture 641 → 64602
                 ["credit_641"] = indemnites641,
-                ["debit_421"] = inKindOffset421,   // retrait de la compensation AN fictive en 421
-                ["credit_4386"] = inKindOffset421
+                ["debit_421"] = inKindOffsetToReclass,   // retrait de la seule compensation AN (pas les avances)
+                ["credit_4386"] = inKindOffsetToReclass
             };
 
             var axes = new List<string>();

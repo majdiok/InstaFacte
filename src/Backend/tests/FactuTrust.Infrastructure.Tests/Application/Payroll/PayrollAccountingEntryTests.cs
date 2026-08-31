@@ -642,4 +642,60 @@ public sealed class PayrollAccountingEntryTests
 
         AssertCreateSucceeds(lines);
     }
+
+    [Fact]
+    public void BuildLines_Sce2026_InKindBenefit_RoutedTo6404()
+    {
+        var run = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        });
+
+        var result = PayrollJournalEntryBuilder.BuildLines(
+            run.TotalGross, run.TotalNet, run.TotalCnssEmployee, run.TotalCnssEmployer,
+            run.TotalIrpp, run.TotalCss, run.TotalTfp, run.TotalFoprolos,
+            run.TotalWorkAccident, run.TotalOtherDeductions, "Paie 08/2026",
+            totalCssEmployer: run.TotalCssEmployer, totalInKindBenefits: 300m,
+            profile: PayrollAccountProfile.Sce2026);
+
+        Assert.True(result.IsSuccess);
+        var lines = result.Value;
+
+        // H2 : avantage en nature → 6404 (SCE), le brut restant au 640.
+        Assert.Equal(300m, lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.InKindBenefitExpenseAccount).Debit);
+        Assert.Equal(run.TotalGross - 300m, lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.SalaryAccount).Debit);
+        // Pas d'indemnité de rupture sur ce cycle.
+        Assert.DoesNotContain(lines, l => l.AccountNumber == PayrollJournalEntryBuilder.TerminationIndemnityAccount);
+
+        AssertCreateSucceeds(lines);
+    }
+
+    [Fact]
+    public void BuildLines_Legacy_InKindBenefit_StaysIn640()
+    {
+        // Legacy : l'avantage en nature reste dans le brut au 640 (pas de 6404) — comportement historique.
+        var run = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        });
+
+        var result = PayrollJournalEntryBuilder.BuildLines(
+            run.TotalGross, run.TotalNet, run.TotalCnssEmployee, run.TotalCnssEmployer,
+            run.TotalIrpp, run.TotalCss, run.TotalTfp, run.TotalFoprolos,
+            run.TotalWorkAccident, run.TotalOtherDeductions, "Paie 08/2026",
+            totalCssEmployer: run.TotalCssEmployer, totalInKindBenefits: 300m,
+            profile: PayrollAccountProfile.Legacy);
+
+        Assert.True(result.IsSuccess);
+        var lines = result.Value;
+
+        Assert.DoesNotContain(lines, l => l.AccountNumber == PayrollJournalEntryBuilder.InKindBenefitExpenseAccount);
+        Assert.Equal(run.TotalGross, lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.SalaryAccount).Debit);
+
+        AssertCreateSucceeds(lines);
+    }
 }

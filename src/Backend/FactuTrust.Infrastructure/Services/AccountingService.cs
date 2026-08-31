@@ -2069,20 +2069,11 @@ public sealed class AccountingService : IAccountingService
     /// (<see cref="AccountingSettings.PayrollAccountProfileEffectiveDate"/>) → <c>Legacy</c> (la
     /// réouverture→revalidation régénère les mêmes comptes qu'à l'origine) ; à partir de la date →
     /// <see cref="AccountingSettings.PayrollAccountProfile"/>. Sans date de bascule, le profil
-    /// configuré s'applique à tous les cycles.
+    /// configuré s'applique à tous les cycles. Délégué à <see cref="AccountingSettings.ResolvePayrollAccountProfile"/>
+    /// (source unique partagée avec la simulation du journal de paie).
     /// </summary>
     private PayrollAccountProfile ResolvePayrollAccountProfile(int year, int month)
-    {
-        var effective = _settings.PayrollAccountProfileEffectiveDate;
-        if (effective is null)
-            return _settings.PayrollAccountProfile;
-
-        // Dernier jour du mois du cycle.
-        var periodEnd = new DateTime(year, month, 1).AddMonths(1).AddDays(-1);
-        return periodEnd < effective.Value
-            ? PayrollAccountProfile.Legacy
-            : _settings.PayrollAccountProfile;
-    }
+        => _settings.ResolvePayrollAccountProfile(year, month);
 
     public async Task<Result> GeneratePayrollRunEntryAsync(PayrollRun payrollRun, CancellationToken cancellationToken = default)
     {
@@ -2122,17 +2113,21 @@ public sealed class AccountingService : IAccountingService
         // réouverture→revalidation régénère les mêmes comptes), à partir de la date → profil configuré.
         var profile = ResolvePayrollAccountProfile(payrollRun.Year, payrollRun.Month);
 
-        var accountMap = new PayrollJournalEntryAccountMap
-        {
-            LoansAccount = _settings.PayrollEmployeeLoansAccount,
-            GarnishmentsAccount = _settings.PayrollGarnishmentsAccount,
-            MutuelleEmployeeAccount = _settings.PayrollMutuelleEmployeeAccount,
-            MealVoucherEmployeeAccount = _settings.PayrollMealVoucherEmployeeAccount,
-            // Compensation avantage en nature : 4386 sous SCE, 421 (historique) sous Legacy.
-            InKindBenefitOffsetAccount = profile == PayrollAccountProfile.Sce2026
-                ? _settings.PayrollInKindOffsetAccount
-                : PayrollJournalEntryBuilder.AdvancesAccount
-        };
+        var accountMap = _settings.BuildPayrollAccountMap(profile);
+
+        // H2 : la ventilation des gains par nature (rupture → 64602, avantage en nature → 6404) ne doit
+        // pas dépendre de la présence de retenues typées. Un cycle de rupture (ou d'avantage en nature)
+        // sans avance/prêt/saisie/mutuelle tombait auparavant sur le chemin agrégé qui passait
+        // totalTerminationIndemnities = 0 → indemnité de rupture au 640. On dérive désormais les
+        // montants des lignes figées des bulletins et on les passe aussi au chemin agrégé. Pour un
+        // vrai cycle Legacy (EarningKind null) les résolveurs renvoient 0 → comportement historique
+        // préservé byte-à-byte.
+        var terminationFromRun = payrollRun.Payslips.Count > 0
+            ? PayrollJournalEntryBuilder.ResolveTerminationIndemnities(payrollRun, profile)
+            : 0m;
+        var inKindFromRun = payrollRun.Payslips.Count > 0
+            ? PayrollJournalEntryBuilder.ResolveInKindBenefits(payrollRun)
+            : 0m;
 
         var auxiliaryCredits = _settings.PayrollEmployeeAuxiliaryEnabled && payrollRun.Payslips.Count > 0
             ? payrollRun.Payslips
@@ -2165,7 +2160,9 @@ public sealed class AccountingService : IAccountingService
                     payrollRun.TotalIrppRegularization,
                     payrollRun.TotalCssRegularization,
                     payrollRun.TotalCssEmployer,
-                    profile: profile)
+                    terminationFromRun,
+                    inKindFromRun,
+                    profile)
                 : PayrollJournalEntryBuilder.BuildLines(
                     payrollRun.TotalGross,
                     payrollRun.TotalNet,
@@ -2181,7 +2178,9 @@ public sealed class AccountingService : IAccountingService
                     payrollRun.TotalIrppRegularization,
                     payrollRun.TotalCssRegularization,
                     payrollRun.TotalCssEmployer,
-                    profile: profile);
+                    terminationFromRun,
+                    inKindFromRun,
+                    profile);
         if (linesResult.IsFailure)
             return Result.Failure(linesResult.Error);
 
@@ -2202,7 +2201,9 @@ public sealed class AccountingService : IAccountingService
             SourcePayrollRun,
             payrollRun.Id,
             lines,
-            currency);
+            currency,
+            pieceRef: $"PAIE-{payrollRun.Year}-{payrollRun.Month:D2}",
+            pieceDate: entryDate);
 
         if (create.IsFailure)
             return Result.Failure(create.Error);
@@ -2432,7 +2433,9 @@ public sealed class AccountingService : IAccountingService
             SourcePayrollPayment,
             payment.Id,
             lines,
-            currency);
+            currency,
+            pieceRef: $"PAIE-PAY-{payrollRun.Year}-{payrollRun.Month:D2}",
+            pieceDate: date);
 
         if (create.IsFailure)
             return Result.Failure(create.Error);
@@ -2567,7 +2570,9 @@ public sealed class AccountingService : IAccountingService
             SourceCnssContributionPayment,
             payment.Id,
             linesResult.Value,
-            currency);
+            currency,
+            pieceRef: $"CNSS-{payment.Year}-{payment.Month:D2}",
+            pieceDate: date);
 
         if (create.IsFailure)
             return Result.Failure(create.Error);
@@ -2701,10 +2706,32 @@ public sealed class AccountingService : IAccountingService
         var tfp = R(payrollRun.TotalTfp);
         var foprolos = R(payrollRun.TotalFoprolos);
         var cssPat = R(payrollRun.TotalCssEmployer);
+
+        // M1 : les montants à reclasser se déduisent des lignes figées des bulletins (EarningKind),
+        // non des sommes brutes des comptes legacy. Sous Legacy, le 641 mêlait indemnités ordinaires
+        // ET indemnités de rupture, et le 421 mêlait la compensation d'avantage en nature ET les
+        // avances (« autres retenues »). Reclasser l'intégralité du 641 → 640 laissait la rupture au
+        // 640 (au lieu de 64602) ; reclasser l'intégralité du 421 → 4386 corrompait la créance d'avance.
+        // On sépare donc à partir des bulletins :
+        //  - rupture (EarningKind.TerminationIndemnity, repli libellé « Indemnité ») : 641 → 64602 ;
+        //  - indemnités ordinaires (le reliquat du 641) : 641 → 640 ;
+        //  - compensation AN (retenue typée InKindBenefitOffset) : 421 → 4386, les avances restent au 421.
         var indemnites641 = R(legacy.Lines.Where(l => l.AccountNumber == PayrollJournalEntryBuilder.IndemnityAccount)
             .Sum(l => l.DebitAmount.Amount));
-        var inKindOffset421 = R(legacy.Lines.Where(l => l.AccountNumber == PayrollJournalEntryBuilder.AdvancesAccount)
+        var posted421Credits = R(legacy.Lines.Where(l => l.AccountNumber == PayrollJournalEntryBuilder.AdvancesAccount)
             .Sum(l => l.CreditAmount.Amount));
+
+        var terminationFromRun = payrollRun.Payslips.Count > 0
+            ? R(PayrollJournalEntryBuilder.ResolveTerminationIndemnities(payrollRun, PayrollAccountProfile.Sce2026))
+            : 0m;
+        var inKindOffsetFromRun = payrollRun.Payslips.Count > 0
+            ? R(PayrollJournalEntryBuilder.ResolveInKindBenefitOffset(payrollRun))
+            : 0m;
+
+        // On ne peut pas reclasser plus que ce qui est effectivement comptabilisé au 641 / au 421.
+        var terminationToReclass = R(Math.Min(terminationFromRun, indemnites641));
+        var ordinaryToReclass = R(Math.Max(0m, indemnites641 - terminationToReclass));
+        var inKindOffsetToReclass = R(Math.Min(inKindOffsetFromRun, posted421Credits));
 
         var label = $"Reclassement paie {payrollRun.Month:D2}/{payrollRun.Year} (migration SCE)";
         var lines = new List<JournalLineInput>();
@@ -2724,11 +2751,15 @@ public sealed class AccountingService : IAccountingService
             R(tfp + foprolos + cssPat), "Taxes sur salaires + CSS patronale");
 
         // Indemnités ordinaires : 641 → 640.
-        Pair(PayrollJournalEntryBuilder.SalaryAccount, PayrollJournalEntryBuilder.IndemnityAccount, indemnites641, "Indemnités ordinaires");
+        Pair(PayrollJournalEntryBuilder.SalaryAccount, PayrollJournalEntryBuilder.IndemnityAccount, ordinaryToReclass, "Indemnités ordinaires");
 
-        // Compensation avantage en nature : 421 (crédit fictif) → 4386 (à payer).
+        // Indemnités de rupture : 641 → 64602.
+        Pair(PayrollJournalEntryBuilder.TerminationIndemnityAccount, PayrollJournalEntryBuilder.IndemnityAccount,
+            terminationToReclass, "Indemnités de rupture");
+
+        // Compensation avantage en nature : 421 (crédit fictif) → 4386 (à payer). Les avances restent au 421.
         Pair(PayrollJournalEntryBuilder.AdvancesAccount, PayrollJournalEntryBuilder.InKindBenefitOffsetPayableAccount,
-            inKindOffset421, "Compensation avantage en nature");
+            inKindOffsetToReclass, "Compensation avantage en nature");
 
         if (lines.Count < 2)
         {

@@ -365,7 +365,12 @@ public static class PayrollCalculator
                 {
                     Amount = appliedByIndex[x.Index],
                     RequestedAmount = x.Line.RequestedAmount ?? x.Line.Amount,
-                    CarriedOverAmount = R(x.Line.Amount - appliedByIndex[x.Index])
+                    // L2 : le report cumule la part saisissable non servie (cap saisisseur, portée par
+                    // CarriedOverAmount en entrée pour les saisies/pensions) ET la réduction budgétaire
+                    // du cycle. On dérive donc du montant demandé, non du montant post-cap — sinon la
+                    // retenue d'une saisie réduite par le budget écraserait le report de cap et le
+                    // reliquat saisissable serait perdu (sous-estimé sur le bulletin et l'échéance).
+                    CarriedOverAmount = R((x.Line.RequestedAmount ?? x.Line.Amount) - appliedByIndex[x.Index])
                 })
             .ToList();
 

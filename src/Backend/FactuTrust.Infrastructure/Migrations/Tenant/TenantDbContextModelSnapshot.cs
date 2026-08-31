@@ -3423,7 +3423,7 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("SourceEntityType", "SourceEntityId")
                         .IsUnique()
-                        .HasFilter("[IsReversed] = 0 AND [SourceEntityType] IN (N'PayrollRun', N'PayrollPayment', N'CnssContributionPayment')");
+                        .HasFilter("[IsReversed] = 0 AND [SourceEntityType] IN (N'PayrollRun', N'PayrollPayment', N'CnssContributionPayment', N'PayrollReclassification')");
 
                     b.HasIndex("JournalCode", "EntryNumber", "EntryDate");
 

@@ -236,4 +236,90 @@ public sealed class PayrollSettlementTests
         Assert.Equal(50m, installment.AppliedAmount);
         Assert.Equal(10m, installment.CarriedOverAmount);
     }
+
+    [Fact]
+    public async Task StrictSettlement_RunWithoutLoanLine_SettlesNoInstallments()
+    {
+        // H1 : un cycle sans aucune ligne de prêt ne solde aucune échéance — plus de solde forfaitaire
+        // tenant-wide. L'ancien code soldait toutes les échéances dues du mois dès qu'aucune ligne ne
+        // portait de SourceEntityId (y compris pour des salariés sans retenue de prêt).
+        var loan = EmployeeLoan.Create(EmpId, "L1", 600m, 2, 2026, 8).Value;
+        SetProp(loan, "CreatedAt", CalcTime.AddSeconds(-60));
+        foreach (var i in loan.Installments) SetProp(i, "CreatedAt", CalcTime.AddSeconds(-60));
+        var dueInstallment = loan.Installments.First(i => i.Year == 2026 && i.Month == 8);
+
+        // Le bulletin ne retient AUCUN prêt (ligne d'avance seulement) → hasLoanDeductionLines = false.
+        var run = BuildRunWithDeductionLine(
+            new DeductionLineInput("Avance sur salaire", 100m, DeductionKind.Advance, SourceEntityId: Guid.NewGuid()));
+
+        var (handler, _, loans, _) = CreateHandler(run);
+        loans.Setup(l => l.ListWithDueInstallmentsForMonthAsync(2026, 8, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EmployeeLoan> { loan });
+
+        var result = await handler.Handle(new ValidatePayrollRunCommand(run.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : null);
+        Assert.False(dueInstallment.IsSettled); // aucune ligne de prêt → rien soldé (H1)
+    }
+
+    [Fact]
+    public async Task StrictSettlement_LegacyLoanLineWithoutSource_MatchesByEmployeeAndAmount()
+    {
+        // H1 repli legacy : lignes de prêt sans SourceEntityId (bulletins antérieurs au typage). On
+        // solde par correspondance salarié + montant — jamais toutes les échéances dues du tenant.
+        var loan1 = EmployeeLoan.Create(EmpId, "L1", 600m, 2, 2026, 8).Value; // échéance 300
+        var loan2 = EmployeeLoan.Create(EmpId, "L2", 400m, 2, 2026, 8).Value; // échéance 200 (sans ligne)
+        SetProp(loan1, "CreatedAt", CalcTime.AddSeconds(-60));
+        SetProp(loan2, "CreatedAt", CalcTime.AddSeconds(-60));
+        foreach (var i in loan1.Installments) SetProp(i, "CreatedAt", CalcTime.AddSeconds(-60));
+        foreach (var i in loan2.Installments) SetProp(i, "CreatedAt", CalcTime.AddSeconds(-60));
+        var due1 = loan1.Installments.First(i => i.Year == 2026 && i.Month == 8);
+        var due2 = loan2.Installments.First(i => i.Year == 2026 && i.Month == 8);
+
+        // Ligne figée sans SourceEntityId, montant = échéance 1 (300). Seule loan1 correspond.
+        var run = BuildRunWithDeductionLine(
+            new DeductionLineInput($"Prêt L1 — échéance {due1.SequenceNumber}", due1.Amount, DeductionKind.Loan));
+
+        var (handler, _, loans, _) = CreateHandler(run);
+        loans.Setup(l => l.ListWithDueInstallmentsForMonthAsync(2026, 8, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EmployeeLoan> { loan1, loan2 });
+
+        var result = await handler.Handle(new ValidatePayrollRunCommand(run.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : null);
+        Assert.True(due1.IsSettled);  // montant correspondant → soldée (repli legacy)
+        Assert.False(due2.IsSettled); // aucune ligne de 200 → non soldée (pas de solde forfaitaire)
+    }
+
+    [Fact]
+    public async Task StrictSettlement_PartiallySettledAdvance_DoesNotStarveNextAdvance()
+    {
+        // M2 : une avance déjà partiellement soldée (RemainingAmount < Amount) ne doit pas exiger sa
+        // totalité pour être soldée, ni avaler le budget disponible au détriment de l'avance suivante.
+        // Avance A (500, déjà soldée de 300 → reliquat 200) ; avance B (300, non soldée). Retenue 350.
+        // Ancien code (seuil sur Amount) : SettlePartial(350) échouait sur A (350 > reliquat 200) → A
+        // non soldée, B affamée, budget perdu. Nouveau code (seuil sur RemainingAmount) : A soldée
+        // (200), B partiellement soldée (150/300).
+        var advanceA = EmployeeAdvance.Create(EmpId, new DateTime(2026, 7, 1), 500m).Value;
+        var advanceB = EmployeeAdvance.Create(EmpId, new DateTime(2026, 8, 1), 300m).Value;
+        Assert.True(advanceA.SettlePartial(Guid.NewGuid(), 300m).IsSuccess); // reliquat 200
+        SetProp(advanceA, "CreatedAt", CalcTime.AddSeconds(-60));
+        SetProp(advanceB, "CreatedAt", CalcTime.AddSeconds(-60));
+
+        var run = BuildRunWithDeductionLine(
+            new DeductionLineInput("Avance sur salaire", 350m, DeductionKind.Advance, SourceEntityId: advanceA.Id));
+
+        var (handler, advances, _, _) = CreateHandler(run);
+        advances.Setup(a => a.ListOutstandingByEmployeeIdsAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EmployeeAdvance> { advanceA, advanceB });
+
+        var result = await handler.Handle(new ValidatePayrollRunCommand(run.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : null);
+        Assert.True(advanceA.IsSettled);          // reliquat 200 couvert → soldée
+        Assert.Equal(500m, advanceA.SettledAmount);
+        Assert.False(advanceB.IsSettled);         // partiellement soldée (150/300)
+        Assert.Equal(150m, advanceB.SettledAmount);
+        Assert.Equal(150m, advanceB.RemainingAmount); // 300 − 150 soldé = 150 restant dû
+    }
 }

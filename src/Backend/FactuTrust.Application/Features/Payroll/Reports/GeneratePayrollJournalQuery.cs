@@ -199,21 +199,21 @@ public sealed class GeneratePayrollJournalQueryHandler
             : run.TotalOtherDeductions;
 
         // Simulation alignée sur la génération réelle : même profil (§5.3) et même carte de comptes.
-        var profile = ResolvePayrollAccountProfile(run.Year, run.Month);
-        var accountMap = new PayrollJournalEntryAccountMap
-        {
-            LoansAccount = _settings.PayrollEmployeeLoansAccount,
-            GarnishmentsAccount = _settings.PayrollGarnishmentsAccount,
-            MutuelleEmployeeAccount = _settings.PayrollMutuelleEmployeeAccount,
-            MealVoucherEmployeeAccount = _settings.PayrollMealVoucherEmployeeAccount,
-            InKindBenefitOffsetAccount = profile == PayrollAccountProfile.Sce2026
-                ? _settings.PayrollInKindOffsetAccount
-                : PayrollJournalEntryBuilder.AdvancesAccount
-        };
+        var profile = _settings.ResolvePayrollAccountProfile(run.Year, run.Month);
+        var accountMap = _settings.BuildPayrollAccountMap(profile);
 
         var label = $"Paie {run.Month:D2}/{run.Year}";
         var hasTypedDeductions = run.Payslips.Any(p =>
             p.Lines.Any(l => l.Kind == PayslipLineKind.Deduction && l.DeductionKind.HasValue));
+
+        // H2 : la ventilation des gains par nature (rupture → 64602, AN → 6404) doit aussi s'appliquer
+        // au chemin agrégé (cycle de rupture sans retenue typée). Voir AccountingService pour le détail.
+        var terminationFromRun = run.Payslips.Count > 0
+            ? PayrollJournalEntryBuilder.ResolveTerminationIndemnities(run, profile)
+            : 0m;
+        var inKindFromRun = run.Payslips.Count > 0
+            ? PayrollJournalEntryBuilder.ResolveInKindBenefits(run)
+            : 0m;
 
         var built = hasTypedDeductions
             ? PayrollJournalEntryBuilder.BuildLinesFromRun(run, label, accountMap, null, profile)
@@ -232,7 +232,9 @@ public sealed class GeneratePayrollJournalQueryHandler
                 run.TotalIrppRegularization,
                 run.TotalCssRegularization,
                 run.TotalCssEmployer,
-                profile: profile);
+                terminationFromRun,
+                inKindFromRun,
+                profile);
 
         if (built.IsFailure)
             return new AccountingView(Array.Empty<PayrollJournalAccountingLineDto>(), false, null, null, null);
@@ -249,22 +251,6 @@ public sealed class GeneratePayrollJournalQueryHandler
             .ToList();
 
         return new AccountingView(simulated, false, null, null, null);
-    }
-
-    /// <summary>
-    /// Profil d'imputation du cycle (plan §5.3) — réplique de AccountingService pour aligner la
-    /// simulation sur la génération réelle.
-    /// </summary>
-    private PayrollAccountProfile ResolvePayrollAccountProfile(int year, int month)
-    {
-        var effective = _settings.PayrollAccountProfileEffectiveDate;
-        if (effective is null)
-            return _settings.PayrollAccountProfile;
-
-        var periodEnd = new DateTime(year, month, 1).AddMonths(1).AddDays(-1);
-        return periodEnd < effective.Value
-            ? PayrollAccountProfile.Legacy
-            : _settings.PayrollAccountProfile;
     }
 
     private sealed record AccountingView(

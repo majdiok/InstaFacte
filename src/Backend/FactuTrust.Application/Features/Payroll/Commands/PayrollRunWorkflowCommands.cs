@@ -166,18 +166,27 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
                     {
                         if (remaining <= 0)
                             break;
-                        if (remaining >= advance.Amount - 0.001m)
+                        // M2 : le seuil de solde intégral se compare au reliquat (RemainingAmount), non au
+                        // montant initial — une avance déjà partiellement soldée n'exige plus sa totalité
+                        // pour être soldée, et ne doit pas avaler le budget disponible au détriment de
+                        // l'avance suivante (qui se retrouverait affamée).
+                        var reliquat = advance.RemainingAmount;
+                        if (remaining >= reliquat - 0.001m)
                         {
-                            // La retenue figée couvre intégralement cette avance.
+                            // La retenue figée couvre intégralement le reliquat de cette avance. On capture
+                            // le reliquat avant Settle — Settle() remet SettledAmount à Amount, ce qui
+                            // annulerait RemainingAmount (et fausserait le budget de l'avance suivante).
                             advance.Settle(run.Id);
-                            remaining -= advance.Amount;
+                            remaining -= reliquat;
                         }
                         else
                         {
                             // R-22 : le net disponible n'a permis de retenir qu'une partie de cette
                             // avance. On solde partiellement à concurrence du montant retenu ; le
                             // reliquat (RemainingAmount) reste dû et sera repris sur un cycle ultérieur.
-                            advance.SettlePartial(run.Id, remaining);
+                            var partialResult = advance.SettlePartial(run.Id, remaining);
+                            if (partialResult.IsFailure)
+                                return partialResult;
                             remaining = 0m;
                         }
                         advancesToSettle.Add(advance);
@@ -225,17 +234,44 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
             await _accruals.AddRangeAsync(newAccruals, ct);
 
             // ── Prêts : solde uniquement les échéances référencées par SourceEntityId (lignes typées).
-            // Repli legacy (lignes sans SourceEntityId) : solde toutes les échéances dues du mois. ──
+            // H1 : plus de solde forfaitaire tenant-wide. Un cycle sans aucune ligne de prêt ne solde
+            // rien — le bug historique soldait toutes les échéances dues du mois (tous salariés
+            // confondus) dès qu'aucune ligne ne portait de SourceEntityId. Repli legacy (lignes de prêt
+            // sans SourceEntityId, bulletins antérieurs au typage) : correspondance salarié + montant. ──
+            var hasLoanDeductionLines = run.Payslips
+                .SelectMany(p => p.Lines)
+                .Any(l => l.Kind == PayslipLineKind.Deduction && l.DeductionKind == DeductionKind.Loan);
+
+            var loanLineAmountsByEmployee = run.Payslips
+                .SelectMany(p => p.Lines
+                    .Where(l => l.Kind == PayslipLineKind.Deduction && l.DeductionKind == DeductionKind.Loan)
+                    .Select(l => (EmployeeId: p.EmployeeId, l.Amount)))
+                .ToList();
+
+            // Repli legacy : lignes de prêt présentes mais sans SourceEntityId (vrais bulletins antérieurs).
+            var legacyLoanFallback = strictSettlement && hasLoanDeductionLines && referencedInstallmentIds.Count == 0;
+            var settleAllLoans = !strictSettlement || legacyLoanFallback;
+
             var loansToSettle = new List<EmployeeLoan>();
-            var settleAllLoans = !strictSettlement || referencedInstallmentIds.Count == 0;
             foreach (var loan in loansDue)
             {
                 var settledAny = false;
                 foreach (var installment in loan.Installments
                     .Where(i => i.Year == run.Year && i.Month == run.Month && !i.IsSettled))
                 {
-                    if (!settleAllLoans && !referencedInstallmentIds.Contains(installment.Id))
-                        continue; // échéance non retenue ce cycle → non soldée (R-06)
+                    if (settleAllLoans)
+                    {
+                        // Repli incident (!strictSettlement) : solde forfaitaire historique.
+                        // Repli legacy : on ne solde que les échéances correspondant à une ligne figée du
+                        // même salarié et de même montant — jamais toutes les échéances dues du tenant.
+                        if (legacyLoanFallback && !loanLineAmountsByEmployee.Any(x =>
+                                x.EmployeeId == loan.EmployeeId && Math.Abs(x.Amount - installment.Amount) <= 0.001m))
+                            continue;
+                    }
+                    else if (!referencedInstallmentIds.Contains(installment.Id))
+                    {
+                        continue; // échéance non référencée par une ligne typée → non soldée (R-06)
+                    }
 
                     loan.MarkInstallmentSettled(installment.Id, run.Id);
                     settledAny = true;

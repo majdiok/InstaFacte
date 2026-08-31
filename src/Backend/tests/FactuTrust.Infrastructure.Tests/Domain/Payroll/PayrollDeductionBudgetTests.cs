@@ -121,4 +121,42 @@ public sealed class PayrollDeductionBudgetTests
 
         Assert.True(advance.SettlePartial(Guid.NewGuid(), 0m).IsFailure);
     }
+
+    [Fact]
+    public void GarnishmentBudgetReduction_PreservesSeizableCapCarry()
+    {
+        // L2 : une saisie réduite par le cap saisisseur (RequestedAmount=60, Amount=50, cap carry=10)
+        // puis à nouveau réduite par l'insuffisance du net doit CUMULER les deux reports (cap + budget),
+        // non écraser le report de cap. BaseSalary 300 → net disponible avant retenues = 270,960 ; une
+        // mutuelle de 226 laisse 44,960 au post-impôt, insuffisant pour la saisie de 50.
+        // Report attendu = 60 − 44,960 = 15,040 (10 de cap + 5,040 de budget). L'ancien code
+        // (CarriedOver = Amount − applied) donnait 5,040 et perdait le report de cap saisisseur.
+        var input = new PayrollComputationInput
+        {
+            BaseSalary = 300m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m,
+            DeductionLines = new[]
+            {
+                new DeductionLineInput("Mutuelle", 226m, DeductionKind.MutuelleEmployee)
+            },
+            PostTaxDeductionLines = new[]
+            {
+                new DeductionLineInput("Saisie — Créancier X", 50m, DeductionKind.Garnishment,
+                    SourceEntityId: Guid.NewGuid(), RequestedAmount: 60m, CarriedOverAmount: 10m)
+            }
+        };
+
+        var c = PayrollCalculator.Compute(input, Params());
+
+        var garnishmentLine = c.Lines.Single(l => l.DeductionKind == DeductionKind.Garnishment);
+        Assert.Equal(60m, garnishmentLine.RequestedAmount);
+        Assert.True(garnishmentLine.Amount < 50m);                                        // réduite par le budget
+        // Report cumulé : cap carry (10) + budget carry (50 − applied) = RequestedAmount − applied.
+        Assert.Equal(
+            Math.Round(60m - garnishmentLine.Amount, 3, MidpointRounding.AwayFromZero),
+            garnishmentLine.CarriedOverAmount);
+        Assert.True(garnishmentLine.CarriedOverAmount > 10m);                             // cap carry préservé, non écrasé
+        Assert.Equal(15.040m, garnishmentLine.CarriedOverAmount);                         // 60 − 44,960
+    }
 }

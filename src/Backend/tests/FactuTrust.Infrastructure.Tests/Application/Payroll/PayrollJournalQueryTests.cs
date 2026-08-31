@@ -208,6 +208,53 @@ public sealed class PayrollJournalQueryTests
     }
 
     [Fact]
+    public async Task TerminationWithoutTypedDeductions_RoutesTo64602UnderSce2026()
+    {
+        // H2 : un cycle de rupture sans retenue typée (ni avance/prêt/saisie/mutuelle) tombe sur le
+        // chemin agrégé. L'indemnité de rupture doit néanmoins sortir au 64602 (SCE), non au 640.
+        // L'ancien code passait totalTerminationIndemnities = 0 sur ce chemin → rupture au 640.
+        var pars = PayrollParameterDefaults.CreateDefaults(2026).Value;
+        var input = new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m,
+            TaxableCnssableAllowances = 500m,
+            AllowanceLines = new[]
+            {
+                new AllowanceLineInput("Indemnité de licenciement", 500m, true, true, EarningKind.TerminationIndemnity)
+            }
+        };
+        var computation = PayrollCalculator.Compute(input, pars);
+        var run = PayrollRun.Create(2026, 8, 2026).Value;
+        SetEntityId(run, Guid.Parse("dddddddd-4444-4444-4444-444444444444"));
+        var (empRate, employerRate) = PayrollCalculator.ResolveCnssRates(input.Regime, pars);
+        var payslip = Payslip.FromComputation(
+            run.Id, EmpAId, "Ahmed Ben Ali", "EMP001", "1234567890", 2026, 8, computation, empRate, employerRate);
+        run.SetPayslips([payslip]);
+        run.Validate("tester");
+
+        var runs = new Mock<IPayrollRunRepository>();
+        runs.Setup(r => r.GetByPeriodWithPayslipsAsync(2026, 8, It.IsAny<CancellationToken>())).ReturnsAsync(run);
+        var entries = new Mock<IJournalEntryRepository>();
+        entries.Setup(e => e.GetActiveBySourceAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((JournalEntry?)null);
+        var settings = Microsoft.Extensions.Options.Options.Create(
+            new FactuTrust.Application.Configuration.AccountingSettings { PayrollAccountProfile = PayrollAccountProfile.Sce2026 });
+        var handler = new GeneratePayrollJournalQueryHandler(runs.Object, entries.Object, settings);
+
+        var result = await handler.Handle(new GeneratePayrollJournalQuery(2026, 8), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : null);
+        var dto = result.Value;
+        Assert.False(dto.AccountingLinesArePosted); // simulation (aucune écriture comptable)
+        // Indemnité de rupture → 64602 ; le brut restant au 640.
+        Assert.Equal(500m, dto.AccountingLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.TerminationIndemnityAccount).Debit);
+        Assert.Equal(run.TotalGross - 500m, dto.AccountingLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.SalaryAccount).Debit);
+        Assert.True(dto.IsBalanced);
+    }
+
+    [Fact]
     public async Task AccountingLines_CarryReadableAccountLabels()
     {
         var run = BuildRun(PayrollRunStatus.Validated, (EmpAId, "Ahmed Ben Ali", "EMP001", 2000m));

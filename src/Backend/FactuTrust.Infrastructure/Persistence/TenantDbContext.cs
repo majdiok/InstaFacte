@@ -3841,7 +3841,7 @@ public partial class TenantDbContext : DbContext
             // concurrent ; une violation lève DbUpdateException (→ HTTP 409 via le middleware).
             entity.HasIndex(e => new { e.SourceEntityType, e.SourceEntityId })
                   .IsUnique()
-                  .HasFilter("[IsReversed] = 0 AND [SourceEntityType] IN (N'PayrollRun', N'PayrollPayment', N'CnssContributionPayment')");
+                  .HasFilter("[IsReversed] = 0 AND [SourceEntityType] IN (N'PayrollRun', N'PayrollPayment', N'CnssContributionPayment', N'PayrollReclassification')");
             entity.HasOne(e => e.AccountingPeriod)
                 .WithMany()
                 .HasForeignKey(e => e.AccountingPeriodId)
