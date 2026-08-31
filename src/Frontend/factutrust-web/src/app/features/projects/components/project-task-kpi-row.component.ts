@@ -4,7 +4,7 @@ import { ProjectTask } from '../project-api.service';
 import { ProjectTaskStatusCode } from '../project-enums';
 import { computeRootTaskStatusSummary, TaskDueFilterKey } from '../project-tasks.vm';
 
-export type TaskStatusChipKey = 'total' | 'done' | 'inProgress' | 'waiting' | 'overdue';
+export type TaskStatusChipKey = 'total' | 'todo' | 'done' | 'inProgress' | 'waiting' | 'overdue';
 
 @Component({
   selector: 'app-project-task-kpi-row',
@@ -21,6 +21,17 @@ export type TaskStatusChipKey = 'total' | 'done' | 'inProgress' | 'waiting' | 'o
         (click)="onChip('total')">
         <span class="proj-tasks-status-chip__label">Total</span>
         <strong class="proj-tasks-status-chip__value">{{ summary.total }}</strong>
+      </button>
+      <button
+        type="button"
+        class="proj-tasks-status-chip proj-tasks-status-chip--todo"
+        [class.proj-tasks-status-chip--active]="activeChip === 'todo'"
+        role="listitem"
+        [attr.aria-label]="'À faire ' + summary.todo + ', ' + summary.todoPct + ' pour cent'"
+        (click)="onChip('todo')">
+        <span class="proj-tasks-status-chip__label">À faire</span>
+        <strong class="proj-tasks-status-chip__value">{{ summary.todo }}</strong>
+        <span class="proj-tasks-status-chip__pct">{{ summary.todoPct }} %</span>
       </button>
       <button
         type="button"
@@ -86,6 +97,10 @@ export class ProjectTaskKpiRowComponent {
   onChip(chip: TaskStatusChipKey): void {
     if (chip === 'total') {
       this.chipClick.emit({ chip, status: null, dueFilter: null });
+      return;
+    }
+    if (chip === 'todo') {
+      this.chipClick.emit({ chip, status: 'Todo', dueFilter: null });
       return;
     }
     if (chip === 'done') {

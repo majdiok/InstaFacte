@@ -96,9 +96,12 @@ describe('project-tasks.vm', () => {
   it('computes root summary with exclusive overdue bucket', () => {
     const summary = computeRootTaskStatusSummary(baseTasks);
     expect(summary.total).toBe(4);
+    expect(summary.todo).toBe(1);
     expect(summary.done).toBe(1);
     expect(summary.inProgress).toBe(1);
+    expect(summary.waiting).toBe(0);
     expect(summary.overdue).toBe(1);
+    expect(summary.todoPct).toBe(25);
     expect(summary.donePct).toBe(25);
   });
 
