@@ -341,7 +341,9 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
             IsPayrollFirmManaged = !isDelegated && isPayrollFirmManaged,
             ProductOnboardingStatus = user.ProductOnboardingStatus,
             ProductOnboardingVersion = user.ProductOnboardingVersion,
-            ProductOnboardingChecklist = ProductOnboardingUserDtoMapper.ChecklistOf(user)
+            ProductOnboardingChecklist = ProductOnboardingUserDtoMapper.ChecklistOf(user),
+            CompanySegment = homeTenant.CompanySegment,
+            BusinessDomain = homeTenant.BusinessDomain
         };
     }
 }

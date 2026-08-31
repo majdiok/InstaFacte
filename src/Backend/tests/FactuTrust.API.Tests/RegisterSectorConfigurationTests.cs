@@ -346,6 +346,40 @@ public sealed class RegisterSectorConfigurationSqlTests : IClassFixture<Channels
     }
 
     [Fact]
+    public async Task Login_after_sector_registration_returns_companySegment_and_businessDomain_in_userDto()
+    {
+        if (!ShouldRun) return;
+
+        // Phase 2 (§WP-B8): the register response AND a subsequent login must surface the tenant's
+        // persisted sector classification on the UserDto (propagated from the tenant row).
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var unique = Guid.NewGuid().ToString("N")[..12];
+        var dto = BuildDto(
+            unique,
+            segment: CompanySegments.Commerce,
+            domain: BusinessDomains.Autre,
+            enabledModules: new[] { (int)AppModule.Stock });
+
+        var registerResponse = await client.PostAsJsonAsync("/api/auth/register", dto, TenantUsersTestSupport.ApiJsonOptions);
+        var registerBody = await registerResponse.Content.ReadFromJsonAsync<FactuTrust.Application.DTOs.ApiResponse<AuthResponseDto>>(TenantUsersTestSupport.ApiJsonOptions);
+        Assert.Equal(HttpStatusCode.Created, registerResponse.StatusCode);
+        Assert.NotNull(registerBody?.Data);
+        Assert.Equal(CompanySegments.Commerce, registerBody!.Data!.User.CompanySegment);
+        Assert.Equal(BusinessDomains.Autre, registerBody.Data.User.BusinessDomain);
+
+        var loginResponse = await client.PostAsJsonAsync(
+            "/api/auth/login",
+            new LoginDto { Email = dto.Email, Password = dto.Password },
+            TenantUsersTestSupport.ApiJsonOptions);
+        var loginBody = await loginResponse.Content.ReadFromJsonAsync<FactuTrust.Application.DTOs.ApiResponse<AuthResponseDto>>(TenantUsersTestSupport.ApiJsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+        Assert.NotNull(loginBody?.Data);
+        Assert.Equal(CompanySegments.Commerce, loginBody!.Data!.User.CompanySegment);
+        Assert.Equal(BusinessDomains.Autre, loginBody.Data.User.BusinessDomain);
+    }
+
+    [Fact]
     public async Task Register_with_flag_disabled_ignores_sector_fields_and_persists_null_classification()
     {
         if (!ShouldRun) return;
@@ -488,6 +522,11 @@ public sealed class RegisterSectorConfigurationSqlTests : IClassFixture<Channels
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.NotNull(body?.Data);
+
+        // Firm tenants are firm-native (Honoraires) and never get a sector classification — the
+        // propagated UserDto fields must be null (§WP-B8 regression guard).
+        Assert.Null(body!.Data!.User.CompanySegment);
+        Assert.Null(body.Data.User.BusinessDomain);
 
         var (segment, domain) = await GetTenantSectorClassificationAsync(_factory, body!.Data!.User.TenantId);
         Assert.Null(segment);
