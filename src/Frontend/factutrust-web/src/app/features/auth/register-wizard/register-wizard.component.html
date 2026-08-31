@@ -87,7 +87,7 @@
         <div class="steps-container">
           @if (currentStep() === 0) {
             <div class="step-pane" @stepSlide>
-              <app-step-company-type [form]="form"></app-step-company-type>
+              <app-step-company-type [form]="form" [domainClearedNotice]="domainClearedNotice()"></app-step-company-type>
             </div>
           }
 
@@ -107,6 +107,7 @@
                 [form]="form"
                 [segment]="selectedSegment()"
                 [domain]="selectedDomain()"
+                [autoEnabledIds]="lastAutoEnabled()"
                 (moduleToggled)="onModuleToggled($event)"
                 (resetToRecommendations)="resetModulesToRecommendations()">
               </app-step-configuration>

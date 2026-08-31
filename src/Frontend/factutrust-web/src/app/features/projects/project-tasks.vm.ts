@@ -21,6 +21,8 @@ export interface TaskListFilters {
 
 export interface RootTaskStatusSummary {
   total: number;
+  todo: number;
+  todoPct: number;
   done: number;
   donePct: number;
   inProgress: number;
@@ -178,6 +180,8 @@ export function computeRootTaskStatusSummary(tasks: ProjectTask[]): RootTaskStat
   const pct = (n: number) => (breakdown.total ? Math.round((n / breakdown.total) * 100) : 0);
   return {
     total: breakdown.total,
+    todo: breakdown.todo,
+    todoPct: pct(breakdown.todo),
     done: breakdown.done,
     donePct: pct(breakdown.done),
     inProgress: breakdown.inProgress,

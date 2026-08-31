@@ -29,18 +29,28 @@
       <p class="mod-group-title"><i class="pi pi-star" aria-hidden="true"></i> Recommandés pour votre secteur</p>
       <div class="mod-grid">
         @for (module of recommendedModules; track module.id) {
-          <div class="mod-card" [class.on]="isModuleEnabled(module.id)">
+          <div class="mod-card" [class.on]="isModuleEnabled(module.id)" [class.locked-dep]="isLockedByDependency(module.id)">
             <div class="mod-top">
               <span class="mod-ico tone-green"><i class="pi pi-sparkles" aria-hidden="true"></i></span>
-              <p-inputSwitch
-                [ngModel]="isModuleEnabled(module.id)"
-                (onChange)="toggleModule(module.id)"
-                [ngModelOptions]="{standalone: true}"
-                [attr.aria-label]="'Activer ' + module.label">
-              </p-inputSwitch>
+              <!-- Wrapper span carries the tooltip: PrimeNG disables pointer events on [disabled] switches. -->
+              <span [pTooltip]="isLockedByDependency(module.id) ? dependencyLockLabel(module.id) : undefined" tooltipPosition="top">
+                <p-inputSwitch
+                  [ngModel]="isModuleEnabled(module.id)"
+                  (onChange)="toggleModule(module.id)"
+                  [ngModelOptions]="{standalone: true}"
+                  [disabled]="isLockedByDependency(module.id)"
+                  [attr.aria-label]="'Activer ' + module.label">
+                </p-inputSwitch>
+              </span>
             </div>
             <span class="mod-name">{{ module.label }}</span>
             <span class="mod-badge"><i class="pi pi-check" aria-hidden="true"></i> Recommandé pour votre secteur</span>
+            @if (isLockedByDependency(module.id)) {
+              <span class="mod-badge dep"><i class="pi pi-link" aria-hidden="true"></i> {{ dependencyLockLabel(module.id) }}</span>
+            }
+            @if (wasAutoEnabled(module.id)) {
+              <p class="dep-hint" role="status" aria-live="polite"><i class="pi pi-info-circle" aria-hidden="true"></i> {{ autoEnabledHintLabel(module.id) }}</p>
+            }
           </div>
         }
       </div>
@@ -50,17 +60,26 @@
       <p class="mod-group-title"><i class="pi pi-th-large" aria-hidden="true"></i> Autres modules</p>
       <div class="mod-grid">
         @for (module of optionalModules; track module.id) {
-          <div class="mod-card" [class.on]="isModuleEnabled(module.id)">
+          <div class="mod-card" [class.on]="isModuleEnabled(module.id)" [class.locked-dep]="isLockedByDependency(module.id)">
             <div class="mod-top">
               <span class="mod-ico tone-gray"><i class="pi pi-box" aria-hidden="true"></i></span>
-              <p-inputSwitch
-                [ngModel]="isModuleEnabled(module.id)"
-                (onChange)="toggleModule(module.id)"
-                [ngModelOptions]="{standalone: true}"
-                [attr.aria-label]="'Activer ' + module.label">
-              </p-inputSwitch>
+              <span [pTooltip]="isLockedByDependency(module.id) ? dependencyLockLabel(module.id) : undefined" tooltipPosition="top">
+                <p-inputSwitch
+                  [ngModel]="isModuleEnabled(module.id)"
+                  (onChange)="toggleModule(module.id)"
+                  [ngModelOptions]="{standalone: true}"
+                  [disabled]="isLockedByDependency(module.id)"
+                  [attr.aria-label]="'Activer ' + module.label">
+                </p-inputSwitch>
+              </span>
             </div>
             <span class="mod-name">{{ module.label }}</span>
+            @if (isLockedByDependency(module.id)) {
+              <span class="mod-badge dep"><i class="pi pi-link" aria-hidden="true"></i> {{ dependencyLockLabel(module.id) }}</span>
+            }
+            @if (wasAutoEnabled(module.id)) {
+              <p class="dep-hint" role="status" aria-live="polite"><i class="pi pi-info-circle" aria-hidden="true"></i> {{ autoEnabledHintLabel(module.id) }}</p>
+            }
           </div>
         }
       </div>

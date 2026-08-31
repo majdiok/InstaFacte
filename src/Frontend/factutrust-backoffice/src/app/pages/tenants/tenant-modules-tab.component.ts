@@ -24,36 +24,12 @@ import {
   type SetTenantModuleOverrideRequest
 } from '@core/services/platform-tenant-module-overrides.service';
 import type { TenantModuleOverrideDto } from '@core/models/platform.models';
+import { MODULE_CATALOG } from '@core/models/module-catalog';
 
 import { FtBadgeComponent } from '@core/ui/badge/ft-badge.component';
 import { FtSkeletonComponent } from '@core/ui/skeleton/ft-skeleton.component';
 import { FtEmptyStateComponent } from '@core/ui/empty-state/ft-empty-state.component';
 import type { FtTone } from '@core/ui/badge/ft-badge.component';
-
-interface ModuleOption {
-  value: number;
-  label: string;
-}
-
-const MODULE_CATALOG: ModuleOption[] = [
-  { value: 0, label: 'Clients' },
-  { value: 1, label: 'Produits et services' },
-  { value: 2, label: 'Ventes (factures)' },
-  { value: 3, label: 'Trésorerie (paiements)' },
-  { value: 4, label: 'Rapports' },
-  { value: 5, label: 'Paramètres et utilisateurs' },
-  { value: 6, label: 'Achats' },
-  { value: 7, label: 'Stock' },
-  { value: 8, label: 'Comptabilité' },
-  { value: 9, label: 'CRM Commercial' },
-  { value: 10, label: 'Fiscal / TEJ' },
-  { value: 11, label: 'Assistant IA' },
-  { value: 12, label: 'Prévisions IA' },
-  { value: 13, label: 'Studio (low-code)' },
-  { value: 14, label: 'RH & Paie' },
-  { value: 15, label: 'Honoraires' },
-  { value: 16, label: 'Projets' }
-];
 
 /**
  * Sous-lot C1 — Tab « Modules » dans le détail tenant.

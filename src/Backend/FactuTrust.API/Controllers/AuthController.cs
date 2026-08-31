@@ -620,7 +620,9 @@ public class AuthController : ControllerBase
             EffectivePermissions = effectivePermissions.ToList(),
             ProductOnboardingStatus = user.ProductOnboardingStatus,
             ProductOnboardingVersion = user.ProductOnboardingVersion,
-            ProductOnboardingChecklist = ProductOnboardingUserDtoMapper.ChecklistOf(user)
+            ProductOnboardingChecklist = ProductOnboardingUserDtoMapper.ChecklistOf(user),
+            CompanySegment = tenant?.CompanySegment,
+            BusinessDomain = tenant?.BusinessDomain
         };
     }
 

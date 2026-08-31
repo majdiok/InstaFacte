@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { provideRouter } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { StepFinalisationComponent } from './step-finalisation.component';
 import { AppModule } from '@core/models/app-module';
@@ -13,7 +15,7 @@ describe('StepFinalisationComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [StepFinalisationComponent, ReactiveFormsModule],
-      providers: [FormBuilder, provideRouter([]), provideNoopAnimations()]
+      providers: [FormBuilder, provideRouter([]), provideNoopAnimations(), provideHttpClient(), provideHttpClientTesting()]
     }).compileComponents();
 
     fb = TestBed.inject(FormBuilder);

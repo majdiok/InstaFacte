@@ -29,6 +29,7 @@ import { computeTaskStatusBreakdown } from '../../project-detail.vm';
           }
         </div>
         <ul class="proj-detail-task-legend">
+          <li><span class="dot dot--todo"></span> À faire <strong>{{ breakdown.todo }}</strong></li>
           <li><span class="dot dot--done"></span> Terminées <strong>{{ breakdown.done }}</strong></li>
           <li><span class="dot dot--progress"></span> En cours <strong>{{ breakdown.inProgress }}</strong></li>
           <li><span class="dot dot--waiting"></span> En attente <strong>{{ breakdown.waiting }}</strong></li>

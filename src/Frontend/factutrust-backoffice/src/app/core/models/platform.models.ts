@@ -110,7 +110,12 @@ export const PlatformPermission = {
   AdminsManage: 'platform.admins:manage',
   ProvidersConfigure: 'platform.providers:configure',
   NotificationsRead: 'platform.notifications:read',
-  AiManage: 'platform.ai:manage'
+  AiManage: 'platform.ai:manage',
+  // ----- Phase 2 (WP-F6) — Règles sectorielles -----------------------------
+  // Doit rester en phase avec PlatformPermissions.cs
+  SectorRulesRead: 'platform.sector-rules:read',
+  SectorRulesManage: 'platform.sector-rules:manage',
+  SectorRulesApply: 'platform.sector-rules:apply'
 } as const;
 
 export type PlatformPermissionKey = (typeof PlatformPermission)[keyof typeof PlatformPermission];
@@ -425,6 +430,11 @@ export interface PlatformTenantListItemDto {
   lastActivityAt?: string | null;
   /** MRR estimé en TND pour cette ligne */
   mrrTnd?: number | null;
+  // ----- Phase 2 (WP-F6 / D8) additions (optionnels, nullable) ------------
+  /** Segment sectoriel déclaré à l'onboarding (kebab-case, ex: "commerce"). */
+  companySegment?: string | null;
+  /** Domaine d'activité déclaré à l'onboarding (kebab-case, ex: "vente-detail"). */
+  businessDomain?: string | null;
 }
 
 export interface PlatformTenantListPageDto {
@@ -506,6 +516,11 @@ export interface PlatformTenantDetailDto {
   subscriptionEndDate: string | null;
   isPayingSubscriber: boolean;
   hasMigrationsApplied: boolean;
+  // ----- Phase 2 (WP-F6 / D8) additions (optionnels, nullable) ------------
+  /** Segment sectoriel déclaré à l'onboarding (kebab-case, ex: "commerce"). */
+  companySegment?: string | null;
+  /** Domaine d'activité déclaré à l'onboarding (kebab-case, ex: "vente-detail"). */
+  businessDomain?: string | null;
 }
 
 export interface SubscriptionDto {

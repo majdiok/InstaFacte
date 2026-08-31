@@ -50,24 +50,57 @@
         <h4>Sélectionnez votre domaine d'activité</h4>
       </div>
 
-      <div class="dom-grid" role="radiogroup" aria-label="Domaine d'activité">
-        @for (domain of domains; track domain.code) {
-          <label
-            class="dom-item"
-            [class.selected]="isDomainSelected(domain.code)">
-            <span class="dom-ico" [class]="domain.tone"><i class="pi {{ domain.icon }}" aria-hidden="true"></i></span>
-            <span class="dom-label">{{ domain.label }}</span>
-            <input
-              type="radio"
-              name="business-domain"
-              [value]="domain.code"
-              [checked]="isDomainSelected(domain.code)"
-              (change)="selectDomain(domain.code)"
-              [attr.aria-label]="domain.label">
-            <span class="dom-radio" aria-hidden="true"></span>
-          </label>
+      @if (filteredDomainsChipLabel) {
+        <span class="adapt-chip" @fadeInOut><i class="pi pi-sparkles" aria-hidden="true"></i> {{ filteredDomainsChipLabel }}</span>
+      }
+
+      @if (domainClearedNotice) {
+        <div class="domain-notice" role="status" aria-live="polite" @fadeInOut>
+          <span class="notice-ico"><i class="pi pi-info-circle" aria-hidden="true"></i></span>
+          <p>
+            <b>Votre domaine précédent n'est plus proposé pour ce segment.</b>
+            Votre sélection a été effacée — choisissez un domaine adapté au segment {{ selectedSegmentLabel }} ci-dessous.
+          </p>
+        </div>
+      }
+
+      @if (domainsDisabled) {
+        <div class="dom-grid--placeholder" id="dom-placeholder-hint" role="status" aria-live="polite">
+          <span class="ph-ico"><i class="pi pi-arrow-left" aria-hidden="true"></i></span>
+          <b>Choisissez d'abord un segment pour voir les domaines adaptés</b>
+          <p>La liste des domaines d'activité s'adaptera automatiquement au segment sélectionné.</p>
+        </div>
+      } @else {
+        <div
+          class="dom-grid"
+          role="radiogroup"
+          aria-label="Domaine d'activité">
+          @for (domain of domains; track domain.code) {
+            <label
+              class="dom-item"
+              [class.selected]="isDomainSelected(domain.code)"
+              @fadeInOut>
+              <span class="dom-ico" [class]="domain.tone"><i class="pi {{ domain.icon }}" aria-hidden="true"></i></span>
+              <span class="dom-label">{{ domain.label }}</span>
+              <input
+                type="radio"
+                name="business-domain"
+                [value]="domain.code"
+                [checked]="isDomainSelected(domain.code)"
+                (change)="selectDomain(domain.code)"
+                [attr.aria-label]="domain.label">
+              <span class="dom-radio" aria-hidden="true"></span>
+            </label>
+          }
+        </div>
+
+        @if (showNoSpecificDomainHint) {
+          <div class="hint-bar hint-bar--muted" @fadeInOut>
+            <span class="hint-ico"><i class="pi pi-info-circle" aria-hidden="true"></i></span>
+            <p>Aucun domaine spécifique — choisissez « Autre domaine ».</p>
+          </div>
         }
-      </div>
+      }
 
       @if (form.get('businessDomain')?.invalid && form.get('businessDomain')?.touched) {
         <div class="field-error" role="alert" @fadeInOut>

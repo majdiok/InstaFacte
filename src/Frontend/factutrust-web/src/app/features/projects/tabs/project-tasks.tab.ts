@@ -2,7 +2,6 @@ import { Component, ElementRef, EventEmitter, Input, OnInit, Output, ViewChild, 
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { DragDropModule, CdkDragDrop } from '@angular/cdk/drag-drop';
 import { MenuItem } from 'primeng/api';
 import { TableModule } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
@@ -30,13 +29,13 @@ import {
   formatDaysUntilDue,
   initialsFromName,
   parseProjectTaskPriority,
-  taskStatusForPhaseSortOrder,
   toIsoDate
 } from '../project-enums';
 import {
   ProjectTaskKpiRowComponent,
   TaskStatusChipKey
 } from '../components/project-task-kpi-row.component';
+import { ProjectKanbanBoardComponent } from '../components/project-kanban-board.component';
 import { CreateTimePayload } from './project-time.tab';
 import {
   TASK_DUE_FILTER_OPTIONS,
@@ -63,7 +62,6 @@ type TaskView = 'list' | 'board' | 'calendar' | 'planning';
     CommonModule,
     FormsModule,
     RouterLink,
-    DragDropModule,
     TableModule,
     DialogModule,
     InputTextModule,
@@ -76,7 +74,8 @@ type TaskView = 'list' | 'board' | 'calendar' | 'planning';
     MenuModule,
     ButtonComponent,
     EmptyStateComponent,
-    ProjectTaskKpiRowComponent
+    ProjectTaskKpiRowComponent,
+    ProjectKanbanBoardComponent
   ],
   template: `
     <div class="proj-tasks-toolbar">
@@ -256,24 +255,12 @@ type TaskView = 'list' | 'board' | 'calendar' | 'planning';
     }
 
     @if (view === 'board' && project) {
-      <div class="proj-kanban">
-        @for (phase of project.phases; track phase.id) {
-          <div class="proj-kanban-col" cdkDropList [id]="phase.id" [cdkDropListData]="tasksOf(phase.id)"
-            [cdkDropListConnectedTo]="phaseIds" (cdkDropListDropped)="onDrop($event, phase.id)">
-            <h3 class="proj-kanban-col-title" [style.border-top-color]="phase.color || 'var(--primary-500)'">{{ phase.name }}</h3>
-            @for (task of tasksOf(phase.id); track task.id) {
-              <div class="proj-kanban-card" cdkDrag [cdkDragData]="task" [routerLink]="['/projects', project.id, 'tasks', task.id]">
-                <strong>{{ task.title }}</strong>
-                <div class="text-sm">{{ task.priorityDisplay }}</div>
-                <div class="text-sm">{{ task.assigneeUserName || 'Non assigné' }}</div>
-                <div class="text-sm">{{ task.loggedHours | number:'1.0-1' }} / {{ task.estimatedHours | number:'1.0-1' }} h</div>
-                <p-progressBar [value]="task.progressPercent" [showValue]="false" styleClass="mt-1" />
-                @if (task.isOverdue) { <span class="text-danger">En retard</span> }
-              </div>
-            }
-          </div>
-        }
-      </div>
+      <app-project-kanban-board
+        [project]="project"
+        [tasks]="filteredRootTasks"
+        [canUpdateTask]="canUpdateTask"
+        (move)="move.emit($event)"
+        (openTask)="openTask($event)" />
     }
 
     @if (view === 'calendar') {
@@ -378,6 +365,8 @@ export class ProjectTasksTabComponent implements OnInit {
   selectedIds = new Set<string>();
   rowMenuItems: MenuItem[] = [];
   private rowMenuTask: ProjectTask | null = null;
+  private boardTasksCache: ProjectTask[] = [];
+  private boardTasksCacheKey = '';
 
   logTimeVisible = false;
   logTimeTask: ProjectTask | null = null;
@@ -436,15 +425,22 @@ export class ProjectTasksTabComponent implements OnInit {
   }
 
   get filteredRootTasks(): ProjectTask[] {
-    return filterRootTasks(this.tasks, this.filters);
+    const key = this.boardTasksKey();
+    if (key !== this.boardTasksCacheKey) {
+      this.boardTasksCacheKey = key;
+      this.boardTasksCache = filterRootTasks(this.tasks, this.filters);
+    }
+    return this.boardTasksCache;
+  }
+
+  private boardTasksKey(): string {
+    const taskKey = this.tasks.map(t => `${t.id}:${t.phaseId}:${t.status}`).join('|');
+    const f = this.filters;
+    return `${taskKey}::${f.searchText}::${f.status ?? ''}::${f.assigneeId ?? ''}::${f.priority ?? ''}::${f.dueFilter ?? ''}`;
   }
 
   get displayTasks(): ProjectTask[] {
     return filterAndSortRootTasks(this.tasks, this.filters, this.sortKey);
-  }
-
-  get phaseIds(): string[] {
-    return this.project?.phases.map(p => p.id) ?? [];
   }
 
   get rootTasks(): ProjectTask[] {
@@ -509,6 +505,8 @@ export class ProjectTasksTabComponent implements OnInit {
     const { status, dueFilter } = this.filters;
     if (dueFilter === 'overdue' && !status) {
       this.activeStatusChip = 'overdue';
+    } else if (status === 'Todo') {
+      this.activeStatusChip = 'todo';
     } else if (status === 'Done') {
       this.activeStatusChip = 'done';
     } else if (status === 'InProgress') {
@@ -524,11 +522,6 @@ export class ProjectTasksTabComponent implements OnInit {
 
   phaseColor(phaseId: string): string {
     return this.project?.phases.find(p => p.id === phaseId)?.color ?? 'var(--color-primary-600, #2563eb)';
-  }
-
-  tasksOf(phaseId: string): ProjectTask[] {
-    const ids = new Set(this.filteredRootTasks.map(t => t.id));
-    return this.tasks.filter(t => t.phaseId === phaseId && !t.parentTaskId && ids.has(t.id));
   }
 
   subCount(id: string): number {
@@ -602,16 +595,6 @@ export class ProjectTasksTabComponent implements OnInit {
 
   shiftMonth(delta: number): void {
     this.cursor = new Date(this.cursor.getFullYear(), this.cursor.getMonth() + delta, 1);
-  }
-
-  onDrop(event: CdkDragDrop<ProjectTask[]>, phaseId: string): void {
-    const task = event.item.data as ProjectTask;
-    if (!task || task.phaseId === phaseId) return;
-    const phase = this.project?.phases.find(p => p.id === phaseId);
-    const status = phase && this.project
-      ? taskStatusForPhaseSortOrder(this.project.kind, phase.sortOrder) ?? undefined
-      : undefined;
-    this.move.emit({ taskId: task.id, phaseId, status });
   }
 
   openCreate(phaseId?: string): void {

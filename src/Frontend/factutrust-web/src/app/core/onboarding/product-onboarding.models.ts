@@ -43,6 +43,10 @@ export interface OnboardingChecklistItemDef {
   permission?: string;
   adminOnly?: boolean;
   managerOnly?: boolean;
+  /** AppModule enum ids (plan WP-F4). All listed modules must be enabled for the item to show. */
+  modules?: number[];
+  /** Company segment kebab codes (plan WP-F4). Item shows only for these segments. */
+  segments?: string[];
 }
 
 export const COMPANY_CHECKLIST_IDS = {

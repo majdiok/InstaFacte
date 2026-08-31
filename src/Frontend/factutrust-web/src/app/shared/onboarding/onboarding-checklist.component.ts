@@ -224,6 +224,12 @@ export class OnboardingChecklistComponent implements OnInit {
     if (item.permission && !this.auth.hasPermission(item.permission)) {
       return false;
     }
+    if (item.modules?.length && !this.auth.hasAllModules(item.modules)) {
+      return false;
+    }
+    if (item.segments?.length && !item.segments.includes(this.auth.user()?.companySegment ?? '')) {
+      return false;
+    }
     return true;
   }
 }

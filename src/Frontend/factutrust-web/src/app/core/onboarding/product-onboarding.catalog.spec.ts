@@ -1,6 +1,8 @@
 import {
   COMPANY_TOUR_STEPS,
   FIRM_TOUR_STEPS,
+  COMPANY_CHECKLIST_ITEMS,
+  FIRM_CHECKLIST_ITEMS,
   filterTourSteps,
   mergeChecklistDone
 } from './product-onboarding.catalog';
@@ -93,5 +95,16 @@ describe('canStartProductTour', () => {
 
   it('allows replay even when status is Completed', () => {
     expect(canStartProductTour({ ...ready, isReplay: true, status: 'Completed' })).toBeTrue();
+  });
+});
+
+describe('checklist catalog module/segment gating metadata (plan WP-F4)', () => {
+  it('no shipped company checklist item is module/segment-gated yet (TODO, additive only)', () => {
+    // Pins the current state: OnboardingChecklistItemDef.modules/segments are wired
+    // end-to-end (see onboarding-checklist.component.ts canSee()) but not yet used by
+    // any real catalog entry — exact list is a product decision (see the TODO comment
+    // above COMPANY_CHECKLIST_ITEMS). Update this pin deliberately once items are added.
+    expect(COMPANY_CHECKLIST_ITEMS.every(item => !item.modules && !item.segments)).toBeTrue();
+    expect(FIRM_CHECKLIST_ITEMS.every(item => !item.modules && !item.segments)).toBeTrue();
   });
 });

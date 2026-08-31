@@ -539,8 +539,15 @@ export class ProjectDetailComponent implements OnInit {
 
   moveTask(ev: { taskId: string; phaseId: string; status?: ProjectTaskStatusCode }): void {
     this.api.moveTask(ev.taskId, ev.phaseId, ev.status).subscribe({
-      next: () => this.loadTab('tasks'),
-      error: err => this.fail(err, 'Déplacement impossible')
+      next: () => {
+        this.ok('Tâche déplacée');
+        this.reloadTasks();
+        this.reloadProject();
+      },
+      error: err => {
+        this.fail(err, 'Déplacement impossible');
+        this.reloadTasks();
+      }
     });
   }
 

@@ -68,7 +68,8 @@ public static class RolePermissionMatrix
         PlatformPermissions.AuditRead,
         PlatformPermissions.SecurityRead,
         PlatformPermissions.AdminsRead,
-        PlatformPermissions.NotificationsRead
+        PlatformPermissions.NotificationsRead,
+        PlatformPermissions.SectorRulesRead
     };
 
     /// <summary>

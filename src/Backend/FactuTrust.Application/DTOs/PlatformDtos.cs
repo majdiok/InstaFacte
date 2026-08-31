@@ -36,6 +36,12 @@ public sealed record PlatformTenantListItemDto
     ///  - Sinon → null
     /// </summary>
     public decimal? MrrTnd { get; init; }
+
+    // ----- Phase 2 additions (plan §WP-B8, D8) — nullable + additive -----------------
+    /// <summary>Tenant sector classification (null for legacy/firm tenants).</summary>
+    public string? CompanySegment { get; init; }
+    /// <summary>Tenant business domain (null for legacy/firm tenants).</summary>
+    public string? BusinessDomain { get; init; }
 }
 
 /// <summary>Paged tenant list for platform operators.</summary>
@@ -119,6 +125,12 @@ public sealed record PlatformTenantDetailDto
 
     /// <summary>Filled by the API layer after checking tenant database migrations.</summary>
     public bool HasMigrationsApplied { get; init; }
+
+    // ----- Phase 2 additions (plan §WP-B8, D8) — nullable + additive -----------------
+    /// <summary>Tenant sector classification (null for legacy/firm tenants).</summary>
+    public string? CompanySegment { get; init; }
+    /// <summary>Tenant business domain (null for legacy/firm tenants).</summary>
+    public string? BusinessDomain { get; init; }
 }
 
 /// <summary>Result of a bulk tenant migration operation.</summary>
