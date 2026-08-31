@@ -1,9 +1,14 @@
-import { TestBed } from '@angular/core/testing';
+import { TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { AppModule } from '@core/models/app-module';
+import { environment } from '@environments/environment';
 import {
+  ApiResponse,
   CORE_MODULE_IDS,
   DOMAIN_OPTIONS,
   RegistrationCatalogService,
+  SectorCatalogDto,
   SEGMENT_OPTIONS,
   defaultWarehouseNameFor,
   optionalModulesFor,
@@ -255,10 +260,19 @@ describe('registration-catalog', () => {
 
   describe('RegistrationCatalogService', () => {
     let service: RegistrationCatalogService;
+    let httpMock: HttpTestingController;
+    const CATALOG_URL = `${environment.apiUrl}/public/sector-catalog`;
 
     beforeEach(() => {
-      TestBed.configureTestingModule({});
+      TestBed.configureTestingModule({
+        providers: [provideHttpClient(), provideHttpClientTesting()]
+      });
       service = TestBed.inject(RegistrationCatalogService);
+      httpMock = TestBed.inject(HttpTestingController);
+    });
+
+    afterEach(() => {
+      httpMock.verify();
     });
 
     it('resolves French labels for known codes', () => {
@@ -271,9 +285,131 @@ describe('registration-catalog', () => {
       expect(service.isCoreModule(AppModule.Stock)).toBe(false);
     });
 
-    it('delegates recommendedModules/optionalModules to the pure functions', () => {
+    it('delegates recommendedModules/optionalModules to the pure functions in fallback (idle) mode', () => {
       expect(service.recommendedModules('commerce', 'autre')).toEqual(recommendedModulesFor('commerce', 'autre'));
       expect(service.optionalModules('commerce', 'autre')).toEqual(optionalModulesFor('commerce', 'autre'));
+    });
+
+    it('domainsForSegment returns the full static list unfiltered, regardless of segment, before load()', () => {
+      expect(service.domainsForSegment('commerce').length).toBe(DOMAIN_OPTIONS.length);
+      expect(service.domainsForSegment(null).length).toBe(DOMAIN_OPTIONS.length);
+      expect(service.domainsForSegment('bogus-segment').length).toBe(DOMAIN_OPTIONS.length);
+    });
+
+    function fakeCatalog(): SectorCatalogDto {
+      return {
+        segments: [
+          {
+            code: 'commerce',
+            labelFr: 'Commerce',
+            descriptionFr: 'Négoce et distribution.',
+            iconKey: 'shopping-cart',
+            sortOrder: 0,
+            coreModuleIds: [...CORE_MODULE_IDS],
+            recommendedModuleIds: [AppModule.Purchases, AppModule.Stock],
+            defaultWarehouseName: 'Magasin principal',
+            domainCodes: ['alimentation-agroalimentaire', 'artisanat']
+          }
+        ],
+        domains: [
+          { code: 'alimentation-agroalimentaire', labelFr: 'Alimentation & Agroalimentaire', sortOrder: 0, additionalModuleIds: [AppModule.Stock] },
+          { code: 'artisanat', labelFr: 'Artisanat', sortOrder: 1, additionalModuleIds: [] },
+          { code: 'autre', labelFr: 'Autre domaine', sortOrder: 2, additionalModuleIds: [] }
+        ],
+        modules: [
+          { id: AppModule.Purchases, code: 'purchases', labelFr: 'Achats', isCore: false },
+          { id: AppModule.Stock, code: 'stock', labelFr: 'Stock', isCore: false },
+          { id: AppModule.Forecasting, code: 'forecasting', labelFr: 'Prévisions IA', isCore: false }
+        ],
+        moduleDependencies: [
+          { moduleId: AppModule.Forecasting, requiresModuleId: AppModule.Stock }
+        ]
+      };
+    }
+
+    it('load() success sets loadState to "remote" and serves segments/domains/modules from the response', () => {
+      service.load();
+      const req = httpMock.expectOne(CATALOG_URL);
+      req.flush({ success: true, data: fakeCatalog() } as ApiResponse<SectorCatalogDto>);
+
+      expect(service.loadState()).toBe('remote');
+      expect(service.segments.map(s => s.code)).toEqual(['commerce']);
+      expect(service.domains.map(d => d.code)).toEqual(['alimentation-agroalimentaire', 'artisanat', 'autre']);
+    });
+
+    it('domainsForSegment(remote) returns the segment ordered domainCodes with "autre" appended', () => {
+      service.load();
+      httpMock.expectOne(CATALOG_URL).flush({ success: true, data: fakeCatalog() } as ApiResponse<SectorCatalogDto>);
+
+      expect(service.domainsForSegment('commerce').map(d => d.code)).toEqual([
+        'alimentation-agroalimentaire', 'artisanat', 'autre'
+      ]);
+      expect(service.domainsForSegment(null)).toEqual([]);
+      expect(service.domainsForSegment('unknown-segment')).toEqual([]);
+    });
+
+    it('404 falls back silently: loadState becomes "fallback", static catalog still served', fakeAsync(() => {
+      service.load();
+      httpMock.expectOne(CATALOG_URL).flush('not found', { status: 404, statusText: 'Not Found' });
+      tick(1500);
+      httpMock.expectOne(CATALOG_URL).flush('not found', { status: 404, statusText: 'Not Found' });
+
+      expect(service.loadState()).toBe('fallback');
+      expect(service.domainsForSegment('commerce').length).toBe(DOMAIN_OPTIONS.length);
+      expect(service.segments).toEqual(SEGMENT_OPTIONS);
+    }));
+
+    it('retries once on 500 then falls back to static on repeated failure', fakeAsync(() => {
+      service.load();
+      httpMock.expectOne(CATALOG_URL).flush('boom', { status: 500, statusText: 'Server Error' });
+      tick(1500);
+      httpMock.expectOne(CATALOG_URL).flush('boom again', { status: 500, statusText: 'Server Error' });
+
+      expect(service.loadState()).toBe('fallback');
+    }));
+
+    it('does not fetch at all when the frontend kill-switch is off', () => {
+      environment.featureFlags.sectorCatalogHttp = false;
+      try {
+        service.load();
+        httpMock.expectNone(CATALOG_URL);
+        expect(service.loadState()).toBe('idle');
+      } finally {
+        environment.featureFlags.sectorCatalogHttp = true;
+      }
+    });
+
+    it('filters unknown module ids out of the remote payload', () => {
+      const catalog = fakeCatalog();
+      catalog.modules.push({ id: 9999, code: 'ghost', labelFr: 'Fantôme', isCore: false });
+      catalog.segments[0].recommendedModuleIds.push(9999);
+
+      service.load();
+      httpMock.expectOne(CATALOG_URL).flush({ success: true, data: catalog } as ApiResponse<SectorCatalogDto>);
+
+      expect(service.modules.some(m => m.id === (9999 as unknown as AppModule))).toBe(false);
+      expect(service.recommendedModules('commerce', null)).not.toContain(9999 as unknown as AppModule);
+    });
+
+    it('requiredBy / dependentsOf compute the transitive dependency closure and guard cycles', () => {
+      service.load();
+      httpMock.expectOne(CATALOG_URL).flush({ success: true, data: fakeCatalog() } as ApiResponse<SectorCatalogDto>);
+
+      expect(service.requiredBy(AppModule.Forecasting)).toEqual([AppModule.Stock]);
+      expect(service.requiredBy(AppModule.Stock)).toEqual([]);
+      expect(service.dependentsOf(AppModule.Stock, [AppModule.Forecasting, AppModule.Purchases])).toEqual([AppModule.Forecasting]);
+      expect(service.dependentsOf(AppModule.Stock, [AppModule.Purchases])).toEqual([]);
+    });
+
+    it('recommendedModules() closes over hard dependencies (Forecasting recommended ⇒ Stock included)', () => {
+      const catalog = fakeCatalog();
+      catalog.segments[0].recommendedModuleIds = [AppModule.Forecasting];
+      service.load();
+      httpMock.expectOne(CATALOG_URL).flush({ success: true, data: catalog } as ApiResponse<SectorCatalogDto>);
+
+      const result = service.recommendedModules('commerce', null);
+      expect(result).toContain(AppModule.Forecasting);
+      expect(result).toContain(AppModule.Stock);
     });
   });
 });

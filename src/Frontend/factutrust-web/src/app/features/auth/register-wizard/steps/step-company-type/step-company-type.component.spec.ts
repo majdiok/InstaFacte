@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { StepCompanyTypeComponent } from './step-company-type.component';
 import { SEGMENT_OPTIONS, DOMAIN_OPTIONS } from '../../registration-catalog';
 
@@ -12,7 +14,7 @@ describe('StepCompanyTypeComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [StepCompanyTypeComponent, ReactiveFormsModule],
-      providers: [FormBuilder, provideNoopAnimations()]
+      providers: [FormBuilder, provideNoopAnimations(), provideHttpClient(), provideHttpClientTesting()]
     }).compileComponents();
 
     fb = TestBed.inject(FormBuilder);

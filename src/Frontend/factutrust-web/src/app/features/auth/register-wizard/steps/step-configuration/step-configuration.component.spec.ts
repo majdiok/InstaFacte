@@ -1,5 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { StepConfigurationComponent } from './step-configuration.component';
 import { AppModule } from '@core/models/app-module';
 
@@ -10,7 +12,8 @@ describe('StepConfigurationComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [StepConfigurationComponent, ReactiveFormsModule]
+      imports: [StepConfigurationComponent, ReactiveFormsModule],
+      providers: [provideHttpClient(), provideHttpClientTesting()]
     }).compileComponents();
 
     fb = TestBed.inject(FormBuilder);

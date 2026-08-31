@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -95,6 +95,21 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
 
   private loadingMessageTimer: ReturnType<typeof setInterval> | null = null;
   private loadingStartedAt = 0;
+
+  /**
+   * Late-arriving remote catalog (plan WP-F1): if the fetch resolves to `'remote'`
+   * after the user already picked a segment/domain but hasn't manually touched a
+   * module toggle, recompute the recommendation once so Step 3 reflects real rules.
+   * Fires at most once (loadState only transitions idle → loading → remote|fallback).
+   * Note: `registrationWizardV2: false` serves the legacy 3-step form
+   * (`features/auth/register/`), which never injects `RegistrationCatalogService` —
+   * zero catalog HTTP traffic on that path.
+   */
+  private readonly reactToRemoteCatalog = effect(() => {
+    if (this.catalog.loadState() === 'remote' && !this.modulesTouched()) {
+      this.onProfileChanged();
+    }
+  });
 
   readonly stepsMeta: WizardStepMeta[] = [
     {
@@ -219,6 +234,10 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
 
     this.form.get('companySegment')?.valueChanges.subscribe(() => this.onProfileChanged());
     this.form.get('businessDomain')?.valueChanges.subscribe(() => this.onProfileChanged());
+
+    // Fetch the live sector catalog once; no-op if the frontend kill-switch is off or
+    // a fetch already ran this session (see RegistrationCatalogService.load()).
+    this.catalog.load();
   }
 
   ngOnDestroy(): void {
