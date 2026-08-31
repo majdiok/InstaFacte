@@ -304,6 +304,14 @@ export class RegistrationCatalogService {
   /** Non-null once a valid remote payload has been received; null in idle/loading/fallback. */
   private readonly remoteCatalog = signal<SectorCatalogDto | null>(null);
 
+  /** Cached set of every `AppModule` numeric id known to the frontend catalog — used to filter
+   *  unknown ids out of the remote payload (defensive; the backend only sends known ids). */
+  private readonly knownModuleIds = new Set<AppModule>(allModuleIds());
+
+  private isValidModuleId(id: number): id is AppModule {
+    return this.knownModuleIds.has(id as AppModule);
+  }
+
   /** Observable load lifecycle — see `load()`. */
   readonly loadState = signal<CatalogLoadState>('idle');
 
@@ -333,11 +341,10 @@ export class RegistrationCatalogService {
   get coreModuleIds(): readonly AppModule[] {
     const remote = this.remoteCatalog();
     if (!remote || remote.segments.length === 0) return CORE_MODULE_IDS;
-    const validIds = new Set(allModuleIds());
     const ids = new Set<AppModule>();
     for (const s of remote.segments) {
       for (const id of s.coreModuleIds) {
-        if (validIds.has(id as AppModule)) ids.add(id as AppModule);
+        if (this.isValidModuleId(id)) ids.add(id);
       }
     }
     return ids.size > 0 ? Array.from(ids).sort((a, b) => a - b) : CORE_MODULE_IDS;
@@ -346,10 +353,9 @@ export class RegistrationCatalogService {
   get modules(): readonly ModuleCatalogEntry[] {
     const remote = this.remoteCatalog();
     if (!remote) return APP_MODULE_OPTIONS.map(o => ({ id: o.value, label: o.label }));
-    const validIds = new Set(allModuleIds());
     return remote.modules
-      .filter(m => validIds.has(m.id as AppModule))
-      .map(m => ({ id: m.id as AppModule, label: m.labelFr }));
+      .filter(m => this.isValidModuleId(m.id))
+      .map(m => ({ id: m.id, label: m.labelFr }));
   }
 
   segmentLabel(code: string | null | undefined): string {
@@ -406,23 +412,20 @@ export class RegistrationCatalogService {
       return recommendedModulesFor(segment, domain);
     }
 
-    const validIds = new Set(allModuleIds());
     const coreSet = new Set(this.coreModuleIds);
     const set = new Set<AppModule>();
 
     const seg = remote.segments.find(s => s.code === segment);
     if (seg) {
       for (const id of seg.recommendedModuleIds) {
-        const m = id as AppModule;
-        if (validIds.has(m) && !coreSet.has(m)) set.add(m);
+        if (this.isValidModuleId(id) && !coreSet.has(id)) set.add(id);
       }
     }
 
     const dom = remote.domains.find(d => d.code === domain);
     if (dom) {
       for (const id of dom.additionalModuleIds) {
-        const m = id as AppModule;
-        if (validIds.has(m) && !coreSet.has(m)) set.add(m);
+        if (this.isValidModuleId(id) && !coreSet.has(id)) set.add(id);
       }
     }
 
@@ -525,10 +528,9 @@ export class RegistrationCatalogService {
   private get dependencyEdges(): readonly { moduleId: AppModule; requiresModuleId: AppModule }[] {
     const remote = this.remoteCatalog();
     if (!remote || !Array.isArray(remote.moduleDependencies)) return [];
-    const validIds = new Set(allModuleIds());
     return remote.moduleDependencies
-      .filter(d => validIds.has(d.moduleId as AppModule) && validIds.has(d.requiresModuleId as AppModule))
-      .map(d => ({ moduleId: d.moduleId as AppModule, requiresModuleId: d.requiresModuleId as AppModule }));
+      .filter(d => this.isValidModuleId(d.moduleId) && this.isValidModuleId(d.requiresModuleId))
+      .map(d => ({ moduleId: d.moduleId, requiresModuleId: d.requiresModuleId }));
   }
 
   private closeDependencies(set: Set<AppModule>): void {
