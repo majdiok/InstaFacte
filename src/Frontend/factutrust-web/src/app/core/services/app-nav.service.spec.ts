@@ -1,9 +1,10 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
-import { AuthService, User } from '@core/services/auth.service';
+import { environment } from '@environments/environment';
+import { AuthResponse, AuthService, User } from '@core/services/auth.service';
 import { FirmContextService } from '@core/services/firm-context.service';
 import { FirmAssignmentService } from '@core/services/firm-assignment.service';
 import { AccountingFeatureFlagsService } from '@features/accounting/shared/accounting-feature-flags.service';
@@ -465,5 +466,118 @@ describe('AppNavService — secondary nav parity', () => {
 
     const nav = TestBed.inject(AppNavService);
     expect(settingsChildRoutes(nav)).toContain(VARIANT_AXES_PATH);
+  });
+});
+
+function makeRegisterTestJwt(): string {
+  const exp = Math.floor(Date.now() / 1000) + 3600;
+  const payload = btoa(JSON.stringify({ exp }));
+  return `e.${payload}.s`;
+}
+
+// Tâche 1.3 du plan : fraîcheur de la session frontend après inscription — le
+// signal utilisateur (et donc la navigation calculée) doit refléter les modules
+// choisis à l'inscription sans rechargement de page ni relogin.
+describe('AppNavService — sidebar freshness right after register()', () => {
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: FirmAssignmentService,
+          useValue: {
+            getActiveClients: () => of({ success: true, data: [] }),
+            getIncomingInvitations: () => of({ success: true, data: [] })
+          }
+        },
+        {
+          provide: AccountingFeatureFlagsService,
+          useValue: { flags: () => ({ fixedAssetsEnabled: true }) }
+        },
+        {
+          provide: StudioNavService,
+          useValue: { items: () => [] }
+        }
+      ]
+    });
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    // Le warm-up IA post-inscription et le chargement des feature flags Stock sont des
+    // effets de bord fire-and-forget non testés ici : on les draine avant verify().
+    httpMock.match(r => r.url.endsWith('/ai/warm-up')).forEach(r => r.flush({ warmed: true }));
+    httpMock
+      .match(r => r.url.includes('/stock/features'))
+      .forEach(r => r.flush({ success: true, data: {}, message: null, errors: [] }));
+    httpMock.verify();
+  });
+
+  it('exposes Ventes/Achats/Stock in navItems() right after register(), with no reload', () => {
+    const auth = TestBed.inject(AuthService);
+    TestBed.inject(FirmContextService).syncFromUser();
+    const nav = TestBed.inject(AppNavService);
+
+    // Avant inscription : aucun utilisateur, navigation vide (sauf éléments publics).
+    expect(nav.navItems().map(i => i.label)).not.toContain('Ventes');
+
+    const registeredUser: User = {
+      ...companyUser,
+      id: 'u-registered',
+      // Commerce · Textile avec Achats/Stock/Fiscal : Core + [Purchases, Stock, Fiscal].
+      enabledModuleIds: [
+        AppModule.Clients,
+        AppModule.Products,
+        AppModule.Sales,
+        AppModule.Treasury,
+        AppModule.Reports,
+        AppModule.Administration,
+        AppModule.Purchases,
+        AppModule.Stock,
+        AppModule.Fiscal
+      ]
+    };
+    const authData: AuthResponse = {
+      accessToken: makeRegisterTestJwt(),
+      refreshToken: 'r',
+      expiresAt: '',
+      user: registeredUser,
+      requires2Fa: false
+    };
+
+    auth.register({
+      email: 'a@b.c',
+      password: 'x',
+      confirmPassword: 'x',
+      firstName: 'A',
+      lastName: 'B',
+      companyName: 'Ste Test',
+      nif: '1234567',
+      taxRegime: 0,
+      street: 'Rue 1',
+      city: 'Tunis',
+      governorate: 'Tunis',
+      companyEmail: 'co@b.c',
+      phone: '20000000',
+      companySegment: 'commerce',
+      businessDomain: 'textile-habillement',
+      enabledModules: registeredUser.enabledModuleIds
+    }).subscribe();
+
+    const req = httpMock.expectOne(
+      r => r.url === `${environment.apiUrl}/auth/register` && r.method === 'POST'
+    );
+    req.flush({ success: true, data: authData, message: null, errors: [] });
+
+    // Sans rechargement ni relogin : navItems() (computed) reflète déjà les
+    // nouveaux modules dès que le signal utilisateur change.
+    const labels = nav.navItems().map(i => i.label);
+    expect(labels).toContain('Ventes');
+    expect(labels).toContain('Achats');
+    expect(labels).toContain('Stock');
   });
 });

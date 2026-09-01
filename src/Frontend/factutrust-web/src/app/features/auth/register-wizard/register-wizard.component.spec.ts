@@ -21,6 +21,16 @@ function validRegisterResponse(): ApiResponse<AuthResponse> {
   };
 }
 
+/** Mock ApiResponse success avec avertissements (tâche 1.2 du plan) pour register */
+function warningsRegisterResponse(warnings: string[]): ApiResponse<AuthResponse> {
+  return {
+    success: true,
+    data: { warnings } as AuthResponse,
+    message: null,
+    errors: []
+  };
+}
+
 /** Mock ApiResponse failure pour register */
 function errorRegisterResponse(errors: string[]): ApiResponse<AuthResponse> {
   return {
@@ -537,6 +547,38 @@ describe('RegisterWizardComponent', () => {
     it('should navigate to /dashboard on success', () => {
       authService.register.and.returnValue(of(validRegisterResponse()));
       component.onSubmit();
+      expect(warehouseContext.navigateAfterSuccessfulAuth).toHaveBeenCalledWith('/dashboard');
+    });
+
+    it('should show a warning banner and hold the redirect when the response carries warnings', () => {
+      authService.register.and.returnValue(
+        of(warningsRegisterResponse(['Module Comptabilité refusé par votre plan']))
+      );
+
+      component.onSubmit();
+
+      expect(component.registrationWarnings()).toEqual(['Module Comptabilité refusé par votre plan']);
+      expect(warehouseContext.navigateAfterSuccessfulAuth).not.toHaveBeenCalled();
+      expect(component.loading()).toBeFalse();
+    });
+
+    it('should not show a warning banner when warnings is absent or empty', () => {
+      authService.register.and.returnValue(of(validRegisterResponse()));
+      component.onSubmit();
+      expect(component.registrationWarnings()).toEqual([]);
+      expect(warehouseContext.navigateAfterSuccessfulAuth).toHaveBeenCalledWith('/dashboard');
+    });
+
+    it('continueAfterWarnings clears the banner and navigates to /dashboard', () => {
+      authService.register.and.returnValue(
+        of(warningsRegisterResponse(['Module Comptabilité refusé par votre plan']))
+      );
+      component.onSubmit();
+      expect(component.registrationWarnings().length).toBe(1);
+
+      component.continueAfterWarnings();
+
+      expect(component.registrationWarnings()).toEqual([]);
       expect(warehouseContext.navigateAfterSuccessfulAuth).toHaveBeenCalledWith('/dashboard');
     });
 

@@ -52,6 +52,12 @@ public static class PlanSeeder
         // l'accès des tenants existants. Les plans "plats" (Modules.Count == 0) restent
         // intacts (rétro-compat permissive gérée par DbPlanResolver).
         await BackfillPlanModulesAsync(db, cancellationToken);
+
+        // Plan §1.1, décision D1 (correction immédiate) : le plan Free ne doit jamais refuser
+        // silencieusement un module proposé par l'assistant d'inscription. Contrairement au
+        // backfill ci-dessus (qui n'ajoute que les modules MANQUANTS), celui-ci corrige aussi les
+        // lignes déjà présentes mais explicitement IsIncluded=false.
+        await AlignFreePlanWizardModulesAsync(db, cancellationToken);
     }
 
     private static async Task BackfillSubscriptionPlanIdAsync(MasterDbContext db, CancellationToken cancellationToken)
@@ -296,5 +302,61 @@ public static class PlanSeeder
             // le démarrage loggue un FATAL récurrent). On ignore : la prochaine exécution réessaiera.
             db.ChangeTracker.Clear();
         }
+    }
+
+    /// <summary>
+    /// Tout <see cref="AppModule"/> que l'assistant d'inscription (frontend
+    /// <c>registration-catalog.ts</c> — <c>CORE_MODULE_IDS</c> ∪ <c>optionalModulesFor()</c>) peut
+    /// proposer/envoyer dans <c>RegisterDto.EnabledModules</c>. <see cref="AppModule.Honoraires"/>
+    /// est le seul module jamais offert par le wizard (natif cabinet — facturé côté
+    /// <c>HonorairesBillingService</c>, hors périmètre d'un tenant auto-inscrit) ; il est donc
+    /// volontairement exclu ici, y compris pour l'alignement du plan Free (plan §1.1, D1).
+    /// </summary>
+    internal static IReadOnlyCollection<int> WizardOfferedModuleIds { get; } = Enum.GetValues<AppModule>()
+        .Where(m => m != AppModule.Honoraires)
+        .Select(m => (int)m)
+        .ToArray();
+
+    /// <summary>
+    /// Plan §1.1, décision D1 (correction immédiate) : le plan Free ne doit jamais opposer un
+    /// plafond silencieux à un module proposé par le wizard d'inscription. <see cref="BackfillPlanModulesAsync"/>
+    /// ci-dessus ne fait qu'AJOUTER les modules absents (IsIncluded=true) ; il ne retouche jamais
+    /// une ligne déjà présente mais explicitement mise à <c>IsIncluded=false</c> (ex. un opérateur
+    /// a restreint le plan Free via le backoffice après le seed initial). Cette méthode corrige
+    /// spécifiquement ce cas, UNIQUEMENT pour le plan Free (Monthly/Annual ne sont pas touchés —
+    /// une vraie restriction sur ces plans reste possible et intentionnelle) et UNIQUEMENT pour
+    /// les modules du wizard (<see cref="WizardOfferedModuleIds"/>) — l'objectif n'est pas
+    /// d'empêcher toute restriction future du plan Free, mais d'éviter qu'une inscription
+    /// autoservice se voie refuser un module qu'elle a explicitement demandé sans le savoir.
+    ///
+    /// Idempotent : ne fait rien (pas de SaveChanges) si toutes les lignes concernées sont déjà
+    /// à IsIncluded=true — c'est déjà le cas pour une instance fraîchement seedée puisque
+    /// <see cref="BuildFreePlan"/> appelle <see cref="AllModulesIncluded"/>.
+    ///
+    /// TODO (plan §1.1) : à terme, un vrai plafond de plan doit être surfacé dans le wizard
+    /// (modules non proposés / grisés selon le plan choisi) plutôt que corrigé après coup ici.
+    /// </summary>
+    private static async Task AlignFreePlanWizardModulesAsync(MasterDbContext db, CancellationToken cancellationToken)
+    {
+        var freePlan = await db.Plans
+            .Include(p => p.Modules)
+            .FirstOrDefaultAsync(p => p.Code == nameof(SubscriptionPlan.Free), cancellationToken);
+        if (freePlan is null) return;
+
+        var wizardModules = WizardOfferedModuleIds;
+        var changed = false;
+        foreach (var planModule in freePlan.Modules)
+        {
+            if (planModule.IsIncluded) continue;
+            if (!wizardModules.Contains(planModule.Module)) continue;
+
+            // Mise à jour EN PLACE (comme BackfillPlanLimitsAsync) — surtout PAS ReplaceModules,
+            // qui ferait clear+re-add et risquerait un DbUpdateConcurrencyException inutile ici.
+            db.Entry(planModule).Property(nameof(PlanModule.IsIncluded)).CurrentValue = true;
+            changed = true;
+        }
+
+        if (changed)
+            await db.SaveChangesAsync(cancellationToken);
     }
 }

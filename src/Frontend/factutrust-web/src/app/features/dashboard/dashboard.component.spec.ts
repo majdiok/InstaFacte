@@ -260,3 +260,139 @@ describe('DashboardComponent — gating par permission (§7.3.3)', () => {
     expect(html).toContain('Devis récents');
   });
 });
+
+/**
+ * Tâche 1.7 du plan — Dashboard : ne plus afficher de sections vides ou hors-sujet.
+ * (a) « Actions rapides » masqué au profit d'un état vide utile quand aucune action
+ *     n'est visible (permissions/modules insuffisants).
+ * (b) Cartes latérales « Livraisons en attente » / « Devis en cours » conditionnées
+ *     aux modules (Stock / Ventes) au lieu de toujours s'afficher.
+ */
+describe('DashboardComponent — tâche 1.7 (sections vides / cartes hors-sujet)', () => {
+  function configure() {
+    const emptyOk = () => of({ success: true, data: { items: [] }, message: null, errors: [] as string[] });
+    TestBed.configureTestingModule({
+      imports: [DashboardComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: InvoiceService, useValue: { getInvoices: jasmine.createSpy().and.returnValue(emptyOk()) } },
+        { provide: StockService, useValue: { getStockAlerts: jasmine.createSpy().and.returnValue(of({ success: true, data: { items: [], totalCount: 0 }, message: null, errors: [] })) } },
+        { provide: DeliveryNoteService, useValue: { getDeliveryNotes: jasmine.createSpy().and.returnValue(emptyOk()) } },
+        {
+          provide: DashboardService,
+          useValue: {
+            loadDashboardData: jasmine.createSpy().and.returnValue(
+              of({
+                allInvoices: [],
+                recentInvoices: [],
+                allQuotes: [],
+                recentQuotes: [],
+                topClients: [],
+                monthlyRevenue: [],
+                recentActivity: [],
+                kpiTrends: { revenueChange: undefined, salesTodayChange: undefined, pendingChange: undefined },
+                kpiSparklines: { revenue: [], salesToday: [], currentMonth: [], pending: [] },
+                activeQuotesCount: 0
+              })
+            )
+          }
+        },
+        { provide: AccountingService, useValue: { getDashboard: jasmine.createSpy().and.returnValue(of({ success: true, data: {}, message: null, errors: [] })) } },
+        { provide: CrmService, useValue: { getMyReminders: jasmine.createSpy().and.returnValue(of({ success: true, data: [], message: null, errors: [] })), getOpportunities: jasmine.createSpy().and.returnValue(of({ success: true, data: [], message: null, errors: [] })) } },
+        { provide: WarehouseContextService, useValue: { selectedWarehouseId: jasmine.createSpy().and.returnValue(null) } }
+      ]
+    });
+  }
+
+  it('nouveau tenant sans permission « actions rapides » : affiche l\'état vide utile, pas de bloc vide', () => {
+    configure();
+    const auth = TestBed.inject(AuthService);
+    // Aucune des permissions dont dépendent les actions rapides.
+    setUser(auth, makeUser([], [AppModule.Administration]));
+
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    expect(component.hasAnyQuickAction()).toBeFalse();
+
+    const html: string = fixture.nativeElement.textContent ?? '';
+    expect(html).toContain('Activez des modules pour voir vos actions rapides.');
+    expect(html).not.toContain('Créer une facture');
+    expect(html).not.toContain('Nouveau devis');
+  });
+
+  it('affiche les actions rapides dès qu\'au moins une permission les autorise', () => {
+    configure();
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, makeUser(['clients:read'], [AppModule.Administration, AppModule.Clients]));
+
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    expect(component.hasAnyQuickAction()).toBeTrue();
+
+    const html: string = fixture.nativeElement.textContent ?? '';
+    expect(html).not.toContain('Activez des modules pour voir vos actions rapides.');
+    expect(html).toContain('Mes clients');
+  });
+
+  it('masque la carte « Livraisons en attente » quand le module Ventes est désactivé', () => {
+    configure();
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, makeUser(['delivery_notes:read'], ALL_MODULES.filter((m) => m !== AppModule.Sales)));
+
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    expect(component.showPendingDeliveriesSideCard()).toBeFalse();
+    const html: string = fixture.nativeElement.textContent ?? '';
+    expect(html).not.toContain('Livraisons en attente');
+  });
+
+  it('affiche la carte « Livraisons en attente » quand le module Ventes est actif', () => {
+    configure();
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, makeUser(['delivery_notes:read'], ALL_MODULES));
+
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    expect(component.showPendingDeliveriesSideCard()).toBeTrue();
+    const html: string = fixture.nativeElement.textContent ?? '';
+    expect(html).toContain('Livraisons en attente');
+  });
+
+  it('masque la carte « Devis en cours » quand le module Ventes est désactivé', () => {
+    configure();
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, makeUser(['quotes:read'], ALL_MODULES.filter((m) => m !== AppModule.Sales)));
+
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    expect(component.showActiveQuotesSideCard()).toBeFalse();
+    const html: string = fixture.nativeElement.textContent ?? '';
+    expect(html).not.toContain('Devis en cours');
+  });
+
+  it('affiche la carte « Devis en cours » quand le module Ventes est actif', () => {
+    configure();
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, makeUser(['quotes:read'], ALL_MODULES));
+
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    expect(component.showActiveQuotesSideCard()).toBeTrue();
+    const html: string = fixture.nativeElement.textContent ?? '';
+    expect(html).toContain('Devis en cours');
+  });
+});

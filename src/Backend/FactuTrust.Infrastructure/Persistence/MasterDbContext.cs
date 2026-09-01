@@ -236,6 +236,12 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(t => t.CompanySegment).HasMaxLength(50);
             entity.Property(t => t.BusinessDomain).HasMaxLength(50);
 
+            // Provisioning mini-saga (plan §1.5) — additive, defaults Ready so every pre-existing
+            // row (and every non-restructured creation flow) reads as already-provisioned.
+            entity.Property(t => t.ProvisioningStatus)
+                .HasDefaultValue(TenantProvisioningStatus.Ready)
+                .IsRequired();
+
             // Value object configurations
             entity.OwnsOne(t => t.NIF, nif =>
             {
@@ -243,6 +249,18 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
                     .HasColumnName("NIF")
                     .HasMaxLength(20)
                     .IsRequired();
+
+                // NIF uniqueness (plan §1.4): unique only among ACTIVE tenants — mirrors the
+                // application-level rule FirmManagedClientService already enforces (a deactivated
+                // tenant's NIF can be reused, e.g. re-registering after a closure). Also filtered on
+                // NIF IS NOT NULL for safety even though every creation path requires a valid NIF
+                // value object today. Guards the race between the controller's pre-check and the
+                // actual insert (two concurrent registrations with the same NIF) — surfaced by the
+                // controller as a 409, not a generic 500.
+                nif.HasIndex(n => n.Value)
+                    .IsUnique()
+                    .HasDatabaseName("IX_Tenants_NIF")
+                    .HasFilter("[NIF] IS NOT NULL AND [IsActive] = 1");
             });
 
             entity.OwnsOne(t => t.Address, addr =>

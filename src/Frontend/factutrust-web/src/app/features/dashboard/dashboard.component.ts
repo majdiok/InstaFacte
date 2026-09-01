@@ -291,6 +291,7 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
     <div class="dash-actions-row">
       <div class="section quick-actions-card" data-tour="dash-quick-actions">
         <h3 class="qa-title"><i class="fa-solid fa-bolt"></i> Actions rapides</h3>
+        @if (hasAnyQuickAction()) {
         <div class="quick-actions">
           @if (canCreateInvoice()) {
             <a routerLink="/invoices/new" class="quick-action-card">
@@ -335,47 +336,61 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
             </a>
           }
         </div>
+        } @else {
+        <div class="quick-actions-empty">
+          <i class="fa-solid fa-puzzle-piece quick-actions-empty-icon" aria-hidden="true"></i>
+          <p>Activez des modules pour voir vos actions rapides.</p>
+          <a routerLink="/settings/company" class="quick-actions-empty-link">
+            Gérer mon entreprise <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+          </a>
+        </div>
+        }
       </div>
 
       <div class="dash-side-cards">
-        @if (drillDown('pendingDeliveriesSide'); as deliveriesTarget) {
-          <a class="dash-side-card dash-side-card--clickable" [routerLink]="deliveriesTarget.route" [queryParams]="deliveriesTarget.queryParams" [attr.aria-label]="deliveriesTarget.ariaLabel">
-            <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--teal"><i class="fa-solid fa-truck-fast"></i></span>
-            <div class="dash-side-text">
-              <span class="dash-side-label">Livraisons en attente</span>
-              <span class="dash-side-value">{{ pendingDeliveriesCount() }}</span>
+        @if (showPendingDeliveriesSideCard()) {
+          @if (drillDown('pendingDeliveriesSide'); as deliveriesTarget) {
+            <a class="dash-side-card dash-side-card--clickable" [routerLink]="deliveriesTarget.route" [queryParams]="deliveriesTarget.queryParams" [attr.aria-label]="deliveriesTarget.ariaLabel">
+              <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--teal"><i class="fa-solid fa-truck-fast"></i></span>
+              <div class="dash-side-text">
+                <span class="dash-side-label">Livraisons en attente</span>
+                <span class="dash-side-value">{{ pendingDeliveriesCount() }}</span>
+              </div>
+            </a>
+          } @else {
+            <div class="dash-side-card">
+              <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--teal"><i class="fa-solid fa-truck-fast"></i></span>
+              <div class="dash-side-text">
+                <span class="dash-side-label">Livraisons en attente</span>
+                <span class="dash-side-value">{{ pendingDeliveriesCount() }}</span>
+              </div>
             </div>
-          </a>
-        } @else {
-          <div class="dash-side-card">
-            <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--teal"><i class="fa-solid fa-truck-fast"></i></span>
-            <div class="dash-side-text">
-              <span class="dash-side-label">Livraisons en attente</span>
-              <span class="dash-side-value">{{ pendingDeliveriesCount() }}</span>
-            </div>
-          </div>
+          }
         }
-        @if (drillDown('activeQuotesSide'); as quotesTarget) {
-          <a class="dash-side-card dash-side-card--clickable" [routerLink]="quotesTarget.route" [queryParams]="quotesTarget.queryParams" [attr.aria-label]="quotesTarget.ariaLabel">
-            <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--indigo"><i class="fa-solid fa-file-contract"></i></span>
-            <div class="dash-side-text">
-              <span class="dash-side-label">Devis en cours</span>
-              <span class="dash-side-value">{{ activeQuotesCount() }}</span>
+        @if (showActiveQuotesSideCard()) {
+          @if (drillDown('activeQuotesSide'); as quotesTarget) {
+            <a class="dash-side-card dash-side-card--clickable" [routerLink]="quotesTarget.route" [queryParams]="quotesTarget.queryParams" [attr.aria-label]="quotesTarget.ariaLabel">
+              <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--indigo"><i class="fa-solid fa-file-contract"></i></span>
+              <div class="dash-side-text">
+                <span class="dash-side-label">Devis en cours</span>
+                <span class="dash-side-value">{{ activeQuotesCount() }}</span>
+              </div>
+            </a>
+          } @else {
+            <div class="dash-side-card">
+              <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--indigo"><i class="fa-solid fa-file-contract"></i></span>
+              <div class="dash-side-text">
+                <span class="dash-side-label">Devis en cours</span>
+                <span class="dash-side-value">{{ activeQuotesCount() }}</span>
+              </div>
             </div>
-          </a>
-        } @else {
-          <div class="dash-side-card">
-            <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--indigo"><i class="fa-solid fa-file-contract"></i></span>
-            <div class="dash-side-text">
-              <span class="dash-side-label">Devis en cours</span>
-              <span class="dash-side-value">{{ activeQuotesCount() }}</span>
-            </div>
-          </div>
+          }
         }
       </div>
     </div>
 
     </ng-template>
+
 
     <ng-template #accountingTpl>
     @if (hasAccountingModule() && accountingKpis()) {
@@ -856,6 +871,35 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
       grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
       gap: var(--spacing-3);
     }
+
+    .quick-actions-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: var(--spacing-2);
+      padding: var(--spacing-6) var(--spacing-4);
+      border: 1px dashed var(--color-neutral-300);
+      border-radius: var(--radius-lg, 0.75rem);
+      color: var(--color-text-secondary);
+    }
+    .quick-actions-empty-icon {
+      font-size: var(--font-size-xl, 1.5rem);
+      color: var(--color-neutral-400);
+    }
+    .quick-actions-empty p {
+      margin: 0;
+      font-size: var(--font-size-sm);
+    }
+    .quick-actions-empty-link {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacing-1);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-primary-600, #2563eb);
+      text-decoration: none;
+    }
+    .quick-actions-empty-link:hover { text-decoration: underline; }
 
     .dash-side-cards {
       display: flex;
@@ -1820,6 +1864,25 @@ export class DashboardComponent implements OnInit {
   canReadClients = computed(() => this.authService.hasPermission(PERMISSIONS.clients.read));
   canReadPayments = computed(() => this.authService.hasPermission(PERMISSIONS.payments.read));
   canReadReports = computed(() => this.authService.hasPermission(PERMISSIONS.reports.view));
+  /**
+   * Tâche 1.7 du plan : le bloc « Actions rapides » n'a de sens que si au moins une
+   * action y est visible. Un nouveau tenant avec peu de modules/permissions actifs
+   * ne doit pas voir un bloc vide — voir `hasAnyQuickAction` ci-dessous.
+   */
+  hasAnyQuickAction = computed(
+    () =>
+      this.canCreateInvoice() ||
+      this.canReadQuotes() ||
+      this.canCreateDeliveryNote() ||
+      this.canCreateReturnNote() ||
+      this.canReadClients() ||
+      this.canReadPayments() ||
+      this.canReadReports()
+  );
+  /** Carte latérale « Livraisons en attente » : les bons de livraison sont rattachés au module Ventes. */
+  showPendingDeliveriesSideCard = computed(() => this.authService.hasModule(AppModule.Sales));
+  /** Carte latérale « Devis en cours » : n'a de sens que si le module Ventes est actif. */
+  showActiveQuotesSideCard = computed(() => this.authService.hasModule(AppModule.Sales));
   showStockUrgent = computed(
     () => this.authService.hasModule(AppModule.Stock) && this.authService.hasPermission(PERMISSIONS.stock.read)
   );

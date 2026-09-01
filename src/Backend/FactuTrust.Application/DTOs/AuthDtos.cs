@@ -79,6 +79,16 @@ public sealed record AuthResponseDto
     public DateTime ExpiresAt { get; init; }
     public UserDto User { get; init; } = null!;
     public bool Requires2Fa { get; init; }
+
+    /// <summary>
+    /// Non-blocking, French, human-readable warnings about the request (plan §1.2 — no silent
+    /// rejections). Optional/additive: absent or empty for every existing flow that has nothing to
+    /// report (e.g. login), so this never breaks an existing consumer of the contract. Registration
+    /// populates it when part of the client's request was dropped or ignored (invalid module ids
+    /// past the pre-check, modules denied by the plan ceiling, or a sector/module selection ignored
+    /// because a kill-switch was off).
+    /// </summary>
+    public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
@@ -169,6 +179,23 @@ public sealed record ResetPasswordDto
     public string Token { get; init; } = null!;
     public string NewPassword { get; init; } = null!;
     public string ConfirmNewPassword { get; init; } = null!;
+}
+
+/// <summary>
+/// DTO for email verification confirmation (plan §1.6).
+/// </summary>
+public sealed record VerifyEmailDto
+{
+    public string Email { get; init; } = null!;
+    public string Token { get; init; } = null!;
+}
+
+/// <summary>
+/// DTO to request a new email verification link (plan §1.6).
+/// </summary>
+public sealed record ResendVerificationDto
+{
+    public string Email { get; init; } = null!;
 }
 
 /// <summary>

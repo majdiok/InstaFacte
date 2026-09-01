@@ -28,8 +28,11 @@ public interface IRegistrationSectorService
     /// <c>SaveChangesAsync</c> — the rows must ride the caller's existing transaction/SaveChanges.
     /// <paramref name="requestedModules"/> null/empty ⇒ no-op (writes nothing ⇒ legacy all-modules
     /// behavior, since <c>UserModuleGrant</c> absence means "all modules enabled").
+    /// Returns a <see cref="ModuleSelectionOutcome"/> (plan §1.1/§1.2 — no silent rejections) so the
+    /// caller can surface non-blocking warnings for modules denied by the plan, dropped ids, or a
+    /// selection ignored outright because the kill-switch was off.
     /// </summary>
-    Task ApplyModuleSelectionAsync(
+    Task<ModuleSelectionOutcome> ApplyModuleSelectionAsync(
         Guid userId,
         SectorProfile? profile,
         IReadOnlyList<int>? requestedModules,

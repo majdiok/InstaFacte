@@ -117,6 +117,9 @@ public static class DependencyInjection
             services.AddScoped<TenantDatabaseProvisioner>();
             services.AddScoped<ITenantService, TenantService>();
             services.AddScoped<ITenantAuthTokenService, TenantAuthTokenService>();
+            // Nettoyage des artefacts orphelins de la mini-saga d'inscription (bases sans Tenant,
+            // Tenant Pending/Failed sans base) — voir OrphanTenantDatabaseCleanupJob.
+            services.AddScoped<Services.Background.OrphanTenantDatabaseCleanupJob>();
             // Révocation immédiate des tokens (plan §6 Phase 2.5) — vérifié par le OnTokenValidated
             // de Program.cs sur chaque requête authentifiée, quel que soit l'émetteur du token.
             services.AddScoped<ISecurityStampTokenValidator, SecurityStampTokenValidator>();
@@ -518,6 +521,7 @@ public static class DependencyInjection
         services.Configure<AccountingAttachmentsOptions>(configuration.GetSection(AccountingAttachmentsOptions.SectionName));
         services.Configure<AccountingFirmsOptions>(configuration.GetSection(AccountingFirmsOptions.SectionName));
         services.Configure<RegistrationSectorOptions>(configuration.GetSection(RegistrationSectorOptions.SectionName));
+        services.Configure<EmailVerificationOptions>(configuration.GetSection(EmailVerificationOptions.SectionName));
         services.Configure<PayrollOptions>(configuration.GetSection(PayrollOptions.SectionName));
         services.Configure<TenantProvisioningOptions>(configuration.GetSection(TenantProvisioningOptions.SectionName));
         services.Configure<FirmGovernanceOptions>(configuration.GetSection(FirmGovernanceOptions.SectionName));

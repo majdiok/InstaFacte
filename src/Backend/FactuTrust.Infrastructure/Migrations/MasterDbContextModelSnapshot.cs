@@ -4484,6 +4484,11 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.Property<Guid?>("ManagedByFirmTenantId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("ProvisioningStatus")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<int>("TaxRegime")
                         .HasColumnType("int");
 
@@ -5209,6 +5214,11 @@ namespace FactuTrust.Infrastructure.Migrations
                                 .HasColumnName("NIF");
 
                             b1.HasKey("TenantId");
+
+                            b1.HasIndex("Value")
+                                .IsUnique()
+                                .HasDatabaseName("IX_Tenants_NIF")
+                                .HasFilter("[NIF] IS NOT NULL AND [IsActive] = 1");
 
                             b1.ToTable("Tenants");
 

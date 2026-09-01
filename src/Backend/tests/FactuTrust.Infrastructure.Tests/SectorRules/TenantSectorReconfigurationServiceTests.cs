@@ -125,7 +125,7 @@ public sealed class TenantSectorReconfigurationServiceTests
                 DefaultWarehouseName = null
             });
 
-        public Task ApplyModuleSelectionAsync(Guid userId, SectorProfile? profile, IReadOnlyList<int>? requestedModules, SubscriptionPlan plan, CancellationToken cancellationToken) =>
+        public Task<ModuleSelectionOutcome> ApplyModuleSelectionAsync(Guid userId, SectorProfile? profile, IReadOnlyList<int>? requestedModules, SubscriptionPlan plan, CancellationToken cancellationToken) =>
             throw new NotImplementedException();
     }
 

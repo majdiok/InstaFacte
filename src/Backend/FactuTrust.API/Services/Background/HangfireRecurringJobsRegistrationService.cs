@@ -122,6 +122,15 @@ internal sealed class HangfireRecurringJobsRegistrationService : BackgroundServi
                 job => job.ExecuteAsync(CancellationToken.None),
                 Cron.Daily(9),
                 UtcOptions)),
+        new(
+            // 10 h UTC : nettoyage des artefacts orphelins de la mini-saga d'inscription (bases
+            // tenant sans ligne Tenant, tenants Pending/Failed non provisionnes depuis plus de 24h).
+            "orphan-tenant-database-cleanup",
+            () => RecurringJob.AddOrUpdate<FactuTrust.Infrastructure.Services.Background.OrphanTenantDatabaseCleanupJob>(
+                "orphan-tenant-database-cleanup",
+                job => job.ExecuteAsync(CancellationToken.None),
+                Cron.Daily(10),
+                UtcOptions)),
     };
 
     private readonly ILogger<HangfireRecurringJobsRegistrationService> _logger;

@@ -56,6 +56,12 @@ export interface AuthResponse {
   expiresAt: string;
   user: User;
   requires2Fa: boolean;
+  /**
+   * Non-blocking warnings surfaced by the backend (e.g. a module requested by
+   * the wizard could not be enabled). Absent/empty ⇒ nothing to show. Never
+   * used as a security signal — purely informational for the UI banner.
+   */
+  warnings?: string[];
 }
 
 export interface ApiResponse<T> {
@@ -447,6 +453,17 @@ export class AuthService {
         }
       })
     );
+  }
+
+  /**
+   * Re-fetch the current user's profile (permissions + enabled modules) and update
+   * the signal in place, without rotating the JWT. Intention-revealing alias of
+   * {@link me} for callers that change the tenant's module configuration
+   * (registration follow-up, Paramètres > Modules in Phase 2) and need the sidebar
+   * (`AppNavService.navItems`) to recompute immediately — no logout/login required.
+   */
+  refreshUserProfile(): Observable<ApiResponse<User>> {
+    return this.me();
   }
 
   /**

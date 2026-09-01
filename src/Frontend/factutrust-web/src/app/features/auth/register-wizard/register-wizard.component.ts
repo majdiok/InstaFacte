@@ -89,6 +89,13 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   loading = signal(false);
   loadingMessage = signal('Création de votre espace...');
   error = signal<string | null>(null);
+  /**
+   * Avertissements non bloquants renvoyés par le backend après une inscription
+   * réussie (ex. module demandé refusé par le plan — tâche 1.2 du plan). Tant
+   * qu'ils sont présents, la redirection automatique vers le tableau de bord est
+   * suspendue afin que l'utilisateur les voie avant de continuer.
+   */
+  registrationWarnings = signal<string[]>([]);
   currentStep = signal(0);
   /** Once the user manually toggles a module, recommendation auto-recompute stops overwriting their choices. */
   modulesTouched = signal(false);
@@ -443,6 +450,15 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       next: (response) => {
         if (response.success) {
           console.log('[RegisterWizardComponent] Registration successful');
+          const warnings = response.data?.warnings?.filter(w => !!w?.trim()) ?? [];
+          if (warnings.length > 0) {
+            // Avertissement non bloquant (ex. module refusé par le plan) : on
+            // laisse l'utilisateur le lire avant de le rediriger vers le
+            // tableau de bord, plutôt que de le faire disparaître aussitôt.
+            this.registrationWarnings.set(warnings);
+            this.stopLoading();
+            return;
+          }
           this.warehouseContext.navigateAfterSuccessfulAuth('/dashboard');
         } else {
           const errorMessage = response.errors?.length > 0
@@ -502,5 +518,11 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   private stopLoading(): void {
     this.clearLoadingMessageTimer();
     this.loading.set(false);
+  }
+
+  /** L'utilisateur a pris connaissance des avertissements : on continue vers le tableau de bord. */
+  continueAfterWarnings(): void {
+    this.registrationWarnings.set([]);
+    this.warehouseContext.navigateAfterSuccessfulAuth('/dashboard');
   }
 }
