@@ -19,6 +19,10 @@ public sealed class SectorRuleSeederTests
         SectorConfigurationCatalog.Segments.Sum(s => s.BaseRecommendedModules.Count)
         + SectorConfigurationCatalog.Domains.Sum(d => d.OverlayModules.Count);
 
+    /// <summary>Total segment↔domain matrix pairs (plan §3.1) — sum of each segment's AllowedDomainCodes count.</summary>
+    private static int ExpectedSegmentDomainLinkCount() =>
+        SectorConfigurationCatalog.Segments.Sum(s => s.AllowedDomainCodes.Count);
+
     [Fact]
     public async Task Seed_on_empty_db_inserts_full_catalog()
     {
@@ -28,7 +32,7 @@ public sealed class SectorRuleSeederTests
 
         Assert.Equal(6, await db.SectorSegments.CountAsync());
         Assert.Equal(10, await db.SectorDomains.CountAsync());
-        Assert.Equal(60, await db.SectorSegmentDomains.CountAsync());
+        Assert.Equal(ExpectedSegmentDomainLinkCount(), await db.SectorSegmentDomains.CountAsync());
         Assert.Equal(ExpectedModuleRuleCount(), await db.SectorModuleRules.CountAsync());
         // 5 of the 6 segments have a DefaultWarehouseName + 1 global plan-comptable-variant row.
         Assert.Equal(7, await db.SectorDefaultSettings.CountAsync());
@@ -38,6 +42,85 @@ public sealed class SectorRuleSeederTests
         Assert.False(result.Forced);
         Assert.Equal(0, result.Updated);
         Assert.Equal(0, result.SkippedExisting);
+    }
+
+    /// <summary>Seed_ne_cree_que_les_liens_de_la_matrice (plan §3.5): only matrix pairs are inserted, never every combination.</summary>
+    [Fact]
+    public async Task Seed_ne_cree_que_les_liens_de_la_matrice()
+    {
+        await using var db = NewDb();
+        await SectorRuleSeeder.SeedAsync(db, force: false, actor: "test", CancellationToken.None);
+
+        var segmentsByCode = await db.SectorSegments.ToDictionaryAsync(s => s.Code);
+        var domainsByCode = await db.SectorDomains.ToDictionaryAsync(d => d.Code);
+        var links = await db.SectorSegmentDomains.Where(l => l.IsActive).ToListAsync();
+        var linkedPairs = links
+            .Select(l => (
+                Segment: segmentsByCode.Values.Single(s => s.Id == l.SegmentId).Code,
+                Domain: domainsByCode.Values.Single(d => d.Id == l.DomainId).Code))
+            .ToHashSet();
+
+        foreach (var segmentDef in SectorConfigurationCatalog.Segments)
+        {
+            foreach (var domainDef in SectorConfigurationCatalog.Domains)
+            {
+                var isMatrixPair = segmentDef.AllowedDomainCodes.Contains(domainDef.Code, StringComparer.Ordinal);
+                Assert.Equal(isMatrixPair, linkedPairs.Contains((segmentDef.Code, domainDef.Code)));
+            }
+        }
+
+        Assert.Equal(ExpectedSegmentDomainLinkCount(), links.Count);
+    }
+
+    /// <summary>Force_desactive_les_liens_retires_du_catalogue_sans_supprimer (plan §3.5).</summary>
+    [Fact]
+    public async Task Force_desactive_les_liens_retires_du_catalogue_sans_supprimer()
+    {
+        await using var db = NewDb();
+        await SectorRuleSeeder.SeedAsync(db, force: false, actor: "test", CancellationToken.None);
+
+        // Simulate a legacy deployment that still has the old "every domain for every segment"
+        // 60-link seed: manually add every pair the matrix does NOT already contain.
+        var segmentsByCode = await db.SectorSegments.ToDictionaryAsync(s => s.Code);
+        var domainsByCode = await db.SectorDomains.ToDictionaryAsync(d => d.Code);
+        var extraLinksAdded = 0;
+        foreach (var segmentDef in SectorConfigurationCatalog.Segments)
+        {
+            foreach (var domainDef in SectorConfigurationCatalog.Domains)
+            {
+                if (segmentDef.AllowedDomainCodes.Contains(domainDef.Code, StringComparer.Ordinal))
+                    continue;
+
+                var extra = SectorSegmentDomain.Create(segmentsByCode[segmentDef.Code].Id, domainsByCode[domainDef.Code].Id, domainDef.SortOrder);
+                db.SectorSegmentDomains.Add(extra);
+                extraLinksAdded++;
+            }
+        }
+        await db.SaveChangesAsync();
+        Assert.Equal(60, ExpectedSegmentDomainLinkCount() + extraLinksAdded); // sanity: full 6×10 grid.
+
+        await SectorRuleSeeder.SeedAsync(db, force: true, actor: "admin", CancellationToken.None);
+
+        var allLinks = await db.SectorSegmentDomains.ToListAsync();
+        Assert.Equal(60, allLinks.Count); // never deleted.
+
+        var activeLinks = allLinks.Where(l => l.IsActive).ToList();
+        Assert.Equal(ExpectedSegmentDomainLinkCount(), activeLinks.Count);
+
+        var activePairs = activeLinks
+            .Select(l => (
+                Segment: segmentsByCode.Values.Single(s => s.Id == l.SegmentId).Code,
+                Domain: domainsByCode.Values.Single(d => d.Id == l.DomainId).Code))
+            .ToHashSet();
+
+        foreach (var segmentDef in SectorConfigurationCatalog.Segments)
+        {
+            foreach (var domainDef in SectorConfigurationCatalog.Domains)
+            {
+                var isMatrixPair = segmentDef.AllowedDomainCodes.Contains(domainDef.Code, StringComparer.Ordinal);
+                Assert.Equal(isMatrixPair, activePairs.Contains((segmentDef.Code, domainDef.Code)));
+            }
+        }
     }
 
     [Fact]

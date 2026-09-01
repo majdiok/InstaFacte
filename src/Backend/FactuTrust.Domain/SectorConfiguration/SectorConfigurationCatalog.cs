@@ -18,6 +18,16 @@ public sealed record SegmentDefinition
 
     /// <summary>Warehouse name used when the registration payload leaves <c>warehouseName</c> blank.</summary>
     public string? DefaultWarehouseName { get; init; }
+
+    /// <summary>
+    /// Business domain codes offered/accepted for this segment (plan §3.1 matrix, Phase 1 dynamic
+    /// configuration). <c>autre</c> is always included as the universal safety-net fallback.
+    /// Consumed by <see cref="StaticSectorCatalogProvider"/> (projected into
+    /// <c>SegmentSnapshot.DomainCodes</c>) and enforced by <c>RegistrationSectorService</c> — this
+    /// is the single source of truth for the segment↔domain link, mirrored by the frontend fallback
+    /// matrix in <c>registration-catalog.ts</c> (<c>SEGMENT_ALLOWED_DOMAINS</c>).
+    /// </summary>
+    public required IReadOnlyList<string> AllowedDomainCodes { get; init; }
 }
 
 /// <summary>
@@ -67,7 +77,20 @@ public static class SectorConfigurationCatalog
             IconKey = "briefcase",
             SortOrder = 0,
             BaseRecommendedModules = new[] { AppModule.Purchases, AppModule.Stock, AppModule.Accounting, AppModule.CRM, AppModule.Fiscal },
-            DefaultWarehouseName = "Entrepôt Principal"
+            DefaultWarehouseName = "Entrepôt Principal",
+            AllowedDomainCodes = new[]
+            {
+                BusinessDomains.TechnologieInformatique,
+                BusinessDomains.AlimentationAgroalimentaire,
+                BusinessDomains.SanteParamedical,
+                BusinessDomains.TextileHabillement,
+                BusinessDomains.TransportLogistique,
+                BusinessDomains.Immobilier,
+                BusinessDomains.EnergieEnvironnement,
+                BusinessDomains.CommunicationMarketing,
+                BusinessDomains.Artisanat,
+                BusinessDomains.Autre
+            }
         },
         new SegmentDefinition
         {
@@ -77,7 +100,16 @@ public static class SectorConfigurationCatalog
             IconKey = "shopping-cart",
             SortOrder = 1,
             BaseRecommendedModules = new[] { AppModule.Purchases, AppModule.Stock, AppModule.Fiscal },
-            DefaultWarehouseName = "Magasin principal"
+            DefaultWarehouseName = "Magasin principal",
+            AllowedDomainCodes = new[]
+            {
+                BusinessDomains.AlimentationAgroalimentaire,
+                BusinessDomains.TextileHabillement,
+                BusinessDomains.TechnologieInformatique,
+                BusinessDomains.SanteParamedical,
+                BusinessDomains.Artisanat,
+                BusinessDomains.Autre
+            }
         },
         new SegmentDefinition
         {
@@ -87,7 +119,16 @@ public static class SectorConfigurationCatalog
             IconKey = "handshake",
             SortOrder = 2,
             BaseRecommendedModules = new[] { AppModule.CRM, AppModule.Projects, AppModule.RecurringContracts, AppModule.Fiscal },
-            DefaultWarehouseName = "Entrepôt Principal"
+            DefaultWarehouseName = "Entrepôt Principal",
+            AllowedDomainCodes = new[]
+            {
+                BusinessDomains.TechnologieInformatique,
+                BusinessDomains.CommunicationMarketing,
+                BusinessDomains.SanteParamedical,
+                BusinessDomains.TransportLogistique,
+                BusinessDomains.Immobilier,
+                BusinessDomains.Autre
+            }
         },
         new SegmentDefinition
         {
@@ -97,7 +138,14 @@ public static class SectorConfigurationCatalog
             IconKey = "hard-hat",
             SortOrder = 3,
             BaseRecommendedModules = new[] { AppModule.Purchases, AppModule.Stock, AppModule.Projects, AppModule.Fiscal },
-            DefaultWarehouseName = "Dépôt chantier"
+            DefaultWarehouseName = "Dépôt chantier",
+            AllowedDomainCodes = new[]
+            {
+                BusinessDomains.Immobilier,
+                BusinessDomains.EnergieEnvironnement,
+                BusinessDomains.Artisanat,
+                BusinessDomains.Autre
+            }
         },
         new SegmentDefinition
         {
@@ -107,7 +155,15 @@ public static class SectorConfigurationCatalog
             IconKey = "heart-handshake",
             SortOrder = 4,
             BaseRecommendedModules = new[] { AppModule.Accounting, AppModule.Fiscal },
-            DefaultWarehouseName = "Entrepôt Principal"
+            DefaultWarehouseName = "Entrepôt Principal",
+            AllowedDomainCodes = new[]
+            {
+                BusinessDomains.SanteParamedical,
+                BusinessDomains.EnergieEnvironnement,
+                BusinessDomains.CommunicationMarketing,
+                BusinessDomains.Artisanat,
+                BusinessDomains.Autre
+            }
         },
         new SegmentDefinition
         {
@@ -117,7 +173,15 @@ public static class SectorConfigurationCatalog
             IconKey = "graduation-cap",
             SortOrder = 5,
             BaseRecommendedModules = new[] { AppModule.RecurringContracts, AppModule.Accounting, AppModule.Fiscal },
-            DefaultWarehouseName = "Entrepôt Principal"
+            DefaultWarehouseName = "Entrepôt Principal",
+            AllowedDomainCodes = new[]
+            {
+                BusinessDomains.TechnologieInformatique,
+                BusinessDomains.SanteParamedical,
+                BusinessDomains.Artisanat,
+                BusinessDomains.CommunicationMarketing,
+                BusinessDomains.Autre
+            }
         }
     };
 

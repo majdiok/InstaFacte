@@ -33,9 +33,9 @@ describe('StepCompanyTypeComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should expose the full catalog of segments and domains', () => {
+  it('should expose the full catalog of segments, and no domains before a segment is chosen', () => {
     expect(component.segments.length).toBe(SEGMENT_OPTIONS.length);
-    expect(component.domains.length).toBe(DOMAIN_OPTIONS.length);
+    expect(component.domains.length).toBe(0);
   });
 
   describe('segment selection', () => {
@@ -89,7 +89,10 @@ describe('StepCompanyTypeComponent', () => {
       expect(component.isDomainSelected('technologie-informatique')).toBeTrue();
     });
 
-    it('should render one radio input per domain in the DOM', () => {
+    it('should render one radio input per domain in the DOM, matrix-filtered by the selected segment', () => {
+      component.selectSegment('entreprise');
+      fixture.detectChanges();
+
       const inputs = fixture.nativeElement.querySelectorAll('.dom-item input[type="radio"]');
       expect(inputs.length).toBe(DOMAIN_OPTIONS.length);
     });
@@ -185,6 +188,48 @@ describe('StepCompanyTypeComponent', () => {
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('.domain-notice')).not.toBeNull();
+    });
+  });
+
+  describe('fallback catalog filtering (plan §3.3/§3.5)', () => {
+    it('filters the domain list to the segment matrix even without the remote catalog', () => {
+      component.selectSegment('commerce');
+      fixture.detectChanges();
+
+      expect(component.domains.map(d => d.code)).toEqual([
+        'alimentation-agroalimentaire',
+        'textile-habillement',
+        'technologie-informatique',
+        'sante-paramedical',
+        'artisanat',
+        'autre'
+      ]);
+      const items = fixture.nativeElement.querySelectorAll('.dom-item');
+      expect(items.length).toBe(6);
+    });
+
+    it('shows the chip with the correct count for a genuinely restricted segment', () => {
+      component.selectSegment('btp-construction');
+      fixture.detectChanges();
+
+      expect(component.filteredDomainsChipLabel).toBe(
+        '4 domaines adaptés à votre segment : BTP & Construction'
+      );
+      expect(fixture.nativeElement.querySelector('.adapt-chip')?.textContent).toContain(
+        '4 domaines adaptés à votre segment : BTP & Construction'
+      );
+    });
+
+    it('hides the chip for "entreprise" since every domain is available (no false "adapted" claim)', () => {
+      component.selectSegment('entreprise');
+      fixture.detectChanges();
+
+      expect(component.filteredDomainsChipLabel).toBeNull();
+      expect(fixture.nativeElement.querySelector('.adapt-chip')).toBeNull();
+    });
+
+    it('hides the chip when no segment is selected', () => {
+      expect(component.filteredDomainsChipLabel).toBeNull();
     });
   });
 });

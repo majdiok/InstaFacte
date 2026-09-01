@@ -113,34 +113,57 @@ public static class SectorRuleSeeder
         // generated client-side by the Entity ctor, so it's already valid at this point) — no
         // intermediate SaveChangesAsync is needed before wiring the links/rules below.
 
-        // ---------- Segment ↔ Domain links (exact Phase 1 semantics: every domain available to
-        // every segment; per-segment SortOrder mirrors the domain's own SortOrder) ----------
+        // ---------- Segment ↔ Domain links (plan §3.1/§3.2 matrix: only the segment↔domain pairs
+        // declared in SegmentDefinition.AllowedDomainCodes; per-link SortOrder mirrors the domain's
+        // own SortOrder) ----------
         var existingLinks = (await context.SectorSegmentDomains.ToListAsync(cancellationToken))
             .ToDictionary(l => (l.SegmentId, l.DomainId));
 
         foreach (var segmentDef in SectorConfigurationCatalog.Segments)
         {
             var segment = segmentsByCode[segmentDef.Code];
+            var allowedDomainCodes = new HashSet<string>(segmentDef.AllowedDomainCodes, StringComparer.Ordinal);
+
             foreach (var domainDef in SectorConfigurationCatalog.Domains)
             {
                 var domain = domainsByCode[domainDef.Code];
                 var key = (segment.Id, domain.Id);
+                var isMatrixPair = allowedDomainCodes.Contains(domainDef.Code);
 
                 if (existingLinks.TryGetValue(key, out var existingLink))
                 {
-                    if (force)
+                    if (isMatrixPair)
                     {
-                        existingLink.UpdateSortOrder(domainDef.SortOrder);
-                        existingLink.Reactivate();
-                        existingLink.SetAuditInfo(effectiveActor, isUpdate: true);
-                        updated++;
+                        if (force)
+                        {
+                            existingLink.UpdateSortOrder(domainDef.SortOrder);
+                            existingLink.Reactivate();
+                            existingLink.SetAuditInfo(effectiveActor, isUpdate: true);
+                            updated++;
+                        }
+                        else
+                        {
+                            skippedExisting++;
+                        }
                     }
                     else
                     {
-                        skippedExisting++;
+                        // Catalog-known segment/domain pair that is no longer in the matrix. Never
+                        // DELETE — force=true deactivates it (restore-factory-defaults semantics);
+                        // without force the existing row (whatever an admin left it as) is untouched.
+                        if (force && existingLink.IsActive)
+                        {
+                            existingLink.Deactivate();
+                            existingLink.SetAuditInfo(effectiveActor, isUpdate: true);
+                            updated++;
+                        }
+                        else
+                        {
+                            skippedExisting++;
+                        }
                     }
                 }
-                else
+                else if (isMatrixPair)
                 {
                     var created = SectorSegmentDomain.Create(segment.Id, domain.Id, domainDef.SortOrder);
                     created.SetAuditInfo(effectiveActor);
@@ -148,6 +171,8 @@ public static class SectorRuleSeeder
                     existingLinks[key] = created;
                     inserted++;
                 }
+                // else: pair absent from both the DB and the matrix — nothing to do (admin-created
+                // links on non-catalog segments/domains are never enumerated here in the first place).
             }
         }
 

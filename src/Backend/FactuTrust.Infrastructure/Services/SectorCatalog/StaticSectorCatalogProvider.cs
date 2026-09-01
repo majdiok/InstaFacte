@@ -17,12 +17,9 @@ public sealed class StaticSectorCatalogProvider : ISectorCatalogProvider
 
     private static SectorRuleSnapshot BuildSnapshot()
     {
-        // Phase 1 semantics: every domain is available to every segment — no restriction.
-        var allDomainCodes = SectorConfigurationCatalog.Domains
-            .OrderBy(d => d.SortOrder)
-            .Select(d => d.Code)
-            .ToList();
-
+        // Phase 1 dynamic configuration (plan §3.1/§3.2): each segment only lists the domains from
+        // its catalog matrix (SegmentDefinition.AllowedDomainCodes) — no longer "every domain for
+        // every segment".
         var segments = SectorConfigurationCatalog.Segments
             .OrderBy(s => s.SortOrder)
             .Select(s => new SegmentSnapshot
@@ -34,7 +31,7 @@ public sealed class StaticSectorCatalogProvider : ISectorCatalogProvider
                 SortOrder = s.SortOrder,
                 DefaultWarehouseName = s.DefaultWarehouseName,
                 BaseRecommendedModules = s.BaseRecommendedModules,
-                DomainCodes = allDomainCodes
+                DomainCodes = s.AllowedDomainCodes
             })
             .ToList();
 

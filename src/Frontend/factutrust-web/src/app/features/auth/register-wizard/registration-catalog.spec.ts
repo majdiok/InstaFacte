@@ -290,10 +290,45 @@ describe('registration-catalog', () => {
       expect(service.optionalModules('commerce', 'autre')).toEqual(optionalModulesFor('commerce', 'autre'));
     });
 
-    it('domainsForSegment returns the full static list unfiltered, regardless of segment, before load()', () => {
-      expect(service.domainsForSegment('commerce').length).toBe(DOMAIN_OPTIONS.length);
-      expect(service.domainsForSegment(null).length).toBe(DOMAIN_OPTIONS.length);
-      expect(service.domainsForSegment('bogus-segment').length).toBe(DOMAIN_OPTIONS.length);
+    it('domainsForSegment filters by the static SEGMENT_ALLOWED_DOMAINS matrix before load() (plan §3.1/§3.3)', () => {
+      expect(service.domainsForSegment('commerce').map(d => d.code)).toEqual([
+        'alimentation-agroalimentaire',
+        'textile-habillement',
+        'technologie-informatique',
+        'sante-paramedical',
+        'artisanat',
+        'autre'
+      ]);
+      expect(service.domainsForSegment(null).length).toBe(0);
+      expect(service.domainsForSegment('bogus-segment').length).toBe(0);
+    });
+
+    it('domainsForSegment pins the exact matrix for every known segment before load() (plan §3.1)', () => {
+      const expected: Record<string, string[]> = {
+        'entreprise': [
+          'technologie-informatique', 'alimentation-agroalimentaire', 'sante-paramedical',
+          'textile-habillement', 'transport-logistique', 'immobilier', 'energie-environnement',
+          'communication-marketing', 'artisanat', 'autre'
+        ],
+        'commerce': [
+          'alimentation-agroalimentaire', 'textile-habillement', 'technologie-informatique',
+          'sante-paramedical', 'artisanat', 'autre'
+        ],
+        'services': [
+          'technologie-informatique', 'communication-marketing', 'sante-paramedical',
+          'transport-logistique', 'immobilier', 'autre'
+        ],
+        'btp-construction': ['immobilier', 'energie-environnement', 'artisanat', 'autre'],
+        'association': [
+          'sante-paramedical', 'energie-environnement', 'communication-marketing', 'artisanat', 'autre'
+        ],
+        'etablissement-educatif': [
+          'technologie-informatique', 'sante-paramedical', 'artisanat', 'communication-marketing', 'autre'
+        ]
+      };
+      for (const [segment, codes] of Object.entries(expected)) {
+        expect(service.domainsForSegment(segment).map(d => d.code)).toEqual(codes);
+      }
     });
 
     function fakeCatalog(): SectorCatalogDto {
@@ -355,7 +390,14 @@ describe('registration-catalog', () => {
       httpMock.expectOne(CATALOG_URL).flush('not found', { status: 404, statusText: 'Not Found' });
 
       expect(service.loadState()).toBe('fallback');
-      expect(service.domainsForSegment('commerce').length).toBe(DOMAIN_OPTIONS.length);
+      expect(service.domainsForSegment('commerce').map(d => d.code)).toEqual([
+        'alimentation-agroalimentaire',
+        'textile-habillement',
+        'technologie-informatique',
+        'sante-paramedical',
+        'artisanat',
+        'autre'
+      ]);
       expect(service.segments).toEqual(SEGMENT_OPTIONS);
     }));
 

@@ -72,17 +72,24 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
                 Error.Validation("BusinessDomain", "Domaine d'activité invalide."));
         }
 
-        // Phase 2 (plan §WP-B4, D4): only enforced when the active snapshot comes from the DB
-        // AND the segment has an explicit, non-empty domain link list — an empty list (or the
-        // static snapshot, which always lists every domain) means "no restriction", preserving
-        // Phase 1 behavior and protecting against an admin accidentally bricking registration by
-        // pruning every link.
-        if (normalizedDomain is not null
-            && snapshot.Source == SectorRuleSource.Db
+        // Phase 1 dynamic configuration (plan §3.2 D4): enforced whenever the segment has an
+        // explicit, non-empty domain link list — regardless of the snapshot source (static catalog
+        // or DB rules). An empty list means "no restriction" (defense against an admin
+        // accidentally pruning every link and bricking registration), and the kill-switch
+        // `EnforceSegmentDomainLinks=false` restores the fully permissive Phase 0 behavior
+        // instantly without a redeploy.
+        if (_options.EnforceSegmentDomainLinks
+            && normalizedDomain is not null
             && segmentSnapshot is not null
             && segmentSnapshot.DomainCodes.Count > 0
             && !segmentSnapshot.DomainCodes.Contains(normalizedDomain, StringComparer.Ordinal))
         {
+            _logger.LogWarning(
+                "RegistrationSectorService.ResolveProfile: rejected incoherent segment/domain couple (segment={Segment}, domain={Domain}, snapshotSource={Source}).",
+                normalizedSegment,
+                normalizedDomain,
+                snapshot.Source);
+
             return Result.Failure<SectorProfile?>(
                 Error.Validation("BusinessDomain", "Domaine d'activité non disponible pour ce type de société."));
         }

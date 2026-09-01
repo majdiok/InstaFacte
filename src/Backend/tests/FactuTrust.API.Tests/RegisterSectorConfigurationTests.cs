@@ -143,7 +143,14 @@ public sealed class PublicSectorCatalogControllerTests
         var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<SectorCatalogDto>>(result.Value);
 
         Assert.NotNull(body.Data);
-        Assert.All(body.Data!.Segments, s => Assert.Equal(10, s.DomainCodes.Count));
+        // Phase 1 dynamic configuration (plan §3.1/§3.2): DomainCodes now mirrors each segment's
+        // catalog matrix (SegmentDefinition.AllowedDomainCodes), not "10 for every segment".
+        Assert.All(body.Data!.Segments, s =>
+        {
+            var expected = SectorConfigurationCatalog.Segments.Single(seg => seg.Code == s.Code).AllowedDomainCodes;
+            Assert.Equal(expected.Count, s.DomainCodes.Count);
+            Assert.Contains(BusinessDomains.Autre, s.DomainCodes);
+        });
         Assert.Empty(body.Data.ModuleDependencies);
     }
 
@@ -445,6 +452,33 @@ public sealed class RegisterSectorConfigurationSqlTests : IClassFixture<Channels
         Assert.NotNull(body);
         Assert.False(body!.Success);
         Assert.Equal("Type de société invalide.", body.Error);
+    }
+
+    /// <summary>
+    /// Register_retourne_400_pour_un_couple_segment_domaine_incoherent (plan §3.5): the segment↔domain
+    /// matrix link is enforced at registration for an incoherent couple (btp-construction never
+    /// lists alimentation-agroalimentaire) — proved end-to-end, not just at the service layer.
+    /// </summary>
+    [Fact]
+    public async Task Register_retourne_400_pour_un_couple_segment_domaine_incoherent()
+    {
+        if (!ShouldRun) return;
+
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var unique = Guid.NewGuid().ToString("N")[..12];
+        var dto = BuildDto(
+            unique,
+            segment: CompanySegments.BtpConstruction,
+            domain: BusinessDomains.AlimentationAgroalimentaire);
+
+        var response = await client.PostAsJsonAsync("/api/auth/register", dto, TenantUsersTestSupport.ApiJsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<FactuTrust.API.Controllers.ApiResponse<AuthResponseDto>>(TenantUsersTestSupport.ApiJsonOptions);
+        Assert.NotNull(body);
+        Assert.False(body!.Success);
+        Assert.Equal("Domaine d'activité non disponible pour ce type de société.", body.Error);
     }
 
     [Fact]

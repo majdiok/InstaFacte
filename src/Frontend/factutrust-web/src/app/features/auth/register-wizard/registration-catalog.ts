@@ -220,6 +220,64 @@ const SEGMENT_DEFAULT_WAREHOUSE_NAME: Record<CompanySegmentCode, string> = {
   'etablissement-educatif': 'Entrepôt Principal'
 };
 
+/**
+ * Fallback segment→domain matrix (plan §3.1) — exact copy of the backend
+ * `SectorConfigurationCatalog` matrix (`SegmentDefinition.AllowedDomainCodes`). Used by
+ * `domainsForSegment()`'s fallback path so the "N domaines adaptés à votre segment" chip is
+ * honest even when the remote catalog is unavailable. `autre` is always included as the
+ * universal safety-net fallback.
+ */
+export const SEGMENT_ALLOWED_DOMAINS: Record<CompanySegmentCode, readonly BusinessDomainCode[]> = {
+  'entreprise': [
+    'technologie-informatique',
+    'alimentation-agroalimentaire',
+    'sante-paramedical',
+    'textile-habillement',
+    'transport-logistique',
+    'immobilier',
+    'energie-environnement',
+    'communication-marketing',
+    'artisanat',
+    'autre'
+  ],
+  'commerce': [
+    'alimentation-agroalimentaire',
+    'textile-habillement',
+    'technologie-informatique',
+    'sante-paramedical',
+    'artisanat',
+    'autre'
+  ],
+  'services': [
+    'technologie-informatique',
+    'communication-marketing',
+    'sante-paramedical',
+    'transport-logistique',
+    'immobilier',
+    'autre'
+  ],
+  'btp-construction': [
+    'immobilier',
+    'energie-environnement',
+    'artisanat',
+    'autre'
+  ],
+  'association': [
+    'sante-paramedical',
+    'energie-environnement',
+    'communication-marketing',
+    'artisanat',
+    'autre'
+  ],
+  'etablissement-educatif': [
+    'technologie-informatique',
+    'sante-paramedical',
+    'artisanat',
+    'communication-marketing',
+    'autre'
+  ]
+};
+
 /** Fallback tone palette for segment/domain codes the static catalog doesn't know (backoffice-added). */
 const TONE_PALETTE: readonly string[] = [
   'tone-blue', 'tone-green', 'tone-orange', 'tone-yellow', 'tone-pink',
@@ -379,27 +437,32 @@ export class RegistrationCatalogService {
   }
 
   /**
-   * Segment-filtered, ordered domain list (plan WP-F2). Static/fallback mode always
-   * returns the full unfiltered list regardless of `segment` — this is the Phase 1
-   * regression contract. Remote mode: no/unknown segment ⇒ `[]`; known segment ⇒ its
-   * ordered `domainCodes`, with `autre` appended when absent (never invalidates a user
-   * who already picked "Autre domaine").
+   * Segment-filtered, ordered domain list (plan WP-F2, §3.3). No/unknown segment ⇒ `[]`
+   * in both remote and fallback modes. Remote mode: known segment ⇒ its ordered
+   * `domainCodes`. Fallback mode (remote catalog unavailable): known segment ⇒ the
+   * static `SEGMENT_ALLOWED_DOMAINS` matrix (plan §3.1), mirroring the backend
+   * `SectorConfigurationCatalog`. In both modes, `autre` is appended when absent (never
+   * invalidates a user who already picked "Autre domaine").
    */
   domainsForSegment(segment: string | null | undefined): readonly DomainOption[] {
     const remote = this.remoteCatalog();
-    if (!remote) {
-      return this.domains;
-    }
-    if (!segment) {
-      return [];
-    }
-    const seg = remote.segments.find(s => s.code === segment);
-    if (!seg) {
-      return [];
-    }
     const byCode = new Map(this.domains.map(d => [d.code, d] as const));
+
+    let codes: readonly string[] | undefined;
+    if (remote) {
+      if (!segment) return [];
+      const seg = remote.segments.find(s => s.code === segment);
+      codes = seg?.domainCodes;
+    } else {
+      if (!isKnownSegment(segment)) return [];
+      codes = SEGMENT_ALLOWED_DOMAINS[segment];
+    }
+    if (!codes) {
+      return [];
+    }
+
     const ordered: DomainOption[] = [];
-    for (const code of seg.domainCodes) {
+    for (const code of codes) {
       const opt = byCode.get(code);
       if (opt) ordered.push(opt);
     }

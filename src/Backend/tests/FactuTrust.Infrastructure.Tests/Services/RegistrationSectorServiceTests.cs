@@ -28,13 +28,14 @@ public sealed class RegistrationSectorServiceTests
     private static RegistrationSectorService NewService(
         MasterDbContext db,
         FactuTrust.Application.Common.Interfaces.IPlanResolver planResolver,
-        bool enabled = true)
+        bool enabled = true,
+        bool enforceSegmentDomainLinks = true)
     {
         return new RegistrationSectorService(
             db,
             planResolver,
             new FactuTrust.Infrastructure.Services.SectorCatalog.StaticSectorCatalogProvider(),
-            Options.Create(new RegistrationSectorOptions { Enabled = enabled }),
+            Options.Create(new RegistrationSectorOptions { Enabled = enabled, EnforceSegmentDomainLinks = enforceSegmentDomainLinks }),
             NullLogger<RegistrationSectorService>.Instance);
     }
 
@@ -128,6 +129,64 @@ public sealed class RegistrationSectorServiceTests
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Value);
         Assert.Equal(CompanySegments.Commerce, result.Value!.SegmentCode);
+    }
+
+    /// <summary>
+    /// ResolveProfile_rejette_un_domaine_non_lie_au_segment_en_statique (plan §3.5): the static
+    /// catalog's matrix now enforces the segment↔domain link even though the snapshot source is
+    /// <see cref="SectorRuleSource.Static"/> — btp-construction never lists
+    /// alimentation-agroalimentaire.
+    /// </summary>
+    [Fact]
+    public void ResolveProfile_rejette_un_domaine_non_lie_au_segment_en_statique()
+    {
+        var service = NewService(NewDb(), new AllowAllPlanResolver());
+        var result = service.ResolveProfile(CompanySegments.BtpConstruction, BusinessDomains.AlimentationAgroalimentaire);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.BusinessDomain", result.Error.Code);
+        Assert.Equal("Domaine d'activité non disponible pour ce type de société.", result.Error.Description);
+    }
+
+    /// <summary>
+    /// ResolveProfile_accepte_un_couple_valide_et_autre_pour_tout_segment (plan §3.5): every
+    /// segment's matrix accepts its own linked domains, and "autre" is always accepted for every
+    /// segment (universal safety-net fallback).
+    /// </summary>
+    [Theory]
+    [InlineData(CompanySegments.Entreprise)]
+    [InlineData(CompanySegments.Commerce)]
+    [InlineData(CompanySegments.Services)]
+    [InlineData(CompanySegments.BtpConstruction)]
+    [InlineData(CompanySegments.Association)]
+    [InlineData(CompanySegments.EtablissementEducatif)]
+    public void ResolveProfile_accepte_un_couple_valide_et_autre_pour_tout_segment(string segment)
+    {
+        var service = NewService(NewDb(), new AllowAllPlanResolver());
+
+        var withAutre = service.ResolveProfile(segment, BusinessDomains.Autre);
+        Assert.True(withAutre.IsSuccess);
+
+        foreach (var domain in SectorConfigurationCatalog.Segments.Single(s => s.Code == segment).AllowedDomainCodes)
+        {
+            var result = service.ResolveProfile(segment, domain);
+            Assert.True(result.IsSuccess, $"{segment} + {domain} devrait être accepté (lien de la matrice).");
+        }
+    }
+
+    /// <summary>
+    /// ResolveProfile_ne_rejette_pas_quand_EnforceSegmentDomainLinks_est_false (plan §3.5): the
+    /// kill-switch restores the fully permissive Phase 0 behavior instantly.
+    /// </summary>
+    [Fact]
+    public void ResolveProfile_ne_rejette_pas_quand_EnforceSegmentDomainLinks_est_false()
+    {
+        var service = NewService(NewDb(), new AllowAllPlanResolver(), enforceSegmentDomainLinks: false);
+        var result = service.ResolveProfile(CompanySegments.BtpConstruction, BusinessDomains.AlimentationAgroalimentaire);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(CompanySegments.BtpConstruction, result.Value!.SegmentCode);
+        Assert.Equal(BusinessDomains.AlimentationAgroalimentaire, result.Value.DomainCode);
     }
 
     // ---------- ApplyModuleSelectionAsync ----------

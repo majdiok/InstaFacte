@@ -18,6 +18,36 @@ public sealed class SectorConfigurationCatalogTests
     }
 
     /// <summary>
+    /// Chaque_segment_a_une_liste_de_domaines_valides_et_contient_autre (plan §3.5): every
+    /// segment's <c>AllowedDomainCodes</c> is non-empty, contains no duplicates, and always
+    /// includes the universal "autre" safety-net fallback.
+    /// </summary>
+    [Fact]
+    public void Chaque_segment_a_une_liste_de_domaines_valides_et_contient_autre()
+    {
+        foreach (var segment in Catalog.Segments)
+        {
+            Assert.NotEmpty(segment.AllowedDomainCodes);
+            Assert.Equal(segment.AllowedDomainCodes.Count, segment.AllowedDomainCodes.Distinct().Count());
+            Assert.Contains(BusinessDomains.Autre, segment.AllowedDomainCodes);
+        }
+    }
+
+    /// <summary>
+    /// La_matrice_ne_reference_que_des_codes_de_domaines_connus (plan §3.5): every code in every
+    /// segment's <c>AllowedDomainCodes</c> resolves to a real <see cref="BusinessDomains"/> code.
+    /// </summary>
+    [Fact]
+    public void La_matrice_ne_reference_que_des_codes_de_domaines_connus()
+    {
+        foreach (var segment in Catalog.Segments)
+        {
+            foreach (var domainCode in segment.AllowedDomainCodes)
+                Assert.True(BusinessDomains.IsKnown(domainCode), $"'{domainCode}' n'est pas un code de domaine connu.");
+        }
+    }
+
+    /// <summary>
     /// Canonical French labels must match the design mockup
     /// (/code/.plans/designs/type-societe-reference.html) exactly, including the '&amp;'
     /// separators (not '/') and the 'Autre domaine' fallback label — coordinated with the
