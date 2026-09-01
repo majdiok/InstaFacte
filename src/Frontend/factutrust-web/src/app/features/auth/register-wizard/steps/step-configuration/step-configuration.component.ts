@@ -40,10 +40,21 @@ export class StepConfigurationComponent {
     return this.catalog.modules.filter(m => optional.has(m.id));
   }
 
+  /** Premium modules locked on the Free plan — rendered as a non-toggleable "Plan supérieur" group. */
+  get premiumModules(): ModuleCatalogEntry[] {
+    const premium = new Set(this.catalog.premiumModules(this.segment, this.domain));
+    return this.catalog.modules.filter(m => premium.has(m.id));
+  }
+
   get profileLabel(): string {
     const segmentLabel = this.catalog.segmentLabel(this.segment);
     const domainLabel = this.catalog.domainLabel(this.domain);
     return [segmentLabel, domainLabel].filter(Boolean).join(' · ');
+  }
+
+  /** Discreet indicator (plan 2.1): the remote catalog was unreachable after retries. */
+  get usedStaticFallback(): boolean {
+    return this.catalog.usedStaticFallback();
   }
 
   enabledModuleIds(): AppModule[] {

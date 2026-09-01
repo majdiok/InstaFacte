@@ -2,7 +2,12 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Domain.Billing;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.SectorConfiguration;
+using FactuTrust.Infrastructure.Persistence;
+using FactuTrust.Infrastructure.Persistence.Seeds;
+using FactuTrust.Infrastructure.Services;
 using FactuTrust.Infrastructure.Services.SectorRules;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -104,5 +109,101 @@ public sealed class SectorModuleSetCalculatorTests
         Assert.DoesNotContain(AppModule.Products, result);
         Assert.DoesNotContain(AppModule.Treasury, result);
         Assert.DoesNotContain(AppModule.Sales, result);
+    }
+
+    // ---------- ComputeAsync + real (DB-backed) plan resolver ----------
+
+    private static MasterDbContext NewDb() =>
+        new(new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options);
+
+    private static DbPlanResolver NewDbPlanResolver(MasterDbContext db) =>
+        new(db, new MemoryCache(new MemoryCacheOptions()));
+
+    /// <summary>
+    /// Plan §1.1/§1.2 — un plan restrictif (Stock/Purchases explicitement désactivés côté BD, via
+    /// <see cref="DbPlanResolver"/> plutôt qu'un stub) doit faire remonter ces modules dans
+    /// <see cref="ModuleSetComputationResult.DeniedByPlan"/> et les exclure du set final, alors même
+    /// que le client les a explicitement demandés.
+    /// </summary>
+    [Fact]
+    public async Task Plan_restrictif_refuse_Stock_et_Purchases_demandes_et_les_exclut_du_resultat()
+    {
+        await using var db = NewDb();
+        var plan = Plan.Create(
+            code: nameof(SubscriptionPlan.Monthly), name: "Mensuel", description: null,
+            billingPeriod: BillingPeriod.Monthly, basePriceTND: 49m, isPublic: true,
+            trialDays: 14, sortOrder: 1, currency: "TND");
+        plan.ReplaceModules(Enum.GetValues<AppModule>().Select(m =>
+            ((int)m, IsIncluded: m != AppModule.Stock && m != AppModule.Purchases)));
+        db.Plans.Add(plan);
+        await db.SaveChangesAsync();
+
+        var result = await SectorModuleSetCalculator.ComputeAsync(
+            coreModules: Array.Empty<AppModule>(),
+            seedModuleIds: new[] { (int)AppModule.Stock, (int)AppModule.Purchases, (int)AppModule.CRM },
+            plan: SubscriptionPlan.Monthly,
+            dependencyEdges: CatalogDependencyEdges(),
+            planResolver: NewDbPlanResolver(db),
+            userId: Guid.NewGuid(),
+            logger: NullLogger.Instance,
+            cancellationToken: CancellationToken.None);
+
+        Assert.Contains(AppModule.Stock, result.DeniedByPlan);
+        Assert.Contains(AppModule.Purchases, result.DeniedByPlan);
+        Assert.DoesNotContain(AppModule.Stock, result.EnabledModules);
+        Assert.DoesNotContain(AppModule.Purchases, result.EnabledModules);
+        Assert.Contains(AppModule.CRM, result.EnabledModules);
+        // Products (pulled in as a Stock/Purchases dependency) is itself allowed by this plan, and
+        // was never explicitly requested — it survives and must NOT show up as a denial.
+        Assert.Contains(AppModule.Products, result.EnabledModules);
+        Assert.DoesNotContain(AppModule.Products, result.DeniedByPlan);
+        Assert.Empty(result.DroppedInvalidIds);
+    }
+
+    /// <summary>
+    /// Plan §1.1, décision D1 — après le seed correctif (<see cref="PlanSeeder"/>), le plan Free doit
+    /// autoriser tout module proposé par le wizard, même si une ligne <see cref="PlanModule"/> avait
+    /// été explicitement désactivée (ex. restriction backoffice antérieure à D1). Vérifié ici via le
+    /// vrai <see cref="DbPlanResolver"/>, pas un stub permissif.
+    /// </summary>
+    [Fact]
+    public async Task Plan_Free_apres_correction_D1_autorise_tous_les_modules_proposes_par_le_wizard()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        await using (var arrangeDb = new MasterDbContext(new DbContextOptionsBuilder<MasterDbContext>()
+                   .UseInMemoryDatabase(dbName).Options))
+        {
+            var free = Plan.Create(
+                code: nameof(SubscriptionPlan.Free), name: "Gratuit", description: null,
+                billingPeriod: BillingPeriod.Free, basePriceTND: 0m, isPublic: true,
+                trialDays: 0, sortOrder: 0, currency: "TND");
+            // Restriction backoffice antérieure à D1, sur des modules que le wizard offre bel et bien.
+            free.ReplaceModules(Enum.GetValues<AppModule>().Select(m =>
+                ((int)m, IsIncluded: m != AppModule.Stock && m != AppModule.Purchases && m != AppModule.Fiscal)));
+            arrangeDb.Plans.Add(free);
+            await arrangeDb.SaveChangesAsync();
+        }
+
+        await using var db = new MasterDbContext(new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(dbName).Options);
+        await PlanSeeder.SeedAsync(db); // Triggers AlignFreePlanWizardModulesAsync (D1).
+
+        var requested = PlanSeeder.WizardOfferedModuleIds.ToArray();
+        var result = await SectorModuleSetCalculator.ComputeAsync(
+            coreModules: Array.Empty<AppModule>(),
+            seedModuleIds: requested,
+            plan: SubscriptionPlan.Free,
+            dependencyEdges: CatalogDependencyEdges(),
+            planResolver: NewDbPlanResolver(db),
+            userId: Guid.NewGuid(),
+            logger: NullLogger.Instance,
+            cancellationToken: CancellationToken.None);
+
+        Assert.Empty(result.DeniedByPlan);
+        Assert.Empty(result.DroppedInvalidIds);
+        foreach (var moduleId in requested)
+            Assert.Contains((AppModule)moduleId, result.EnabledModules);
     }
 }

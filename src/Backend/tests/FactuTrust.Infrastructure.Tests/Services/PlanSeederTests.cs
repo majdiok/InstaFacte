@@ -106,4 +106,169 @@ public sealed class PlanSeederTests
         Assert.Equal(SubscriptionLimits.Free.MaxCustomEntities.ToString(), maxEntities);
         Assert.Equal("50", maxEntities);
     }
+
+    /// <summary>
+    /// Plan §1.1, décision D1 — un plan Free préexistant dont un opérateur a explicitement
+    /// désactivé un module proposé par le wizard d'inscription (ex. Stock/Purchases) doit être
+    /// réaligné (IsIncluded=true) par le seed, contrairement à <see cref="BackfillPlanModulesAsync"/>
+    /// qui n'ajoute que les lignes manquantes. Monthly/Annual ne sont volontairement PAS touchés —
+    /// une restriction sur ces plans reste possible et intentionnelle.
+    /// </summary>
+    [Fact]
+    public async Task SeedAsync_AlignsFreePlanWizardModules_ButLeavesMonthlyAndAnnualRestrictionsIntact()
+    {
+        var dbName = Guid.NewGuid().ToString();
+
+        await using (var arrangeDb = NewDb(dbName))
+        {
+            var free = Plan.Create(
+                code: nameof(SubscriptionPlan.Free), name: "Gratuit", description: "ancien",
+                billingPeriod: BillingPeriod.Free, basePriceTND: 0m, isPublic: true,
+                trialDays: 0, sortOrder: 0, currency: "TND");
+            // Un opérateur a restreint le plan Free via le backoffice : Stock et Purchases (offerts
+            // par le wizard) sont explicitement désactivés — c'est exactement le cas non couvert par
+            // BackfillPlanModulesAsync (qui n'ajoute que les modules ABSENTS).
+            free.ReplaceModules(Enum.GetValues<AppModule>().Select(m =>
+                ((int)m, IsIncluded: m != AppModule.Stock && m != AppModule.Purchases)));
+            arrangeDb.Plans.Add(free);
+
+            var monthly = Plan.Create(
+                code: nameof(SubscriptionPlan.Monthly), name: "Mensuel", description: "ancien",
+                billingPeriod: BillingPeriod.Monthly, basePriceTND: 49m, isPublic: true,
+                trialDays: 14, sortOrder: 1, currency: "TND");
+            // Restriction intentionnelle sur un plan payant : ne doit JAMAIS être touchée par D1
+            // (qui ne s'applique qu'au plan Free).
+            monthly.ReplaceModules(Enum.GetValues<AppModule>().Select(m =>
+                ((int)m, IsIncluded: m != AppModule.Stock)));
+            arrangeDb.Plans.Add(monthly);
+
+            await arrangeDb.SaveChangesAsync();
+        }
+
+        await using (var db1 = NewDb(dbName))
+        {
+            await PlanSeeder.SeedAsync(db1);
+        }
+
+        await using (var assertDb1 = NewDb(dbName))
+        {
+            var free = await assertDb1.Plans.Include(p => p.Modules)
+                .SingleAsync(p => p.Code == nameof(SubscriptionPlan.Free));
+            Assert.True(free.Modules.Single(m => m.Module == (int)AppModule.Stock).IsIncluded);
+            Assert.True(free.Modules.Single(m => m.Module == (int)AppModule.Purchases).IsIncluded);
+
+            var monthly = await assertDb1.Plans.Include(p => p.Modules)
+                .SingleAsync(p => p.Code == nameof(SubscriptionPlan.Monthly));
+            Assert.False(monthly.Modules.Single(m => m.Module == (int)AppModule.Stock).IsIncluded,
+                "Monthly's intentional restriction must not be touched by the Free-only D1 fix.");
+        }
+
+        // Idempotence : un second passage ne doit rien changer (ni lever d'exception).
+        await using (var db2 = NewDb(dbName))
+        {
+            await PlanSeeder.SeedAsync(db2);
+        }
+
+        await using var assertDb2 = NewDb(dbName);
+        var freeAfterSecondRun = await assertDb2.Plans.Include(p => p.Modules)
+            .SingleAsync(p => p.Code == nameof(SubscriptionPlan.Free));
+        Assert.True(freeAfterSecondRun.Modules.Single(m => m.Module == (int)AppModule.Stock).IsIncluded);
+        Assert.True(freeAfterSecondRun.Modules.Single(m => m.Module == (int)AppModule.Purchases).IsIncluded);
+
+        var monthlyAfterSecondRun = await assertDb2.Plans.Include(p => p.Modules)
+            .SingleAsync(p => p.Code == nameof(SubscriptionPlan.Monthly));
+        Assert.False(monthlyAfterSecondRun.Modules.Single(m => m.Module == (int)AppModule.Stock).IsIncluded);
+    }
+
+    /// <summary>
+    /// Plan §1.1, décision D1 (RÉSOLU — Free = cœur + standard, pas de premium) : un seed frais du
+    /// plan Free doit semer les modules premium (AI/Forecasting/Studio/Payroll) à
+    /// <c>IsIncluded=false</c> et tout le reste (cœur + standard + Honoraires) à <c>true</c>.
+    /// Monthly/Annual restent <see cref="PlanSeeder"/>.<c>AllModulesIncluded</c> (tout inclus, y
+    /// compris premium — le plafond premium ne s'applique qu'au plan Free).
+    /// </summary>
+    [Fact]
+    public async Task SeedAsync_FreePlan_excludes_premium_modules_but_includes_core_and_standard()
+    {
+        var dbName = Guid.NewGuid().ToString();
+
+        await using (var db = NewDb(dbName))
+        {
+            await PlanSeeder.SeedAsync(db);
+        }
+
+        await using var assertDb = NewDb(dbName);
+        var plans = await assertDb.Plans.Include(p => p.Modules).ToListAsync();
+        var free = plans.Single(p => p.Code == nameof(SubscriptionPlan.Free));
+        var monthly = plans.Single(p => p.Code == nameof(SubscriptionPlan.Monthly));
+        var annual = plans.Single(p => p.Code == nameof(SubscriptionPlan.Annual));
+
+        var premium = AppModuleExtensions.PaidPlanModuleIds.Select(m => (int)m).ToHashSet();
+
+        // Free : premium OFF, tout le reste ON (y compris Honoraires, inchangé — natif cabinet).
+        Assert.All(free.Modules.Where(m => premium.Contains(m.Module)),
+            m => Assert.False(m.IsIncluded, $"Free must NOT include premium module {(AppModule)m.Module}."));
+        Assert.All(free.Modules.Where(m => !premium.Contains(m.Module)),
+            m => Assert.True(m.IsIncluded, $"Free must include non-premium module {(AppModule)m.Module}."));
+        // Honoraires reste inclus sur Free (hors périmètre du plafond premium, inchangé).
+        Assert.True(free.Modules.Single(m => m.Module == (int)AppModule.Honoraires).IsIncluded);
+
+        // Monthly/Annual : tout inclus (aucun plafond premium).
+        foreach (var plan in new[] { monthly, annual })
+        {
+            Assert.All(plan.Modules,
+                m => Assert.True(m.IsIncluded, $"{plan.Code} must include every module, including premium {(AppModule)m.Module}."));
+        }
+    }
+
+    /// <summary>
+    /// Plan §1.1, décision D1 — un plan Free préexistant (legacy) dont les modules premium ont été
+    /// laissés à <c>IsIncluded=true</c> (le seed précédent semait <c>AllModulesIncluded</c>) doit être
+    /// corrigé par la passe premium → false de <c>AlignFreePlanWizardModulesAsync</c>, et ce de façon
+    /// idempotente (un second passage ne change rien et ne lève pas d'exception). Symétrique au test
+    /// wizard false → true ci-dessus.
+    /// </summary>
+    [Fact]
+    public async Task SeedAsync_AlignsFreePlanPremiumModulesFalse_Idempotently()
+    {
+        var dbName = Guid.NewGuid().ToString();
+
+        await using (var arrangeDb = NewDb(dbName))
+        {
+            var free = Plan.Create(
+                code: nameof(SubscriptionPlan.Free), name: "Gratuit", description: "ancien",
+                billingPeriod: BillingPeriod.Free, basePriceTND: 0m, isPublic: true,
+                trialDays: 0, sortOrder: 0, currency: "TND");
+            // Legacy : tout inclus (premium compris) — exactement l'état laissé par l'ancien seed.
+            free.ReplaceModules(Enum.GetValues<AppModule>().Select(m => ((int)m, true)));
+            arrangeDb.Plans.Add(free);
+            await arrangeDb.SaveChangesAsync();
+        }
+
+        var premium = AppModuleExtensions.PaidPlanModuleIds.Select(m => (int)m).ToHashSet();
+
+        await using (var db1 = NewDb(dbName))
+        {
+            await PlanSeeder.SeedAsync(db1);
+        }
+
+        await using var assertDb1 = NewDb(dbName);
+        var free1 = await assertDb1.Plans.Include(p => p.Modules)
+            .SingleAsync(p => p.Code == nameof(SubscriptionPlan.Free));
+        foreach (var id in premium)
+            Assert.False(free1.Modules.Single(m => m.Module == id).IsIncluded,
+                $"Premium module {(AppModule)id} must be flipped to IsIncluded=false on Free (D1).");
+
+        // Idempotence : un second passage ne doit rien changer (ni lever d'exception).
+        await using (var db2 = NewDb(dbName))
+        {
+            await PlanSeeder.SeedAsync(db2);
+        }
+
+        await using var assertDb2 = NewDb(dbName);
+        var free2 = await assertDb2.Plans.Include(p => p.Modules)
+            .SingleAsync(p => p.Code == nameof(SubscriptionPlan.Free));
+        foreach (var id in premium)
+            Assert.False(free2.Modules.Single(m => m.Module == id).IsIncluded);
+    }
 }

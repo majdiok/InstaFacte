@@ -52,6 +52,13 @@ public static class PlanSeeder
         // l'accès des tenants existants. Les plans "plats" (Modules.Count == 0) restent
         // intacts (rétro-compat permissive gérée par DbPlanResolver).
         await BackfillPlanModulesAsync(db, cancellationToken);
+
+        // Plan §1.1, décision D1 (RÉSOLU — Free = cœur + standard) : aligne le plan Free sur les
+        // invariants du seed — (1) réactive tout module offert par le wizard qu'un opérateur aurait
+        // désactivé (contrairement au backfill ci-dessus qui n'ajoute que les modules MANQUANTS), et
+        // (2) force OFF les modules premium (AI/Forecasting/Studio/Payroll). S'exécute APRÈS
+        // BackfillPlanModulesAsync (qui peut ajouter les modules manquants comme inclus).
+        await AlignFreePlanWizardModulesAsync(db, cancellationToken);
     }
 
     private static async Task BackfillSubscriptionPlanIdAsync(MasterDbContext db, CancellationToken cancellationToken)
@@ -118,8 +125,10 @@ public static class PlanSeeder
             ("PrioritySupport", SubscriptionLimits.Free.PrioritySupport)
         });
 
-        // Tous les modules autorisés (rétro-compat) — l'admin pourra restreindre plus tard.
-        plan.ReplaceModules(AllModulesIncluded());
+        // Plan §1.1, décision D1 : le plan Free inclut les modules cœur + standard mais PAS les
+        // modules premium réservés aux plans payants (AI/Forecasting/Studio/Payroll). Honoraires
+        // reste inclus (natif cabinet — hors périmètre du plafond Free, inchangé).
+        plan.ReplaceModules(FreePlanModules());
         return plan;
     }
 
@@ -203,6 +212,19 @@ public static class PlanSeeder
     {
         return Enum.GetValues<AppModule>()
             .Select(m => ((int)m, true));
+    }
+
+    /// <summary>
+    /// Modules du plan Free (décision D1) : tous inclus SAUF les modules premium
+    /// (<see cref="AppModuleExtensions.PaidPlanModuleIds"/> = AI/Forecasting/Studio/Payroll) qui sont
+    /// semés <c>IsIncluded=false</c>. <see cref="AppModule.Honoraires"/> reste inclus comme aujourd'hui
+    /// (natif cabinet, hors périmètre du plafond Free).
+    /// </summary>
+    private static IEnumerable<(int Module, bool IsIncluded)> FreePlanModules()
+    {
+        var premium = AppModuleExtensions.PaidPlanModuleIds.Select(m => (int)m).ToHashSet();
+        return Enum.GetValues<AppModule>()
+            .Select(m => ((int)m, IsIncluded: !premium.Contains((int)m)));
     }
 
     /// <summary>
@@ -296,5 +318,85 @@ public static class PlanSeeder
             // le démarrage loggue un FATAL récurrent). On ignore : la prochaine exécution réessaiera.
             db.ChangeTracker.Clear();
         }
+    }
+
+    /// <summary>
+    /// Tout <see cref="AppModule"/> que l'assistant d'inscription (frontend
+    /// <c>registration-catalog.ts</c> — <c>CORE_MODULE_IDS</c> ∪ <c>optionalModulesFor()</c>) peut
+    /// proposer/envoyer dans <c>RegisterDto.EnabledModules</c>. <see cref="AppModule.Honoraires"/>
+    /// est le seul module jamais offert par le wizard (natif cabinet — facturé côté
+    /// <c>HonorairesBillingService</c>, hors périmètre d'un tenant auto-inscrit) ; il est donc
+    /// volontairement exclu ici. Les modules premium (<see cref="AppModuleExtensions.PaidPlanModuleIds"/>
+    /// = AI/Forecasting/Studio/Payroll) sont également exclus (décision D1) : le wizard ne propose
+    /// plus ces modules au plan Free — ils sont exposés comme verrouillés « plan supérieur requis »
+    /// via le flag <c>AvailableOnFreePlan</c> du catalogue sectoriel. Résultat = les 13 modules
+    /// cœur + standard.
+    /// </summary>
+    internal static IReadOnlyCollection<int> WizardOfferedModuleIds { get; } = Enum.GetValues<AppModule>()
+        .Where(m => m != AppModule.Honoraires && !AppModuleExtensions.PaidPlanModuleIds.Contains(m))
+        .Select(m => (int)m)
+        .ToArray();
+
+    /// <summary>
+    /// Plan §1.1, décision D1 (RÉSOLU — Free = cœur + standard, pas de modules premium) : aligne le
+    /// plan Free en base sur les invariants du seed, en deux passes idempotentes :
+    ///
+    /// 1. <b>Wizard → true</b> : le plan Free ne doit jamais opposer un plafond silencieux à un module
+    ///    proposé par le wizard d'inscription. <see cref="BackfillPlanModulesAsync"/> ci-dessus ne fait
+    ///    qu'AJOUTER les modules absents (IsIncluded=true) ; il ne retouche jamais une ligne déjà
+    ///    présente mais explicitement mise à <c>IsIncluded=false</c> (ex. un opérateur a restreint le
+    ///    plan Free via le backoffice après le seed initial). Cette passe corrige spécifiquement ce cas,
+    ///    UNIQUEMENT pour le plan Free (Monthly/Annual ne sont pas touchés — une vraie restriction sur
+    ///    ces plans reste possible et intentionnelle) et UNIQUEMENT pour les modules du wizard
+    ///    (<see cref="WizardOfferedModuleIds"/> = les 13 cœur + standard).
+    ///
+    /// 2. <b>Premium → false</b> (symétrique) : les modules premium
+    ///    (<see cref="AppModuleExtensions.PaidPlanModuleIds"/> = AI/Forecasting/Studio/Payroll) sont
+    ///    forcés à <c>IsIncluded=false</c> sur le plan Free. Une base legacy (où le seed précédent
+    ///    semait <c>AllModulesIncluded</c>) ou une manipulation opérateur ne peut ainsi jamais laisser
+    ///    un module premium « gratuit » sur le plan Free global. Cette passe DOIT s'exécuter APRÈS
+    ///    <see cref="BackfillPlanModulesAsync"/> (qui peut ajouter les modules manquants comme inclus) ;
+    ///    l'ordre d'appel dans <see cref="SeedAsync"/> le garantit.
+    ///
+    /// Idempotent : ne fait rien (pas de SaveChanges) si toutes les lignes concernées sont déjà dans
+    /// l'état attendu — c'est déjà le cas pour une instance fraîchement seedée puisque
+    /// <see cref="BuildFreePlan"/> appelle <see cref="FreePlanModules"/>.
+    /// </summary>
+    private static async Task AlignFreePlanWizardModulesAsync(MasterDbContext db, CancellationToken cancellationToken)
+    {
+        var freePlan = await db.Plans
+            .Include(p => p.Modules)
+            .FirstOrDefaultAsync(p => p.Code == nameof(SubscriptionPlan.Free), cancellationToken);
+        if (freePlan is null) return;
+
+        var wizardModules = WizardOfferedModuleIds;
+        var premiumModules = AppModuleExtensions.PaidPlanModuleIds.Select(m => (int)m).ToHashSet();
+        var changed = false;
+        foreach (var planModule in freePlan.Modules)
+        {
+            // Passe 2 (premium → false) : prioritaire car disjointe du set wizard. Force OFF les
+            // modules premium sur le plan Free (décision D1).
+            if (premiumModules.Contains(planModule.Module))
+            {
+                if (planModule.IsIncluded)
+                {
+                    db.Entry(planModule).Property(nameof(PlanModule.IsIncluded)).CurrentValue = false;
+                    changed = true;
+                }
+                continue;
+            }
+
+            // Passe 1 (wizard false → true) : ne retouche que les modules offerts par le wizard.
+            if (!planModule.IsIncluded && wizardModules.Contains(planModule.Module))
+            {
+                // Mise à jour EN PLACE (comme BackfillPlanLimitsAsync) — surtout PAS ReplaceModules,
+                // qui ferait clear+re-add et risquerait un DbUpdateConcurrencyException inutile ici.
+                db.Entry(planModule).Property(nameof(PlanModule.IsIncluded)).CurrentValue = true;
+                changed = true;
+            }
+        }
+
+        if (changed)
+            await db.SaveChangesAsync(cancellationToken);
     }
 }

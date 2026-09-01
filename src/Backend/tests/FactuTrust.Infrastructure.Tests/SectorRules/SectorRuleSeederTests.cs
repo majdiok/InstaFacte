@@ -41,12 +41,14 @@ public sealed class SectorRuleSeederTests
         Assert.Equal(ExpectedModuleRuleCount(), await db.SectorModuleRules.CountAsync());
         // 5 of the 6 segments have a DefaultWarehouseName + 1 global plan-comptable-variant row.
         Assert.Equal(7, await db.SectorDefaultSettings.CountAsync());
-        // Phase 2 (plan §4.2/§4.3): the catalog now declares 4 module dependency edges and 3
-        // additive data templates (one chart-account item each).
+        // Phase 2 (plan §4.2/§4.3): the catalog declares 4 module dependency edges and additive data
+        // templates. Phase 3 §3.4 enriched the catalog with 5 more templates (product families, extra
+        // warehouses, BTP chart-account, numbering prefixes) on top of the 3 original chart-account
+        // templates — 8 total.
         Assert.Equal(SectorConfigurationCatalog.ModuleDependencies.Count, await db.SectorModuleDependencies.CountAsync());
         Assert.Equal(4, await db.SectorModuleDependencies.CountAsync());
         Assert.Equal(SectorConfigurationCatalog.DataTemplates.Count, await db.SectorDataTemplates.CountAsync());
-        Assert.Equal(3, await db.SectorDataTemplates.CountAsync());
+        Assert.Equal(8, await db.SectorDataTemplates.CountAsync());
         Assert.Equal(ExpectedDataTemplateItemCount(), await db.SectorDataTemplateItems.CountAsync());
         Assert.Equal(1, result.NewVersion);
         Assert.False(result.Forced);
@@ -82,7 +84,7 @@ public sealed class SectorRuleSeederTests
         await SectorRuleSeeder.SeedAsync(db, force: false, actor: "test", CancellationToken.None);
 
         var templates = await db.SectorDataTemplates.ToListAsync();
-        Assert.Equal(3, templates.Count);
+        Assert.Equal(SectorConfigurationCatalog.DataTemplates.Count, templates.Count);
         Assert.All(templates, t => Assert.True(t.IsActive));
 
         foreach (var templateDef in SectorConfigurationCatalog.DataTemplates)

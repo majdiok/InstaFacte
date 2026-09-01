@@ -47,6 +47,13 @@ export interface OnboardingChecklistItemDef {
   modules?: number[];
   /** Company segment kebab codes (plan WP-F4). Item shows only for these segments. */
   segments?: string[];
+  /**
+   * Phase 3 (plan §3.5) — minimum tenant age in days before the item appears. Used for
+   * "progressive profiling" nudges that should not surface on day 0. Defensive: when the
+   * tenant creation date is absent/unparseable the item is shown (fail-open = pre-Phase-3
+   * behavior — no new hiding from an unknown date).
+   */
+  minAgeDays?: number;
 }
 
 export const COMPANY_CHECKLIST_IDS = {
@@ -57,7 +64,11 @@ export const COMPANY_CHECKLIST_IDS = {
   numbering: 'numbering',
   inviteUser: 'invite-user',
   checkDefaultWarehouse: 'check-default-warehouse',
-  commerceStockReceipt: 'commerce-stock-receipt'
+  commerceStockReceipt: 'commerce-stock-receipt',
+  btpFirstProject: 'btp-first-project',
+  recurringContractSetup: 'recurring-contract-setup',
+  /** Phase 3 (plan §3.5) — progressive profiling nudge (minAgeDays-gated). */
+  completeCompanyProfile: 'complete-company-profile'
 } as const;
 
 export const FIRM_CHECKLIST_IDS = {
@@ -117,4 +128,27 @@ export function hasBlockingModalOpen(): boolean {
   return !!document.querySelector(
     '.p-dialog-mask, .p-dialog-visible, ngb-modal-window, .modal.show'
   );
+}
+
+/**
+ * Phase 3 (plan §3.5) — age gate for "progressive profiling" checklist items. Returns `true`
+ * (eligible/visible) when:
+ * - `minAgeDays` is absent/≤ 0 (no age gate — always shown), OR
+ * - the tenant is at least `minAgeDays` days old.
+ *
+ * **Fail-open**: when `tenantCreatedAtUtc` is absent or unparseable, returns `true` — matching
+ * the pre-Phase-3 behavior (an unknown creation date must not newly hide items).
+ */
+export function isItemAgeEligible(
+  minAgeDays: number | undefined,
+  tenantCreatedAtUtc: string | null | undefined
+): boolean {
+  if (!minAgeDays || minAgeDays <= 0) return true;
+  if (!tenantCreatedAtUtc) return true;
+
+  const created = new Date(tenantCreatedAtUtc);
+  if (Number.isNaN(created.getTime())) return true;
+
+  const ageMs = Date.now() - created.getTime();
+  return ageMs >= minAgeDays * 24 * 60 * 60 * 1000;
 }

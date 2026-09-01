@@ -8,7 +8,8 @@ namespace FactuTrust.Infrastructure.Persistence;
 /// </summary>
 public static class WithholdingTaxCatalogInitializer
 {
-    public static async Task EnsureSystemTypesSeededAsync(TenantDbContext context, CancellationToken cancellationToken = default)
+    /// <returns><c>true</c> when at least one new system type was inserted, otherwise <c>false</c>.</returns>
+    public static async Task<bool> EnsureSystemTypesSeededAsync(TenantDbContext context, CancellationToken cancellationToken = default)
     {
         var existingCodes = await context.WithholdingTaxTypes
             .AsNoTracking()
@@ -30,5 +31,7 @@ public static class WithholdingTaxCatalogInitializer
 
         if (added)
             await context.SaveChangesAsync(cancellationToken);
+
+        return added;
     }
 }

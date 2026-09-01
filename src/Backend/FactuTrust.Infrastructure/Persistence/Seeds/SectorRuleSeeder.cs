@@ -772,6 +772,36 @@ public static class SectorRuleSeeder
             updated++;
         }
 
+        // ---------- Tax regime suggestions (plan §3.1: informational, admin-editable) ----------
+        var existingSuggestions = (await context.SectorTaxRegimeSuggestions.ToListAsync(cancellationToken))
+            .ToDictionary(s => (s.SegmentCode, s.Regime), SuggestionKeyComparer.Instance);
+
+        var catalogSuggestionKeys = new HashSet<(string SegmentCode, int Regime)>();
+        foreach (var def in SectorConfigurationCatalog.TaxRegimeSuggestions)
+        {
+            var key = (def.SegmentCode, (int)def.Regime);
+            catalogSuggestionKeys.Add(key);
+            UpsertTaxRegimeSuggestion(
+                context, existingSuggestions, def.SegmentCode, (int)def.Regime, def.NoteFr, def.SortOrder,
+                mode, effectiveActor, RecordDivergence,
+                ref inserted, ref updated, ref skippedExisting);
+        }
+
+        // Deactivate catalog-owned suggestions removed from the catalog (review F3).
+        foreach (var (key, suggestion) in existingSuggestions)
+        {
+            if (catalogSuggestionKeys.Contains(key) || !suggestion.IsActive)
+                continue;
+            if (!suggestion.IsManagedByCatalog)
+            {
+                RecordDivergence($"Removed-catalog tax regime suggestion '{key.SegmentCode}/{key.Regime}' left active (admin-managed).");
+                continue;
+            }
+            suggestion.Deactivate();
+            suggestion.SetAuditInfo(effectiveActor, isUpdate: true);
+            updated++;
+        }
+
         // ---------- Version stamp: bumped exactly once per run, in the same SaveChangesAsync. ----------
         var stamp = await context.SectorRuleSetStamps.SingleOrDefaultAsync(
             s => s.Id == SectorRuleSetStamp.SingletonId, cancellationToken);
@@ -838,6 +868,62 @@ public static class SectorRuleSeeder
             created.SetAuditInfo(actor);
             context.SectorDefaultSettings.Add(created);
             existingSettings[key] = created;
+            inserted++;
+        }
+    }
+
+    /// <summary>Ordinal comparer for the (string, int) natural key used by tax-regime-suggestion lookups.</summary>
+    private sealed class SuggestionKeyComparer : IEqualityComparer<(string SegmentCode, int Regime)>
+    {
+        public static readonly SuggestionKeyComparer Instance = new();
+
+        public bool Equals((string SegmentCode, int Regime) x, (string SegmentCode, int Regime) y) =>
+            string.Equals(x.SegmentCode, y.SegmentCode, StringComparison.Ordinal) && x.Regime == y.Regime;
+
+        public int GetHashCode((string SegmentCode, int Regime) obj) =>
+            HashCode.Combine(obj.SegmentCode, obj.Regime);
+    }
+
+    private static void UpsertTaxRegimeSuggestion(
+        MasterDbContext context,
+        Dictionary<(string SegmentCode, int Regime), SectorTaxRegimeSuggestion> existingSuggestions,
+        string segmentCode,
+        int regime,
+        string noteFr,
+        int sortOrder,
+        SeedMode mode,
+        string actor,
+        Action<string> recordDivergence,
+        ref int inserted,
+        ref int updated,
+        ref int skippedExisting)
+    {
+        var key = (segmentCode, regime);
+        if (existingSuggestions.TryGetValue(key, out var existing))
+        {
+            if (mode == SeedMode.InsertMissing)
+            {
+                skippedExisting++;
+            }
+            else if (mode == SeedMode.Reconcile && !existing.IsManagedByCatalog)
+            {
+                recordDivergence($"Tax regime suggestion '{segmentCode}/{regime}' left unchanged (admin-managed).");
+                skippedExisting++;
+            }
+            else
+            {
+                existing.ResetFromCatalog(noteFr, sortOrder);
+                existing.MarkCatalogManaged();
+                existing.SetAuditInfo(actor, isUpdate: true);
+                updated++;
+            }
+        }
+        else
+        {
+            var created = SectorTaxRegimeSuggestion.Create(segmentCode, regime, noteFr, sortOrder);
+            created.SetAuditInfo(actor);
+            context.SectorTaxRegimeSuggestions.Add(created);
+            existingSuggestions[key] = created;
             inserted++;
         }
     }

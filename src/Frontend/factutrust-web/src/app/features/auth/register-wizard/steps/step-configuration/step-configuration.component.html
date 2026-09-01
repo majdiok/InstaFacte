@@ -8,6 +8,11 @@
       @if (profileLabel) {
         <span class="based-chip"><i class="pi pi-bolt" aria-hidden="true"></i> Basé sur : {{ profileLabel }}</span>
       }
+      @if (usedStaticFallback) {
+        <span class="based-chip based-chip--fallback" pTooltip="Le catalogue de recommandations en ligne est momentanément indisponible ; nous utilisons une liste par défaut." tooltipPosition="top">
+          <i class="pi pi-info-circle" aria-hidden="true"></i> Recommandations par défaut
+        </span>
+      }
     </div>
 
     <div class="mod-group">
@@ -84,6 +89,24 @@
         }
       </div>
     </div>
+
+    @if (premiumModules.length) {
+      <div class="mod-group">
+        <p class="mod-group-title"><i class="pi pi-lock" aria-hidden="true"></i> Plan supérieur</p>
+        <div class="mod-grid">
+          @for (module of premiumModules; track module.id) {
+            <div class="mod-card locked-plan" aria-disabled="true">
+              <div class="mod-top">
+                <span class="mod-ico tone-indigo"><i class="pi pi-bolt" aria-hidden="true"></i></span>
+                <span class="mod-locked-badge mod-locked-badge--plan"><i class="pi pi-lock" aria-hidden="true"></i> Plan supérieur</span>
+              </div>
+              <span class="mod-name">{{ module.label }}</span>
+              <span class="mod-plan-note">Disponible avec une offre supérieure.</span>
+            </div>
+          }
+        </div>
+      </div>
+    }
 
     <button type="button" class="btn-reset" (click)="onReset()">
       <i class="pi pi-refresh" aria-hidden="true"></i> Réinitialiser aux recommandations

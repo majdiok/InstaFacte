@@ -24,6 +24,13 @@ export const SETTINGS_ROUTES: Routes = [
     title: 'Mon entreprise - InstaFact'
   },
   {
+    path: 'modules',
+    canActivate: [platformSettingsGuard, permissionGuard],
+    data: { permissions: [PERMISSIONS.settings.update] },
+    loadComponent: () => import('./modules/modules-settings.component').then(m => m.ModulesSettingsComponent),
+    title: 'Modules - InstaFact'
+  },
+  {
     path: 'subscription',
     canActivate: [platformSettingsGuard],
     loadComponent: () => import('./subscription/subscription.component').then(m => m.SubscriptionComponent),

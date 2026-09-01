@@ -1,0 +1,427 @@
+{
+  "segments": [
+    {
+      "code": "entreprise",
+      "labelFr": "Entreprise",
+      "descriptionFr": "Soci\u00E9t\u00E9s commerciales et de services aux entreprises.",
+      "iconKey": "briefcase",
+      "sortOrder": 0,
+      "coreModuleIds": [
+        5,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "recommendedModuleIds": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "defaultWarehouseName": "Entrep\u00F4t Principal",
+      "domainCodes": [
+        "technologie-informatique",
+        "alimentation-agroalimentaire",
+        "sante-paramedical",
+        "textile-habillement",
+        "transport-logistique",
+        "immobilier",
+        "energie-environnement",
+        "communication-marketing",
+        "artisanat",
+        "autre"
+      ]
+    },
+    {
+      "code": "commerce",
+      "labelFr": "Commerce",
+      "descriptionFr": "N\u00E9goce et distribution.",
+      "iconKey": "shopping-cart",
+      "sortOrder": 1,
+      "coreModuleIds": [
+        5,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "recommendedModuleIds": [
+        6,
+        7,
+        10
+      ],
+      "defaultWarehouseName": "Magasin principal",
+      "domainCodes": [
+        "alimentation-agroalimentaire",
+        "textile-habillement",
+        "technologie-informatique",
+        "sante-paramedical",
+        "artisanat",
+        "autre"
+      ]
+    },
+    {
+      "code": "services",
+      "labelFr": "Prestations de services",
+      "descriptionFr": "Services et conseils.",
+      "iconKey": "handshake",
+      "sortOrder": 2,
+      "coreModuleIds": [
+        5,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "recommendedModuleIds": [
+        9,
+        16,
+        17,
+        10
+      ],
+      "defaultWarehouseName": "Entrep\u00F4t Principal",
+      "domainCodes": [
+        "technologie-informatique",
+        "communication-marketing",
+        "sante-paramedical",
+        "transport-logistique",
+        "immobilier",
+        "autre"
+      ]
+    },
+    {
+      "code": "btp-construction",
+      "labelFr": "BTP \u0026 Construction",
+      "descriptionFr": "B\u00E2timent et travaux publics.",
+      "iconKey": "hard-hat",
+      "sortOrder": 3,
+      "coreModuleIds": [
+        5,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "recommendedModuleIds": [
+        6,
+        7,
+        16,
+        10
+      ],
+      "defaultWarehouseName": "D\u00E9p\u00F4t chantier",
+      "domainCodes": [
+        "immobilier",
+        "energie-environnement",
+        "artisanat",
+        "autre"
+      ]
+    },
+    {
+      "code": "association",
+      "labelFr": "Association",
+      "descriptionFr": "Organismes \u00E0 but non lucratif.",
+      "iconKey": "heart-handshake",
+      "sortOrder": 4,
+      "coreModuleIds": [
+        5,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "recommendedModuleIds": [
+        8,
+        10
+      ],
+      "defaultWarehouseName": "Entrep\u00F4t Principal",
+      "domainCodes": [
+        "sante-paramedical",
+        "energie-environnement",
+        "communication-marketing",
+        "artisanat",
+        "autre"
+      ]
+    },
+    {
+      "code": "etablissement-educatif",
+      "labelFr": "\u00C9tablissement \u00E9ducatif",
+      "descriptionFr": "\u00C9coles, universit\u00E9s, centres de formation.",
+      "iconKey": "graduation-cap",
+      "sortOrder": 5,
+      "coreModuleIds": [
+        5,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "recommendedModuleIds": [
+        17,
+        8,
+        10
+      ],
+      "defaultWarehouseName": "Entrep\u00F4t Principal",
+      "domainCodes": [
+        "technologie-informatique",
+        "sante-paramedical",
+        "artisanat",
+        "communication-marketing",
+        "autre"
+      ]
+    }
+  ],
+  "domains": [
+    {
+      "code": "technologie-informatique",
+      "labelFr": "Technologie \u0026 Informatique",
+      "sortOrder": 0,
+      "additionalModuleIds": [
+        16,
+        17
+      ]
+    },
+    {
+      "code": "alimentation-agroalimentaire",
+      "labelFr": "Alimentation \u0026 Agroalimentaire",
+      "sortOrder": 1,
+      "additionalModuleIds": [
+        7,
+        6
+      ]
+    },
+    {
+      "code": "sante-paramedical",
+      "labelFr": "Sant\u00E9 \u0026 Param\u00E9dical",
+      "sortOrder": 2,
+      "additionalModuleIds": [
+        9
+      ]
+    },
+    {
+      "code": "textile-habillement",
+      "labelFr": "Textile \u0026 Habillement",
+      "sortOrder": 3,
+      "additionalModuleIds": [
+        7
+      ]
+    },
+    {
+      "code": "transport-logistique",
+      "labelFr": "Transport \u0026 Logistique",
+      "sortOrder": 4,
+      "additionalModuleIds": [
+        7
+      ]
+    },
+    {
+      "code": "immobilier",
+      "labelFr": "Immobilier",
+      "sortOrder": 5,
+      "additionalModuleIds": []
+    },
+    {
+      "code": "energie-environnement",
+      "labelFr": "\u00C9nergie \u0026 Environnement",
+      "sortOrder": 6,
+      "additionalModuleIds": []
+    },
+    {
+      "code": "communication-marketing",
+      "labelFr": "Communication \u0026 Marketing",
+      "sortOrder": 7,
+      "additionalModuleIds": [
+        9
+      ]
+    },
+    {
+      "code": "artisanat",
+      "labelFr": "Artisanat",
+      "sortOrder": 8,
+      "additionalModuleIds": []
+    },
+    {
+      "code": "autre",
+      "labelFr": "Autre domaine",
+      "sortOrder": 9,
+      "additionalModuleIds": []
+    }
+  ],
+  "modules": [
+    {
+      "id": 0,
+      "code": "Clients",
+      "labelFr": "Clients",
+      "isCore": true,
+      "availableOnFreePlan": true
+    },
+    {
+      "id": 1,
+      "code": "Products",
+      "labelFr": "Produits et services",
+      "isCore": true,
+      "availableOnFreePlan": true
+    },
+    {
+      "id": 2,
+      "code": "Sales",
+      "labelFr": "Ventes (factures)",
+      "isCore": true,
+      "availableOnFreePlan": true
+    },
+    {
+      "id": 3,
+      "code": "Treasury",
+      "labelFr": "Tr\u00E9sorerie (paiements)",
+      "isCore": true,
+      "availableOnFreePlan": true
+    },
+    {
+      "id": 4,
+      "code": "Reports",
+      "labelFr": "Rapports",
+      "isCore": true,
+      "availableOnFreePlan": true
+    },
+    {
+      "id": 5,
+      "code": "Administration",
+      "labelFr": "Param\u00E8tres et utilisateurs",
+      "isCore": true,
+      "availableOnFreePlan": true
+    },
+    {
+      "id": 6,
+      "code": "Purchases",
+      "labelFr": "Achats",
+      "isCore": false,
+      "availableOnFreePlan": true
+    },
+    {
+      "id": 7,
+      "code": "Stock",
+      "labelFr": "Stock",
+      "isCore": false,
+      "availableOnFreePlan": true
+    },
+    {
+      "id": 8,
+      "code": "Accounting",
+      "labelFr": "Comptabilit\u00E9",
+      "isCore": false,
+      "availableOnFreePlan": true
+    },
+    {
+      "id": 9,
+      "code": "CRM",
+      "labelFr": "CRM Commercial",
+      "isCore": false,
+      "availableOnFreePlan": true
+    },
+    {
+      "id": 10,
+      "code": "Fiscal",
+      "labelFr": "Fiscal / TEJ",
+      "isCore": false,
+      "availableOnFreePlan": true
+    },
+    {
+      "id": 11,
+      "code": "AI",
+      "labelFr": "Assistant IA",
+      "isCore": false,
+      "availableOnFreePlan": false
+    },
+    {
+      "id": 12,
+      "code": "Forecasting",
+      "labelFr": "Pr\u00E9visions IA",
+      "isCore": false,
+      "availableOnFreePlan": false
+    },
+    {
+      "id": 13,
+      "code": "Studio",
+      "labelFr": "Studio (low-code)",
+      "isCore": false,
+      "availableOnFreePlan": false
+    },
+    {
+      "id": 14,
+      "code": "Payroll",
+      "labelFr": "RH \u0026 Paie",
+      "isCore": false,
+      "availableOnFreePlan": false
+    },
+    {
+      "id": 16,
+      "code": "Projects",
+      "labelFr": "Projets",
+      "isCore": false,
+      "availableOnFreePlan": true
+    },
+    {
+      "id": 17,
+      "code": "RecurringContracts",
+      "labelFr": "Contrats r\u00E9currents",
+      "isCore": false,
+      "availableOnFreePlan": true
+    }
+  ],
+  "moduleDependencies": [],
+  "suggestedTaxRegimes": [
+    {
+      "segmentCode": "entreprise",
+      "regime": 0,
+      "noteFr": "R\u00E9gime r\u00E9el : comptabilit\u00E9 compl\u00E8te et facturation TVA, recommand\u00E9 pour les soci\u00E9t\u00E9s d\u0027entreprise."
+    },
+    {
+      "segmentCode": "commerce",
+      "regime": 0,
+      "noteFr": "R\u00E9gime r\u00E9el : g\u00E9n\u00E9ralement adapt\u00E9 au commerce d\u00E8s lors que le chiffre d\u0027affaires d\u00E9passe les seuils du forfait."
+    },
+    {
+      "segmentCode": "commerce",
+      "regime": 1,
+      "noteFr": "R\u00E9gime forfaitaire : simplifi\u00E9, possible pour les petits commerces sous les seuils l\u00E9gaux."
+    },
+    {
+      "segmentCode": "services",
+      "regime": 0,
+      "noteFr": "R\u00E9gime r\u00E9el : recommand\u00E9 pour les prestations de services d\u00E8s lors que les seuils du forfait sont d\u00E9pass\u00E9s."
+    },
+    {
+      "segmentCode": "services",
+      "regime": 1,
+      "noteFr": "R\u00E9gime forfaitaire : simplifi\u00E9, possible pour les petites prestations de services sous les seuils l\u00E9gaux."
+    },
+    {
+      "segmentCode": "btp-construction",
+      "regime": 0,
+      "noteFr": "R\u00E9gime r\u00E9el : obligatoire pour le BTP \u2014 comptabilit\u00E9 de chantier et TVA r\u00E9cup\u00E9rable."
+    },
+    {
+      "segmentCode": "association",
+      "regime": 2,
+      "noteFr": "Exon\u00E9ration de TVA : la plupart des associations \u00E0 but non lucratif sont exon\u00E9r\u00E9es."
+    },
+    {
+      "segmentCode": "etablissement-educatif",
+      "regime": 2,
+      "noteFr": "Exon\u00E9ration de TVA : applicable aux \u00E9tablissements d\u0027enseignement remplissant les conditions l\u00E9gales."
+    },
+    {
+      "segmentCode": "etablissement-educatif",
+      "regime": 0,
+      "noteFr": "R\u00E9gime r\u00E9el : possible pour les activit\u00E9s commerciales annexes d\u0027un \u00E9tablissement \u00E9ducatif."
+    }
+  ],
+  "catalogVersion": "static:0"
+}

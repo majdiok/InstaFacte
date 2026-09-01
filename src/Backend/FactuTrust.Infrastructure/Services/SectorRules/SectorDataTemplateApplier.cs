@@ -4,6 +4,7 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.SectorConfiguration;
+using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -115,6 +116,10 @@ public sealed class SectorDataTemplateApplier : ISectorDataTemplateApplier
                 return await ApplyChartAccountAsync(context, templateCode, item, dryRun, warnings, cancellationToken);
             case "document-numbering-scheme":
                 return await ApplyDocumentNumberingSchemeAsync(context, tenantId, templateCode, item, dryRun, warnings, cancellationToken);
+            case "product-category":
+                return await ApplyProductCategoryAsync(context, templateCode, item, dryRun, warnings, cancellationToken);
+            case "warehouse":
+                return await ApplyWarehouseAsync(context, templateCode, item, dryRun, warnings, cancellationToken);
             case "setting":
                 return await ApplySettingAsync(context, templateCode, item, dryRun, warnings, cancellationToken);
             default:
@@ -192,7 +197,12 @@ public sealed class SectorDataTemplateApplier : ISectorDataTemplateApplier
         return new TemplateItemOutcome(templateCode, item.ItemKind, "created");
     }
 
-    /// <summary>Payload : {"documentType","currentSequence"?}. La fiscalYear utilisée est l'année civile courante.</summary>
+    /// <summary>
+    /// Payload : {"documentType","currentSequence"?,"prefix"?}. La fiscalYear utilisée est l'année civile
+    /// courante. Lorsqu'un <c>prefix</c> non vide est fourni, le bloc de texte libre par défaut du schéma
+    /// est remplacé par ce préfixe (via <see cref="DocumentNumberingScheme.UpdateFormat"/>) — uniquement
+    /// pour un schéma nouvellement créé (jamais verrouillé à l'inscription, currentSequence=0).
+    /// </summary>
     private static async Task<TemplateItemOutcome> ApplyDocumentNumberingSchemeAsync(
         TenantDbContext context,
         Guid tenantId,
@@ -235,7 +245,154 @@ public sealed class SectorDataTemplateApplier : ISectorDataTemplateApplier
         var currentSequence = payload.TryGetProperty("currentSequence", out var seqProp) && seqProp.TryGetInt32(out var seq) ? seq : 0;
 
         var scheme = DocumentNumberingScheme.CreateDefault(tenantId, documentType, fiscalYear, currentSequence);
+
+        // Optional custom free-text prefix (plan §3.4 — "default document numbering prefixes/mentions").
+        // Only applied to a freshly created (unlocked) scheme, so the check-before-insert idempotency
+        // contract is preserved: an existing scheme is never touched.
+        var prefix = payload.TryGetProperty("prefix", out var prefixProp) ? prefixProp.GetString() : null;
+        if (!string.IsNullOrWhiteSpace(prefix))
+        {
+            var prefixBlocks = BuildPrefixBlocks(documentType, prefix);
+            var formatResult = scheme.UpdateFormat(prefixBlocks);
+            if (formatResult.IsFailure)
+                warnings.Add($"Modèle « {templateCode} » : préfixe de numérotation {prefix} refusé ({formatResult.Error.Description}), préfixe par défaut conservé.");
+        }
+
         context.DocumentNumberingSchemes.Add(scheme);
+        return new TemplateItemOutcome(templateCode, item.ItemKind, "created");
+    }
+
+    /// <summary>
+    /// Construit les blocs de format équivalents à <see cref="NumberingSchemeDefaults.GetDefaultBlocks"/>
+    /// mais en remplaçant le bloc de texte libre par <paramref name="prefix"/>. Reproduit la même
+    /// structure (séparateur / année / numéro) que les schémas par défaut afin de rester homogène.
+    /// </summary>
+    private static IReadOnlyList<NumberingFormatBlock> BuildPrefixBlocks(NumberingDocumentType documentType, string prefix)
+    {
+        if (documentType == NumberingDocumentType.PhysicalInventory)
+        {
+            return new List<NumberingFormatBlock>
+            {
+                new(NumberingBlockType.FreeText, prefix, 0),
+                new(NumberingBlockType.Separator, "-", 1),
+                new(NumberingBlockType.DocumentNumberPadded6, null, 2)
+            };
+        }
+
+        return new List<NumberingFormatBlock>
+        {
+            new(NumberingBlockType.FreeText, prefix, 0),
+            new(NumberingBlockType.Separator, "-", 1),
+            new(NumberingBlockType.Year4, null, 2),
+            new(NumberingBlockType.Separator, "-", 3),
+            new(NumberingBlockType.DocumentNumberPadded6, null, 4)
+        };
+    }
+
+    /// <summary>Payload : {"code","name","displayOrder"?}. Insère la catégorie si elle n'existe pas déjà (par code normalisé).</summary>
+    private static async Task<TemplateItemOutcome> ApplyProductCategoryAsync(
+        TenantDbContext context,
+        string templateCode,
+        DataTemplateItemSnapshot item,
+        bool dryRun,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        JsonElement payload;
+        try
+        {
+            payload = JsonDocument.Parse(item.PayloadJson).RootElement;
+        }
+        catch (JsonException)
+        {
+            warnings.Add($"Modèle « {templateCode} » : élément product-category avec un JSON invalide, ignoré.");
+            return new TemplateItemOutcome(templateCode, item.ItemKind, "skipped");
+        }
+
+        var code = payload.TryGetProperty("code", out var codeProp) ? codeProp.GetString() : null;
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            warnings.Add($"Modèle « {templateCode} » : élément product-category sans code, ignoré.");
+            return new TemplateItemOutcome(templateCode, item.ItemKind, "skipped");
+        }
+
+        var normalizedCode = code!.Trim().ToUpperInvariant();
+
+        var exists = await context.ProductCategories
+            .AsNoTracking()
+            .AnyAsync(c => c.Code == normalizedCode, cancellationToken);
+
+        if (exists)
+            return new TemplateItemOutcome(templateCode, item.ItemKind, "existing");
+
+        if (dryRun)
+            return new TemplateItemOutcome(templateCode, item.ItemKind, "created");
+
+        var name = payload.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? normalizedCode : normalizedCode;
+        var displayOrder = payload.TryGetProperty("displayOrder", out var orderProp) && orderProp.TryGetInt32(out var order) ? order : 0;
+
+        var result = ProductCategory.Create(code, name, displayOrder);
+        if (result.IsFailure)
+        {
+            warnings.Add($"Modèle « {templateCode} » : catégorie {normalizedCode} invalide ({result.Error.Description}), ignorée.");
+            return new TemplateItemOutcome(templateCode, item.ItemKind, "skipped");
+        }
+
+        context.ProductCategories.Add(result.Value);
+        return new TemplateItemOutcome(templateCode, item.ItemKind, "created");
+    }
+
+    /// <summary>Payload : {"code","name","address"?,"isDefault"?}. Insère l'entrepôt s'il n'existe pas déjà (par code normalisé).</summary>
+    private static async Task<TemplateItemOutcome> ApplyWarehouseAsync(
+        TenantDbContext context,
+        string templateCode,
+        DataTemplateItemSnapshot item,
+        bool dryRun,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        JsonElement payload;
+        try
+        {
+            payload = JsonDocument.Parse(item.PayloadJson).RootElement;
+        }
+        catch (JsonException)
+        {
+            warnings.Add($"Modèle « {templateCode} » : élément warehouse avec un JSON invalide, ignoré.");
+            return new TemplateItemOutcome(templateCode, item.ItemKind, "skipped");
+        }
+
+        var code = payload.TryGetProperty("code", out var codeProp) ? codeProp.GetString() : null;
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            warnings.Add($"Modèle « {templateCode} » : élément warehouse sans code, ignoré.");
+            return new TemplateItemOutcome(templateCode, item.ItemKind, "skipped");
+        }
+
+        var normalizedCode = code!.Trim().ToUpperInvariant();
+
+        var exists = await context.Warehouses
+            .AsNoTracking()
+            .AnyAsync(w => w.Code == normalizedCode, cancellationToken);
+
+        if (exists)
+            return new TemplateItemOutcome(templateCode, item.ItemKind, "existing");
+
+        if (dryRun)
+            return new TemplateItemOutcome(templateCode, item.ItemKind, "created");
+
+        var name = payload.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? normalizedCode : normalizedCode;
+        var address = payload.TryGetProperty("address", out var addressProp) ? addressProp.GetString() : null;
+        var isDefault = payload.TryGetProperty("isDefault", out var defaultProp) && defaultProp.ValueKind is JsonValueKind.True or JsonValueKind.False && defaultProp.GetBoolean();
+
+        var result = Warehouse.Create(code, name, address, isDefault);
+        if (result.IsFailure)
+        {
+            warnings.Add($"Modèle « {templateCode} » : entrepôt {normalizedCode} invalide ({result.Error.Description}), ignoré.");
+            return new TemplateItemOutcome(templateCode, item.ItemKind, "skipped");
+        }
+
+        context.Warehouses.Add(result.Value);
         return new TemplateItemOutcome(templateCode, item.ItemKind, "created");
     }
 

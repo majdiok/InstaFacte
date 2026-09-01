@@ -321,6 +321,83 @@ describe('AuthService', () => {
     });
   });
 
+  describe('register', () => {
+    beforeEach(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+      configureAuthTestBed();
+      httpMock = TestBed.inject(HttpTestingController);
+    });
+
+    it('stores the full user profile (enabledModuleIds, companySegment, businessDomain) from the response', () => {
+      const service = TestBed.inject(AuthService);
+      const registeredUser: User = {
+        ...minimalUser,
+        enabledModuleIds: [0, 1, 2, 3, 4, 5, 6, 7, 10],
+        companySegment: 'commerce',
+        businessDomain: 'textile-habillement'
+      };
+      const authData: AuthResponse = {
+        accessToken: makeJwt(),
+        refreshToken: 'new-refresh',
+        expiresAt: '',
+        user: registeredUser,
+        requires2Fa: false
+      };
+
+      service.register({
+        email: 'a@b.c',
+        password: 'x',
+        confirmPassword: 'x',
+        firstName: 'A',
+        lastName: 'B',
+        companyName: 'Co',
+        nif: '1234567',
+        taxRegime: 0,
+        street: 'Rue 1',
+        city: 'Tunis',
+        governorate: 'Tunis',
+        companyEmail: 'co@b.c',
+        phone: '20000000'
+      }).subscribe();
+
+      const req = httpMock.expectOne(
+        r => r.url === `${environment.apiUrl}/auth/register` && r.method === 'POST'
+      );
+      req.flush({ success: true, data: authData, message: null, errors: [] });
+
+      expect(service.user()?.enabledModuleIds).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 10]);
+      expect(service.user()?.companySegment).toBe('commerce');
+      expect(service.user()?.businessDomain).toBe('textile-habillement');
+    });
+  });
+
+  describe('refreshUserProfile', () => {
+    beforeEach(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+      configureAuthTestBed();
+      httpMock = TestBed.inject(HttpTestingController);
+    });
+
+    it('calls GET /auth/me and updates the user signal', () => {
+      const service = TestBed.inject(AuthService);
+      const refreshed: User = {
+        ...minimalUser,
+        enabledModuleIds: [0, 1, 2, 3, 4, 5, 6, 7, 10]
+      };
+
+      service.refreshUserProfile().subscribe();
+
+      const req = httpMock.expectOne(
+        r => r.url === `${environment.apiUrl}/auth/me` && r.method === 'GET'
+      );
+      req.flush({ success: true, data: refreshed, message: null, errors: [] });
+
+      expect(service.user()?.enabledModuleIds).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 10]);
+    });
+  });
+
   describe('bootstrap from storage', () => {
     it('normalizes camelCase role when loading ft_user from sessionStorage', () => {
       localStorage.clear();

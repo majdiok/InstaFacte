@@ -534,4 +534,64 @@ public sealed class PlatformSectorRulesController : ControllerBase
 
         return Ok(FactuTrust.Application.DTOs.ApiResponse<object>.Ok(null!, "Modèle désactivé."));
     }
+
+    // ---------- Tax regime suggestions (plan §3.1) ----------
+
+    [HttpGet("tax-regime-suggestions")]
+    [Authorize(Policy = "perm:" + PlatformPermissions.SectorRulesRead)]
+    public async Task<IActionResult> ListTaxRegimeSuggestions(CancellationToken cancellationToken)
+        => Ok(FactuTrust.Application.DTOs.ApiResponse<IReadOnlyList<SectorTaxRegimeSuggestionAdminDto>>.Ok(await _service.ListTaxRegimeSuggestionsAsync(cancellationToken)));
+
+    [HttpGet("tax-regime-suggestions/{id:guid}")]
+    [Authorize(Policy = "perm:" + PlatformPermissions.SectorRulesRead)]
+    public async Task<IActionResult> GetTaxRegimeSuggestion(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _service.GetTaxRegimeSuggestionAsync(id, cancellationToken);
+        return result.IsFailure
+            ? NotFound(FactuTrust.Application.DTOs.ApiResponse<SectorTaxRegimeSuggestionAdminDto>.Fail(result.Error.Description, result.Error.Code))
+            : Ok(FactuTrust.Application.DTOs.ApiResponse<SectorTaxRegimeSuggestionAdminDto>.Ok(result.Value));
+    }
+
+    [HttpPost("tax-regime-suggestions")]
+    [Authorize(Policy = "perm:" + PlatformPermissions.SectorRulesManage)]
+    public async Task<IActionResult> CreateTaxRegimeSuggestion([FromBody] CreateSectorTaxRegimeSuggestionRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId))
+            return Unauthorized(FactuTrust.Application.DTOs.ApiResponse<SectorTaxRegimeSuggestionAdminDto>.Fail("Non authentifié."));
+
+        var result = await _service.CreateTaxRegimeSuggestionAsync(request, actorId.ToString(), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(FactuTrust.Application.DTOs.ApiResponse<SectorTaxRegimeSuggestionAdminDto>.Fail(result.Error.Description, result.Error.Code));
+
+        return CreatedAtAction(nameof(GetTaxRegimeSuggestion), new { id = result.Value.Id },
+            FactuTrust.Application.DTOs.ApiResponse<SectorTaxRegimeSuggestionAdminDto>.Ok(result.Value, "Suggestion créée."));
+    }
+
+    [HttpPut("tax-regime-suggestions/{id:guid}")]
+    [Authorize(Policy = "perm:" + PlatformPermissions.SectorRulesManage)]
+    public async Task<IActionResult> UpdateTaxRegimeSuggestion(Guid id, [FromBody] UpdateSectorTaxRegimeSuggestionRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId))
+            return Unauthorized(FactuTrust.Application.DTOs.ApiResponse<SectorTaxRegimeSuggestionAdminDto>.Fail("Non authentifié."));
+
+        var result = await _service.UpdateTaxRegimeSuggestionAsync(id, request, actorId.ToString(), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(FactuTrust.Application.DTOs.ApiResponse<SectorTaxRegimeSuggestionAdminDto>.Fail(result.Error.Description, result.Error.Code));
+
+        return Ok(FactuTrust.Application.DTOs.ApiResponse<SectorTaxRegimeSuggestionAdminDto>.Ok(result.Value, "Suggestion mise à jour."));
+    }
+
+    [HttpDelete("tax-regime-suggestions/{id:guid}")]
+    [Authorize(Policy = "perm:" + PlatformPermissions.SectorRulesManage)]
+    public async Task<IActionResult> DeactivateTaxRegimeSuggestion(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId))
+            return Unauthorized(FactuTrust.Application.DTOs.ApiResponse<object>.Fail("Non authentifié."));
+
+        var result = await _service.DeactivateTaxRegimeSuggestionAsync(id, actorId.ToString(), cancellationToken);
+        if (result.IsFailure)
+            return NotFound(FactuTrust.Application.DTOs.ApiResponse<object>.Fail(result.Error.Description, result.Error.Code));
+
+        return Ok(FactuTrust.Application.DTOs.ApiResponse<object>.Ok(null!, "Suggestion désactivée."));
+    }
 }

@@ -18,6 +18,14 @@ public interface ITenantSectorReconfigurationService
     const string TenantNotFoundCode = "Validation.TenantNotFound";
 
     /// <summary>
+    /// Audit action recorded (tenant-DB <c>AuditLog</c>) for an applied re-configuration — plan §2.3.
+    /// Exposed here (rather than only as an internal implementation constant) so
+    /// <c>CompanySectorController</c> (API assembly) can query the tenant's most recent
+    /// reconfiguration audit row to enforce the 1-change/day self-service rate limit.
+    /// </summary>
+    const string AuditAction = "sector-reconfiguration";
+
+    /// <summary>
     /// Computes a dry-run preview of the requested re-configuration. Strictly no side effects —
     /// templates are evaluated with <c>dryRun=true</c> and no <c>SaveChangesAsync</c> is issued.
     /// Returns a failure (<see cref="Result.IsFailure"/>) with the French validation message for an

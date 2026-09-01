@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { catchError, of, retry } from 'rxjs';
+import { catchError, of, retry, timer } from 'rxjs';
 import { environment } from '@environments/environment';
 import { AppModule, APP_MODULE_OPTIONS } from '@core/models/app-module';
 
@@ -98,6 +98,13 @@ export interface RemoteSectorModuleDto {
   code: string;
   labelFr: string;
   isCore: boolean;
+  /**
+   * Whether this module is freely selectable on the Free plan during signup. Mirrors
+   * the backend `availableOnFreePlan` flag the sector-catalog endpoint writes on every
+   * module (and the checked-in snapshot). Absent on older payloads ⇒ treated as
+   * `true` (selectable); premium modules carry `false` (see `PREMIUM_MODULE_IDS`).
+   */
+  availableOnFreePlan?: boolean;
 }
 
 /**
@@ -110,11 +117,24 @@ export interface RemoteModuleDependencyDto {
   requiredModuleId: number;
 }
 
+/**
+ * Backend `SuggestedTaxRegimeDto` (plan §3.1) — admin-editable segment → tax regime
+ * suggestion, surfaced with a French explanatory note. Additive/optional: absent on
+ * catalogs served before this field ships server-side (fallback catalog never has it).
+ */
+export interface RemoteSuggestedTaxRegimeDto {
+  segmentCode: string;
+  regime: number;
+  noteFr: string;
+}
+
 export interface SectorCatalogDto {
   segments: RemoteSectorSegmentDto[];
   domains: RemoteSectorDomainDto[];
   modules: RemoteSectorModuleDto[];
   moduleDependencies: RemoteModuleDependencyDto[];
+  /** Optional (plan §3.1) — absent on older/static payloads. */
+  suggestedTaxRegimes?: RemoteSuggestedTaxRegimeDto[];
 }
 
 export type CatalogLoadState = 'idle' | 'loading' | 'remote' | 'fallback';
@@ -187,6 +207,21 @@ export const CORE_MODULE_IDS: readonly AppModule[] = [
   AppModule.Sales,
   AppModule.Treasury,
   AppModule.Reports
+];
+
+/**
+ * Modules reserved for a paid plan — never freely selectable on the Free plan
+ * during signup, never submitted in `enabledModules`. Mirrors the backend's
+ * canonical premium set exactly (`AppModule.AI`, `Forecasting`, `Studio`,
+ * `Payroll`). The `sector-catalog-parity.spec.ts` contract pins this constant
+ * against the sector-catalog snapshot's `availableOnFreePlan: false` module set
+ * so the frontend and backend notions of "premium" cannot silently drift apart.
+ */
+export const PREMIUM_MODULE_IDS: readonly AppModule[] = [
+  AppModule.AI,
+  AppModule.Forecasting,
+  AppModule.Studio,
+  AppModule.Payroll
 ];
 
 const SEGMENT_RECOMMENDED_MODULES: Record<CompanySegmentCode, readonly AppModule[]> = {
@@ -325,14 +360,14 @@ export function recommendedModulesFor(
   return Array.from(set).sort((a, b) => a - b);
 }
 
-/** Every module that is neither core, recommended for the profile, nor Honoraires (firm-native, never offered). */
+/** Every module that is neither core, recommended for the profile, premium (paid plan), nor Honoraires (firm-native, never offered). */
 export function optionalModulesFor(
   segment: string | null | undefined,
   domain: string | null | undefined
 ): AppModule[] {
   const recommended = new Set(recommendedModulesFor(segment, domain));
   return allModuleIds()
-    .filter(id => id !== AppModule.Honoraires && !recommended.has(id))
+    .filter(id => id !== AppModule.Honoraires && !recommended.has(id) && !PREMIUM_MODULE_IDS.includes(id))
     .sort((a, b) => a - b);
 }
 
@@ -428,12 +463,45 @@ export class RegistrationCatalogService {
     return this.domains.find(d => d.code === code)?.label ?? '';
   }
 
+  /**
+   * Suggested tax regime for a segment (plan §3.1). Returns `undefined` whenever the
+   * remote catalog hasn't loaded yet, doesn't carry `suggestedTaxRegimes` (older
+   * backend, or the static fallback catalog which never has this field), or has no
+   * entry for `segment` — the wizard then behaves exactly as before (no suggestion).
+   */
+  suggestedTaxRegimeFor(segment: string | null | undefined): RemoteSuggestedTaxRegimeDto | undefined {
+    if (!segment) return undefined;
+    const remote = this.remoteCatalog();
+    if (!remote || !Array.isArray(remote.suggestedTaxRegimes)) return undefined;
+    return remote.suggestedTaxRegimes.find(r => r.segmentCode === segment);
+  }
+
   moduleLabel(id: AppModule): string {
     return this.modules.find(m => m.id === id)?.label ?? String(id);
   }
 
   isCoreModule(id: AppModule): boolean {
     return this.coreModuleIds.includes(id);
+  }
+
+  /**
+   * Whether a module is locked on the Free plan — i.e. not freely selectable
+   * during signup and never submitted in `enabledModules`. A module is locked when
+   * it is one of the canonical premium modules (`PREMIUM_MODULE_IDS`) OR the remote
+   * sector catalog explicitly flags it `availableOnFreePlan: false`. The constant is
+   * the frontend's authoritative mirror of the backend's premium set (and applies in
+   * both remote and static-fallback modes); the remote flag is a defensive second
+   * source so a backend that additionally gates a non-canonical module is honored too.
+   * An absent flag is treated as selectable (only the constant can lock in fallback).
+   */
+  isLockedOnFreePlan(id: AppModule): boolean {
+    if (PREMIUM_MODULE_IDS.includes(id)) return true;
+    const remote = this.remoteCatalog();
+    if (remote) {
+      const mod = remote.modules.find(m => m.id === id);
+      if (mod && mod.availableOnFreePlan === false) return true;
+    }
+    return false;
   }
 
   /**
@@ -501,7 +569,7 @@ export class RegistrationCatalogService {
     this.closeDependencies(set);
 
     return Array.from(set)
-      .filter(m => m !== AppModule.Honoraires)
+      .filter(m => m !== AppModule.Honoraires && !this.isLockedOnFreePlan(m))
       .sort((a, b) => a - b);
   }
 
@@ -514,7 +582,23 @@ export class RegistrationCatalogService {
     const coreSet = new Set(this.coreModuleIds);
     return this.modules
       .map(m => m.id)
-      .filter(id => id !== AppModule.Honoraires && !recommended.has(id) && !coreSet.has(id))
+      .filter(id => id !== AppModule.Honoraires && !recommended.has(id) && !coreSet.has(id) && !this.isLockedOnFreePlan(id))
+      .sort((a, b) => a - b);
+  }
+
+  /**
+   * Modules locked on the Free plan that are present in the (remote or static)
+   * catalog — the "Plan supérieur" group rendered as locked, non-toggleable cards
+   * during signup. Returns only modules actually present in the catalog (so a
+   * premium id the backend doesn't serve is silently absent), sorted ascending,
+   * and never includes core modules (premium modules are never core). Disjoint from
+   * `recommendedModules()` and `optionalModules()`, which both exclude locked modules.
+   */
+  premiumModules(segment: string | null | undefined, domain: string | null | undefined): AppModule[] {
+    const coreSet = new Set(this.coreModuleIds);
+    return this.modules
+      .map(m => m.id)
+      .filter(id => !coreSet.has(id) && this.isLockedOnFreePlan(id))
       .sort((a, b) => a - b);
   }
 
@@ -560,13 +644,29 @@ export class RegistrationCatalogService {
     return enabled.filter(id => id !== moduleId && this.requiredBy(id).includes(moduleId));
   }
 
+  /** Number of retries attempted after the initial request before falling back (plan 2.1 — 3 attempts total). */
+  private static readonly RETRY_COUNT = 2;
+  /** Backoff base delay (ms); attempt N waits `RETRY_BACKOFF_MS_BASE * N` before retrying. */
+  private static readonly RETRY_BACKOFF_MS_BASE = 1500;
+
+  /**
+   * True once the catalog has fallen back to the bundled static table after exhausting
+   * its retries (plan 2.1). Drives the discreet "recommandations par défaut" wizard
+   * indicator — kept separate from `loadState() === 'fallback'` so a future caller
+   * (telemetry dashboard, support tooling) can query it independently of the load
+   * lifecycle enum.
+   */
+  readonly usedStaticFallback = signal(false);
+
   /**
    * Fetches the live sector catalog once per SPA session and caches it in-memory
    * (plan WP-F1). No-op when already loading/loaded, or when the frontend kill-switch
-   * `featureFlags.sectorCatalogHttp` is off. Never surfaces an error to the caller —
-   * registration must never be blocked by this endpoint. Root-provided means an admin
-   * editing rules mid-session won't be reflected without a hard reload; acceptable for
-   * the registration flow.
+   * `featureFlags.sectorCatalogHttp` is off. Never surfaces a blocking error to the
+   * caller — registration must never be blocked by this endpoint — but a failure after
+   * retries is now "loud": logged to the console/telemetry sink and reflected through
+   * `usedStaticFallback()` so the wizard can show a discreet indicator (plan 2.1).
+   * Root-provided means an admin editing rules mid-session won't be reflected without a
+   * hard reload; acceptable for the registration flow.
    */
   load(): void {
     if (this.loadState() !== 'idle') return;
@@ -577,19 +677,38 @@ export class RegistrationCatalogService {
     this.http
       .get<ApiResponse<SectorCatalogDto>>(`${environment.apiUrl}/public/sector-catalog`)
       .pipe(
-        retry({ count: 1, delay: 1500 }),
+        // Plan 2.1: 3 attempts total (initial + 2 retries) with linear backoff before
+        // falling back to the static catalog — was a single retry (2 attempts) in Phase 1.
+        retry({
+          count: RegistrationCatalogService.RETRY_COUNT,
+          delay: (_error, retryCount) => timer(RegistrationCatalogService.RETRY_BACKOFF_MS_BASE * retryCount)
+        }),
         catchError(() => of(null))
       )
       .subscribe(res => {
         const data = res?.data;
         if (!res || !res.success || !data || !Array.isArray(data.segments) || data.segments.length === 0) {
-          console.warn('[RegistrationCatalogService] Sector catalog unavailable or empty — using static fallback.');
-          this.loadState.set('fallback');
+          this.reportStaticFallback(res);
           return;
         }
         this.remoteCatalog.set(data);
         this.loadState.set('remote');
       });
+  }
+
+  /**
+   * Loud fallback reporting (plan 2.1 — "bruyant" instead of silent): console telemetry
+   * with enough context to diagnose an endpoint outage, plus the `usedStaticFallback`
+   * signal the wizard reads to show its discreet indicator.
+   */
+  private reportStaticFallback(res: ApiResponse<SectorCatalogDto> | null): void {
+    console.warn(
+      '[RegistrationCatalogService] Sector catalog unavailable or empty after ' +
+        `${RegistrationCatalogService.RETRY_COUNT + 1} attempt(s) — using static fallback catalog.`,
+      { lastResponseSuccess: res?.success ?? null, hasData: !!res?.data }
+    );
+    this.usedStaticFallback.set(true);
+    this.loadState.set('fallback');
   }
 
   private get dependencyEdges(): readonly { moduleId: AppModule; requiresModuleId: AppModule }[] {

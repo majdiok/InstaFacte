@@ -207,6 +207,13 @@ export class SettingsComponent {
     if (this.canReadTenantSettings()) {
       items.push(
         {
+          title: 'Modules',
+          description: 'Activez ou désactivez les fonctionnalités de votre espace',
+          icon: 'pi pi-th-large',
+          route: 'modules',
+          color: 'var(--color-primary-500)'
+        },
+        {
           title: 'Mon abonnement',
           description: 'Gérez votre forfait et vos options',
           icon: 'pi pi-credit-card',

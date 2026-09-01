@@ -1,3 +1,6 @@
+using FactuTrust.Application.DTOs;
+using FactuTrust.Domain.Entities;
+
 namespace FactuTrust.Application.Common.Interfaces;
 
 /// <summary>
@@ -69,4 +72,18 @@ public interface ITenantService
     /// Ensures the pre-migrated template database and backup file are up to date.
     /// </summary>
     Task EnsureTenantTemplateAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Re-seeds the tenant DB's fiscal catalogs (withholding tax types, withholding fiscal-year
+    /// parameters, income-tax year parameters) after a <c>TaxRegime</c> change (plan §2.4). Purely
+    /// additive/idempotent — reuses the same initializers run at tenant creation — and never touches
+    /// existing business data (invoices, journal entries). Also returns a non-blocking warning when
+    /// <paramref name="newRegime"/> is atypical for <paramref name="companySegment"/>.
+    /// </summary>
+    Task<FiscalReSeedResultDto> ReSeedFiscalParametersAsync(
+        Guid tenantId,
+        TaxRegime oldRegime,
+        TaxRegime newRegime,
+        string? companySegment,
+        CancellationToken cancellationToken = default);
 }

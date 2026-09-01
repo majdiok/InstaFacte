@@ -56,4 +56,11 @@ public interface ISectorRuleAdminService
     Task<Result<SectorDataTemplateAdminDto>> CreateTemplateAsync(CreateSectorDataTemplateRequest request, string? actor, CancellationToken cancellationToken);
     Task<Result<SectorDataTemplateAdminDto>> UpdateTemplateAsync(Guid id, UpdateSectorDataTemplateRequest request, string? actor, CancellationToken cancellationToken);
     Task<Result<bool>> DeactivateTemplateAsync(Guid id, string? actor, CancellationToken cancellationToken);
+
+    // Plan §3.1 — segment → suggested tax regime (informational, admin-editable).
+    Task<IReadOnlyList<SectorTaxRegimeSuggestionAdminDto>> ListTaxRegimeSuggestionsAsync(CancellationToken cancellationToken);
+    Task<Result<SectorTaxRegimeSuggestionAdminDto>> GetTaxRegimeSuggestionAsync(Guid id, CancellationToken cancellationToken);
+    Task<Result<SectorTaxRegimeSuggestionAdminDto>> CreateTaxRegimeSuggestionAsync(CreateSectorTaxRegimeSuggestionRequest request, string? actor, CancellationToken cancellationToken);
+    Task<Result<SectorTaxRegimeSuggestionAdminDto>> UpdateTaxRegimeSuggestionAsync(Guid id, UpdateSectorTaxRegimeSuggestionRequest request, string? actor, CancellationToken cancellationToken);
+    Task<Result<bool>> DeactivateTaxRegimeSuggestionAsync(Guid id, string? actor, CancellationToken cancellationToken);
 }

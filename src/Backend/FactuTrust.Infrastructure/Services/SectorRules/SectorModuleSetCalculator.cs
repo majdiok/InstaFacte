@@ -38,8 +38,31 @@ public static class SectorModuleSetCalculator
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        var result = await ComputeAsync(
+            coreModules, seedModuleIds, plan, dependencyEdges, planResolver, userId, logger, cancellationToken);
+        return result.EnabledModules;
+    }
+
+    /// <summary>
+    /// Same computation as <see cref="ComputeEnabledSetAsync"/>, but also reports what happened to
+    /// the client's explicitly-requested modules (plan §1.1/§1.2 — no silent rejections): which
+    /// requested-but-valid modules got excluded by the plan ceiling, and which raw ids were dropped
+    /// outright (undefined enum values, or Honoraires). Additive — the original method above is
+    /// unchanged and keeps its exact historical signature/behavior for existing callers/tests.
+    /// </summary>
+    public static async Task<ModuleSetComputationResult> ComputeAsync(
+        IReadOnlyList<AppModule> coreModules,
+        IEnumerable<int> seedModuleIds,
+        SubscriptionPlan plan,
+        IReadOnlyList<ModuleDependencySnapshot> dependencyEdges,
+        IPlanResolver planResolver,
+        Guid userId,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
         var coreModuleSet = new HashSet<AppModule>(coreModules);
         var candidateSet = new HashSet<AppModule>(coreModuleSet);
+        var requestedValidModules = new HashSet<AppModule>();
         var droppedValues = new List<int>();
         var consideredCount = 0;
 
@@ -62,6 +85,7 @@ public static class SectorModuleSetCalculator
             }
 
             candidateSet.Add(module);
+            requestedValidModules.Add(module);
         }
 
         if (droppedValues.Count > 0)
@@ -143,7 +167,17 @@ public static class SectorModuleSetCalculator
             }
         }
 
-        return finalSet;
+        // Denied-by-plan report (plan §1.1/§1.2): only modules the client explicitly asked for
+        // (requestedValidModules) — never core/dependency-auto-pulled ones the client never
+        // requested — count as a denial worth surfacing back to them.
+        var deniedByPlan = requestedValidModules.Where(m => !finalSet.Contains(m)).ToList();
+
+        return new ModuleSetComputationResult
+        {
+            EnabledModules = finalSet,
+            DeniedByPlan = deniedByPlan,
+            DroppedInvalidIds = droppedValues
+        };
     }
 
     /// <summary>
@@ -162,4 +196,15 @@ public static class SectorModuleSetCalculator
         module = default;
         return false;
     }
+}
+
+/// <summary>
+/// Detailed result of <see cref="SectorModuleSetCalculator.ComputeAsync"/> (plan §1.1/§1.2) — lets
+/// the caller report denied/dropped modules instead of silently swallowing that information.
+/// </summary>
+public sealed record ModuleSetComputationResult
+{
+    public required HashSet<AppModule> EnabledModules { get; init; }
+    public required IReadOnlyList<AppModule> DeniedByPlan { get; init; }
+    public required IReadOnlyList<int> DroppedInvalidIds { get; init; }
 }

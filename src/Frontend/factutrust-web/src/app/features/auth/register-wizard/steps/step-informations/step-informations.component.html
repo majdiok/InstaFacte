@@ -213,6 +213,25 @@
             <i class="pi pi-info-circle"></i> Format attendu: 1234567/A/B/C/000
           </div>
         }
+        @if (nifSegmentSuggestion()?.category) {
+          <small class="field-hint nif-category-hint">
+            NIF détecté : catégorie {{ nifSegmentSuggestion()!.category.categoryLabelFr }}
+          </small>
+        }
+        @if (showNifMismatchHint()) {
+          <div class="nif-coherence-notice" @fadeInOut>
+            <i class="pi pi-exclamation-triangle"></i>
+            <span>{{ nifSegmentSuggestion()!.hintMessage }}</span>
+            <div class="nif-coherence-actions">
+              <button type="button" class="btn-link" (click)="applySuggestedSegmentFromNif()">
+                Changer pour {{ suggestedSegmentLabelFromNif() }}
+              </button>
+              <button type="button" class="btn-link btn-link--muted" (click)="dismissNifSegmentHint()">
+                Confirmer mon segment
+              </button>
+            </div>
+          </div>
+        }
       </div>
 
       <div class="form-group flex-1">
@@ -227,6 +246,11 @@
           <div class="field-error" id="wiz-taxRegime-error" role="alert" @fadeInOut>
             <i class="pi pi-info-circle"></i> Le régime fiscal est requis
           </div>
+        }
+        @if (isSuggestedTaxRegimeActive()) {
+          <small class="field-hint suggestion-hint">
+            <i class="pi pi-sparkles"></i> Suggéré pour votre secteur — {{ suggestedTaxRegime!.noteFr }}
+          </small>
         }
       </div>
     </div>
@@ -266,13 +290,14 @@
       </div>
     </div>
 
-    <div class="form-row">
+    <div class="form-row form-row--deferred">
       <div class="form-group flex-1">
         <label for="wiz-website" class="sr-only">Site web</label>
         <div class="input-icon-wrapper">
           <i class="pi pi-globe icon"></i>
           <input pInputText id="wiz-website" formControlName="website" placeholder="Site web (optionnel)">
         </div>
+        <small class="field-hint">Vous pourrez compléter plus tard</small>
       </div>
 
       <div class="form-group flex-1">
@@ -281,7 +306,7 @@
           <i class="pi pi-box icon"></i>
           <input pInputText id="wiz-warehouseName" formControlName="warehouseName" placeholder="Entrepôt principal (optionnel)">
         </div>
-        <small class="field-hint">Un nom par défaut adapté à votre secteur sera utilisé si laissé vide</small>
+        <small class="field-hint">Un nom par défaut adapté à votre secteur sera utilisé si laissé vide — vous pourrez compléter plus tard</small>
       </div>
     </div>
   </div>

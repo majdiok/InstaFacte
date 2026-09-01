@@ -29,6 +29,10 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
     public DbSet<TenantConnectionString> TenantConnectionStrings => Set<TenantConnectionString>();
     public DbSet<UserModuleGrant> UserModuleGrants => Set<UserModuleGrant>();
+    public DbSet<ModuleGrantAuditEntry> ModuleGrantAuditEntries => Set<ModuleGrantAuditEntry>();
+
+    /// <summary>Plan §3.3 — per-tenant dismissals of module usage recommendations.</summary>
+    public DbSet<ModuleRecommendationDismissal> ModuleRecommendationDismissals => Set<ModuleRecommendationDismissal>();
     public DbSet<AccountingFirmProfile> AccountingFirmProfiles => Set<AccountingFirmProfile>();
     public DbSet<FirmClientAssignment> FirmClientAssignments => Set<FirmClientAssignment>();
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
@@ -133,6 +137,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     public DbSet<Domain.Entities.SectorRules.SectorModuleRule> SectorModuleRules => Set<Domain.Entities.SectorRules.SectorModuleRule>();
     public DbSet<Domain.Entities.SectorRules.SectorModuleDependency> SectorModuleDependencies => Set<Domain.Entities.SectorRules.SectorModuleDependency>();
     public DbSet<Domain.Entities.SectorRules.SectorDefaultSetting> SectorDefaultSettings => Set<Domain.Entities.SectorRules.SectorDefaultSetting>();
+    public DbSet<Domain.Entities.SectorRules.SectorTaxRegimeSuggestion> SectorTaxRegimeSuggestions => Set<Domain.Entities.SectorRules.SectorTaxRegimeSuggestion>();
     public DbSet<Domain.Entities.SectorRules.SectorDataTemplate> SectorDataTemplates => Set<Domain.Entities.SectorRules.SectorDataTemplate>();
     public DbSet<Domain.Entities.SectorRules.SectorDataTemplateItem> SectorDataTemplateItems => Set<Domain.Entities.SectorRules.SectorDataTemplateItem>();
     public DbSet<Domain.Entities.SectorRules.SectorRuleSetStamp> SectorRuleSetStamps => Set<Domain.Entities.SectorRules.SectorRuleSetStamp>();
@@ -235,6 +240,13 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             // Sector-aware registration wizard (plan §6.1 B2) — additive, nullable.
             entity.Property(t => t.CompanySegment).HasMaxLength(50);
             entity.Property(t => t.BusinessDomain).HasMaxLength(50);
+            entity.Property(t => t.SectorCatalogVersion).HasMaxLength(50);
+
+            // Provisioning mini-saga (plan §1.5) — additive, defaults Ready so every pre-existing
+            // row (and every non-restructured creation flow) reads as already-provisioned.
+            entity.Property(t => t.ProvisioningStatus)
+                .HasDefaultValue(TenantProvisioningStatus.Ready)
+                .IsRequired();
 
             // Value object configurations
             entity.OwnsOne(t => t.NIF, nif =>
@@ -243,6 +255,18 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
                     .HasColumnName("NIF")
                     .HasMaxLength(20)
                     .IsRequired();
+
+                // NIF uniqueness (plan §1.4): unique only among ACTIVE tenants — mirrors the
+                // application-level rule FirmManagedClientService already enforces (a deactivated
+                // tenant's NIF can be reused, e.g. re-registering after a closure). Also filtered on
+                // NIF IS NOT NULL for safety even though every creation path requires a valid NIF
+                // value object today. Guards the race between the controller's pre-check and the
+                // actual insert (two concurrent registrations with the same NIF) — surfaced by the
+                // controller as a 409, not a generic 500.
+                nif.HasIndex(n => n.Value)
+                    .IsUnique()
+                    .HasDatabaseName("IX_Tenants_NIF")
+                    .HasFilter("[NIF] IS NOT NULL AND [IsActive] = 1");
             });
 
             entity.OwnsOne(t => t.Address, addr =>
@@ -373,6 +397,24 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.HasKey(g => g.Id);
             entity.HasIndex(g => new { g.UserId, g.Module }).IsUnique();
             entity.Property(g => g.EnabledFeatureKeys).HasMaxLength(2000);
+        });
+
+        // Plan §2.2 — audit trail for module-grant changes made via CompanyModulesController.
+        builder.Entity<ModuleGrantAuditEntry>(entity =>
+        {
+            entity.ToTable("ModuleGrantAuditEntries");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Action).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.DiffJson).HasColumnType("nvarchar(max)").IsRequired();
+            entity.HasIndex(e => new { e.TenantId, e.CreatedAtUtc });
+        });
+
+        // Plan §3.3 — per-tenant dismissal of module usage recommendations; never resurfaces once dismissed.
+        builder.Entity<ModuleRecommendationDismissal>(entity =>
+        {
+            entity.ToTable("ModuleRecommendationDismissals");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.TenantId, e.Module }).IsUnique();
         });
 
         // Lot B2 — Platform admin 2FA profile (1-to-1 avec ApplicationUser).
@@ -1409,6 +1451,18 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(e => e.DomainCode).HasMaxLength(50);
             entity.Property(e => e.SettingKey).HasMaxLength(100).IsRequired();
             entity.Property(e => e.ValueType).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+        });
+
+        // Plan §3.1 — segment → suggested tax regime rows (informational, admin-editable).
+        builder.Entity<Domain.Entities.SectorRules.SectorTaxRegimeSuggestion>(entity =>
+        {
+            entity.ToTable("SectorTaxRegimeSuggestions");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.SegmentCode, e.Regime }).IsUnique();
+            entity.Property(e => e.SegmentCode).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.NoteFr).HasMaxLength(500).IsRequired();
             entity.Property(e => e.CreatedBy).HasMaxLength(450);
             entity.Property(e => e.UpdatedBy).HasMaxLength(450);
         });

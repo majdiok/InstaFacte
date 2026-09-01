@@ -1,6 +1,6 @@
-import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputMaskModule } from 'primeng/inputmask';
@@ -12,6 +12,7 @@ import { DividerModule } from 'primeng/divider';
 import { FileUploadModule } from 'primeng/fileupload';
 import { TagModule } from 'primeng/tag';
 import { InputSwitchModule } from 'primeng/inputswitch';
+import { DialogModule } from 'primeng/dialog';
 import { ToastService } from '@core/services/toast.service';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subject } from 'rxjs';
@@ -19,10 +20,17 @@ import { takeUntil } from 'rxjs/operators';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { ErrorMessageService } from '@core/services/error-message.service';
-import { CompanyService, UpdateCompanyRequest } from '@core/services/company.service';
+import { CompanyService, UpdateCompanyRequest, Company } from '@core/services/company.service';
 import { StockService, Warehouse, UpdateWarehouseRequest } from '@core/services/stock.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rules';
+import { AuthService } from '@core/services/auth.service';
+import { computeCompanyProfileCompletion } from './company-profile-completion.helpers';
+import {
+  CompanySectorPreviewResponse,
+  CompanySectorService,
+  SectorOptionDto
+} from '@core/services/company-sector.service';
 
 @Component({
   selector: 'app-company',
@@ -30,6 +38,7 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
   imports: [
     CommonModule,
     ReactiveFormsModule,
+    FormsModule,
     RouterModule,
     InputTextModule,
     InputMaskModule,
@@ -41,6 +50,7 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
     FileUploadModule,
     TagModule,
     InputSwitchModule,
+    DialogModule,
     PageHeaderComponent,
     BreadcrumbComponent
   ],
@@ -83,7 +93,20 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
         </p-button>
       </div>
     }
-    
+
+    @if (profileCompletionPct() < 100) {
+      <div class="profile-completion-banner" role="status" aria-live="polite">
+        <div class="pcb-icon"><i class="pi pi-chart-line" aria-hidden="true"></i></div>
+        <div class="pcb-body">
+          <div class="pcb-title">Profil complété à {{ profileCompletionPct() }} %</div>
+          <div class="pcb-bar">
+            <div class="pcb-bar__fill" [style.width.%]="profileCompletionPct()"></div>
+          </div>
+          <p class="pcb-text">Complétez votre logo, RIB et coordonnées pour des documents plus professionnels.</p>
+        </div>
+      </div>
+    }
+
     <form [formGroup]="form" (ngSubmit)="onSubmit()">
       <div class="form-grid">
         <!-- Company Identity -->
@@ -388,10 +411,160 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
         </p-button>
       </div>
     </form>
+
+    <p-card header="Secteur d'activité" styleClass="form-card sector-card" id="secteur">
+      @if (sectorLoading()) {
+        <div class="loading-container">
+          <i class="pi pi-spin pi-spinner" style="font-size: 1.5rem"></i>
+          <p>Chargement du secteur...</p>
+        </div>
+      } @else {
+        <p class="form-hint">
+          Votre secteur d'activité permet de recommander automatiquement les modules et modèles de documents adaptés à votre métier. Ce changement peut être effectué une fois par jour.
+        </p>
+        <div class="form-grid sector-grid">
+          <div class="form-group">
+            <label for="sectorSegment">Segment</label>
+            <p-select
+              inputId="sectorSegment"
+              [options]="availableSegments()"
+              optionLabel="labelFr"
+              optionValue="code"
+              [(ngModel)]="selectedSegmentCode"
+              [ngModelOptions]="{standalone: true}"
+              placeholder="Sélectionnez un segment"
+              class="w-full">
+            </p-select>
+          </div>
+          <div class="form-group">
+            <label for="sectorDomain">Domaine d'activité</label>
+            <p-select
+              inputId="sectorDomain"
+              [options]="availableDomains()"
+              optionLabel="labelFr"
+              optionValue="code"
+              [(ngModel)]="selectedDomainCode"
+              [ngModelOptions]="{standalone: true}"
+              placeholder="Sélectionnez un domaine"
+              class="w-full">
+            </p-select>
+          </div>
+        </div>
+        @if (sectorError()) {
+          <p class="sector-error" role="alert">
+            <i class="pi pi-exclamation-triangle"></i> {{ sectorError() }}
+          </p>
+        }
+        <div class="sector-actions">
+          <p-button
+            label="Prévisualiser les changements"
+            icon="pi pi-eye"
+            [outlined]="true"
+            [disabled]="!isSectorChanged() || sectorPreviewLoading()"
+            [loading]="sectorPreviewLoading()"
+            (onClick)="previewSectorChange()">
+          </p-button>
+        </div>
+      }
+    </p-card>
+
+    <p-dialog
+      header="Aperçu du changement de secteur"
+      [(visible)]="previewDialogVisible"
+      [modal]="true"
+      [style]="{ width: 'min(480px, 95vw)' }"
+      [draggable]="false"
+      [dismissableMask]="true">
+      @if (sectorPreview(); as preview) {
+        <div class="preview-content">
+          @if (preview.modulesToEnable.length > 0) {
+            <p class="preview-section-title"><i class="pi pi-th-large"></i> Ce changement activera :</p>
+            <ul class="preview-list">
+              @for (m of preview.modulesToEnable; track m.id) {
+                <li>{{ m.labelFr }}</li>
+              }
+            </ul>
+          }
+          @if (preview.templates.length > 0) {
+            <p class="preview-section-title"><i class="pi pi-file"></i> Modèles pré-remplis :</p>
+            <ul class="preview-list">
+              @for (t of preview.templates; track t) {
+                <li>{{ t }}</li>
+              }
+            </ul>
+          }
+          @if (preview.warnings.length > 0) {
+            <div class="preview-warnings">
+              @for (w of preview.warnings; track w) {
+                <p><i class="pi pi-exclamation-triangle"></i> {{ w }}</p>
+              }
+            </div>
+          }
+          @if (preview.modulesToEnable.length === 0 && preview.templates.length === 0) {
+            <p>Aucun module ou modèle supplémentaire ne sera activé.</p>
+          }
+        </div>
+      }
+      <div class="dialog-actions">
+        <p-button label="Annuler" [outlined]="true" severity="secondary" (onClick)="previewDialogVisible = false"></p-button>
+        <p-button
+          label="Confirmer"
+          icon="pi pi-check"
+          [loading]="sectorSaving()"
+          (onClick)="confirmSectorChange()">
+        </p-button>
+      </div>
+    </p-dialog>
     }
 
   `,
   styles: [`
+    .profile-completion-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--spacing-3);
+      background: linear-gradient(135deg, var(--color-primary-50), #fff);
+      border: 1px solid var(--color-primary-100);
+      border-radius: var(--radius-lg);
+      padding: var(--spacing-4);
+      margin-bottom: var(--spacing-4);
+    }
+    .pcb-icon {
+      width: 36px;
+      height: 36px;
+      flex: 0 0 36px;
+      border-radius: 9px;
+      background: var(--color-primary-100);
+      color: var(--color-primary-600);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pcb-body { flex: 1; min-width: 0; }
+    .pcb-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--color-primary-700);
+    }
+    .pcb-bar {
+      height: 6px;
+      border-radius: 999px;
+      background: var(--color-primary-100);
+      margin: 0.5rem 0;
+      overflow: hidden;
+    }
+    .pcb-bar__fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--color-primary-600);
+      transition: width 400ms ease-out;
+    }
+    .pcb-text {
+      font-size: 0.78rem;
+      color: var(--color-neutral-600);
+      margin: 0;
+    }
+
     .form-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -525,6 +698,70 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
       font-weight: var(--font-weight-medium);
     }
 
+    .sector-card {
+      margin-top: var(--spacing-4);
+    }
+
+    .sector-grid {
+      grid-template-columns: repeat(2, 1fr);
+      margin-top: var(--spacing-3);
+
+      @media (max-width: 640px) {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .sector-error {
+      color: var(--color-error-600, #dc2626);
+      font-size: var(--font-size-sm);
+      margin-top: var(--spacing-2);
+
+      i {
+        margin-right: var(--spacing-1);
+      }
+    }
+
+    .sector-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: var(--spacing-4);
+    }
+
+    .preview-content {
+      .preview-section-title {
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-neutral-700);
+        margin-bottom: var(--spacing-1);
+
+        i {
+          margin-right: var(--spacing-1);
+        }
+      }
+
+      .preview-list {
+        margin: 0 0 var(--spacing-3);
+        padding-left: var(--spacing-5);
+      }
+
+      .preview-warnings {
+        p {
+          color: var(--color-warning-700, #92400e);
+          background: var(--color-warning-50, #fffaf0);
+          border: 1px solid var(--color-warning-200, #fbe3b7);
+          border-radius: var(--radius-md);
+          padding: var(--spacing-2) var(--spacing-3);
+          font-size: var(--font-size-sm);
+        }
+      }
+    }
+
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--spacing-3);
+      margin-top: var(--spacing-5);
+    }
+
     .form-actions {
       display: flex;
       justify-content: flex-end;
@@ -627,6 +864,8 @@ export class CompanyComponent implements OnInit, OnDestroy {
   private stockService = inject(StockService);
   private errorHandler = inject(ErrorHandlerService);
   errorMessageService = inject(ErrorMessageService);
+  private sectorService = inject(CompanySectorService);
+  private authService = inject(AuthService);
 
   breadcrumbItems: BreadcrumbItem[] = [
     { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
@@ -640,6 +879,25 @@ export class CompanyComponent implements OnInit, OnDestroy {
   errorMessage = signal<string | null>(null);
   isRateLimited = signal(false);
   defaultWarehouseId = signal<string | null>(null);
+
+  /** Raw company data from the API — used to compute profile completion (plan §3.5). */
+  company = signal<Company | null>(null);
+  /** Profile completion percentage (plan §3.5) — 0–100, rounded. */
+  profileCompletionPct = computed(() => computeCompanyProfileCompletion(this.company()));
+
+  // Secteur d'activité (plan v1 §2.3)
+  sectorLoading = signal(false);
+  sectorSaving = signal(false);
+  sectorPreviewLoading = signal(false);
+  sectorError = signal<string | null>(null);
+  availableSegments = signal<SectorOptionDto[]>([]);
+  availableDomains = signal<SectorOptionDto[]>([]);
+  currentSegmentCode = signal<string | null>(null);
+  currentDomainCode = signal<string | null>(null);
+  selectedSegmentCode: string | null = null;
+  selectedDomainCode: string | null = null;
+  previewDialogVisible = false;
+  sectorPreview = signal<CompanySectorPreviewResponse | null>(null);
 
   // Protection against multiple simultaneous requests
   private isLoadingInProgress = false;
@@ -683,6 +941,7 @@ export class CompanyComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadCompanyData();
+    this.loadSector();
   }
 
   ngOnDestroy(): void {
@@ -763,6 +1022,7 @@ export class CompanyComponent implements OnInit, OnDestroy {
       next: (response) => {
         if (response.success && response.data) {
           const company = response.data;
+          this.company.set(company);
 
           // Format phone number for display (add spaces)
           const phoneFormatted = company.phone.length === 8
@@ -977,5 +1237,125 @@ export class CompanyComponent implements OnInit, OnDestroy {
         this.errorHandler.logError('Failed to update company', err);
       }
     });
+  }
+
+  // --- Secteur d'activité (plan v1 §2.3) ---
+
+  loadSector(): void {
+    this.sectorLoading.set(true);
+    this.sectorError.set(null);
+
+    this.sectorService.getSector().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (res) => {
+        this.sectorLoading.set(false);
+        if (res.success && res.data) {
+          this.availableSegments.set(res.data.availableSegments || []);
+          this.availableDomains.set(res.data.availableDomains || []);
+          this.currentSegmentCode.set(res.data.companySegment);
+          this.currentDomainCode.set(res.data.businessDomain);
+          this.selectedSegmentCode = res.data.companySegment;
+          this.selectedDomainCode = res.data.businessDomain;
+        } else {
+          this.sectorError.set(res.message || 'Impossible de charger le secteur d\'activité.');
+        }
+      },
+      error: (err: HttpErrorResponse) => {
+        this.sectorLoading.set(false);
+        this.sectorError.set(this.errorHandler.extractErrorMessage(err));
+      }
+    });
+  }
+
+  isSectorChanged(): boolean {
+    return (
+      !!this.selectedSegmentCode &&
+      !!this.selectedDomainCode &&
+      (this.selectedSegmentCode !== this.currentSegmentCode() ||
+        this.selectedDomainCode !== this.currentDomainCode())
+    );
+  }
+
+  previewSectorChange(): void {
+    if (!this.isSectorChanged() || this.sectorPreviewLoading()) {
+      return;
+    }
+
+    this.sectorPreviewLoading.set(true);
+    this.sectorError.set(null);
+
+    this.sectorService
+      .previewSector({
+        companySegment: this.selectedSegmentCode!,
+        businessDomain: this.selectedDomainCode!
+      })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => {
+          this.sectorPreviewLoading.set(false);
+          if (res.success && res.data) {
+            this.sectorPreview.set(res.data);
+            this.previewDialogVisible = true;
+          } else {
+            this.showErrorToast('Erreur', res.message || 'Impossible de prévisualiser ce changement.');
+          }
+        },
+        error: (err: HttpErrorResponse) => {
+          this.sectorPreviewLoading.set(false);
+          this.showErrorToast('Erreur', this.errorHandler.extractErrorMessage(err));
+        }
+      });
+  }
+
+  confirmSectorChange(): void {
+    if (!this.selectedSegmentCode || !this.selectedDomainCode || this.sectorSaving()) {
+      return;
+    }
+
+    this.sectorSaving.set(true);
+
+    this.sectorService
+      .applySector({
+        companySegment: this.selectedSegmentCode,
+        businessDomain: this.selectedDomainCode
+      })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => {
+          this.sectorSaving.set(false);
+          this.previewDialogVisible = false;
+
+          if (!res.success || !res.data) {
+            this.showErrorToast('Erreur', res.message || 'Impossible de mettre à jour le secteur d\'activité.');
+            return;
+          }
+
+          this.currentSegmentCode.set(res.data.companySegment);
+          this.currentDomainCode.set(res.data.businessDomain);
+
+          // La navigation/le tableau de bord doivent refléter les nouveaux modules
+          // immédiatement, sans relogin (plan 1.3/2.3).
+          this.authService.refreshUserProfile().pipe(takeUntil(this.destroy$)).subscribe();
+
+          const warnings = (res.data.warnings || []).filter(w => !!w?.trim());
+          if (warnings.length > 0) {
+            this.toastService.add({
+              severity: 'warn',
+              summary: 'Secteur mis à jour avec avertissements',
+              detail: warnings.join(' '),
+              life: 8000
+            });
+          } else {
+            this.toastService.add({
+              severity: 'success',
+              summary: 'Secteur d\'activité mis à jour',
+              detail: 'Vos recommandations de modules ont été actualisées.'
+            });
+          }
+        },
+        error: (err: HttpErrorResponse) => {
+          this.sectorSaving.set(false);
+          this.showErrorToast('Erreur', this.errorHandler.extractErrorMessage(err));
+        }
+      });
   }
 }

@@ -7,6 +7,7 @@ import {
   ApiResponse,
   CORE_MODULE_IDS,
   DOMAIN_OPTIONS,
+  PREMIUM_MODULE_IDS,
   RegistrationCatalogService,
   SectorCatalogDto,
   SEGMENT_OPTIONS,
@@ -111,6 +112,54 @@ describe('registration-catalog', () => {
           expect(optional).not.toContain(AppModule.Honoraires);
           for (const id of optional) {
             expect(recommended.has(id)).toBe(false);
+          }
+        }
+      }
+    });
+  });
+
+  describe('PREMIUM_MODULE_IDS / premium gating (Free plan — static-fallback path)', () => {
+    it('PREMIUM_MODULE_IDS is exactly AI, Forecasting, Studio, Payroll', () => {
+      expect([...PREMIUM_MODULE_IDS].sort((a, b) => a - b)).toEqual(
+        [AppModule.AI, AppModule.Forecasting, AppModule.Studio, AppModule.Payroll].sort((a, b) => a - b)
+      );
+    });
+
+    it('premium modules are never core', () => {
+      for (const premium of PREMIUM_MODULE_IDS) {
+        expect((CORE_MODULE_IDS as readonly AppModule[]).includes(premium)).toBe(false);
+      }
+    });
+
+    it('optionalModulesFor never includes a premium module, for any segment/domain', () => {
+      for (const segment of SEGMENT_OPTIONS) {
+        for (const domain of DOMAIN_OPTIONS) {
+          const optional = optionalModulesFor(segment.code, domain.code);
+          for (const premium of PREMIUM_MODULE_IDS) {
+            expect(optional).withContext(`${segment.code}/${domain.code}`).not.toContain(premium);
+          }
+        }
+      }
+    });
+
+    it('optionalModulesFor still surfaces non-premium optional modules where not recommended (commerce + autre)', () => {
+      const optional = optionalModulesFor('commerce', 'autre');
+      // commerce base = {Purchases, Stock, Fiscal}; no domain overlay for autre.
+      expect(optional).toContain(AppModule.Accounting);
+      expect(optional).toContain(AppModule.CRM);
+      expect(optional).toContain(AppModule.Projects);
+      expect(optional).toContain(AppModule.RecurringContracts);
+      for (const premium of PREMIUM_MODULE_IDS) {
+        expect(optional).not.toContain(premium);
+      }
+    });
+
+    it('recommendedModulesFor never includes a premium module (premium never recommended in the static catalog)', () => {
+      for (const segment of SEGMENT_OPTIONS) {
+        for (const domain of DOMAIN_OPTIONS) {
+          const recommended = recommendedModulesFor(segment.code, domain.code);
+          for (const premium of PREMIUM_MODULE_IDS) {
+            expect(recommended).withContext(`${segment.code}/${domain.code}`).not.toContain(premium);
           }
         }
       }
@@ -386,24 +435,46 @@ describe('registration-catalog', () => {
       expect(service.domainsForSegment('unknown-segment')).toEqual([]);
     });
 
-    it('404 falls back silently: loadState becomes "fallback", static catalog still served', fakeAsync(() => {
+    it('404 fails loudly after retries with backoff: loadState becomes "fallback", static catalog still served, usedStaticFallback flips true', fakeAsync(() => {
+      const warnSpy = spyOn(console, 'warn');
+      expect(service.usedStaticFallback()).toBe(false);
+
       service.load();
       httpMock.expectOne(CATALOG_URL).flush('not found', { status: 404, statusText: 'Not Found' });
-      tick(1500);
+      tick(1500); // 1st retry backoff (1 * 1500ms)
+      httpMock.expectOne(CATALOG_URL).flush('not found', { status: 404, statusText: 'Not Found' });
+      tick(3000); // 2nd retry backoff (2 * 1500ms)
       httpMock.expectOne(CATALOG_URL).flush('not found', { status: 404, statusText: 'Not Found' });
 
       expect(service.loadState()).toBe('fallback');
+      expect(service.usedStaticFallback()).toBe(true);
       expect(service.domainsForSegment('commerce').map(d => d.code)).toEqual(COMMERCE_FALLBACK_DOMAINS);
       expect(service.segments).toEqual(SEGMENT_OPTIONS);
+      expect(warnSpy).toHaveBeenCalled();
     }));
 
-    it('retries once on 500 then falls back to static on repeated failure', fakeAsync(() => {
+    it('retries twice (3 attempts total) with linear backoff on 500 then falls back to static on repeated failure (plan 2.1)', fakeAsync(() => {
       service.load();
       httpMock.expectOne(CATALOG_URL).flush('boom', { status: 500, statusText: 'Server Error' });
       tick(1500);
       httpMock.expectOne(CATALOG_URL).flush('boom again', { status: 500, statusText: 'Server Error' });
+      tick(3000);
+      httpMock.expectOne(CATALOG_URL).flush('boom once more', { status: 500, statusText: 'Server Error' });
 
       expect(service.loadState()).toBe('fallback');
+      expect(service.usedStaticFallback()).toBe(true);
+    }));
+
+    it('recovers on the 2nd retry (3rd attempt) without falling back', fakeAsync(() => {
+      service.load();
+      httpMock.expectOne(CATALOG_URL).flush('boom', { status: 500, statusText: 'Server Error' });
+      tick(1500);
+      httpMock.expectOne(CATALOG_URL).flush('boom again', { status: 500, statusText: 'Server Error' });
+      tick(3000);
+      httpMock.expectOne(CATALOG_URL).flush({ success: true, data: fakeCatalog() } as ApiResponse<SectorCatalogDto>);
+
+      expect(service.loadState()).toBe('remote');
+      expect(service.usedStaticFallback()).toBe(false);
     }));
 
     it('does not fetch at all when the frontend kill-switch is off', () => {
@@ -439,15 +510,201 @@ describe('registration-catalog', () => {
       expect(service.dependentsOf(AppModule.Stock, [AppModule.Purchases])).toEqual([]);
     });
 
-    it('recommendedModules() closes over hard dependencies (Forecasting recommended ⇒ Stock included)', () => {
+    it('recommendedModules() closes over hard dependencies (a recommended module pulls its hard requirement)', () => {
+      // Forecasting is now a premium (Free-plan-locked) module and is filtered out of
+      // recommendedModules(), so this closure test uses a non-premium recommended module
+      // (Purchases) with a fabricated hard dependency on Stock to exercise the same
+      // transitive-closure logic (plan WP-F3).
       const catalog = fakeCatalog();
-      catalog.segments[0].recommendedModuleIds = [AppModule.Forecasting];
+      catalog.segments[0].recommendedModuleIds = [AppModule.Purchases];
+      catalog.moduleDependencies = [{ moduleId: AppModule.Purchases, requiredModuleId: AppModule.Stock }];
       service.load();
       httpMock.expectOne(CATALOG_URL).flush({ success: true, data: catalog } as ApiResponse<SectorCatalogDto>);
 
       const result = service.recommendedModules('commerce', null);
-      expect(result).toContain(AppModule.Forecasting);
+      expect(result).toContain(AppModule.Purchases);
       expect(result).toContain(AppModule.Stock);
+    });
+
+    // Premium (paid-plan) module gating — Free plan must not let users freely select
+    // AI/Forecasting/Studio/Payroll, and they must never be submitted in enabledModules.
+    describe('premium module gating (Free plan)', () => {
+      it('isLockedOnFreePlan is true for every PREMIUM_MODULE_IDS id and false for core/standard modules (idle/static path)', () => {
+        for (const premium of PREMIUM_MODULE_IDS) {
+          expect(service.isLockedOnFreePlan(premium)).toBe(true);
+        }
+        expect(service.isLockedOnFreePlan(AppModule.Administration)).toBe(false);
+        expect(service.isLockedOnFreePlan(AppModule.Stock)).toBe(false);
+        expect(service.isLockedOnFreePlan(AppModule.Honoraires)).toBe(false);
+      });
+
+      it('optionalModules excludes premium modules in the static-fallback (idle) path', () => {
+        const optional = service.optionalModules('commerce', 'autre');
+        for (const premium of PREMIUM_MODULE_IDS) {
+          expect(optional).not.toContain(premium);
+        }
+      });
+
+      it('premiumModules returns exactly the premium ids present in the static catalog, sorted, never core (idle path)', () => {
+        const premium = service.premiumModules('commerce', 'autre');
+        expect(premium).toEqual([...PREMIUM_MODULE_IDS].sort((a, b) => a - b));
+        for (const id of premium) {
+          expect(service.isCoreModule(id)).toBe(false);
+        }
+      });
+
+      it('recommended/optional/premium are mutually disjoint and partition every non-core, non-Honoraires module (idle path)', () => {
+        const segment = 'entreprise';
+        const domain = 'technologie-informatique';
+        const recommended = new Set(service.recommendedModules(segment, domain));
+        const optional = new Set(service.optionalModules(segment, domain));
+        const premium = new Set(service.premiumModules(segment, domain));
+        for (const id of optional) {
+          expect(recommended.has(id)).toBe(false);
+          expect(premium.has(id)).toBe(false);
+        }
+        for (const id of premium) {
+          expect(recommended.has(id)).toBe(false);
+          expect(optional.has(id)).toBe(false);
+        }
+        const all = service.modules
+          .filter(m => !service.isCoreModule(m.id) && m.id !== AppModule.Honoraires)
+          .map(m => m.id);
+        for (const id of all) {
+          const count = (recommended.has(id) ? 1 : 0) + (optional.has(id) ? 1 : 0) + (premium.has(id) ? 1 : 0);
+          expect(count).withContext(`module id ${id}`).toBe(1);
+        }
+      });
+
+      describe('remote path', () => {
+        function fakePremiumCatalog(): SectorCatalogDto {
+          return {
+            segments: [
+              {
+                code: 'commerce', labelFr: 'Commerce', descriptionFr: '', iconKey: 'shopping-cart', sortOrder: 0,
+                coreModuleIds: [...CORE_MODULE_IDS],
+                recommendedModuleIds: [AppModule.Purchases, AppModule.Stock],
+                defaultWarehouseName: 'Magasin principal', domainCodes: ['artisanat']
+              }
+            ],
+            domains: [{ code: 'artisanat', labelFr: 'Artisanat', sortOrder: 0, additionalModuleIds: [] }],
+            modules: [
+              { id: AppModule.Purchases, code: 'purchases', labelFr: 'Achats', isCore: false, availableOnFreePlan: true },
+              { id: AppModule.Stock, code: 'stock', labelFr: 'Stock', isCore: false, availableOnFreePlan: true },
+              { id: AppModule.Accounting, code: 'accounting', labelFr: 'Comptabilité', isCore: false, availableOnFreePlan: true },
+              { id: AppModule.AI, code: 'ai', labelFr: 'Assistant IA', isCore: false, availableOnFreePlan: false },
+              { id: AppModule.Forecasting, code: 'forecasting', labelFr: 'Prévisions IA', isCore: false, availableOnFreePlan: false }
+            ],
+            moduleDependencies: []
+          };
+        }
+
+        function loadRemote(catalog: SectorCatalogDto = fakePremiumCatalog()): void {
+          service.load();
+          httpMock.expectOne(CATALOG_URL).flush({ success: true, data: catalog } as ApiResponse<SectorCatalogDto>);
+        }
+
+        it('isLockedOnFreePlan honors availableOnFreePlan:false from the remote payload', () => {
+          loadRemote();
+          expect(service.isLockedOnFreePlan(AppModule.AI)).toBe(true);
+          expect(service.isLockedOnFreePlan(AppModule.Forecasting)).toBe(true);
+          expect(service.isLockedOnFreePlan(AppModule.Purchases)).toBe(false);
+          expect(service.isLockedOnFreePlan(AppModule.Stock)).toBe(false);
+        });
+
+        it('optionalModules excludes premium modules but keeps non-premium optional ones (remote path)', () => {
+          loadRemote();
+          const optional = service.optionalModules('commerce', 'artisanat');
+          expect(optional).not.toContain(AppModule.AI);
+          expect(optional).not.toContain(AppModule.Forecasting);
+          expect(optional).toContain(AppModule.Accounting);
+        });
+
+        it('premiumModules returns only the premium modules present in the remote catalog (remote path)', () => {
+          loadRemote();
+          expect(service.premiumModules('commerce', 'artisanat')).toEqual([AppModule.AI, AppModule.Forecasting]);
+        });
+
+        it('a non-canonical module flagged availableOnFreePlan:false is also locked (defensive remote field)', () => {
+          const catalog = fakePremiumCatalog();
+          // Flag a non-premium module as unavailable on Free — the remote field must gate it too.
+          const accounting = catalog.modules.find(m => m.id === AppModule.Accounting)!;
+          accounting.availableOnFreePlan = false;
+          loadRemote(catalog);
+
+          expect(service.isLockedOnFreePlan(AppModule.Accounting)).toBe(true);
+          expect(service.optionalModules('commerce', 'artisanat')).not.toContain(AppModule.Accounting);
+          expect(service.premiumModules('commerce', 'artisanat')).toContain(AppModule.Accounting);
+        });
+
+        it('a premium module with an absent availableOnFreePlan flag is still locked via PREMIUM_MODULE_IDS (older payload)', () => {
+          // Simulate an older payload that omits the flag entirely on AI.
+          const catalog = fakePremiumCatalog();
+          catalog.modules = catalog.modules.map(m =>
+            m.id === AppModule.AI ? { id: m.id, code: m.code, labelFr: m.labelFr, isCore: m.isCore } : m
+          );
+          loadRemote(catalog);
+
+          expect(service.isLockedOnFreePlan(AppModule.AI)).toBe(true);
+          expect(service.optionalModules('commerce', 'artisanat')).not.toContain(AppModule.AI);
+          expect(service.premiumModules('commerce', 'artisanat')).toContain(AppModule.AI);
+        });
+      });
+    });
+
+    // Plan §3.1 — suggestedTaxRegimeFor
+    describe('suggestedTaxRegimeFor (plan §3.1)', () => {
+      it('returns the suggestion when the remote catalog carries suggestedTaxRegimes for the segment', () => {
+        const catalog = fakeCatalog();
+        catalog.suggestedTaxRegimes = [
+          { segmentCode: 'commerce', regime: 1, noteFr: 'Le régime forfaitaire est usuel en commerce.' }
+        ];
+        service.load();
+        httpMock.expectOne(CATALOG_URL).flush({ success: true, data: catalog } as ApiResponse<SectorCatalogDto>);
+
+        const suggestion = service.suggestedTaxRegimeFor('commerce');
+        expect(suggestion).not.toBeUndefined();
+        expect(suggestion!.regime).toBe(1);
+        expect(suggestion!.noteFr).toContain('forfaitaire');
+      });
+
+      it('returns undefined when the remote catalog has no suggestedTaxRegimes field (graceful absence)', () => {
+        service.load();
+        httpMock.expectOne(CATALOG_URL).flush({ success: true, data: fakeCatalog() } as ApiResponse<SectorCatalogDto>);
+
+        expect(service.suggestedTaxRegimeFor('commerce')).toBeUndefined();
+      });
+
+      it('returns undefined when the remote catalog has no entry for the given segment', () => {
+        const catalog = fakeCatalog();
+        catalog.suggestedTaxRegimes = [
+          { segmentCode: 'association', regime: 2, noteFr: 'Exonéré pour les associations.' }
+        ];
+        service.load();
+        httpMock.expectOne(CATALOG_URL).flush({ success: true, data: catalog } as ApiResponse<SectorCatalogDto>);
+
+        expect(service.suggestedTaxRegimeFor('commerce')).toBeUndefined();
+      });
+
+      it('returns undefined when no remote catalog has loaded yet (static/fallback mode)', () => {
+        expect(service.suggestedTaxRegimeFor('commerce')).toBeUndefined();
+      });
+
+      it('returns undefined for an empty/null segment', () => {
+        expect(service.suggestedTaxRegimeFor('')).toBeUndefined();
+        expect(service.suggestedTaxRegimeFor(null)).toBeUndefined();
+        expect(service.suggestedTaxRegimeFor(undefined)).toBeUndefined();
+      });
+
+      it('returns undefined when suggestedTaxRegimes is not an array (defensive)', () => {
+        const catalog = fakeCatalog();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (catalog as any).suggestedTaxRegimes = 'not-an-array';
+        service.load();
+        httpMock.expectOne(CATALOG_URL).flush({ success: true, data: catalog } as ApiResponse<SectorCatalogDto>);
+
+        expect(service.suggestedTaxRegimeFor('commerce')).toBeUndefined();
+      });
     });
   });
 });

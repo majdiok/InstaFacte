@@ -7,7 +7,7 @@ namespace FactuTrust.Domain.ProductOnboarding;
 /// </summary>
 public static class ProductOnboardingDefaults
 {
-    public const int CatalogVersion = 1;
+    public const int CatalogVersion = 2;
 
     public const string EmptyChecklistJson = """{"dismissed":false,"doneIds":[]}""";
 
@@ -19,6 +19,12 @@ public static class ProductOnboardingDefaults
         public const string CreateInvoice = "create-invoice";
         public const string Numbering = "numbering";
         public const string InviteUser = "invite-user";
+
+        /// <summary>Plan §2.6 — the default warehouse was renamed away from the generic seed name, or a second warehouse was created.</summary>
+        public const string CheckDefaultWarehouse = "check-default-warehouse";
+
+        /// <summary>Plan §2.6 — at least one validated stock entry ("bon d'entrée") has been recorded.</summary>
+        public const string CommerceStockReceipt = "commerce-stock-receipt";
     }
 
     public static class FirmItemIds

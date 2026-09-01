@@ -1,5 +1,6 @@
 import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { DragDropModule, CdkDragDrop } from '@angular/cdk/drag-drop';
 import { RouterModule, Router } from '@angular/router';
 import { TableModule } from 'primeng/table';
@@ -28,6 +29,16 @@ import { PERMISSIONS } from '@core/config/permission-keys';
 import { AppModule } from '@core/models/app-module';
 import { AccountingService, AccountingDashboardDto } from '../accounting/services/accounting.service';
 import { CrmService } from '../crm/services/crm.service';
+import { PurchaseOrderService } from '@core/services/purchase-order.service';
+import { ProjectApiService } from '../projects/project-api.service';
+import { RecurringContractService } from '@core/services/recurring-contract.service';
+import { APP_MODULE_OPTIONS } from '@core/models/app-module';
+import {
+  SectorKpiWidgetDef,
+  isQuickActionWidgetVisible,
+  QUICK_ACTION_WIDGETS,
+  visibleSectorKpiWidgets
+} from './dashboard-widgets.registry';
 import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { TenantSystemStatusService } from '@core/services/tenant-system-status.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
@@ -47,6 +58,10 @@ import {
 } from './dashboard-layout.config';
 import { DashboardLayoutService } from './services/dashboard-layout.service';
 import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-checklist.component';
+import { CompanyModulesService } from '@core/services/company-modules.service';
+import { ModuleRecommendationsService, ModuleRecommendationDto } from '@core/services/module-recommendations.service';
+import { ToastService } from '@core/services/toast.service';
+import { MODULE_ICON_BY_ID } from '@core/utils/module-icon.util';
 
 @Component({
   selector: 'app-dashboard',
@@ -147,6 +162,8 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
           <div class="dash-block__body">
             @switch (block.id) {
               @case ('kpi') { <ng-container [ngTemplateOutlet]="kpiTpl"></ng-container> }
+              @case ('sector') { <ng-container [ngTemplateOutlet]="sectorTpl"></ng-container> }
+              @case ('recommendations') { <ng-container [ngTemplateOutlet]="recommendationsTpl"></ng-container> }
               @case ('urgent') { <ng-container [ngTemplateOutlet]="urgentTpl"></ng-container> }
               @case ('quick-actions') { <ng-container [ngTemplateOutlet]="quickActionsTpl"></ng-container> }
               @case ('accounting') { <ng-container [ngTemplateOutlet]="accountingTpl"></ng-container> }
@@ -244,6 +261,74 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
 
     </ng-template>
 
+    <ng-template #sectorTpl>
+    <!-- Aperçu sectoriel & modules actifs (plan v1 §2.5 — dashboard adaptatif) -->
+    <div class="sector-block">
+      @if (sectorKpiWidgets().length > 0) {
+        <div class="sector-kpi-row">
+          @for (widget of sectorKpiWidgets(); track widget.widgetId) {
+            <a [routerLink]="widget.route" class="sector-kpi-card" [ngClass]="widget.tone">
+              <span class="sector-kpi-icon"><i [class]="widget.icon" aria-hidden="true"></i></span>
+              <div class="sector-kpi-text">
+                <span class="sector-kpi-label">{{ widget.labelFr }}</span>
+                <span class="sector-kpi-value">{{ sectorKpiValue(widget) ?? '—' }}</span>
+              </div>
+            </a>
+          }
+        </div>
+      }
+      <div class="modules-block">
+        <div class="modules-block__header">
+          <span class="modules-block__title"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i> Modules actifs</span>
+          <a routerLink="/settings/modules" class="modules-block__link">
+            Gérer mes modules <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+          </a>
+        </div>
+        <div class="modules-block__pills">
+          @for (mod of activeModuleOptions(); track mod.value) {
+            <span class="mod-pill">{{ mod.label }}</span>
+          }
+        </div>
+      </div>
+    </div>
+    </ng-template>
+
+    <ng-template #recommendationsTpl>
+    <!-- Recommandé pour vous (plan §3.3) — cartes d'activation en un clic -->
+    @if (moduleRecommendations().length > 0) {
+      <div class="recommendations-block">
+        <div class="recommendations-block__header">
+          <span class="recommendations-block__title"><i class="pi pi-sparkles" aria-hidden="true"></i> Recommandé pour vous</span>
+        </div>
+        <div class="recommendations-block__cards">
+          @for (rec of moduleRecommendations(); track rec.moduleId) {
+            <div class="recommendation-card">
+              <div class="recommendation-card__head">
+                <span class="recommendation-card__icon"><i [class]="recommendationModuleIcon(rec.moduleId)" aria-hidden="true"></i></span>
+                <span class="recommendation-card__label">{{ recommendationModuleLabel(rec.moduleId) }}</span>
+              </div>
+              <p class="recommendation-card__reason">{{ rec.reasonFr }}</p>
+              <div class="recommendation-card__actions">
+                <button type="button" class="btn-activate"
+                        (click)="activateRecommendation(rec.moduleId)"
+                        [disabled]="activatingModuleId() !== null">
+                  @if (activatingModuleId() === rec.moduleId) {
+                    <i class="pi pi-spin pi-spinner" aria-hidden="true"></i> Activation…
+                  } @else {
+                    <i class="pi pi-check" aria-hidden="true"></i> Activer
+                  }
+                </button>
+                <button type="button" class="btn-dismiss" (click)="dismissRecommendation(rec.moduleId)">
+                  Masquer
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
+    </ng-template>
+
     <ng-template #urgentTpl>
     <!-- Urgent Actions Banner -->
     @if (!loading() && hasUrgentActions()) {
@@ -291,6 +376,7 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
     <div class="dash-actions-row">
       <div class="section quick-actions-card" data-tour="dash-quick-actions">
         <h3 class="qa-title"><i class="fa-solid fa-bolt"></i> Actions rapides</h3>
+        @if (hasAnyQuickAction()) {
         <div class="quick-actions">
           @if (canCreateInvoice()) {
             <a routerLink="/invoices/new" class="quick-action-card">
@@ -334,48 +420,74 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
               <span class="quick-action-label">Rapports</span>
             </a>
           }
+          @if (canUseStockEntryQuickAction()) {
+            <a routerLink="/stock/entries/new" class="quick-action-card">
+              <div class="quick-action-icon qa-stock"><i class="fa-solid fa-box"></i></div>
+              <span class="quick-action-label">Entrée de stock</span>
+            </a>
+          }
+          @if (canUseNewOpportunityQuickAction()) {
+            <a routerLink="/crm/opportunities" class="quick-action-card">
+              <div class="quick-action-icon qa-crm"><i class="fa-solid fa-heart"></i></div>
+              <span class="quick-action-label">Nouvelle opportunité</span>
+            </a>
+          }
         </div>
+        } @else {
+        <div class="quick-actions-empty">
+          <i class="fa-solid fa-puzzle-piece quick-actions-empty-icon" aria-hidden="true"></i>
+          <p>Activez des modules pour voir vos actions rapides.</p>
+          <a routerLink="/settings/company" class="quick-actions-empty-link">
+            Gérer mon entreprise <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+          </a>
+        </div>
+        }
       </div>
 
       <div class="dash-side-cards">
-        @if (drillDown('pendingDeliveriesSide'); as deliveriesTarget) {
-          <a class="dash-side-card dash-side-card--clickable" [routerLink]="deliveriesTarget.route" [queryParams]="deliveriesTarget.queryParams" [attr.aria-label]="deliveriesTarget.ariaLabel">
-            <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--teal"><i class="fa-solid fa-truck-fast"></i></span>
-            <div class="dash-side-text">
-              <span class="dash-side-label">Livraisons en attente</span>
-              <span class="dash-side-value">{{ pendingDeliveriesCount() }}</span>
+        @if (showPendingDeliveriesSideCard()) {
+          @if (drillDown('pendingDeliveriesSide'); as deliveriesTarget) {
+            <a class="dash-side-card dash-side-card--clickable" [routerLink]="deliveriesTarget.route" [queryParams]="deliveriesTarget.queryParams" [attr.aria-label]="deliveriesTarget.ariaLabel">
+              <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--teal"><i class="fa-solid fa-truck-fast"></i></span>
+              <div class="dash-side-text">
+                <span class="dash-side-label">Livraisons en attente</span>
+                <span class="dash-side-value">{{ pendingDeliveriesCount() }}</span>
+              </div>
+            </a>
+          } @else {
+            <div class="dash-side-card">
+              <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--teal"><i class="fa-solid fa-truck-fast"></i></span>
+              <div class="dash-side-text">
+                <span class="dash-side-label">Livraisons en attente</span>
+                <span class="dash-side-value">{{ pendingDeliveriesCount() }}</span>
+              </div>
             </div>
-          </a>
-        } @else {
-          <div class="dash-side-card">
-            <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--teal"><i class="fa-solid fa-truck-fast"></i></span>
-            <div class="dash-side-text">
-              <span class="dash-side-label">Livraisons en attente</span>
-              <span class="dash-side-value">{{ pendingDeliveriesCount() }}</span>
-            </div>
-          </div>
+          }
         }
-        @if (drillDown('activeQuotesSide'); as quotesTarget) {
-          <a class="dash-side-card dash-side-card--clickable" [routerLink]="quotesTarget.route" [queryParams]="quotesTarget.queryParams" [attr.aria-label]="quotesTarget.ariaLabel">
-            <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--indigo"><i class="fa-solid fa-file-contract"></i></span>
-            <div class="dash-side-text">
-              <span class="dash-side-label">Devis en cours</span>
-              <span class="dash-side-value">{{ activeQuotesCount() }}</span>
+        @if (showActiveQuotesSideCard()) {
+          @if (drillDown('activeQuotesSide'); as quotesTarget) {
+            <a class="dash-side-card dash-side-card--clickable" [routerLink]="quotesTarget.route" [queryParams]="quotesTarget.queryParams" [attr.aria-label]="quotesTarget.ariaLabel">
+              <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--indigo"><i class="fa-solid fa-file-contract"></i></span>
+              <div class="dash-side-text">
+                <span class="dash-side-label">Devis en cours</span>
+                <span class="dash-side-value">{{ activeQuotesCount() }}</span>
+              </div>
+            </a>
+          } @else {
+            <div class="dash-side-card">
+              <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--indigo"><i class="fa-solid fa-file-contract"></i></span>
+              <div class="dash-side-text">
+                <span class="dash-side-label">Devis en cours</span>
+                <span class="dash-side-value">{{ activeQuotesCount() }}</span>
+              </div>
             </div>
-          </a>
-        } @else {
-          <div class="dash-side-card">
-            <span class="ft-icon-badge ft-icon-badge--lg ft-icon-badge--indigo"><i class="fa-solid fa-file-contract"></i></span>
-            <div class="dash-side-text">
-              <span class="dash-side-label">Devis en cours</span>
-              <span class="dash-side-value">{{ activeQuotesCount() }}</span>
-            </div>
-          </div>
+          }
         }
       </div>
     </div>
 
     </ng-template>
+
 
     <ng-template #accountingTpl>
     @if (hasAccountingModule() && accountingKpis()) {
@@ -857,6 +969,35 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
       gap: var(--spacing-3);
     }
 
+    .quick-actions-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: var(--spacing-2);
+      padding: var(--spacing-6) var(--spacing-4);
+      border: 1px dashed var(--color-neutral-300);
+      border-radius: var(--radius-lg, 0.75rem);
+      color: var(--color-text-secondary);
+    }
+    .quick-actions-empty-icon {
+      font-size: var(--font-size-xl, 1.5rem);
+      color: var(--color-neutral-400);
+    }
+    .quick-actions-empty p {
+      margin: 0;
+      font-size: var(--font-size-sm);
+    }
+    .quick-actions-empty-link {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacing-1);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-primary-600, #2563eb);
+      text-decoration: none;
+    }
+    .quick-actions-empty-link:hover { text-decoration: underline; }
+
     .dash-side-cards {
       display: flex;
       flex-direction: column;
@@ -975,6 +1116,238 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
     .qa-report {
       background: #eff6ff;
       color: #2563eb;
+    }
+
+    .qa-stock {
+      background: #ecfeff;
+      color: #0e7490;
+    }
+
+    .qa-crm {
+      background: #fdf2f8;
+      color: #db2777;
+    }
+
+    /* ===== Aperçu sectoriel & modules (plan v1 §2.5) ===== */
+    .sector-block {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-4);
+    }
+
+    .sector-kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: var(--spacing-3);
+    }
+
+    .sector-kpi-card {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-3);
+      padding: var(--spacing-3) var(--spacing-4);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--color-border-subtle, var(--color-neutral-200));
+      background: var(--color-surface-card, #fff);
+      text-decoration: none;
+      transition: transform var(--duration-moderate, 260ms) var(--ease-out-soft), box-shadow var(--duration-moderate, 260ms) var(--ease-out-soft);
+    }
+
+    .sector-kpi-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-soft-lg, var(--shadow-lg));
+    }
+
+    .sector-kpi-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-lg);
+      font-size: var(--font-size-lg);
+      flex-shrink: 0;
+    }
+
+    .sector-kpi-card.sector-kpi--amber .sector-kpi-icon { background: var(--color-warning-100); color: var(--color-warning-600); }
+    .sector-kpi-card.sector-kpi--purple .sector-kpi-icon { background: #f3e8ff; color: #9333ea; }
+    .sector-kpi-card.sector-kpi--indigo .sector-kpi-icon { background: #e0e7ff; color: #4f46e5; }
+    .sector-kpi-card.sector-kpi--teal .sector-kpi-icon { background: #ccfbf1; color: #0d9488; }
+
+    .sector-kpi-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sector-kpi-label {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-secondary);
+    }
+
+    .sector-kpi-value {
+      font-size: var(--font-size-lg);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .modules-block {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-2);
+      padding: var(--spacing-3) var(--spacing-4);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--color-border-subtle, var(--color-neutral-200));
+      background: var(--color-surface-subtle, var(--color-neutral-50));
+    }
+
+    .modules-block__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--spacing-2);
+    }
+
+    .modules-block__title {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .modules-block__link {
+      font-size: var(--font-size-sm);
+      color: var(--color-primary-600);
+      text-decoration: none;
+      font-weight: var(--font-weight-medium);
+    }
+
+    .modules-block__link:hover {
+      text-decoration: underline;
+    }
+
+    .modules-block__pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--spacing-2);
+    }
+
+    .mod-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: var(--spacing-1) var(--spacing-3);
+      border-radius: var(--radius-full, 999px);
+      background: var(--color-surface-card, #fff);
+      border: 1px solid var(--color-border-subtle, var(--color-neutral-200));
+      font-size: var(--font-size-xs);
+      color: var(--color-text-secondary);
+    }
+
+    /* Plan §3.3 — « Recommandé pour vous » */
+    .recommendations-block {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-3);
+    }
+
+    .recommendations-block__header {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-2);
+    }
+
+    .recommendations-block__title {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+
+      i { color: var(--color-primary-600); }
+    }
+
+    .recommendations-block__cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: var(--spacing-3);
+    }
+
+    .recommendation-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: var(--spacing-3) var(--spacing-4);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--color-border-subtle, var(--color-neutral-200));
+      background: var(--color-surface-card, #fff);
+    }
+
+    .recommendation-card__head {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .recommendation-card__icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-md, 8px);
+      background: var(--color-primary-50);
+      color: var(--color-primary-600);
+      flex-shrink: 0;
+    }
+
+    .recommendation-card__label {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .recommendation-card__reason {
+      margin: 0;
+      font-size: var(--font-size-xs);
+      color: var(--color-text-secondary);
+      line-height: 1.45;
+      flex: 1;
+    }
+
+    .recommendation-card__actions {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .btn-activate {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.35rem 0.8rem;
+      border-radius: var(--radius-md, 8px);
+      border: none;
+      background: var(--color-primary-600);
+      color: #fff;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      cursor: pointer;
+      transition: background var(--duration-fast, 150ms);
+
+      &:hover:not(:disabled) { background: var(--color-primary-700); }
+      &:disabled { opacity: 0.6; cursor: not-allowed; }
+    }
+
+    .btn-dismiss {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      color: var(--color-text-secondary);
+      padding: 0.35rem 0.4rem;
+
+      &:hover { text-decoration: underline; color: var(--color-text-primary); }
     }
 
     .quick-action-label {
@@ -1776,6 +2149,9 @@ export class DashboardComponent implements OnInit {
   private tenantSystemStatus = inject(TenantSystemStatusService);
   private errorHandler = inject(ErrorHandlerService);
   private layoutService = inject(DashboardLayoutService);
+  private modulesService = inject(CompanyModulesService);
+  private recommendationsService = inject(ModuleRecommendationsService);
+  private toastService = inject(ToastService);
 
   readonly tenantMigrationFailed = this.tenantSystemStatus.tenantMigrationFailed;
   readonly tenantMigrationMessage = this.errorHandler.getTenantMigrationFailureMessage();
@@ -1799,6 +2175,11 @@ export class DashboardComponent implements OnInit {
   crmRemindersCount = signal(0);
   crmOpenOppsCount = signal(0);
 
+  // ===== Recommandations de modules basées sur l'usage (plan §3.3) =====
+  moduleRecommendations = signal<ModuleRecommendationDto[]>([]);
+  recommendationsLoading = signal(false);
+  activatingModuleId = signal<AppModule | null>(null);
+
   // --- Personnalisation du tableau de bord (drag & drop) ---
   editMode = signal(false);
   savingLayout = signal(false);
@@ -1820,6 +2201,27 @@ export class DashboardComponent implements OnInit {
   canReadClients = computed(() => this.authService.hasPermission(PERMISSIONS.clients.read));
   canReadPayments = computed(() => this.authService.hasPermission(PERMISSIONS.payments.read));
   canReadReports = computed(() => this.authService.hasPermission(PERMISSIONS.reports.view));
+  /**
+   * Tâche 1.7 du plan : le bloc « Actions rapides » n'a de sens que si au moins une
+   * action y est visible. Un nouveau tenant avec peu de modules/permissions actifs
+   * ne doit pas voir un bloc vide — voir `hasAnyQuickAction` ci-dessous.
+   */
+  hasAnyQuickAction = computed(
+    () =>
+      this.canCreateInvoice() ||
+      this.canReadQuotes() ||
+      this.canCreateDeliveryNote() ||
+      this.canCreateReturnNote() ||
+      this.canReadClients() ||
+      this.canReadPayments() ||
+      this.canReadReports() ||
+      this.canUseStockEntryQuickAction() ||
+      this.canUseNewOpportunityQuickAction()
+  );
+  /** Carte latérale « Livraisons en attente » : les bons de livraison sont rattachés au module Ventes. */
+  showPendingDeliveriesSideCard = computed(() => this.authService.hasModule(AppModule.Sales));
+  /** Carte latérale « Devis en cours » : n'a de sens que si le module Ventes est actif. */
+  showActiveQuotesSideCard = computed(() => this.authService.hasModule(AppModule.Sales));
   showStockUrgent = computed(
     () => this.authService.hasModule(AppModule.Stock) && this.authService.hasPermission(PERMISSIONS.stock.read)
   );
@@ -1844,6 +2246,67 @@ export class DashboardComponent implements OnInit {
   hasCrmModule = computed(
     () =>
       this.authService.hasModule(AppModule.CRM) && this.authService.hasPermission(PERMISSIONS.crm.read)
+  );
+
+  // ===== Aperçu sectoriel & modules (plan v1 §2.5 — dashboard adaptatif) =====
+  private purchaseOrderService = inject(PurchaseOrderService);
+  private projectApiService = inject(ProjectApiService);
+  private recurringContractService = inject(RecurringContractService);
+
+  companySegment = computed(() => this.authService.user()?.companySegment ?? null);
+
+  /** Modules actifs de l'utilisateur, pour le bloc « Modules actifs » (plan §2.5 point 3). */
+  activeModuleOptions = computed(() => {
+    const enabledIds = new Set(this.authService.user()?.enabledModuleIds ?? []);
+    return APP_MODULE_OPTIONS.filter((o) => enabledIds.has(o.value));
+  });
+
+  /** Widgets KPI sectoriels visibles pour le segment courant (modules + permission). */
+  sectorKpiWidgets = computed(() =>
+    visibleSectorKpiWidgets(
+      this.companySegment(),
+      (mods) => this.authService.hasAllModules(mods),
+      (perm) => this.authService.hasPermission(perm)
+    )
+  );
+
+  purchaseOrdersPendingCount = signal<number | null>(null);
+  activeProjectsCount = signal<number | null>(null);
+  activeRecurringContractsCount = signal<number | null>(null);
+
+  /** Résout la valeur numérique affichée pour un widget KPI sectoriel donné. */
+  sectorKpiValue(widget: SectorKpiWidgetDef): number | null {
+    switch (widget.widgetId) {
+      case 'commerce-stock-ruptures':
+        return this.stockAlertsCount();
+      case 'commerce-purchases-pending':
+        return this.purchaseOrdersPendingCount();
+      case 'services-btp-active-projects':
+        return this.activeProjectsCount();
+      case 'services-btp-recurring-contracts':
+      case 'assoc-edu-membership-fees':
+        return this.activeRecurringContractsCount();
+      default:
+        return null;
+    }
+  }
+
+  /** Action rapide dérivée des modules actifs : entrée de stock (plan §2.5 point 3). */
+  canUseStockEntryQuickAction = computed(() =>
+    isQuickActionWidgetVisible(
+      QUICK_ACTION_WIDGETS.find((w) => w.widgetId === 'qa-stock-entry')!,
+      (mods) => this.authService.hasAllModules(mods),
+      (perm) => this.authService.hasPermission(perm)
+    )
+  );
+
+  /** Action rapide dérivée des modules actifs : nouvelle opportunité CRM. */
+  canUseNewOpportunityQuickAction = computed(() =>
+    isQuickActionWidgetVisible(
+      QUICK_ACTION_WIDGETS.find((w) => w.widgetId === 'qa-new-opportunity')!,
+      (mods) => this.authService.hasAllModules(mods),
+      (perm) => this.authService.hasPermission(perm)
+    )
   );
 
   skeletonColumns: SkeletonColumn[] = [
@@ -1875,6 +2338,8 @@ export class DashboardComponent implements OnInit {
     this.loadPendingDeliveries();
     this.loadAccountingKpis();
     this.loadCrmKpis();
+    this.loadSectorKpis();
+    this.loadModuleRecommendations();
     this.layoutService.loadLayout();
   }
 
@@ -1889,7 +2354,10 @@ export class DashboardComponent implements OnInit {
         return this.hasCrmModule();
       case 'chart':
         return !this.loading() && this.canReadInvoices() && this.monthlyRevenue().length > 0;
+      case 'recommendations':
+        return !this.loading() && this.moduleRecommendations().length > 0;
       case 'kpi':
+      case 'sector':
       case 'quick-actions':
       case 'bottom-grid':
       default:
@@ -1951,6 +2419,97 @@ export class DashboardComponent implements OnInit {
     return `${n} TND`;
   }
 
+  // ===== Recommandations de modules (plan §3.3) =====
+
+  /** Libellé français d'un module à partir de son id (pour l'affichage de la carte). */
+  recommendationModuleLabel(moduleId: AppModule): string {
+    return APP_MODULE_OPTIONS.find((o) => o.value === moduleId)?.label ?? String(moduleId);
+  }
+
+  recommendationModuleIcon(moduleId: AppModule): string {
+    return MODULE_ICON_BY_ID[moduleId]?.icon ?? 'pi-puzzle';
+  }
+
+  loadModuleRecommendations(): void {
+    this.recommendationsLoading.set(true);
+    this.recommendationsService.getRecommendations().subscribe({
+      next: (res) => {
+        this.recommendationsLoading.set(false);
+        if (res.success && res.data) {
+          this.moduleRecommendations.set(res.data);
+        }
+      },
+      error: () => {
+        this.recommendationsLoading.set(false);
+        /* dashboard reste utilisable sans recommandations */
+      }
+    });
+  }
+
+  /** Active un module recommandé en un clic (réutilise PUT /api/company/modules, plan §3.3). */
+  activateRecommendation(moduleId: AppModule): void {
+    if (this.activatingModuleId() !== null) return;
+    const currentEnabled = this.authService.user()?.enabledModuleIds ?? [];
+    const nextEnabled = [...new Set([...currentEnabled, moduleId])];
+
+    this.activatingModuleId.set(moduleId);
+    this.modulesService.updateModules(nextEnabled as AppModule[]).subscribe({
+      next: (res) => {
+        this.activatingModuleId.set(null);
+        if (!res.success || !res.data) {
+          this.toastService.add({
+            severity: 'error',
+            summary: 'Échec de l’activation',
+            detail: res.message || 'Impossible d’activer ce module.'
+          });
+          return;
+        }
+        // Sidebar/nav must reflect the change immediately (plan 1.3/2.2).
+        this.authService.refreshUserProfile().subscribe();
+        const warnings = res.data.warnings?.filter((w) => !!w?.trim()) ?? [];
+        if (warnings.length > 0) {
+          this.toastService.add({
+            severity: 'warn',
+            summary: 'Module activé avec avertissements',
+            detail: warnings.join(' '),
+            life: 8000
+          });
+        } else {
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Module activé',
+            detail: 'Votre navigation a été actualisée.'
+          });
+        }
+        // Retire la reco localement (le backend ne la renverra plus non plus).
+        this.moduleRecommendations.update((list) => list.filter((r) => r.moduleId !== moduleId));
+      },
+      error: (err: HttpErrorResponse) => {
+        this.activatingModuleId.set(null);
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Échec de l’activation',
+          detail: this.errorHandler.extractErrorMessage(err),
+          life: 8000
+        });
+      }
+    });
+  }
+
+  /** Masque une recommandation (persistant côté backend, plan §3.3). */
+  dismissRecommendation(moduleId: AppModule): void {
+    this.recommendationsService.dismiss(moduleId).subscribe({
+      next: (res) => {
+        if (res.success) {
+          this.moduleRecommendations.update((list) => list.filter((r) => r.moduleId !== moduleId));
+        }
+      },
+      error: () => {
+        /* échec silencieux — la reco reste visible, l'utilisateur peut réessayer */
+      }
+    });
+  }
+
   formatVatDeadline(isoDate: string): string {
     if (!isoDate) return '—';
     const d = new Date(isoDate);
@@ -1986,6 +2545,46 @@ export class DashboardComponent implements OnInit {
       },
       error: (err) => this.handlePossibleTenantMigrationError(err)
     });
+  }
+
+  /**
+   * Charge les données des widgets KPI sectoriels visibles (plan v1 §2.5). Chaque
+   * appel est conditionné à la visibilité effective du widget correspondant
+   * (module + permission) pour éviter des requêtes inutiles/interdites.
+   */
+  loadSectorKpis(): void {
+    const widgets = this.sectorKpiWidgets();
+
+    if (widgets.some((w) => w.widgetId === 'commerce-purchases-pending')) {
+      this.purchaseOrderService.getPurchaseOrdersSummary({}).subscribe({
+        next: (res) => {
+          if (res.success && res.data) this.purchaseOrdersPendingCount.set(res.data.pendingCount ?? 0);
+        },
+        error: () => {
+          /* le tableau de bord reste utilisable sans ce widget */
+        }
+      });
+    }
+
+    if (widgets.some((w) => w.widgetId === 'services-btp-active-projects')) {
+      this.projectApiService.dashboard().subscribe({
+        next: (res) => {
+          if (res.success && res.data) this.activeProjectsCount.set(res.data.activeProjects ?? 0);
+        },
+        error: () => {
+          /* le tableau de bord reste utilisable sans ce widget */
+        }
+      });
+    }
+
+    if (widgets.some((w) => w.widgetId === 'services-btp-recurring-contracts' || w.widgetId === 'assoc-edu-membership-fees')) {
+      this.recurringContractService.list({ status: 'Active', page: 1, pageSize: 1 }).subscribe({
+        next: (paged) => this.activeRecurringContractsCount.set(paged?.totalCount ?? 0),
+        error: () => {
+          /* le tableau de bord reste utilisable sans ce widget */
+        }
+      });
+    }
   }
 
   reloadAfterMigrationIssue(): void {

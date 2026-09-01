@@ -1,9 +1,11 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ProductOnboarding;
+using FactuTrust.Domain.SectorConfiguration;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
@@ -224,7 +226,8 @@ public sealed class ProductOnboardingServiceTests
             current.Object,
             factory.Object,
             Options.Create(new ProductOnboardingSettings { Enabled = true }),
-            NullLogger<ProductOnboardingService>.Instance);
+            NullLogger<ProductOnboardingService>.Instance,
+            BuildRegistrationSectorService());
 
         var dto = await service.GetMineAsync(CancellationToken.None);
 
@@ -244,7 +247,19 @@ public sealed class ProductOnboardingServiceTests
             current,
             factory.Object,
             Options.Create(new ProductOnboardingSettings { Enabled = enabled }),
-            NullLogger<ProductOnboardingService>.Instance);
+            NullLogger<ProductOnboardingService>.Instance,
+            BuildRegistrationSectorService());
+    }
+
+    private static IRegistrationSectorService BuildRegistrationSectorService()
+    {
+        // Mirrors the production RegistrationSectorService: resolves against the static catalog so
+        // the segment-aware warehouse baseline matches what TenantService seeds at registration.
+        var mock = new Mock<IRegistrationSectorService>();
+        mock.Setup(r => r.ResolveProfile(It.IsAny<string?>(), It.IsAny<string?>()))
+            .Returns<string?, string?>((segment, domain) =>
+                Result<SectorProfile?>.Success(SectorConfigurationCatalog.Resolve(segment, domain)));
+        return mock.Object;
     }
 
     private static MasterDbContext BuildDb()

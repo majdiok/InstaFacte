@@ -130,7 +130,7 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
         return Result.Success(profile);
     }
 
-    public async Task ApplyModuleSelectionAsync(
+    public async Task<ModuleSelectionOutcome> ApplyModuleSelectionAsync(
         Guid userId,
         SectorProfile? profile,
         IReadOnlyList<int>? requestedModules,
@@ -140,14 +140,27 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
         // Kill-switch gate: a disabled deployment must never write grant rows, even if a caller
         // still sends enabledModules (e.g. a stale/misbehaving client, or the flag toggled off
         // mid-rollout). This mirrors the same gate ResolveProfile applies for the profile itself.
+        // Plan §1.2: report back that the selection was ignored so the caller can warn the client
+        // instead of silently applying legacy all-modules behavior with no explanation.
         if (!_options.Enabled)
-            return;
+        {
+            if (requestedModules is { Count: > 0 })
+            {
+                _logger.LogWarning(
+                    "RegistrationSectorService.ApplyModuleSelectionAsync: kill-switch disabled — ignoring {Count} requested module id(s) for user {UserId}.",
+                    requestedModules.Count,
+                    userId);
+                return ModuleSelectionOutcome.IgnoredKillSwitch;
+            }
+
+            return ModuleSelectionOutcome.Empty;
+        }
 
         // Absent/empty selection ⇒ write nothing. UserModuleGrant absence means "all modules
         // enabled" (EffectivePermissionService.ResolveEnabledModules) — this is the exact legacy
         // behavior for payloads that don't opt into the wizard's module step.
         if (requestedModules is null || requestedModules.Count == 0)
-            return;
+            return ModuleSelectionOutcome.Empty;
 
         var coreModules = profile?.CoreModules ?? SectorConfigurationCatalog.CoreModules;
         var dependencyEdges = _catalogProvider.GetSnapshot().ModuleDependencies;
@@ -155,7 +168,7 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
         // The candidate/plan-intersection logic is shared with the tenant re-configuration flow
         // (plan §WP-B7, D6) via SectorModuleSetCalculator — enum filtering, Honoraires rejection,
         // dependency closure, Administration carve-out and plan ceiling all live in one place.
-        var finalSet = await SectorModuleSetCalculator.ComputeEnabledSetAsync(
+        var computation = await SectorModuleSetCalculator.ComputeAsync(
             coreModules,
             requestedModules,
             plan,
@@ -165,21 +178,24 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
             _logger,
             cancellationToken);
 
+        var finalSet = computation.EnabledModules;
+
         // Full selection ⇒ canonical legacy representation is "no grant rows".
         if (finalSet.Count == AppModuleExtensions.AllValues.Length)
-            return;
-
-        foreach (var module in AppModuleExtensions.AllValues)
         {
-            _db.UserModuleGrants.Add(new UserModuleGrant
+            return new ModuleSelectionOutcome
             {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                Module = module,
-                IsEnabled = finalSet.Contains(module),
-                EnabledFeatureKeys = null
-            });
+                EnabledModules = finalSet.ToList(),
+                DeniedByPlan = computation.DeniedByPlan,
+                DroppedInvalidIds = computation.DroppedInvalidIds
+            };
         }
+
+        // Shared with TenantSectorReconfigurationService/CompanyModulesController (plan §2.2) — same
+        // delete-then-insert/"all modules = no rows" semantics. saveChanges=false: this method never
+        // called SaveChangesAsync itself (caller's responsibility, see class summary); a fresh
+        // registration user simply has zero pre-existing rows so the delete is a no-op.
+        await UserModuleGrantWriter.RewriteGrantsAsync(_db, userId, finalSet, saveChanges: false, cancellationToken);
 
         _logger.LogInformation(
             "RegistrationSectorService.ApplyModuleSelectionAsync: wrote {Count} module grant row(s) for user {UserId} (segment={Segment}, domain={Domain}, enabled={Enabled})",
@@ -188,5 +204,12 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
             profile?.SegmentCode,
             profile?.DomainCode,
             string.Join(",", finalSet));
+
+        return new ModuleSelectionOutcome
+        {
+            EnabledModules = finalSet.ToList(),
+            DeniedByPlan = computation.DeniedByPlan,
+            DroppedInvalidIds = computation.DroppedInvalidIds
+        };
     }
 }

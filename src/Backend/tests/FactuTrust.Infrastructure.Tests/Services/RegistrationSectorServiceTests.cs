@@ -367,6 +367,83 @@ public sealed class RegistrationSectorServiceTests
         Assert.Equal(0, await db.UserModuleGrants.CountAsync());
     }
 
+    /// <summary>
+    /// Plan §1.2 — the outcome itself (not just the absence of grant rows) must report that the
+    /// selection was ignored, so <c>AuthController.Register</c> can surface a non-blocking warning
+    /// instead of silently applying legacy all-modules behavior with no explanation.
+    /// </summary>
+    [Fact]
+    public async Task ApplyModuleSelection_kill_switch_disabled_reports_Ignored_outcome()
+    {
+        await using var db = NewDb();
+        var service = NewService(db, new AllowAllPlanResolver(), enabled: false);
+        var userId = Guid.NewGuid();
+
+        var outcome = await service.ApplyModuleSelectionAsync(
+            userId, null, new[] { (int)AppModule.Stock, (int)AppModule.CRM }, SubscriptionPlan.Free, CancellationToken.None);
+
+        Assert.True(outcome.Ignored);
+        Assert.Same(ModuleSelectionOutcome.IgnoredKillSwitch, outcome);
+    }
+
+    /// <summary>
+    /// Plan §1.2 — the kill-switch being off with an EMPTY/absent selection must NOT be reported as
+    /// "ignored" (nothing was actually ignored — there was nothing to apply either way).
+    /// </summary>
+    [Fact]
+    public async Task ApplyModuleSelection_kill_switch_disabled_with_no_selection_does_not_report_Ignored()
+    {
+        await using var db = NewDb();
+        var service = NewService(db, new AllowAllPlanResolver(), enabled: false);
+        var userId = Guid.NewGuid();
+
+        var outcome = await service.ApplyModuleSelectionAsync(
+            userId, null, null, SubscriptionPlan.Free, CancellationToken.None);
+
+        Assert.False(outcome.Ignored);
+    }
+
+    /// <summary>
+    /// Plan §1.1/§1.2 — invalid raw ids (undefined enum values, or Honoraires) sent by the client
+    /// must be surfaced in <see cref="ModuleSelectionOutcome.DroppedInvalidIds"/>, not just silently
+    /// filtered out of the grant rows.
+    /// </summary>
+    [Fact]
+    public async Task ApplyModuleSelection_reports_invalid_ids_in_DroppedInvalidIds()
+    {
+        await using var db = NewDb();
+        var service = NewService(db, new AllowAllPlanResolver());
+        var userId = Guid.NewGuid();
+
+        var requested = new[] { 9999, -1, (int)AppModule.Honoraires, (int)AppModule.Stock };
+        var outcome = await service.ApplyModuleSelectionAsync(
+            userId, null, requested, SubscriptionPlan.Free, CancellationToken.None);
+
+        Assert.Equal(new[] { 9999, -1, (int)AppModule.Honoraires }.OrderBy(x => x),
+            outcome.DroppedInvalidIds.OrderBy(x => x));
+        Assert.Contains(AppModule.Stock, outcome.EnabledModules);
+        Assert.DoesNotContain(AppModule.Honoraires, outcome.EnabledModules);
+    }
+
+    /// <summary>
+    /// Plan §1.1/§1.2 — a module explicitly requested by the client but excluded by the plan ceiling
+    /// must be reported in <see cref="ModuleSelectionOutcome.DeniedByPlan"/>.
+    /// </summary>
+    [Fact]
+    public async Task ApplyModuleSelection_reports_plan_denied_modules_in_DeniedByPlan()
+    {
+        await using var db = NewDb();
+        var service = NewService(db, new DenyingPlanResolver(new[] { AppModule.Stock }));
+        var userId = Guid.NewGuid();
+
+        var outcome = await service.ApplyModuleSelectionAsync(
+            userId, null, new[] { (int)AppModule.Stock, (int)AppModule.CRM }, SubscriptionPlan.Free, CancellationToken.None);
+
+        Assert.Contains(AppModule.Stock, outcome.DeniedByPlan);
+        Assert.DoesNotContain(AppModule.CRM, outcome.DeniedByPlan);
+        Assert.DoesNotContain(AppModule.Stock, outcome.EnabledModules);
+    }
+
     [Fact]
     public async Task ApplyModuleSelection_does_not_call_SaveChanges_rows_ride_callers_transaction()
     {

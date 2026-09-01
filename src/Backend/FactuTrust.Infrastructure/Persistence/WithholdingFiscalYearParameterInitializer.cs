@@ -8,7 +8,8 @@ namespace FactuTrust.Infrastructure.Persistence;
 /// </summary>
 public static class WithholdingFiscalYearParameterInitializer
 {
-    public static async Task EnsureDefaultsSeededAsync(TenantDbContext context, CancellationToken cancellationToken = default)
+    /// <returns><c>true</c> when at least one fiscal-year parameter row was inserted, otherwise <c>false</c>.</returns>
+    public static async Task<bool> EnsureDefaultsSeededAsync(TenantDbContext context, CancellationToken cancellationToken = default)
     {
         var existing = await context.WithholdingFiscalYearParameters
             .AsNoTracking()
@@ -32,5 +33,7 @@ public static class WithholdingFiscalYearParameterInitializer
 
         if (added)
             await context.SaveChangesAsync(cancellationToken);
+
+        return added;
     }
 }

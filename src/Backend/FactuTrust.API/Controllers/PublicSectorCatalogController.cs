@@ -48,64 +48,13 @@ public sealed class PublicSectorCatalogController : ControllerBase
         // increasing origin load beyond the existing public-catalog rate limiter.
         var maxAgeSeconds = snapshot.Source == SectorRuleSource.Db ? 300 : 3600;
         if (HttpContext is not null)
-            Response.Headers.CacheControl = $"public,max-age={maxAgeSeconds}";
-
-        return Ok(ApiResponse<SectorCatalogDto>.Ok(BuildCatalog(snapshot)));
-    }
-
-    internal static SectorCatalogDto BuildCatalog(SectorRuleSnapshot snapshot)
-    {
-        var coreModuleIds = SectorConfigurationCatalog.CoreModules.Select(m => (int)m).ToList();
-        var coreModuleSet = new HashSet<AppModule>(SectorConfigurationCatalog.CoreModules);
-
-        var segments = snapshot.Segments
-            .OrderBy(s => s.SortOrder)
-            .Select(s => new SectorSegmentDto
-            {
-                Code = s.Code,
-                LabelFr = s.LabelFr,
-                DescriptionFr = s.DescriptionFr,
-                IconKey = s.IconKey,
-                SortOrder = s.SortOrder,
-                CoreModuleIds = coreModuleIds,
-                RecommendedModuleIds = s.BaseRecommendedModules.Select(m => (int)m).ToList(),
-                DefaultWarehouseName = s.DefaultWarehouseName,
-                DomainCodes = s.DomainCodes
-            })
-            .ToList();
-
-        var domains = snapshot.Domains
-            .OrderBy(d => d.SortOrder)
-            .Select(d => new SectorDomainDto
-            {
-                Code = d.Code,
-                LabelFr = d.LabelFr,
-                SortOrder = d.SortOrder,
-                AdditionalModuleIds = d.OverlayModules.Select(m => (int)m).ToList()
-            })
-            .ToList();
-
-        var modules = AppModuleExtensions.AllValues
-            .Where(m => m != AppModule.Honoraires)
-            .Select(m => new SectorModuleDto
-            {
-                Id = (int)m,
-                Code = m.ToString(),
-                LabelFr = m.ToDisplayString(),
-                IsCore = coreModuleSet.Contains(m)
-            })
-            .ToList();
-
-        var moduleDependencies = snapshot.ModuleDependencies
-            .Select(d => new SectorModuleDependencyDto { ModuleId = d.ModuleId, RequiredModuleId = d.RequiredModuleId })
-            .ToList();
-
-        return new SectorCatalogDto
         {
-            Segments = segments,
-            Domains = domains,
-            Modules = modules,
-            ModuleDependencies = moduleDependencies
-        };
+            Response.Headers.CacheControl = $"public,max-age={maxAgeSeconds}";
+            // Plan §2.1 — lets clients cheaply detect a catalog change (e.g. after an admin edit)
+            // via a conditional request, without re-downloading/re-parsing the full payload.
+            Response.Headers.ETag = $"\"{snapshot.CatalogVersionTag}\"";
+        }
+
+        return Ok(ApiResponse<SectorCatalogDto>.Ok(SectorCatalogDtoMapper.BuildCatalog(snapshot)));
     }
 }

@@ -276,6 +276,25 @@ public static class AppModuleExtensions
 
     public static readonly AppModule[] AllValues = Enum.GetValues<AppModule>();
 
+    /// <summary>
+    /// Modules réservés aux plans payants (Monthly/Annual) — NON disponibles sur le plan Free et
+    /// NON proposés par le wizard d'inscription. Source de vérité unique partagée entre
+    /// <c>PlanSeeder</c> (Infrastructure — seeding du plan Free + alignement) et le mapper du
+    /// catalogue sectoriel (Application — flag <c>AvailableOnFreePlan</c> exposé au wizard).
+    /// Plan §1.1, décision D1 (Free = cœur + standard, pas de modules premium).
+    /// <see cref="AppModule.Honoraires"/> reste exclu partout (natif cabinet) et n'apparaît pas ici.
+    /// </summary>
+    public static IReadOnlyCollection<AppModule> PaidPlanModuleIds { get; } = new[]
+    {
+        AppModule.AI,
+        AppModule.Forecasting,
+        AppModule.Studio,
+        AppModule.Payroll
+    };
+
+    /// <summary>True si <paramref name="module"/> est réservé aux plans payants (voir <see cref="PaidPlanModuleIds"/>).</summary>
+    public static bool IsPaidPlanOnly(this AppModule module) => PaidPlanModuleIds.Contains(module);
+
     private static readonly Lazy<IReadOnlySet<string>> AllModulesPermissionUniverseLazy = new(() =>
     {
         var union = new HashSet<string>();

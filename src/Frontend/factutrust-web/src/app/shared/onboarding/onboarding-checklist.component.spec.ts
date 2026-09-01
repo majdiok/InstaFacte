@@ -20,6 +20,7 @@ describe('OnboardingChecklistComponent', () => {
     admin?: boolean;
     companySegment?: string | null;
     enabledModuleIds?: number[];
+    tenantCreatedAtUtc?: string | null;
   }): void {
     patchSpy = jasmine.createSpy('patch').and.returnValue(of({
       enabled: true,
@@ -38,6 +39,7 @@ describe('OnboardingChecklistComponent', () => {
           useValue: {
             user: () => ({
               companySegment: opts.companySegment ?? null,
+              tenantCreatedAtUtc: opts.tenantCreatedAtUtc ?? undefined,
               productOnboardingChecklist: {
                 dismissed: false,
                 doneIds: opts.doneIds ?? []
@@ -170,6 +172,38 @@ describe('OnboardingChecklistComponent', () => {
     });
   });
 
+  describe('plan v1 §2.6 — items sectoriels additionnels (BTP / Services & Éducatif)', () => {
+    it('tenant BTP avec module Projets actif voit « Créer votre premier projet », pas le tenant Commerce', () => {
+      setup({ admin: true, enabledModuleIds: [AppModule.Projects], companySegment: 'btp-construction' });
+      expect(fixture.nativeElement.textContent).toContain('Créer votre premier projet');
+    });
+
+    it('tenant Commerce ne voit pas « Créer votre premier projet » même avec le module Projets actif', () => {
+      setup({ admin: true, enabledModuleIds: [AppModule.Projects], companySegment: 'commerce' });
+      expect(fixture.nativeElement.textContent).not.toContain('Créer votre premier projet');
+    });
+
+    it('masque « Créer votre premier projet » pour un tenant BTP sans le module Projets', () => {
+      setup({ admin: true, enabledModuleIds: [], companySegment: 'btp-construction' });
+      expect(fixture.nativeElement.textContent).not.toContain('Créer votre premier projet');
+    });
+
+    it('tenant Services avec module RecurringContracts actif voit « Configurer un contrat récurrent »', () => {
+      setup({ admin: true, enabledModuleIds: [AppModule.RecurringContracts], companySegment: 'services' });
+      expect(fixture.nativeElement.textContent).toContain('Configurer un contrat récurrent');
+    });
+
+    it('tenant Établissement éducatif avec module RecurringContracts actif voit aussi cet item', () => {
+      setup({ admin: true, enabledModuleIds: [AppModule.RecurringContracts], companySegment: 'etablissement-educatif' });
+      expect(fixture.nativeElement.textContent).toContain('Configurer un contrat récurrent');
+    });
+
+    it('tenant BTP ne voit pas « Configurer un contrat récurrent » (réservé Services/Éducatif)', () => {
+      setup({ admin: true, enabledModuleIds: [AppModule.RecurringContracts], companySegment: 'btp-construction' });
+      expect(fixture.nativeElement.textContent).not.toContain('Configurer un contrat récurrent');
+    });
+  });
+
   describe('progress counts the filtered list (plan WP-F5)', () => {
     // Two shipped catalog items ARE module/segment-gated now ('check-default-warehouse',
     // 'commerce-stock-receipt' — see the 'real catalog items' describe block above), but this
@@ -189,6 +223,25 @@ describe('OnboardingChecklistComponent', () => {
 
       expect(fixture.componentInstance.visibleItems().length).toBe(2);
       expect(fixture.componentInstance.progressLabel()).toBe('1 / 2 étapes terminées');
+    });
+  });
+
+  describe('plan §3.5 — minAgeDays gating (progressive profiling)', () => {
+    it('hides the "Complétez votre profil entreprise" item when the tenant is younger than minAgeDays', () => {
+      const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+      setup({ admin: true, tenantCreatedAtUtc: oneDayAgo });
+      expect(fixture.nativeElement.textContent).not.toContain('Complétez votre profil entreprise');
+    });
+
+    it('shows the "Complétez votre profil entreprise" item once the tenant is old enough', () => {
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+      setup({ admin: true, tenantCreatedAtUtc: tenDaysAgo });
+      expect(fixture.nativeElement.textContent).toContain('Complétez votre profil entreprise');
+    });
+
+    it('shows the item when tenantCreatedAtUtc is absent (fail-open = pre-Phase-3 behavior)', () => {
+      setup({ admin: true, tenantCreatedAtUtc: undefined });
+      expect(fixture.nativeElement.textContent).toContain('Complétez votre profil entreprise');
     });
   });
 });

@@ -26,6 +26,16 @@ public sealed class Tenant : AggregateRoot
     public DateTime? DeactivatedAt { get; private set; }
 
     /// <summary>
+    /// Provisioning mini-saga (plan §1.5): tracks whether the tenant's dedicated database has been
+    /// successfully created/seeded. <see cref="Create"/> (self-registration, the only flow with a
+    /// two-phase commit — master row committed before database provisioning starts) defaults to
+    /// <see cref="TenantProvisioningStatus.Pending"/>; every other factory provisions synchronously
+    /// within one transaction like before and defaults to <see cref="TenantProvisioningStatus.Ready"/>
+    /// so their behavior stays byte-identical. Login/tenant resolution must refuse a non-Ready tenant.
+    /// </summary>
+    public TenantProvisioningStatus ProvisioningStatus { get; private set; } = TenantProvisioningStatus.Ready;
+
+    /// <summary>
     /// Cabinet comptable qui a créé et gère ce dossier client (société sans compte plateforme).
     /// Null pour les tenants auto-inscrits.
     /// </summary>
@@ -41,6 +51,16 @@ public sealed class Tenant : AggregateRoot
 
     /// <summary>Normalized catalog code, e.g. "sante-paramedical". Null when no domain was captured.</summary>
     public string? BusinessDomain { get; private set; }
+
+    /// <summary>
+    /// Plan §2.1 — <see cref="FactuTrust.Domain.SectorConfiguration.SectorRuleSnapshot.CatalogVersionTag"/>
+    /// (e.g. "static:0", "db:12") captured at the moment <see cref="CompanySegment"/>/<see cref="BusinessDomain"/>
+    /// were last resolved from the sector catalog (registration, or a later reconfiguration). Null for
+    /// tenants created before this field existed, or when no sector classification was ever set.
+    /// Informational only — never gates behavior; lets support/diagnostics tell which catalog
+    /// version drove a given tenant's module set.
+    /// </summary>
+    public string? SectorCatalogVersion { get; private set; }
 
     private Tenant() { }
 
@@ -70,7 +90,11 @@ public sealed class Tenant : AggregateRoot
             Kind = TenantKind.Company,
             Website = website?.Trim(),
             DatabaseName = GenerateDatabaseName(),
-            IsActive = true
+            IsActive = true,
+            // Self-registration is the only flow provisioning the tenant database in a second,
+            // separate step after this master row is committed (plan §1.5 mini-saga) — starts
+            // Pending until AuthController.Register marks it Ready/Failed.
+            ProvisioningStatus = TenantProvisioningStatus.Pending
         };
 
         tenant.AddDomainEvent(new TenantCreatedEvent(tenant.Id, tenant.CompanyName, tenant.DatabaseName));
@@ -99,6 +123,9 @@ public sealed class Tenant : AggregateRoot
             return result;
 
         result.Value.ManagedByFirmTenantId = managedByFirmTenantId;
+        // Unlike self-registration, firm-managed client provisioning stays fully synchronous
+        // within one transaction (FirmManagedClientService) — restore the historical Ready default.
+        result.Value.ProvisioningStatus = TenantProvisioningStatus.Ready;
         return result;
     }
 
@@ -196,6 +223,19 @@ public sealed class Tenant : AggregateRoot
         }
     }
 
+    /// <summary>Plan §2.1 — records the catalog version tag active when the sector classification was last resolved. Null clears it.</summary>
+    public void SetSectorCatalogVersion(string? catalogVersionTag)
+    {
+        if (string.IsNullOrWhiteSpace(catalogVersionTag))
+        {
+            SectorCatalogVersion = null;
+            return;
+        }
+
+        var trimmed = catalogVersionTag.Trim();
+        SectorCatalogVersion = trimmed.Length > 50 ? trimmed[..50] : trimmed;
+    }
+
     public void Deactivate()
     {
         if (!IsActive)
@@ -216,11 +256,42 @@ public sealed class Tenant : AggregateRoot
         AddDomainEvent(new TenantReactivatedEvent(Id, CompanyName));
     }
 
+    /// <summary>Provisioning mini-saga (plan §1.5): dedicated database created/seeded and connection string persisted.</summary>
+    public void MarkProvisioningReady()
+    {
+        ProvisioningStatus = TenantProvisioningStatus.Ready;
+    }
+
+    /// <summary>Provisioning mini-saga (plan §1.5): database provisioning failed — best-effort cleanup follows.</summary>
+    public void MarkProvisioningFailed()
+    {
+        ProvisioningStatus = TenantProvisioningStatus.Failed;
+    }
+
     private static string GenerateDatabaseName()
     {
         var uniqueId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
         return $"FactuTrust_Tenant_{uniqueId}";
     }
+}
+
+/// <summary>
+/// Provisioning mini-saga status (plan §1.5) for a tenant's dedicated database.
+/// <see cref="Ready"/> is deliberately the enum's zero/CLR-default value: EF Core treats a property
+/// holding its CLR default as "not explicitly set" and would otherwise substitute the column's
+/// database-generated default on every insert, silently discarding an explicit
+/// <see cref="Pending"/> — see the `HasDefaultValue` sentinel-value warning this ordering avoids.
+/// </summary>
+public enum TenantProvisioningStatus
+{
+    /// <summary>Database provisioned, seeded, and connection string persisted — tenant usable.</summary>
+    Ready = 0,
+
+    /// <summary>Master row committed; database provisioning not completed yet.</summary>
+    Pending = 1,
+
+    /// <summary>Database provisioning failed; tenant/database are candidates for orphan cleanup.</summary>
+    Failed = 2
 }
 
 /// <summary>

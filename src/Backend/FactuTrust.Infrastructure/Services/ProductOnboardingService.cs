@@ -7,6 +7,7 @@ using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Constants;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ProductOnboarding;
+using FactuTrust.Domain.Services;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -17,24 +18,46 @@ namespace FactuTrust.Infrastructure.Services;
 
 public sealed class ProductOnboardingService : IProductOnboardingService
 {
+    /// <summary>
+    /// Generic fallback default-warehouse name, used as the "still untouched" baseline for the
+    /// plan §2.6 <c>check-default-warehouse</c> onboarding item when no sector-specific name
+    /// resolves. The segment-aware baseline is <c>SectorProfile.DefaultWarehouseName</c>
+    /// (e.g. "Magasin principal" for Commerce, "Dépôt chantier" for BTP) — the same value
+    /// <c>AuthController</c> passes into tenant DB provisioning at registration — so a fresh
+    /// Commerce/BTP tenant is not wrongly flagged as "renamed ⇒ done" at day 0.
+    /// </summary>
+    private const string DefaultWarehouseSeedName = "Entrepôt Principal";
+
+    /// <summary>
+    /// Warehouse codes auto-seeded by the plan §3.4 sector data templates (Commerce provisions
+    /// "Boutique"/"Réserve" reserves). They are provisioning artifacts, not user engagement, so they
+    /// are excluded from the "created a second warehouse" auto-completion signal — otherwise a fresh
+    /// Commerce tenant would be auto-completed at day 0 merely for having its provisioned reserves.
+    /// </summary>
+    private static readonly HashSet<string> SectorTemplateSeededWarehouseCodes =
+        new(StringComparer.OrdinalIgnoreCase) { "BOUTIQUE", "RESERVE" };
+
     private readonly MasterDbContext _master;
     private readonly ICurrentUser _currentUser;
     private readonly ITenantDbContextFactory _tenantDbFactory;
     private readonly ProductOnboardingSettings _settings;
     private readonly ILogger<ProductOnboardingService> _logger;
+    private readonly IRegistrationSectorService _registrationSectorService;
 
     public ProductOnboardingService(
         MasterDbContext master,
         ICurrentUser currentUser,
         ITenantDbContextFactory tenantDbFactory,
         IOptions<ProductOnboardingSettings> settings,
-        ILogger<ProductOnboardingService> logger)
+        ILogger<ProductOnboardingService> logger,
+        IRegistrationSectorService registrationSectorService)
     {
         _master = master;
         _currentUser = currentUser;
         _tenantDbFactory = tenantDbFactory;
         _settings = settings.Value;
         _logger = logger;
+        _registrationSectorService = registrationSectorService;
     }
 
     public async Task<ProductOnboardingDto> GetMineAsync(CancellationToken cancellationToken)
@@ -195,6 +218,59 @@ public sealed class ProductOnboardingService : IProductOnboardingService
         if (hasInvoice)
             ids.Add(ProductOnboardingDefaults.CompanyItemIds.CreateInvoice);
 
+        // Plan §2.6 — "check-default-warehouse": the tenant engaged with warehouse setup, either by
+        // renaming the default warehouse away from its segment-specific seed name or by creating an
+        // extra warehouse of its own. The seed baseline is the tenant's segment DefaultWarehouseName
+        // (same source TenantService uses to seed at registration); the §3.4 template-seeded reserve
+        // warehouses (Commerce "Boutique"/"Réserve") are excluded so a fresh Commerce tenant isn't
+        // auto-completed at day 0 just for having its provisioned reserves.
+        var warehouses = await tenantDb.Warehouses.AsNoTracking()
+            .Where(w => w.IsActive)
+            .Select(w => new { w.IsDefault, w.Code, w.Name })
+            .ToListAsync(cancellationToken);
+        var sectorProfile = _registrationSectorService.ResolveProfile(tenant.CompanySegment, tenant.BusinessDomain);
+        var expectedDefaultName = sectorProfile.IsSuccess && sectorProfile.Value is not null
+            ? sectorProfile.Value.DefaultWarehouseName
+            : null;
+        var untouchedDefaultName = !string.IsNullOrWhiteSpace(expectedDefaultName)
+            ? expectedDefaultName!
+            : DefaultWarehouseSeedName;
+        var defaultWarehouseRenamed = warehouses
+            .FirstOrDefault(w => w.IsDefault)?.Name is { } defaultName
+            && !string.Equals(defaultName, untouchedDefaultName, StringComparison.Ordinal);
+        var userCreatedExtraWarehouses = warehouses
+            .Count(w => !w.IsDefault && !SectorTemplateSeededWarehouseCodes.Contains(w.Code));
+        if (userCreatedExtraWarehouses > 0 || defaultWarehouseRenamed)
+            ids.Add(ProductOnboardingDefaults.CompanyItemIds.CheckDefaultWarehouse);
+
+        // Plan §2.6 — "commerce-stock-receipt": at least one validated stock entry ("bon d'entrée").
+        var hasStockReceipt = await tenantDb.StockVouchers.AsNoTracking()
+            .AnyAsync(v => v.Kind == StockVoucherKind.Entry && v.Status == StockVoucherStatus.Validated, cancellationToken);
+        if (hasStockReceipt)
+            ids.Add(ProductOnboardingDefaults.CompanyItemIds.CommerceStockReceipt);
+
+        // Plan §2.6 — "numbering": at least one numbering scheme's format or start number diverges
+        // from the document type's default (StartNumber initializes to 1 and only an explicit
+        // UpdateStartNumber call changes it; blocks are compared after deserialization — not as raw
+        // JSON — so legacy PascalCase-persisted defaults still compare equal to the current
+        // camelCase default serialization).
+        var numberingSchemes = await tenantDb.DocumentNumberingSchemes.AsNoTracking()
+            .Select(s => new { s.DocumentType, s.StartNumber, s.FormatBlocksJson })
+            .ToListAsync(cancellationToken);
+        var numberingCustomized = numberingSchemes.Any(s =>
+            s.StartNumber != 1 || !MatchesDefaultBlocks(s.DocumentType, s.FormatBlocksJson));
+        if (numberingCustomized)
+            ids.Add(ProductOnboardingDefaults.CompanyItemIds.Numbering);
+
         return ids;
+    }
+
+    private static bool MatchesDefaultBlocks(NumberingDocumentType documentType, string formatBlocksJson)
+    {
+        var actual = NumberingSchemeDefaults.DeserializeBlocks(formatBlocksJson);
+        var expected = NumberingSchemeDefaults.GetDefaultBlocks(documentType);
+
+        return actual.Count == expected.Count
+            && actual.Zip(expected, (a, e) => a.Type == e.Type && a.Order == e.Order && a.Value == e.Value).All(match => match);
     }
 }

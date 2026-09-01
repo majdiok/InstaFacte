@@ -257,6 +257,15 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(15)
             }));
 
+    options.AddPolicy("email-verification", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = isDevelopment ? 30 : 3,
+                Window = TimeSpan.FromMinutes(15)
+            }));
+
     options.AddPolicy("ai", context =>
     {
         // Quota par utilisateur authentifié (repli sur l'IP pour l'anonyme) : évite que plusieurs
