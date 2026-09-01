@@ -52,6 +52,18 @@ public sealed class SectorDataTemplate : Entity
         SortOrder = sortOrder;
     }
 
+    /// <summary>
+    /// Refreshes the segment/domain scope a catalog-known template targets (review R3). Only the
+    /// catalog seeder needs this — <c>UpdateDetails</c> (used by the admin CRUD's PUT endpoint too)
+    /// intentionally leaves the scope untouched, since the admin surface never lets an operator
+    /// re-target an existing template to a different segment/domain.
+    /// </summary>
+    public void UpdateScope(string? segmentCode, string? domainCode)
+    {
+        SegmentCode = segmentCode;
+        DomainCode = domainCode;
+    }
+
     public void Deactivate() => IsActive = false;
 
     public void Reactivate() => IsActive = true;

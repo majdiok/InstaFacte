@@ -7,7 +7,8 @@ using FactuTrust.Domain.Auth;
 using FactuTrust.Domain.Authorization;
 using FactuTrust.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace FactuTrust.API.Tests;
@@ -23,18 +24,30 @@ namespace FactuTrust.API.Tests;
 /// infrastructure reasons unrelated to the behavior under test, this instead exercises the exact
 /// two links of the real enforcement chain at the unit level:
 ///
-///  1. <see cref="EffectivePermissionsCalculator"/> + <see cref="PermissionAuthorizationHandler"/> —
-///     the same claims shape TenantAuthTokenService puts on the JWT for a module-scoped user
-///     (perm_source=modules + one `perm` claim per effective permission), run through the exact
-///     handler ASP.NET Core invokes for [Authorize(Policy = "perm:...")]. QuotesController's list
-///     endpoint uses PermissionPolicies.QuotesRead == "perm:" + Permissions.Quotes.Read, so denial
-///     of that requirement here is equivalent to a 403 on that endpoint.
+///  1. <see cref="EffectivePermissionsCalculator"/> + a DI-resolved <see cref="IAuthorizationService"/>
+///     running the REAL <see cref="PermissionPolicyProvider"/> + <see cref="PermissionAuthorizationHandler"/>
+///     pair registered exactly as in Program.cs (review R5c: previously this test new'd up
+///     PermissionAuthorizationHandler and an AuthorizationHandlerContext by hand, bypassing the
+///     policy-name-to-requirement resolution done by PermissionPolicyProvider.GetPolicyAsync —
+///     a bug there could pass unnoticed). QuotesController's list endpoint uses
+///     PermissionPolicies.QuotesRead == "perm:" + Permissions.Quotes.Read, so denial of that policy
+///     name here is equivalent to a 403 on that endpoint.
 ///  2. TenantUsersController.ValidateModuleAccessItems — the private static grant-write guard that
 ///     rejects unknown feature keys before any grant row is persisted — invoked via reflection
 ///     since it is intentionally private (no public surface widened just for a test).
 /// </summary>
 public sealed class FeatureLevelAuthorizationTests
 {
+    private static IAuthorizationService BuildRealAuthorizationService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthorizationCore();
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+        services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
+        return services.BuildServiceProvider().GetRequiredService<IAuthorizationService>();
+    }
+
     [Fact]
     public async Task Utilisateur_Sales_limite_a_invoices_recoit_403_sur_quotes()
     {
@@ -56,21 +69,13 @@ public sealed class FeatureLevelAuthorizationTests
             identity.AddClaim(new Claim(AuthClaimTypes.Permission, permission));
         var user = new ClaimsPrincipal(identity);
 
-        var handler = new PermissionAuthorizationHandler(NullLogger<PermissionAuthorizationHandler>.Instance);
+        var authorizationService = BuildRealAuthorizationService();
 
-        var quotesContext = new AuthorizationHandlerContext(
-            new IAuthorizationRequirement[] { new PermissionRequirement(Permissions.Quotes.Read) },
-            user,
-            resource: null);
-        await handler.HandleAsync(quotesContext);
-        Assert.False(quotesContext.HasSucceeded); // 403 equivalent on the quotes-permission endpoint
+        var quotesResult = await authorizationService.AuthorizeAsync(user, resource: null, PermissionPolicies.QuotesRead);
+        Assert.False(quotesResult.Succeeded); // 403 equivalent on the quotes-permission endpoint
 
-        var invoicesContext = new AuthorizationHandlerContext(
-            new IAuthorizationRequirement[] { new PermissionRequirement(Permissions.Invoices.Read) },
-            user,
-            resource: null);
-        await handler.HandleAsync(invoicesContext);
-        Assert.True(invoicesContext.HasSucceeded); // invoices stays allowed: the denial is feature-scoped, not a global lockout
+        var invoicesResult = await authorizationService.AuthorizeAsync(user, resource: null, PermissionPolicies.InvoicesRead);
+        Assert.True(invoicesResult.Succeeded); // invoices stays allowed: the denial is feature-scoped, not a global lockout
     }
 
     [Fact]

@@ -35,18 +35,15 @@ namespace FactuTrust.API.Controllers;
 public sealed class PlatformSectorRulesController : ControllerBase
 {
     private readonly ISectorRuleAdminService _service;
-    private readonly StaticSectorCatalogProvider _staticCatalogProvider;
     private readonly DbSectorCatalogProvider _dbCatalogProvider;
     private readonly ILogger<PlatformSectorRulesController> _logger;
 
     public PlatformSectorRulesController(
         ISectorRuleAdminService service,
-        StaticSectorCatalogProvider staticCatalogProvider,
         DbSectorCatalogProvider dbCatalogProvider,
         ILogger<PlatformSectorRulesController> logger)
     {
         _service = service;
-        _staticCatalogProvider = staticCatalogProvider;
         _dbCatalogProvider = dbCatalogProvider;
         _logger = logger;
     }
@@ -104,7 +101,11 @@ public sealed class PlatformSectorRulesController : ControllerBase
     [ProducesResponseType(typeof(FactuTrust.Application.DTOs.ApiResponse<SectorRuleParityDto>), StatusCodes.Status200OK)]
     public IActionResult GetParity()
     {
-        var staticSnapshot = _staticCatalogProvider.GetSnapshot();
+        // Review R1: compare against the FULL catalog reference (deps + templates included), not
+        // the rollback-gated StaticSectorCatalogProvider (which always reports them empty) — the
+        // parity check must still validate the DB dependency edges and data templates against the
+        // catalog seed, independently of the UseDbRules flag's runtime gating.
+        var staticSnapshot = FactuTrust.Domain.SectorConfiguration.SectorConfigurationCatalog.BuildCatalogSnapshot();
         var dbSnapshot = _dbCatalogProvider.GetSnapshot();
 
         var parity = SectorRuleParityChecker.Check(staticSnapshot, dbSnapshot);

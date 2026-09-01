@@ -438,4 +438,107 @@ public static class SectorConfigurationCatalog
             DefaultWarehouseName = segment.DefaultWarehouseName
         };
     }
+
+    /// <summary>
+    /// Full reference <see cref="SectorRuleSnapshot"/> built straight from the in-memory catalog —
+    /// deps and templates INCLUDED (review R1). Two consumers need this exact "everything the
+    /// catalog knows" view and must never see it silently emptied:
+    /// <list type="bullet">
+    /// <item><see cref="Persistence.Seeds.SectorRuleSeeder"/> (indirectly, via the catalog source
+    /// types themselves) uses the same data to seed the master DB — this method mirrors that
+    /// projection so parity checks compare like-for-like.</item>
+    /// <item><c>PlatformSectorRulesController.GetParity</c> and
+    /// <c>SectorRuleParityChecker</c> diff this against the DB snapshot to detect catalog/DB drift
+    /// — they need the real dependency edges and templates, not the rollback-gated static provider
+    /// view.</item>
+    /// </list>
+    /// <see cref="StaticSectorCatalogProvider"/> deliberately does NOT expose this directly: per
+    /// its own contract (see <c>ISectorDataTemplateApplier</c> doc), that provider always reports
+    /// empty <c>ModuleDependencies</c>/<c>DataTemplates</c> so that <c>UseDbRules=false</c> (or a
+    /// DB outage) is a true, complete rollback to Phase 1 behavior — module dependencies and
+    /// chart-account templates are Phase 2/3 additive features that must stay off when the DB
+    /// rules are off.
+    /// </summary>
+    public static SectorRuleSnapshot BuildCatalogSnapshot()
+    {
+        var segments = Segments
+            .OrderBy(s => s.SortOrder)
+            .Select(s => new SegmentSnapshot
+            {
+                Code = s.Code,
+                LabelFr = s.LabelFr,
+                DescriptionFr = s.DescriptionFr,
+                IconKey = s.IconKey,
+                SortOrder = s.SortOrder,
+                DefaultWarehouseName = s.DefaultWarehouseName,
+                BaseRecommendedModules = s.BaseRecommendedModules,
+                DomainCodes = s.AllowedDomainCodes
+            })
+            .ToList();
+
+        var domains = Domains
+            .OrderBy(d => d.SortOrder)
+            .Select(d => new DomainSnapshot
+            {
+                Code = d.Code,
+                LabelFr = d.LabelFr,
+                SortOrder = d.SortOrder,
+                OverlayModules = d.OverlayModules
+            })
+            .ToList();
+
+        var defaultSettings = Segments
+            .Where(s => s.DefaultWarehouseName is not null)
+            .Select(s => new DefaultSettingSnapshot
+            {
+                SegmentCode = s.Code,
+                DomainCode = null,
+                SettingKey = "default-warehouse-name",
+                SettingValue = s.DefaultWarehouseName!,
+                ValueType = "string"
+            })
+            .ToList();
+
+        var moduleDependencies = ModuleDependencies
+            .Select(e => new ModuleDependencySnapshot
+            {
+                ModuleId = (int)e.Module,
+                RequiredModuleId = (int)e.RequiredModule
+            })
+            .ToList();
+
+        var dataTemplates = DataTemplates
+            .OrderBy(t => t.SortOrder)
+            .Select(t => new DataTemplateSnapshot
+            {
+                Code = t.Code,
+                SegmentCode = t.SegmentCode,
+                DomainCode = t.DomainCode,
+                LabelFr = t.LabelFr,
+                DescriptionFr = t.DescriptionFr,
+                Version = t.Version,
+                SortOrder = t.SortOrder,
+                Items = t.Items
+                    .OrderBy(i => i.SortOrder)
+                    .Select(i => new DataTemplateItemSnapshot
+                    {
+                        ItemKind = i.ItemKind,
+                        PayloadJson = i.PayloadJson,
+                        SortOrder = i.SortOrder
+                    })
+                    .ToList()
+            })
+            .ToList();
+
+        return new SectorRuleSnapshot
+        {
+            Source = SectorRuleSource.Static,
+            Version = 0,
+            Segments = segments,
+            Domains = domains,
+            ModuleDependencies = moduleDependencies,
+            DefaultSettings = defaultSettings,
+            DataTemplates = dataTemplates
+        };
+    }
 }

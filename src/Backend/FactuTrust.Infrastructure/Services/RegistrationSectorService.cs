@@ -8,6 +8,8 @@ using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Services.SectorRules;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace FactuTrust.Infrastructure.Services;
 
@@ -38,6 +40,24 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Review R4 — logs must never carry a raw, client-supplied segment/domain string that hasn't
+    /// yet been validated against the catalog (an unrecognized value could be arbitrary free text
+    /// typed into a registration form field). Returns a length + short SHA-256 fingerprint instead
+    /// — enough to correlate repeated/identical rejected inputs in logs and metrics without ever
+    /// exposing their content. Once a segment/domain IS a known catalog code (the "incoherent
+    /// couple" rejection below), it is safe to log verbatim — it can only be one of a small,
+    /// non-sensitive, publicly documented set of values.
+    /// </summary>
+    private static string SafeInputSummary(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+            return "empty";
+
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)))[..8];
+        return $"len={raw.Length};sha256_8={hash}";
+    }
+
     public Result<SectorProfile?> ResolveProfile(string? companySegment, string? businessDomain)
     {
         if (!_options.Enabled)
@@ -52,8 +72,8 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
         if (normalizedDomain is not null && normalizedSegment is null)
         {
             _logger.LogWarning(
-                "RegistrationSectorService.ResolveProfile: rejected domain without segment (domain={Domain}).",
-                normalizedDomain);
+                "RegistrationSectorService.ResolveProfile: rejected domain without segment (domain={DomainSummary}).",
+                SafeInputSummary(normalizedDomain));
 
             return Result.Failure<SectorProfile?>(
                 Error.Validation("CompanySegment", "Type de société requis lorsque le domaine est fourni."));
@@ -67,8 +87,8 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
         if (normalizedSegment is not null && segmentSnapshot is null)
         {
             _logger.LogWarning(
-                "RegistrationSectorService.ResolveProfile: rejected unknown segment (segment={Segment}).",
-                normalizedSegment);
+                "RegistrationSectorService.ResolveProfile: rejected unknown segment (segmentSummary={SegmentSummary}).",
+                SafeInputSummary(normalizedSegment));
 
             return Result.Failure<SectorProfile?>(
                 Error.Validation("CompanySegment", "Type de société invalide."));
@@ -77,8 +97,8 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
         if (normalizedDomain is not null && !snapshot.Domains.Any(d => string.Equals(d.Code, normalizedDomain, StringComparison.Ordinal)))
         {
             _logger.LogWarning(
-                "RegistrationSectorService.ResolveProfile: rejected unknown domain (domain={Domain}).",
-                normalizedDomain);
+                "RegistrationSectorService.ResolveProfile: rejected unknown domain (domainSummary={DomainSummary}).",
+                SafeInputSummary(normalizedDomain));
 
             return Result.Failure<SectorProfile?>(
                 Error.Validation("BusinessDomain", "Domaine d'activité invalide."));

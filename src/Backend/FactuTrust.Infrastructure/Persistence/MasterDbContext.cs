@@ -1443,6 +1443,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.ToTable("SectorRuleSetStamps");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+            entity.Property(e => e.CatalogContentHash).HasMaxLength(64);
         });
     }
 }

@@ -35,7 +35,7 @@ public sealed class SectorCatalogProviderParityTests
         await using var db = NewDb();
         await SectorRuleSeeder.SeedAsync(db, force: false, actor: "parity-test", CancellationToken.None);
 
-        var staticSnapshot = new StaticSectorCatalogProvider().GetSnapshot();
+        var staticSnapshot = SectorConfigurationCatalog.BuildCatalogSnapshot();
         var dbSnapshot = NewDbProvider(db).GetSnapshot();
 
         var result = SectorRuleParityChecker.Check(staticSnapshot, dbSnapshot);
@@ -68,7 +68,7 @@ public sealed class SectorCatalogProviderParityTests
         stamp.Bump("parity-test");
         await db.SaveChangesAsync(CancellationToken.None);
 
-        var staticSnapshot = new StaticSectorCatalogProvider().GetSnapshot();
+        var staticSnapshot = SectorConfigurationCatalog.BuildCatalogSnapshot();
         var dbSnapshot = NewDbProvider(db).GetSnapshot();
 
         var result = SectorRuleParityChecker.Check(staticSnapshot, dbSnapshot);
@@ -99,7 +99,7 @@ public sealed class SectorCatalogProviderParityTests
         stamp.Bump("parity-test");
         await db.SaveChangesAsync(CancellationToken.None);
 
-        var staticSnapshot = new StaticSectorCatalogProvider().GetSnapshot();
+        var staticSnapshot = SectorConfigurationCatalog.BuildCatalogSnapshot();
         var dbSnapshot = NewDbProvider(db).GetSnapshot();
 
         var result = SectorRuleParityChecker.Check(staticSnapshot, dbSnapshot);
@@ -124,7 +124,7 @@ public sealed class SectorCatalogProviderParityTests
         stamp.Bump("parity-test");
         await db.SaveChangesAsync(CancellationToken.None);
 
-        var staticSnapshot = new StaticSectorCatalogProvider().GetSnapshot();
+        var staticSnapshot = SectorConfigurationCatalog.BuildCatalogSnapshot();
         var dbSnapshot = NewDbProvider(db).GetSnapshot();
 
         var result = SectorRuleParityChecker.Check(staticSnapshot, dbSnapshot);
@@ -134,11 +134,11 @@ public sealed class SectorCatalogProviderParityTests
     }
 
     [Fact]
-    public void Parity_checker_reports_match_when_both_snapshots_are_the_static_catalog()
+    public void Parity_checker_reports_match_when_both_snapshots_are_the_catalog_reference()
     {
-        // Two identical static snapshots trivially match — a guard against a checker that would
-        // report spurious differences on equal inputs.
-        var snapshot = new StaticSectorCatalogProvider().GetSnapshot();
+        // Two identical catalog-reference snapshots trivially match — a guard against a checker
+        // that would report spurious differences on equal inputs.
+        var snapshot = SectorConfigurationCatalog.BuildCatalogSnapshot();
 
         var result = SectorRuleParityChecker.Check(snapshot, snapshot);
 

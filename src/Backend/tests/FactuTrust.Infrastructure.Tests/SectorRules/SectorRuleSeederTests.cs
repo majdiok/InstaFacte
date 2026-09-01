@@ -304,6 +304,33 @@ public sealed class SectorRuleSeederTests
     }
 
     [Fact]
+    public async Task Force_rafraichit_le_payload_d_un_item_de_template_catalogue()
+    {
+        // Review R3: a template item is matched by (ItemKind, SortOrder), not by its PayloadJson —
+        // previously force=true only reactivated an already-active item and never touched its
+        // payload, so a catalog Version bump could silently republish stale account data under a
+        // new version number. force=true must now overwrite the payload to the catalog's current
+        // value.
+        await using var db = NewDb();
+        await SectorRuleSeeder.SeedAsync(db, force: false, actor: "test", CancellationToken.None);
+
+        var templateDef = SectorConfigurationCatalog.DataTemplates[0];
+        var itemDef = templateDef.Items[0];
+        var template = await db.SectorDataTemplates.SingleAsync(t => t.Code == templateDef.Code);
+        var item = await db.SectorDataTemplateItems.SingleAsync(
+            i => i.TemplateId == template.Id && i.ItemKind == itemDef.ItemKind && i.SortOrder == itemDef.SortOrder);
+
+        // Simulate a stale payload left over from a previous catalog revision.
+        item.UpdatePayload("{\"stale\":\"payload-from-an-older-catalog-revision\"}");
+        await db.SaveChangesAsync();
+
+        await SectorRuleSeeder.SeedAsync(db, force: true, actor: "admin", CancellationToken.None);
+
+        var refreshedItem = await db.SectorDataTemplateItems.SingleAsync(i => i.Id == item.Id);
+        Assert.Equal(itemDef.PayloadJson, refreshedItem.PayloadJson);
+    }
+
+    [Fact]
     public async Task SeedIfEmpty_noops_when_segments_exist()
     {
         await using var db = NewDb();
@@ -314,6 +341,94 @@ public sealed class SectorRuleSeederTests
 
         var versionAfterNoop = await db.SectorRuleSetStamps.Select(s => s.Version).SingleAsync();
         Assert.Equal(versionAfterFirstSeed, versionAfterNoop);
+        Assert.Equal(6, await db.SectorSegments.CountAsync());
+    }
+
+    // ---------- ReconcileOnStartupAsync (review R2) ----------
+
+    [Fact]
+    public void ComputeCatalogHash_is_deterministic_and_matches_across_calls()
+    {
+        Assert.Equal(SectorRuleSeeder.ComputeCatalogHash(), SectorRuleSeeder.ComputeCatalogHash());
+    }
+
+    [Fact]
+    public async Task ReconcileOnStartup_seeds_full_catalog_on_an_empty_db()
+    {
+        await using var db = NewDb();
+
+        var result = await SectorRuleSeeder.ReconcileOnStartupAsync(db, CancellationToken.None);
+
+        Assert.Equal(6, await db.SectorSegments.CountAsync());
+        var stamp = await db.SectorRuleSetStamps.SingleAsync();
+        Assert.Equal(SectorRuleSeeder.ComputeCatalogHash(), stamp.CatalogContentHash);
+        Assert.Equal(stamp.Version, result.NewVersion);
+    }
+
+    [Fact]
+    public async Task ReconcileOnStartup_is_a_pure_noop_when_the_catalog_hash_is_unchanged()
+    {
+        await using var db = NewDb();
+        await SectorRuleSeeder.ReconcileOnStartupAsync(db, CancellationToken.None);
+        var versionAfterFirstRun = await db.SectorRuleSetStamps.Select(s => s.Version).SingleAsync();
+
+        // An admin-only label edit on a non-catalog surface must survive the reconcile no-op —
+        // proof that the second call really did nothing (unlike a force=true seed, which would
+        // reset it).
+        var segment = await db.SectorSegments.FirstAsync(s => s.Code == CompanySegments.Commerce);
+        segment.ResetFromCatalog("Libellé admin", segment.DescriptionFr, segment.IconKey, segment.SortOrder, segment.DefaultWarehouseName);
+        await db.SaveChangesAsync();
+
+        var result = await SectorRuleSeeder.ReconcileOnStartupAsync(db, CancellationToken.None);
+
+        var versionAfterSecondRun = await db.SectorRuleSetStamps.Select(s => s.Version).SingleAsync();
+        Assert.Equal(versionAfterFirstRun, versionAfterSecondRun);
+        Assert.Equal(versionAfterSecondRun, result.NewVersion);
+        var untouchedSegment = await db.SectorSegments.SingleAsync(s => s.Code == CompanySegments.Commerce);
+        Assert.Equal("Libellé admin", untouchedSegment.LabelFr);
+    }
+
+    [Fact]
+    public async Task ReconcileOnStartup_force_reseeds_when_the_recorded_hash_is_stale()
+    {
+        await using var db = NewDb();
+        await SectorRuleSeeder.ReconcileOnStartupAsync(db, CancellationToken.None);
+
+        // Simulate drift: an admin-edited catalog-known segment label, plus a stale recorded hash
+        // (as if this row had been seeded by an older catalog revision).
+        var segment = await db.SectorSegments.FirstAsync(s => s.Code == CompanySegments.Commerce);
+        segment.ResetFromCatalog("Libellé obsolète", segment.DescriptionFr, segment.IconKey, segment.SortOrder, segment.DefaultWarehouseName);
+        var stamp = await db.SectorRuleSetStamps.SingleAsync();
+        stamp.SetCatalogHash("stale-hash-from-an-older-catalog-revision");
+        await db.SaveChangesAsync();
+
+        var result = await SectorRuleSeeder.ReconcileOnStartupAsync(db, CancellationToken.None);
+
+        Assert.True(result.Forced);
+        var resetSegment = await db.SectorSegments.SingleAsync(s => s.Code == CompanySegments.Commerce);
+        Assert.Equal("Commerce", resetSegment.LabelFr);
+        var refreshedStamp = await db.SectorRuleSetStamps.SingleAsync();
+        Assert.Equal(SectorRuleSeeder.ComputeCatalogHash(), refreshedStamp.CatalogContentHash);
+    }
+
+    [Fact]
+    public async Task ReconcileOnStartup_force_reseeds_when_no_hash_was_ever_recorded()
+    {
+        // Simulate a pre-R2 deployment: at least one segment already exists (from an old seed run)
+        // and the stamp predates the CatalogContentHash column — CreateInitial() leaves it null,
+        // exactly like a row created before this migration landed.
+        await using var db = NewDb();
+        var preExistingSegment = SectorSegment.Create(CompanySegments.Commerce, "Commerce", "desc", "icon", 0, null);
+        db.SectorSegments.Add(preExistingSegment);
+        db.SectorRuleSetStamps.Add(SectorRuleSetStamp.CreateInitial());
+        await db.SaveChangesAsync();
+        Assert.Null((await db.SectorRuleSetStamps.SingleAsync()).CatalogContentHash);
+
+        var result = await SectorRuleSeeder.ReconcileOnStartupAsync(db, CancellationToken.None);
+
+        Assert.True(result.Forced);
+        var refreshedStamp = await db.SectorRuleSetStamps.SingleAsync();
+        Assert.Equal(SectorRuleSeeder.ComputeCatalogHash(), refreshedStamp.CatalogContentHash);
         Assert.Equal(6, await db.SectorSegments.CountAsync());
     }
 }

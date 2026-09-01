@@ -135,7 +135,7 @@ public sealed class PublicSectorCatalogControllerTests
     }
 
     [Fact]
-    public void Get_includes_domainCodes_and_the_4_catalog_moduleDependencies_with_static_provider()
+    public void Get_includes_domainCodes_but_empty_moduleDependencies_with_static_provider()
     {
         var controller = NewController();
 
@@ -151,12 +151,11 @@ public sealed class PublicSectorCatalogControllerTests
             Assert.Equal(expected.Count, s.DomainCodes.Count);
             Assert.Contains(BusinessDomains.Autre, s.DomainCodes);
         });
-        // Phase 2 (plan §4.2): the static catalog now declares the 4 approved dependency edges.
-        Assert.Equal(4, body.Data.ModuleDependencies.Count);
-        Assert.Contains(body.Data.ModuleDependencies, d => d.ModuleId == (int)AppModule.Stock && d.RequiredModuleId == (int)AppModule.Products);
-        Assert.Contains(body.Data.ModuleDependencies, d => d.ModuleId == (int)AppModule.Purchases && d.RequiredModuleId == (int)AppModule.Products);
-        Assert.Contains(body.Data.ModuleDependencies, d => d.ModuleId == (int)AppModule.Forecasting && d.RequiredModuleId == (int)AppModule.Treasury);
-        Assert.Contains(body.Data.ModuleDependencies, d => d.ModuleId == (int)AppModule.RecurringContracts && d.RequiredModuleId == (int)AppModule.Sales);
+        // Review R1 (rollback contract): the static provider always reports EMPTY module
+        // dependencies, even though the catalog itself declares 4 approved edges — Phase 2
+        // dependency-closure pulling is a DB-gated feature. With UseDbRules=false (this
+        // controller/provider's only mode), the rollback to Phase 1 behavior must be complete.
+        Assert.Empty(body.Data.ModuleDependencies);
     }
 
     [Fact]

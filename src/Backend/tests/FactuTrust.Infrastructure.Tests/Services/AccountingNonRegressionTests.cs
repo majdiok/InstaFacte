@@ -1,3 +1,5 @@
+using FactuTrust.Application;
+using FactuTrust.Infrastructure;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Pricing;
 using FactuTrust.Application.Common.Interfaces.Repositories;
@@ -22,6 +24,7 @@ using FactuTrust.Infrastructure.Services.SectorRules;
 using FactuTrust.Infrastructure.Tests.Fixtures;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -43,6 +46,21 @@ namespace FactuTrust.Infrastructure.Tests.Services;
 /// </summary>
 public sealed class AccountingNonRegressionTests
 {
+    /// <summary>
+    /// Review R1: the two SQL-gated tests below exercise <see cref="SectorDataTemplateApplier"/>
+    /// against a REAL SQL Server chart of accounts and need it to actually apply the catalog's 3
+    /// data templates — <see cref="StaticSectorCatalogProvider"/> is the wrong fixture for that
+    /// now that it deliberately reports empty <c>DataTemplates</c> (rollback-gating for
+    /// <c>UseDbRules=false</c>). This tiny provider exposes the full catalog reference instead —
+    /// exactly what <c>SectorRuleSeeder</c> would have written into the master DB and what a real
+    /// <c>DbSectorCatalogProvider</c> would read back once seeded — so these tests keep proving
+    /// the templates are additive/idempotent against the 130+ account system chart.
+    /// </summary>
+    private sealed class CatalogReferenceSectorCatalogProvider : ISectorCatalogProvider
+    {
+        public SectorRuleSnapshot GetSnapshot() => SectorConfigurationCatalog.BuildCatalogSnapshot();
+    }
+
     // ============================================================================================
     // 1) Les 10 handlers d'écritures sont enregistrés en DI sans condition (plan §6.1, bullet 1).
     // ============================================================================================
@@ -88,9 +106,9 @@ public sealed class AccountingNonRegressionTests
         AssertHandlerResolvesAmong<InvoiceCancelledEvent, ReverseJournalEntryOnInvoiceCancelledHandler>(provider);
 
         // 2 (SupplierInvoiceCreated) + 8 (un handler comptable chacune) = 10 — le compte documenté
-        // par la carte des dépendances comptables.
-        const int totalDocumentedHandlers = 10;
-        Assert.Equal(totalDocumentedHandlers, supplierInvoiceHandlers.Count + 8);
+        // par la carte des dépendances comptables. Chaque assertion ci-dessus vérifie déjà
+        // individuellement la présence/typage du bon handler ; il n'y a rien à additionner de plus
+        // (une assertion "2 + 8 == 10" serait tautologique — elle ne dépend d'aucun résultat DI).
     }
 
     private static void AssertSingleHandlerResolves<TNotification, THandler>(IServiceProvider provider)
@@ -111,16 +129,38 @@ public sealed class AccountingNonRegressionTests
     }
 
     /// <summary>
-    /// Construit un conteneur DI minimal : MediatR câblé exactement comme en production sur
-    /// l'assembly Application (mêmes handlers scannés), plus un mock loose pour chaque interface
-    /// de repository/service requise par les 10 constructeurs — et RIEN d'autre. Aucun
-    /// <c>ICurrentUser</c>/<c>IPlanResolver</c>/gate de permission n'est enregistré.
+    /// Construit un conteneur DI en appelant les VRAIES extensions de production
+    /// (<c>FactuTrust.Application.DependencyInjection.AddApplication</c> +
+    /// <c>FactuTrust.Infrastructure.DependencyInjection.AddInfrastructure</c> — exactement ce que
+    /// <c>Program.cs</c> appelle, lignes 51-52) plutôt qu'un <c>AddMediatR</c> reconstruit à la
+    /// main (review R5a) : si l'enregistrement MediatR de production venait un jour à conditionner
+    /// un des 10 handlers d'écritures (flag, assembly filtrée, etc.), ce test le détecterait — un
+    /// conteneur artisanal ne peut PAS le détecter puisqu'il ne rejoue pas le code de production.
+    /// <c>AddInfrastructure</c> a besoin d'une <see cref="IConfiguration"/> minimale (chaînes de
+    /// connexion factices — jamais résolues : aucun <c>DbContext</c> n'est construit ici, seule la
+    /// résolution des <c>INotificationHandler&lt;T&gt;</c> est exercée) et enregistre les
+    /// implémentations RÉELLES de tous les repositories/services (EF-backed). On surcharge ensuite
+    /// UNIQUEMENT les interfaces requises par les 10 constructeurs avec des mocks loose (la dernière
+    /// registration l'emporte pour une résolution simple) — sans quoi les tests exigeraient un vrai
+    /// SQL Server. Aucun <c>ICurrentUser</c>/<c>IPlanResolver</c>/gate de permission personnalisé
+    /// n'est ajouté — la production ne les conditionne pas non plus pour ces handlers.
     /// </summary>
     private static ServiceProvider BuildAccountingHandlersProvider()
     {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:MasterConnection"] = "Server=(localdb)\\mssqllocaldb;Database=FactuTrust_DiProbe_Unused;Trusted_Connection=True;TrustServerCertificate=True;"
+            })
+            .Build();
+
         var services = new ServiceCollection();
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(GenerateJournalEntryOnSupplierInvoiceHandler).Assembly));
+        services.AddSingleton<IConfiguration>(configuration);
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+
+        // Câblage de production réel (Program.cs) — voir doc de méthode ci-dessus.
+        services.AddApplication();
+        services.AddInfrastructure(configuration);
 
         RegisterLooseMock<ISupplierInvoiceRepository>(services);
         RegisterLooseMock<IAccountingService>(services);
@@ -184,10 +224,10 @@ public sealed class AccountingNonRegressionTests
             .Setup(x => x.HasPermission(It.IsAny<string>()))
             .Returns(false);
 
-        var handler = CreateStandardInvoiceHandler(accounting, currentUser);
+        var (handler, draft) = CreateStandardInvoiceHandler(accounting, currentUser);
 
         var result = await handler.Handle(
-            new SubmitInvoiceCommand(CurrentDraft(handler).Id, new string('k', 40)),
+            new SubmitInvoiceCommand(draft.Id, new string('k', 40)),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess, result.Error?.Description);
@@ -198,11 +238,7 @@ public sealed class AccountingNonRegressionTests
         currentUser.Verify(x => x.HasPermission(It.IsAny<string>()), Times.Never);
     }
 
-    private InvoiceDraft? _draft;
-
-    private InvoiceDraft CurrentDraft(SubmitInvoiceCommandHandler _) => _draft!;
-
-    private SubmitInvoiceCommandHandler CreateStandardInvoiceHandler(Mock<IAccountingService> accounting, Mock<ICurrentUser> currentUser)
+    private (SubmitInvoiceCommandHandler Handler, InvoiceDraft Draft) CreateStandardInvoiceHandler(Mock<IAccountingService> accounting, Mock<ICurrentUser> currentUser)
     {
         var client = Client.Create(
             "Ste Test",
@@ -210,16 +246,16 @@ public sealed class AccountingNonRegressionTests
             Address.Create("1 rue Test", "Tunis", "Tunis", postalCode: "1000").Value,
             Email.Create("client@test.local").Value).Value;
 
-        _draft = InvoiceDraft.Create(InvoiceType.Standard);
-        _draft.UpdateMetadata(new DraftMetadata
+        var draft = InvoiceDraft.Create(InvoiceType.Standard);
+        draft.UpdateMetadata(new DraftMetadata
         {
             Type = InvoiceType.Standard,
             IssueDate = new DateTime(2026, 9, 20),
             Currency = "TND"
         });
-        _draft.UpdateSeller(Guid.NewGuid());
-        _draft.UpdateClient(client.Id, null);
-        _draft.UpdateLines(new List<DraftInvoiceLine>
+        draft.UpdateSeller(Guid.NewGuid());
+        draft.UpdateClient(client.Id, null);
+        draft.UpdateLines(new List<DraftInvoiceLine>
         {
             new()
             {
@@ -231,12 +267,12 @@ public sealed class AccountingNonRegressionTests
                 FodecApplicable = false
             }
         });
-        _draft.UpdatePaymentLegal(new DraftPaymentLegal { PaymentMethod = "CASH" });
+        draft.UpdatePaymentLegal(new DraftPaymentLegal { PaymentMethod = "CASH" });
 
         var draftRepository = new Mock<IInvoiceDraftRepository>();
         draftRepository
-            .Setup(x => x.GetByIdAsync(_draft.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(_draft);
+            .Setup(x => x.GetByIdAsync(draft.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(draft);
 
         var invoiceRepository = new Mock<IInvoiceRepository>();
         invoiceRepository
@@ -274,7 +310,7 @@ public sealed class AccountingNonRegressionTests
                 It.IsAny<IReadOnlyList<TrackedDocumentLine>>(), It.IsAny<CancellationToken>(), It.IsAny<bool>()))
             .ReturnsAsync(FactuTrust.Domain.Common.Result.Success());
 
-        return new SubmitInvoiceCommandHandler(
+        var handler = new SubmitInvoiceCommandHandler(
             draftRepository.Object,
             invoiceRepository.Object,
             clientRepository.Object,
@@ -296,6 +332,8 @@ public sealed class AccountingNonRegressionTests
             new Mock<IRecurringContractInvoiceLinker>().Object,
             new Mock<IStockMovementRepository>().Object,
             new Mock<IStockItemRepository>().Object);
+
+        return (handler, draft);
     }
 
     // ============================================================================================
@@ -329,19 +367,30 @@ public sealed class AccountingNonRegressionTests
     /// <c>20260326233329_AddAccountingModule_Tenant</c> / <c>20260707011639_AddJournalCatalog_Tenant</c>),
     /// PAS par <c>EnsureCreated</c> — même chemin que la mise en service réelle d'un tenant
     /// (<c>TenantDatabaseProvisioner</c>/<c>TenantService</c> appellent <c>Database.MigrateAsync</c>).
-    /// Repli silencieux (<see cref="SqlTestDatabase.CanRun"/> == false) si SQL Server/LocalDB est
-    /// indisponible — même convention que le reste de la suite (ex. <c>Nct01ChartMigrationServiceTests</c>).
+    /// Review R5(b): reports an explicit "Skipped" (via <c>Xunit.SkippableFact</c>) rather than a
+    /// silently-green "Passed" when SQL Server/LocalDB is unavailable — this is a NEW test file
+    /// (Phase 4), so it does not have to preserve the older `if (!CanRun) return;` convention used
+    /// by pre-existing suites (ex. <c>Nct01ChartMigrationServiceTests</c>); those are left untouched.
     /// </summary>
-    [Theory]
+    [SkippableTheory]
     [MemberData(nameof(SegmentDomainCombos))]
     public async Task Le_provisioning_sectoriel_n_altere_pas_le_plan_comptable_systeme(string segment, string domain)
     {
         using var sqlDb = new SqlTestDatabase($"{nameof(AccountingNonRegressionTests)}_{segment}_{domain}");
-        if (!sqlDb.CanRun) return;
+        Skip.If(!sqlDb.CanRun, "SQL Server/LocalDB indisponible dans ce bac à sable.");
 
         var options = BuildSqlServerOptions(sqlDb.ConnectionString!);
+        // SqlTestDatabase's constructor already provisioned the database via EnsureCreated()
+        // (schema from the current model snapshot, no migration history). This test needs the
+        // REAL migration path (see class doc: "PAS par EnsureCreated") so the system chart of
+        // accounts / journals are seeded exactly as in production. Drop the EnsureCreated schema
+        // first so MigrateAsync starts from a clean slate instead of colliding with tables that
+        // already exist (e.g. "There is already an object named 'AuditLogs' in the database").
         await using (var migrateContext = new TenantDbContext(options))
+        {
+            await migrateContext.Database.EnsureDeletedAsync();
             await migrateContext.Database.MigrateAsync();
+        }
 
         List<(string Number, string Label, int AccountClass, AccountNatureType Nature, bool IsSystem)> accountsBefore;
         int systemJournalsBefore;
@@ -360,7 +409,7 @@ public sealed class AccountingNonRegressionTests
         Assert.Equal(7, systemJournalsBefore);
         var systemAccountsBefore = accountsBefore.Where(a => a.IsSystem).ToList();
 
-        var catalogProvider = new StaticSectorCatalogProvider();
+        var catalogProvider = new CatalogReferenceSectorCatalogProvider();
         var factory = new SingleConnectionTenantDbContextFactory(options);
         var applier = new SectorDataTemplateApplier(catalogProvider, factory, NullLogger<SectorDataTemplateApplier>.Instance);
 
@@ -401,18 +450,24 @@ public sealed class AccountingNonRegressionTests
     //    rejouant les VRAIS templates du catalogue (pas de fixtures synthétiques) pour chaque
     //    combo segment×domaine — même chemin SQL réel que le test #3 ci-dessus.
     // ============================================================================================
-    [Theory]
+    [SkippableTheory]
     [MemberData(nameof(SegmentDomainCombos))]
     public async Task Reapplication_des_templates_sectoriels_est_idempotente_sur_les_comptes(string segment, string domain)
     {
         using var sqlDb = new SqlTestDatabase($"{nameof(AccountingNonRegressionTests)}_Idem_{segment}_{domain}");
-        if (!sqlDb.CanRun) return;
+        Skip.If(!sqlDb.CanRun, "SQL Server/LocalDB indisponible dans ce bac à sable.");
 
         var options = BuildSqlServerOptions(sqlDb.ConnectionString!);
+        // See the sibling test above for why EnsureDeletedAsync() must run before MigrateAsync():
+        // SqlTestDatabase's constructor already created the schema via EnsureCreated(), which
+        // collides with a from-scratch MigrateAsync() run.
         await using (var migrateContext = new TenantDbContext(options))
+        {
+            await migrateContext.Database.EnsureDeletedAsync();
             await migrateContext.Database.MigrateAsync();
+        }
 
-        var catalogProvider = new StaticSectorCatalogProvider();
+        var catalogProvider = new CatalogReferenceSectorCatalogProvider();
         var factory = new SingleConnectionTenantDbContextFactory(options);
         var applier = new SectorDataTemplateApplier(catalogProvider, factory, NullLogger<SectorDataTemplateApplier>.Instance);
 

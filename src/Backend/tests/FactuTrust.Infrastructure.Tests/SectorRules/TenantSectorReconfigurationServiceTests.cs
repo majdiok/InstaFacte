@@ -99,6 +99,17 @@ public sealed class TenantSectorReconfigurationServiceTests
             throw new InvalidOperationException("templates-boom");
     }
 
+    /// <summary>
+    /// Review R1: <see cref="StaticSectorCatalogProvider"/> deliberately reports empty
+    /// <c>DataTemplates</c> (rollback gating for <c>UseDbRules=false</c>) — the tenant-isolation
+    /// test below needs a catalog that actually applies a real template (a new chart account) to
+    /// prove per-tenant isolation, so it uses this full-catalog reference instead.
+    /// </summary>
+    private sealed class CatalogReferenceSectorCatalogProvider : ISectorCatalogProvider
+    {
+        public SectorRuleSnapshot GetSnapshot() => SectorConfigurationCatalog.BuildCatalogSnapshot();
+    }
+
     /// <summary>Registration sector service stub that resolves a profile whose core covers the entire
     /// module universe — drives the canonical no-rows grant path (plan §WP-B7 "canonical form preserved").</summary>
     private sealed class FullCoreRegistrationSectorService : IRegistrationSectorService
@@ -600,7 +611,7 @@ public sealed class TenantSectorReconfigurationServiceTests
         });
 
         var planResolver = new AllowAllPlanResolver();
-        var catalog = new StaticSectorCatalogProvider();
+        var catalog = new CatalogReferenceSectorCatalogProvider();
         var registrationService = new RegistrationSectorService(
             db, planResolver, catalog,
             Options.Create(new RegistrationSectorOptions { Enabled = true }),

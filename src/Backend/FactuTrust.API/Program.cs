@@ -645,10 +645,14 @@ using (var scope = app.Services.CreateScope())
 
             await DatabaseSeeder.SeedFiscalCalendarRulesAsync(context);
 
-            // Phase 2 — moteur de règles sectorielles en base (plan §WP-B3). No-ops once
-            // SectorSegments has any row, so this only does real work on the very first boot
-            // against a fresh master DB (or right after this migration lands).
-            await FactuTrust.Infrastructure.Persistence.Seeds.SectorRuleSeeder.SeedIfEmptyAsync(context);
+            // Phase 2 — moteur de règles sectorielles en base (plan §WP-B3). Review R2: this now
+            // reconciles on EVERY boot, not just the very first one against an empty master DB —
+            // an existing deployment whose catalog drifted (new segment/dependency/template, or a
+            // template payload refresh) since its last seed run converges automatically instead of
+            // silently running with a stale rule set until an admin hits the force-seed endpoint.
+            // No-ops (besides a cheap hash comparison) once the catalog hash already matches the
+            // stamp recorded by the last seed/reconcile run.
+            await FactuTrust.Infrastructure.Persistence.Seeds.SectorRuleSeeder.ReconcileOnStartupAsync(context);
 
             logger.LogInformation("Database seeding completed successfully.");
         }

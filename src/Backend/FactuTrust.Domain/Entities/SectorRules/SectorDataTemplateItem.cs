@@ -33,4 +33,12 @@ public sealed class SectorDataTemplateItem : Entity
     public void Deactivate() => IsActive = false;
 
     public void Reactivate() => IsActive = true;
+
+    /// <summary>
+    /// Refreshes the payload for a catalog-known item on a force/reconcile seed run (review R3) —
+    /// without this, a template <c>Version</c> bump in the catalog would publish a NEW version
+    /// number over the SAME OLD account payload, since items are matched by the natural key
+    /// <c>(ItemKind, SortOrder)</c> and were previously only ever reactivated, never refreshed.
+    /// </summary>
+    public void UpdatePayload(string payloadJson) => PayloadJson = payloadJson;
 }

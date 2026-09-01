@@ -15,6 +15,19 @@ import {
   recommendedModulesFor
 } from './registration-catalog';
 
+// Review S5: the exact domain-code list for the 'commerce' segment (SEGMENT_ALLOWED_DOMAINS
+// fallback matrix) is asserted identically in three separate specs below (static-matrix filter,
+// per-segment matrix pin, 404-fallback). Hoisted once here so those three assertions can't drift
+// out of sync with each other while still each independently pinning the exact contract.
+const COMMERCE_FALLBACK_DOMAINS = [
+  'alimentation-agroalimentaire',
+  'textile-habillement',
+  'technologie-informatique',
+  'sante-paramedical',
+  'artisanat',
+  'autre'
+];
+
 describe('registration-catalog', () => {
   it('exposes exactly 6 segments and 10 domains (plan §5/§3 C1)', () => {
     expect(SEGMENT_OPTIONS.length).toBe(6);
@@ -291,14 +304,7 @@ describe('registration-catalog', () => {
     });
 
     it('domainsForSegment filters by the static SEGMENT_ALLOWED_DOMAINS matrix before load() (plan §3.1/§3.3)', () => {
-      expect(service.domainsForSegment('commerce').map(d => d.code)).toEqual([
-        'alimentation-agroalimentaire',
-        'textile-habillement',
-        'technologie-informatique',
-        'sante-paramedical',
-        'artisanat',
-        'autre'
-      ]);
+      expect(service.domainsForSegment('commerce').map(d => d.code)).toEqual(COMMERCE_FALLBACK_DOMAINS);
       expect(service.domainsForSegment(null).length).toBe(0);
       expect(service.domainsForSegment('bogus-segment').length).toBe(0);
     });
@@ -310,10 +316,7 @@ describe('registration-catalog', () => {
           'textile-habillement', 'transport-logistique', 'immobilier', 'energie-environnement',
           'communication-marketing', 'artisanat', 'autre'
         ],
-        'commerce': [
-          'alimentation-agroalimentaire', 'textile-habillement', 'technologie-informatique',
-          'sante-paramedical', 'artisanat', 'autre'
-        ],
+        'commerce': COMMERCE_FALLBACK_DOMAINS,
         'services': [
           'technologie-informatique', 'communication-marketing', 'sante-paramedical',
           'transport-logistique', 'immobilier', 'autre'
@@ -390,14 +393,7 @@ describe('registration-catalog', () => {
       httpMock.expectOne(CATALOG_URL).flush('not found', { status: 404, statusText: 'Not Found' });
 
       expect(service.loadState()).toBe('fallback');
-      expect(service.domainsForSegment('commerce').map(d => d.code)).toEqual([
-        'alimentation-agroalimentaire',
-        'textile-habillement',
-        'technologie-informatique',
-        'sante-paramedical',
-        'artisanat',
-        'autre'
-      ]);
+      expect(service.domainsForSegment('commerce').map(d => d.code)).toEqual(COMMERCE_FALLBACK_DOMAINS);
       expect(service.segments).toEqual(SEGMENT_OPTIONS);
     }));
 
