@@ -1,3 +1,5 @@
+using FactuTrust.Domain.Enums;
+
 namespace FactuTrust.Application.DTOs;
 
 /// <summary>
@@ -60,6 +62,15 @@ public sealed record SectorModuleDto
     public required string Code { get; init; }
     public required string LabelFr { get; init; }
     public required bool IsCore { get; init; }
+
+    /// <summary>
+    /// Plan §1.1, décision D1 — whether this module is available on the Free plan. False for the
+    /// paid-plan-only modules (AI/Forecasting/Studio/Payroll, see
+    /// <see cref="AppModuleExtensions.PaidPlanModuleIds"/>); true for every core + standard module.
+    /// Lets the registration wizard surface premium modules as locked "plan supérieur requis"
+    /// instead of silently denying them after signup.
+    /// </summary>
+    public required bool AvailableOnFreePlan { get; init; }
 }
 
 /// <summary>Phase 2 (plan §WP-B4) — a dependency edge: selecting <see cref="ModuleId"/> auto-pulls <see cref="RequiredModuleId"/>.</summary>

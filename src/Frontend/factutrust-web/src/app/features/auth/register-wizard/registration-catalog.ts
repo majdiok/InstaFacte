@@ -98,6 +98,13 @@ export interface RemoteSectorModuleDto {
   code: string;
   labelFr: string;
   isCore: boolean;
+  /**
+   * Whether this module is freely selectable on the Free plan during signup. Mirrors
+   * the backend `availableOnFreePlan` flag the sector-catalog endpoint writes on every
+   * module (and the checked-in snapshot). Absent on older payloads ⇒ treated as
+   * `true` (selectable); premium modules carry `false` (see `PREMIUM_MODULE_IDS`).
+   */
+  availableOnFreePlan?: boolean;
 }
 
 /**
@@ -200,6 +207,21 @@ export const CORE_MODULE_IDS: readonly AppModule[] = [
   AppModule.Sales,
   AppModule.Treasury,
   AppModule.Reports
+];
+
+/**
+ * Modules reserved for a paid plan — never freely selectable on the Free plan
+ * during signup, never submitted in `enabledModules`. Mirrors the backend's
+ * canonical premium set exactly (`AppModule.AI`, `Forecasting`, `Studio`,
+ * `Payroll`). The `sector-catalog-parity.spec.ts` contract pins this constant
+ * against the sector-catalog snapshot's `availableOnFreePlan: false` module set
+ * so the frontend and backend notions of "premium" cannot silently drift apart.
+ */
+export const PREMIUM_MODULE_IDS: readonly AppModule[] = [
+  AppModule.AI,
+  AppModule.Forecasting,
+  AppModule.Studio,
+  AppModule.Payroll
 ];
 
 const SEGMENT_RECOMMENDED_MODULES: Record<CompanySegmentCode, readonly AppModule[]> = {
@@ -338,14 +360,14 @@ export function recommendedModulesFor(
   return Array.from(set).sort((a, b) => a - b);
 }
 
-/** Every module that is neither core, recommended for the profile, nor Honoraires (firm-native, never offered). */
+/** Every module that is neither core, recommended for the profile, premium (paid plan), nor Honoraires (firm-native, never offered). */
 export function optionalModulesFor(
   segment: string | null | undefined,
   domain: string | null | undefined
 ): AppModule[] {
   const recommended = new Set(recommendedModulesFor(segment, domain));
   return allModuleIds()
-    .filter(id => id !== AppModule.Honoraires && !recommended.has(id))
+    .filter(id => id !== AppModule.Honoraires && !recommended.has(id) && !PREMIUM_MODULE_IDS.includes(id))
     .sort((a, b) => a - b);
 }
 
@@ -463,6 +485,26 @@ export class RegistrationCatalogService {
   }
 
   /**
+   * Whether a module is locked on the Free plan — i.e. not freely selectable
+   * during signup and never submitted in `enabledModules`. A module is locked when
+   * it is one of the canonical premium modules (`PREMIUM_MODULE_IDS`) OR the remote
+   * sector catalog explicitly flags it `availableOnFreePlan: false`. The constant is
+   * the frontend's authoritative mirror of the backend's premium set (and applies in
+   * both remote and static-fallback modes); the remote flag is a defensive second
+   * source so a backend that additionally gates a non-canonical module is honored too.
+   * An absent flag is treated as selectable (only the constant can lock in fallback).
+   */
+  isLockedOnFreePlan(id: AppModule): boolean {
+    if (PREMIUM_MODULE_IDS.includes(id)) return true;
+    const remote = this.remoteCatalog();
+    if (remote) {
+      const mod = remote.modules.find(m => m.id === id);
+      if (mod && mod.availableOnFreePlan === false) return true;
+    }
+    return false;
+  }
+
+  /**
    * Segment-filtered, ordered domain list (plan WP-F2, §3.3). No/unknown segment ⇒ `[]`
    * in both remote and fallback modes. Remote mode: known segment ⇒ its ordered
    * `domainCodes`. Fallback mode (remote catalog unavailable): known segment ⇒ the
@@ -527,7 +569,7 @@ export class RegistrationCatalogService {
     this.closeDependencies(set);
 
     return Array.from(set)
-      .filter(m => m !== AppModule.Honoraires)
+      .filter(m => m !== AppModule.Honoraires && !this.isLockedOnFreePlan(m))
       .sort((a, b) => a - b);
   }
 
@@ -540,7 +582,23 @@ export class RegistrationCatalogService {
     const coreSet = new Set(this.coreModuleIds);
     return this.modules
       .map(m => m.id)
-      .filter(id => id !== AppModule.Honoraires && !recommended.has(id) && !coreSet.has(id))
+      .filter(id => id !== AppModule.Honoraires && !recommended.has(id) && !coreSet.has(id) && !this.isLockedOnFreePlan(id))
+      .sort((a, b) => a - b);
+  }
+
+  /**
+   * Modules locked on the Free plan that are present in the (remote or static)
+   * catalog — the "Plan supérieur" group rendered as locked, non-toggleable cards
+   * during signup. Returns only modules actually present in the catalog (so a
+   * premium id the backend doesn't serve is silently absent), sorted ascending,
+   * and never includes core modules (premium modules are never core). Disjoint from
+   * `recommendedModules()` and `optionalModules()`, which both exclude locked modules.
+   */
+  premiumModules(segment: string | null | undefined, domain: string | null | undefined): AppModule[] {
+    const coreSet = new Set(this.coreModuleIds);
+    return this.modules
+      .map(m => m.id)
+      .filter(id => !coreSet.has(id) && this.isLockedOnFreePlan(id))
       .sort((a, b) => a - b);
   }
 

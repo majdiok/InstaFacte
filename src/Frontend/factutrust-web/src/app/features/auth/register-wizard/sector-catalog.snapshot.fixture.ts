@@ -5,7 +5,12 @@
  * (relative to the repository root). The content below was copied *verbatim* (same
  * segments/domains/modules/moduleDependencies/catalogVersion data, decoded from the
  * backend file's JSON-escaped Unicode into plain UTF-8 for readability) on 2026-09-01
- * when the backend agent first checked that file in.
+ * when the backend agent first checked that file in. The per-module
+ * `availableOnFreePlan` flag (true for core/standard modules, false for the 4 premium
+ * modules AI/Forecasting/Studio/Payroll) was added alongside the backend's Free-plan
+ * gating change so this fixture mirrors the backend snapshot's updated module entries;
+ * `sector-catalog-parity.spec.ts` pins the frontend `PREMIUM_MODULE_IDS` constant
+ * against the fixture's `availableOnFreePlan: false` set.
  *
  * Why a copy instead of a live import: the Angular workspace's TypeScript project
  * (`tsconfig.app.json`) restricts `rootDir` to `src/Frontend/factutrust-web/src`, and the
@@ -149,23 +154,23 @@ export const SECTOR_CATALOG_SNAPSHOT_FIXTURE: SectorCatalogDto & { catalogVersio
     { code: 'autre', labelFr: 'Autre domaine', sortOrder: 9, additionalModuleIds: [] }
   ],
   modules: [
-    { id: 0, code: 'Clients', labelFr: 'Clients', isCore: true },
-    { id: 1, code: 'Products', labelFr: 'Produits et services', isCore: true },
-    { id: 2, code: 'Sales', labelFr: 'Ventes (factures)', isCore: true },
-    { id: 3, code: 'Treasury', labelFr: 'Trésorerie (paiements)', isCore: true },
-    { id: 4, code: 'Reports', labelFr: 'Rapports', isCore: true },
-    { id: 5, code: 'Administration', labelFr: 'Paramètres et utilisateurs', isCore: true },
-    { id: 6, code: 'Purchases', labelFr: 'Achats', isCore: false },
-    { id: 7, code: 'Stock', labelFr: 'Stock', isCore: false },
-    { id: 8, code: 'Accounting', labelFr: 'Comptabilité', isCore: false },
-    { id: 9, code: 'CRM', labelFr: 'CRM Commercial', isCore: false },
-    { id: 10, code: 'Fiscal', labelFr: 'Fiscal / TEJ', isCore: false },
-    { id: 11, code: 'AI', labelFr: 'Assistant IA', isCore: false },
-    { id: 12, code: 'Forecasting', labelFr: 'Prévisions IA', isCore: false },
-    { id: 13, code: 'Studio', labelFr: 'Studio (low-code)', isCore: false },
-    { id: 14, code: 'Payroll', labelFr: 'RH & Paie', isCore: false },
-    { id: 16, code: 'Projects', labelFr: 'Projets', isCore: false },
-    { id: 17, code: 'RecurringContracts', labelFr: 'Contrats récurrents', isCore: false }
+    { id: 0, code: 'Clients', labelFr: 'Clients', isCore: true, availableOnFreePlan: true },
+    { id: 1, code: 'Products', labelFr: 'Produits et services', isCore: true, availableOnFreePlan: true },
+    { id: 2, code: 'Sales', labelFr: 'Ventes (factures)', isCore: true, availableOnFreePlan: true },
+    { id: 3, code: 'Treasury', labelFr: 'Trésorerie (paiements)', isCore: true, availableOnFreePlan: true },
+    { id: 4, code: 'Reports', labelFr: 'Rapports', isCore: true, availableOnFreePlan: true },
+    { id: 5, code: 'Administration', labelFr: 'Paramètres et utilisateurs', isCore: true, availableOnFreePlan: true },
+    { id: 6, code: 'Purchases', labelFr: 'Achats', isCore: false, availableOnFreePlan: true },
+    { id: 7, code: 'Stock', labelFr: 'Stock', isCore: false, availableOnFreePlan: true },
+    { id: 8, code: 'Accounting', labelFr: 'Comptabilité', isCore: false, availableOnFreePlan: true },
+    { id: 9, code: 'CRM', labelFr: 'CRM Commercial', isCore: false, availableOnFreePlan: true },
+    { id: 10, code: 'Fiscal', labelFr: 'Fiscal / TEJ', isCore: false, availableOnFreePlan: true },
+    { id: 11, code: 'AI', labelFr: 'Assistant IA', isCore: false, availableOnFreePlan: false },
+    { id: 12, code: 'Forecasting', labelFr: 'Prévisions IA', isCore: false, availableOnFreePlan: false },
+    { id: 13, code: 'Studio', labelFr: 'Studio (low-code)', isCore: false, availableOnFreePlan: false },
+    { id: 14, code: 'Payroll', labelFr: 'RH & Paie', isCore: false, availableOnFreePlan: false },
+    { id: 16, code: 'Projects', labelFr: 'Projets', isCore: false, availableOnFreePlan: true },
+    { id: 17, code: 'RecurringContracts', labelFr: 'Contrats récurrents', isCore: false, availableOnFreePlan: true }
   ],
   moduleDependencies: [],
   suggestedTaxRegimes: [

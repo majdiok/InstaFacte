@@ -259,103 +259,120 @@
       "id": 0,
       "code": "Clients",
       "labelFr": "Clients",
-      "isCore": true
+      "isCore": true,
+      "availableOnFreePlan": true
     },
     {
       "id": 1,
       "code": "Products",
       "labelFr": "Produits et services",
-      "isCore": true
+      "isCore": true,
+      "availableOnFreePlan": true
     },
     {
       "id": 2,
       "code": "Sales",
       "labelFr": "Ventes (factures)",
-      "isCore": true
+      "isCore": true,
+      "availableOnFreePlan": true
     },
     {
       "id": 3,
       "code": "Treasury",
       "labelFr": "Tr\u00E9sorerie (paiements)",
-      "isCore": true
+      "isCore": true,
+      "availableOnFreePlan": true
     },
     {
       "id": 4,
       "code": "Reports",
       "labelFr": "Rapports",
-      "isCore": true
+      "isCore": true,
+      "availableOnFreePlan": true
     },
     {
       "id": 5,
       "code": "Administration",
       "labelFr": "Param\u00E8tres et utilisateurs",
-      "isCore": true
+      "isCore": true,
+      "availableOnFreePlan": true
     },
     {
       "id": 6,
       "code": "Purchases",
       "labelFr": "Achats",
-      "isCore": false
+      "isCore": false,
+      "availableOnFreePlan": true
     },
     {
       "id": 7,
       "code": "Stock",
       "labelFr": "Stock",
-      "isCore": false
+      "isCore": false,
+      "availableOnFreePlan": true
     },
     {
       "id": 8,
       "code": "Accounting",
       "labelFr": "Comptabilit\u00E9",
-      "isCore": false
+      "isCore": false,
+      "availableOnFreePlan": true
     },
     {
       "id": 9,
       "code": "CRM",
       "labelFr": "CRM Commercial",
-      "isCore": false
+      "isCore": false,
+      "availableOnFreePlan": true
     },
     {
       "id": 10,
       "code": "Fiscal",
       "labelFr": "Fiscal / TEJ",
-      "isCore": false
+      "isCore": false,
+      "availableOnFreePlan": true
     },
     {
       "id": 11,
       "code": "AI",
       "labelFr": "Assistant IA",
-      "isCore": false
+      "isCore": false,
+      "availableOnFreePlan": false
     },
     {
       "id": 12,
       "code": "Forecasting",
       "labelFr": "Pr\u00E9visions IA",
-      "isCore": false
+      "isCore": false,
+      "availableOnFreePlan": false
     },
     {
       "id": 13,
       "code": "Studio",
       "labelFr": "Studio (low-code)",
-      "isCore": false
+      "isCore": false,
+      "availableOnFreePlan": false
     },
     {
       "id": 14,
       "code": "Payroll",
       "labelFr": "RH \u0026 Paie",
-      "isCore": false
+      "isCore": false,
+      "availableOnFreePlan": false
     },
     {
       "id": 16,
       "code": "Projects",
       "labelFr": "Projets",
-      "isCore": false
+      "isCore": false,
+      "availableOnFreePlan": true
     },
     {
       "id": 17,
       "code": "RecurringContracts",
       "labelFr": "Contrats r\u00E9currents",
-      "isCore": false
+      "isCore": false,
+      "availableOnFreePlan": true
     }
   ],
   "moduleDependencies": [],

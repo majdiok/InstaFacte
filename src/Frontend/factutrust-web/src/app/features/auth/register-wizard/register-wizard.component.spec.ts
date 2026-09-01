@@ -261,6 +261,58 @@ describe('RegisterWizardComponent', () => {
     });
   });
 
+  describe('Free-plan premium module gating (AI/Forecasting/Studio/Payroll never submitted)', () => {
+    const PREMIUM = [AppModule.AI, AppModule.Forecasting, AppModule.Studio, AppModule.Payroll];
+
+    it('recommendedModules never includes a premium module, so the initial enabledModules selection never does either', () => {
+      component.form.patchValue({ companySegment: 'commerce', businessDomain: 'artisanat' });
+      const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
+      for (const premium of PREMIUM) {
+        expect(enabled).not.toContain(premium);
+      }
+    });
+
+    it('resetModulesToRecommendations never reintroduces a premium module', () => {
+      component.form.patchValue({ companySegment: 'services', businessDomain: 'technologie-informatique' });
+      component.form.get('enabledModules')?.setValue([AppModule.Accounting]);
+      component.resetModulesToRecommendations();
+      const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
+      for (const premium of PREMIUM) {
+        expect(enabled).not.toContain(premium);
+      }
+    });
+
+    it('the submitted RegisterRequest.enabledModules never contains a premium module', () => {
+      authService.register.and.returnValue(of(validRegisterResponse()));
+      component.form.patchValue({
+        companySegment: 'commerce',
+        businessDomain: 'artisanat',
+        firstName: 'John',
+        lastName: 'Doe',
+        email: 'test@example.com',
+        password: 'Test1234@Password',
+        confirmPassword: 'Test1234@Password',
+        companyName: 'Test Company',
+        nif: '1234567A/B/C/000',
+        taxRegime: 0,
+        companyEmail: 'contact@test.tn',
+        phone: '98455112',
+        street: '155 Rue Test',
+        city: 'Monastir',
+        governorate: 'Monastir',
+        acceptTerms: true
+      });
+      component.onSubmit();
+
+      expect(authService.register).toHaveBeenCalled();
+      const request = authService.register.calls.mostRecent().args[0] as RegisterRequest;
+      const enabled: AppModule[] = request.enabledModules ?? [];
+      for (const premium of PREMIUM) {
+        expect(enabled).not.toContain(premium);
+      }
+    });
+  });
+
   describe('module dependency handling (plan WP-F3)', () => {
     function loadDependencyCatalog(): void {
       const httpMock = TestBed.inject(HttpTestingController);

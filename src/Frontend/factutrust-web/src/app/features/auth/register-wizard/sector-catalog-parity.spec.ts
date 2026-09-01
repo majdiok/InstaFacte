@@ -38,6 +38,7 @@ import {
   SEGMENT_OPTIONS,
   DOMAIN_OPTIONS,
   CORE_MODULE_IDS,
+  PREMIUM_MODULE_IDS,
   SEGMENT_ALLOWED_DOMAINS,
   recommendedModulesFor,
   defaultWarehouseNameFor,
@@ -131,6 +132,40 @@ describe('sector catalog parity contract (frontend static catalog vs backend sna
       expect(backendModules.map(m => m.labelFr)).toEqual(frontendModulesWithoutHonoraires.map(m => m.label));
     }
   );
+
+  it('every backend module carries an explicit availableOnFreePlan boolean (mirrors the backend snapshot field)', () => {
+    for (const m of snapshot.modules) {
+      expect(typeof m.availableOnFreePlan).withContext(`module id ${m.id} (${m.code})`).toBe('boolean');
+    }
+  });
+
+  it('the fixture\'s availableOnFreePlan:false module set exactly matches PREMIUM_MODULE_IDS (frontend premium mirror)', () => {
+    const fixtureLocked = snapshot.modules
+      .filter(m => m.availableOnFreePlan === false)
+      .map(m => m.id as AppModule)
+      .sort((a, b) => a - b);
+    const frontendPremium = [...PREMIUM_MODULE_IDS].sort((a, b) => a - b);
+    expect(fixtureLocked).toEqual(frontendPremium);
+  });
+
+  it('PREMIUM_MODULE_IDS is exactly AI, Forecasting, Studio, Payroll (canonical paid-plan module ids)', () => {
+    expect([...PREMIUM_MODULE_IDS].sort((a, b) => a - b)).toEqual(
+      [AppModule.AI, AppModule.Forecasting, AppModule.Studio, AppModule.Payroll].sort((a, b) => a - b)
+    );
+  });
+
+  it('premium modules are never core and never appear in any segment\'s coreModuleIds', () => {
+    for (const m of snapshot.modules) {
+      if (PREMIUM_MODULE_IDS.includes(m.id as AppModule)) {
+        expect(m.isCore).withContext(`premium module ${m.code}`).toBe(false);
+      }
+    }
+    for (const segment of backendSegments) {
+      for (const premiumId of PREMIUM_MODULE_IDS) {
+        expect(segment.coreModuleIds).withContext(`segment "${segment.code}" coreModuleIds`).not.toContain(premiumId);
+      }
+    }
+  });
 
   it('backend snapshot has no module dependencies (frontend static fallback assumes none)', () => {
     // `RegistrationCatalogService`'s static fallback path never populates `moduleDependencies`

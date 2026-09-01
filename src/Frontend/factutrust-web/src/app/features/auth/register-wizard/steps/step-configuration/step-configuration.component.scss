@@ -91,6 +91,37 @@
     background: linear-gradient(180deg, #fdfdff, #f5f6ff);
   }
 
+  /** Plan supérieur — premium modules locked on the Free plan: not toggleable, never submitted. */
+  &.locked-plan {
+    background: var(--color-neutral-50);
+    border-style: dashed;
+    border-color: var(--color-neutral-300);
+
+    .mod-name {
+      color: var(--color-neutral-600);
+    }
+
+    .mod-locked-badge--plan {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      color: #4f46e5;
+      background: #e4e6fd;
+      border: 1px solid #d4d6fb;
+
+      i {
+        font-size: 0.6rem;
+      }
+    }
+
+    .mod-plan-note {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--color-neutral-500);
+      line-height: 1.4;
+    }
+  }
+
   .mod-top {
     display: flex;
     align-items: flex-start;

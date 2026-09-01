@@ -51,7 +51,10 @@ public static class SectorCatalogDtoMapper
                 Id = (int)m,
                 Code = m.ToString(),
                 LabelFr = m.ToDisplayString(),
-                IsCore = coreModuleSet.Contains(m)
+                IsCore = coreModuleSet.Contains(m),
+                // Plan §1.1, décision D1 : les modules premium (PaidPlanModuleIds) ne sont pas
+                // disponibles sur le plan Free — le wizard les affiche verrouillés « plan supérieur ».
+                AvailableOnFreePlan = !AppModuleExtensions.PaidPlanModuleIds.Contains(m)
             })
             .ToList();
 
