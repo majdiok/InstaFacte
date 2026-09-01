@@ -103,10 +103,11 @@ describe('OnboardingChecklistComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Premiers pas');
   });
 
-  describe('module/segment gating (plan WP-F4)', () => {
-    // `canSee` is a private helper; the plan's OnboardingChecklistItemDef.modules/segments
-    // gating rules are exercised directly here since no shipped catalog item is
-    // module/segment-gated yet (see the TODO in product-onboarding.catalog.ts).
+  describe('module/segment gating (plan §4.4 / WP-F4)', () => {
+    // `canSee` is a private helper; exercised directly here with synthetic items to
+    // cover the gating rules in isolation. The two real gated catalog items
+    // ('check-default-warehouse', 'commerce-stock-receipt') are covered end-to-end
+    // below, through the actual rendered component.
     function canSee(item: object): boolean {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (fixture.componentInstance as any).canSee(item);
@@ -140,6 +141,31 @@ describe('OnboardingChecklistComponent', () => {
     it('items with neither modules nor segments are unaffected', () => {
       setup({ admin: true });
       expect(canSee({})).toBeTrue();
+    });
+  });
+
+  describe('real catalog items — Phase 2 additive gating end-to-end', () => {
+    it('hides "check-default-warehouse" and "commerce-stock-receipt" when Stock is disabled', () => {
+      setup({ admin: true, enabledModuleIds: [], companySegment: 'commerce' });
+      const text: string = fixture.nativeElement.textContent;
+      expect(text).not.toContain('Vérifier votre entrepôt par défaut');
+      expect(text).not.toContain('Réceptionner votre premier stock');
+    });
+
+    it('shows "check-default-warehouse" once Stock is enabled, regardless of segment', () => {
+      setup({ admin: true, enabledModuleIds: [7], companySegment: 'services' });
+      expect(fixture.nativeElement.textContent).toContain('Vérifier votre entrepôt par défaut');
+      expect(fixture.nativeElement.textContent).not.toContain('Réceptionner votre premier stock');
+    });
+
+    it('shows "commerce-stock-receipt" only when Stock is enabled AND segment is commerce', () => {
+      setup({ admin: true, enabledModuleIds: [7], companySegment: 'commerce' });
+      expect(fixture.nativeElement.textContent).toContain('Réceptionner votre premier stock');
+    });
+
+    it('hides "commerce-stock-receipt" for a non-commerce segment even with Stock enabled', () => {
+      setup({ admin: true, enabledModuleIds: [7], companySegment: 'entreprise' });
+      expect(fixture.nativeElement.textContent).not.toContain('Réceptionner votre premier stock');
     });
   });
 

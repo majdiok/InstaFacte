@@ -1823,8 +1823,17 @@ export class DashboardComponent implements OnInit {
   showStockUrgent = computed(
     () => this.authService.hasModule(AppModule.Stock) && this.authService.hasPermission(PERMISSIONS.stock.read)
   );
-  showDeliveryUrgent = computed(() => this.authService.hasPermission(PERMISSIONS.deliveryNotes.read));
-  showInvoiceUrgent = computed(() => this.authService.hasPermission(PERMISSIONS.invoices.read));
+  // Alignées sur showStockUrgent : ces deux widgets sont rattachés au module Sales
+  // (factures/BL de vente). La permission seule suffit déjà en pratique (le calcul des
+  // permissions effectives intersecte déjà les modules activés côté backend), mais on
+  // ajoute le hasModule() explicite en défense en profondeur, par cohérence avec
+  // showStockUrgent/hasAccountingModule/hasCrmModule (Phase 2 — audit gating dashboard).
+  showDeliveryUrgent = computed(
+    () => this.authService.hasModule(AppModule.Sales) && this.authService.hasPermission(PERMISSIONS.deliveryNotes.read)
+  );
+  showInvoiceUrgent = computed(
+    () => this.authService.hasModule(AppModule.Sales) && this.authService.hasPermission(PERMISSIONS.invoices.read)
+  );
 
   hasAccountingModule = computed(
     () =>

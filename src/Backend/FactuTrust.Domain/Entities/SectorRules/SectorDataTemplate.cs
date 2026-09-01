@@ -3,10 +3,11 @@ using FactuTrust.Domain.Common;
 namespace FactuTrust.Domain.Entities.SectorRules;
 
 /// <summary>
-/// Master-DB backed data template header (Phase 2, plan §WP-B5/§WP-B6): a named, versioned set of
-/// <see cref="SectorDataTemplateItem"/> rows applied additively to a tenant DB when its
-/// segment/domain matches (null = applies to every segment/domain). The static catalog has none
-/// — templates only exist once authored via the admin CRUD.
+/// Master-DB backed data template header (Phase 2, plan §WP-B5/§WP-B6, §4.3): a named, versioned
+/// set of <see cref="SectorDataTemplateItem"/> rows applied additively to a tenant DB when its
+/// segment/domain matches (null = applies to every segment/domain). The static catalog declares a
+/// small set of additive chart-of-accounts presets (<c>SectorConfigurationCatalog.DataTemplates</c>),
+/// seeded by <c>SectorRuleSeeder</c>; additional templates can be authored via the admin CRUD.
 /// </summary>
 public sealed class SectorDataTemplate : Entity
 {

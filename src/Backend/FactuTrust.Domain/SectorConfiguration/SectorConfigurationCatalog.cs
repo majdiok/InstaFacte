@@ -44,6 +44,46 @@ public sealed record DomainDefinition
 }
 
 /// <summary>
+/// Declares that enabling <see cref="Module"/> also requires <see cref="RequiredModule"/> to be
+/// enabled (plan §4.2). Consumed by <see cref="SectorModuleSetCalculator"/> (transitive-closure
+/// pull) and projected into <c>SectorRuleSnapshot.ModuleDependencies</c>/seeded as
+/// <c>SectorModuleDependency</c> rows for DB-driven resolution.
+/// </summary>
+public sealed record ModuleDependencyEdge
+{
+    public required AppModule Module { get; init; }
+    public required AppModule RequiredModule { get; init; }
+}
+
+/// <summary>
+/// One data-template item (plan §4.3 additive sector presets). <c>ItemKind</c>/<c>PayloadJson</c>
+/// match what <c>SectorDataTemplateApplier.ApplyItemAsync</c> understands (e.g. <c>"chart-account"</c>).
+/// </summary>
+public sealed record DataTemplateItemDefinition
+{
+    public required string ItemKind { get; init; }
+    public required string PayloadJson { get; init; }
+    public required int SortOrder { get; init; }
+}
+
+/// <summary>
+/// A named, additive sector data template (plan §4.3) — e.g. "add these extra chart-of-accounts
+/// sub-accounts for this domain". Never modifies/removes pre-existing tenant rows; items are only
+/// inserted if the matching row does not already exist (see <c>SectorDataTemplateApplier</c>).
+/// </summary>
+public sealed record DataTemplateDefinition
+{
+    public required string Code { get; init; }
+    public string? SegmentCode { get; init; }
+    public string? DomainCode { get; init; }
+    public required string LabelFr { get; init; }
+    public string? DescriptionFr { get; init; }
+    public required int Version { get; init; }
+    public required int SortOrder { get; init; }
+    public required IReadOnlyList<DataTemplateItemDefinition> Items { get; init; }
+}
+
+/// <summary>
 /// Phase 1 declarative sector catalog — pure static data, source of truth for module
 /// recommendations and default warehouse naming (plan §3 C8, §5, §6.1 B1).
 /// <para>
@@ -256,6 +296,90 @@ public static class SectorConfigurationCatalog
             LabelFr = "Autre domaine",
             SortOrder = 9,
             OverlayModules = Array.Empty<AppModule>()
+        }
+    };
+
+    /// <summary>
+    /// Module dependency edges (plan §4.2, approved matrix). Note: because
+    /// <see cref="CoreModules"/> already includes Products, Sales and Treasury, these 4 edges are
+    /// currently no-ops in the real registration/reconfiguration flow (the required module is
+    /// always already granted) — implemented exactly as approved regardless, for when
+    /// <see cref="CoreModules"/> composition changes or a module becomes optional later.
+    /// </summary>
+    public static readonly IReadOnlyList<ModuleDependencyEdge> ModuleDependencies = new[]
+    {
+        new ModuleDependencyEdge { Module = AppModule.Stock, RequiredModule = AppModule.Products },
+        new ModuleDependencyEdge { Module = AppModule.Purchases, RequiredModule = AppModule.Products },
+        new ModuleDependencyEdge { Module = AppModule.Forecasting, RequiredModule = AppModule.Treasury },
+        new ModuleDependencyEdge { Module = AppModule.RecurringContracts, RequiredModule = AppModule.Sales }
+    };
+
+    /// <summary>
+    /// Additive sector data templates (plan §4.3). Domain-scoped chart-of-accounts sub-accounts
+    /// verified against the real Tunisian seeded chart (<c>TunisianPostingAccounts</c>): parents
+    /// 707 "Ventes de marchandises" and 705 "Prestations de services" both exist, are top-level,
+    /// class 7, nature Credit; account numbers 7071/7072/7051 do not already exist. Applied
+    /// exclusively through <c>SectorDataTemplateApplier.ApplyChartAccountAsync</c>'s existing
+    /// insert-if-not-exists path — never touches accounting seeding/migrations.
+    /// </summary>
+    public static readonly IReadOnlyList<DataTemplateDefinition> DataTemplates = new[]
+    {
+        new DataTemplateDefinition
+        {
+            Code = "chart-account-detail-alimentation-agroalimentaire",
+            SegmentCode = null,
+            DomainCode = BusinessDomains.AlimentationAgroalimentaire,
+            LabelFr = "Sous-compte ventes — Alimentation & agroalimentaire",
+            DescriptionFr = "Ajoute un sous-compte 7071 dédié aux ventes de marchandises alimentaires.",
+            Version = 1,
+            SortOrder = 0,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "chart-account",
+                    PayloadJson = "{\"accountNumber\":\"7071\",\"label\":\"Ventes de marchandises - Alimentation & agroalimentaire\",\"accountClass\":7,\"parentAccountNumber\":\"707\",\"natureType\":\"Credit\",\"isSystem\":false}",
+                    SortOrder = 0
+                }
+            }
+        },
+        new DataTemplateDefinition
+        {
+            Code = "chart-account-detail-textile-habillement",
+            SegmentCode = null,
+            DomainCode = BusinessDomains.TextileHabillement,
+            LabelFr = "Sous-compte ventes — Textile & habillement",
+            DescriptionFr = "Ajoute un sous-compte 7072 dédié aux ventes de marchandises textiles.",
+            Version = 1,
+            SortOrder = 1,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "chart-account",
+                    PayloadJson = "{\"accountNumber\":\"7072\",\"label\":\"Ventes de marchandises - Textile & habillement\",\"accountClass\":7,\"parentAccountNumber\":\"707\",\"natureType\":\"Credit\",\"isSystem\":false}",
+                    SortOrder = 0
+                }
+            }
+        },
+        new DataTemplateDefinition
+        {
+            Code = "chart-account-detail-technologie-informatique",
+            SegmentCode = null,
+            DomainCode = BusinessDomains.TechnologieInformatique,
+            LabelFr = "Sous-compte prestations — Technologie & informatique",
+            DescriptionFr = "Ajoute un sous-compte 7051 dédié aux prestations de services technologiques.",
+            Version = 1,
+            SortOrder = 2,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "chart-account",
+                    PayloadJson = "{\"accountNumber\":\"7051\",\"label\":\"Prestations de services - Technologie & informatique\",\"accountClass\":7,\"parentAccountNumber\":\"705\",\"natureType\":\"Credit\",\"isSystem\":false}",
+                    SortOrder = 0
+                }
+            }
         }
     };
 

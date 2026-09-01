@@ -3,10 +3,11 @@ using FactuTrust.Domain.Common;
 namespace FactuTrust.Domain.Entities.SectorRules;
 
 /// <summary>
-/// Master-DB backed module dependency edge (Phase 2, plan §WP-B4/§WP-B5): selecting
-/// <see cref="ModuleId"/> auto-pulls <see cref="RequiredModuleId"/>. The static catalog has none;
-/// this table starts empty and is authored via the admin CRUD. Acyclicity is enforced at the
-/// service layer (<c>SectorRuleAdminService</c>), never here.
+/// Master-DB backed module dependency edge (Phase 2, plan §WP-B4/§WP-B5, §4.2): selecting
+/// <see cref="ModuleId"/> auto-pulls <see cref="RequiredModuleId"/>. The static catalog declares a
+/// small approved set (<c>SectorConfigurationCatalog.ModuleDependencies</c>), seeded by
+/// <c>SectorRuleSeeder</c>; additional edges can be authored via the admin CRUD. Acyclicity is
+/// enforced at the service layer (<c>SectorRuleAdminService</c>), never here.
 /// </summary>
 public sealed class SectorModuleDependency : Entity
 {

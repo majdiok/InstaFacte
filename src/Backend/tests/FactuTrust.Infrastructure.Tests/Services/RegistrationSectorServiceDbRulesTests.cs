@@ -1,11 +1,15 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Domain.Billing;
+using FactuTrust.Domain.Entities.SectorRules;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.SectorConfiguration;
 using FactuTrust.Infrastructure.Persistence;
+using FactuTrust.Infrastructure.Persistence.Seeds;
 using FactuTrust.Infrastructure.Services;
+using FactuTrust.Infrastructure.Services.SectorCatalog;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -176,6 +180,39 @@ public sealed class RegistrationSectorServiceDbRulesTests
         var result = service.ResolveProfile(CompanySegments.Commerce, BusinessDomains.SanteParamedical);
 
         Assert.True(result.IsSuccess);
+    }
+
+    /// <summary>
+    /// Plan §4.6 — extend with the real DB matrix: seed the master-DB rule tables straight from
+    /// the catalog via <see cref="SectorRuleSeeder"/>, deactivate one catalog-known
+    /// <see cref="SectorSegmentDomain"/> link, then read it back through the real
+    /// <see cref="DbSectorCatalogProvider"/> (not the <see cref="FixedSnapshotProvider"/> stub) —
+    /// the deactivated couple must be rejected exactly like an unknown couple.
+    /// </summary>
+    [Fact]
+    public async Task ResolveProfile_rejects_couple_when_link_is_deactivated_in_db()
+    {
+        await using var db = NewDb();
+        await SectorRuleSeeder.SeedAsync(db, force: false, actor: "test", CancellationToken.None);
+
+        var segment = await db.SectorSegments.SingleAsync(s => s.Code == CompanySegments.Commerce, CancellationToken.None);
+        var domain = await db.SectorDomains.SingleAsync(d => d.Code == BusinessDomains.AlimentationAgroalimentaire, CancellationToken.None);
+        var link = await db.SectorSegmentDomains.SingleAsync(
+            sd => sd.SegmentId == segment.Id && sd.DomainId == domain.Id, CancellationToken.None);
+        link.Deactivate();
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        var stamp = await db.SectorRuleSetStamps.SingleAsync(CancellationToken.None);
+        stamp.Bump("test");
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        var provider = new DbSectorCatalogProvider(db, new MemoryCache(new MemoryCacheOptions()));
+        var service = NewService(db, new AllowAllPlanResolver(), provider);
+
+        var result = service.ResolveProfile(CompanySegments.Commerce, BusinessDomains.AlimentationAgroalimentaire);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.BusinessDomain", result.Error.Code);
     }
 
     // ---------- ApplyModuleSelectionAsync: dependency transitive closure ----------

@@ -135,7 +135,7 @@ public sealed class PublicSectorCatalogControllerTests
     }
 
     [Fact]
-    public void Get_includes_domainCodes_and_empty_moduleDependencies_with_static_provider()
+    public void Get_includes_domainCodes_and_the_4_catalog_moduleDependencies_with_static_provider()
     {
         var controller = NewController();
 
@@ -151,7 +151,12 @@ public sealed class PublicSectorCatalogControllerTests
             Assert.Equal(expected.Count, s.DomainCodes.Count);
             Assert.Contains(BusinessDomains.Autre, s.DomainCodes);
         });
-        Assert.Empty(body.Data.ModuleDependencies);
+        // Phase 2 (plan §4.2): the static catalog now declares the 4 approved dependency edges.
+        Assert.Equal(4, body.Data.ModuleDependencies.Count);
+        Assert.Contains(body.Data.ModuleDependencies, d => d.ModuleId == (int)AppModule.Stock && d.RequiredModuleId == (int)AppModule.Products);
+        Assert.Contains(body.Data.ModuleDependencies, d => d.ModuleId == (int)AppModule.Purchases && d.RequiredModuleId == (int)AppModule.Products);
+        Assert.Contains(body.Data.ModuleDependencies, d => d.ModuleId == (int)AppModule.Forecasting && d.RequiredModuleId == (int)AppModule.Treasury);
+        Assert.Contains(body.Data.ModuleDependencies, d => d.ModuleId == (int)AppModule.RecurringContracts && d.RequiredModuleId == (int)AppModule.Sales);
     }
 
     [Fact]

@@ -35,3 +35,39 @@ describe('layout-module-policy — stock vouchers (sous /stock)', () => {
     expect(MODULES_REQUIRED_BY_FIRST_SEGMENT['issues']).toBeUndefined();
   });
 });
+
+// Phase 2 (plan §4.4): audit of every routed first segment in app.routes.ts against the module
+// policy map — these five were routed but missing an entry (moduleGuard silently let any
+// authenticated user through regardless of their module grants).
+describe('layout-module-policy — Phase 2 audit: previously-missing routed segments', () => {
+  it('gates sales-orders behind Sales + sales_orders:read', () => {
+    expect(MODULES_REQUIRED_BY_FIRST_SEGMENT['sales-orders']).toEqual([AppModule.Sales]);
+    expect(PERMISSIONS_ALL_REQUIRED_BY_FIRST_SEGMENT['sales-orders']).toEqual(['sales_orders:read']);
+  });
+
+  it('gates pricing behind Sales + pricing:read', () => {
+    expect(MODULES_REQUIRED_BY_FIRST_SEGMENT['pricing']).toEqual([AppModule.Sales]);
+    expect(PERMISSIONS_ALL_REQUIRED_BY_FIRST_SEGMENT['pricing']).toEqual(['pricing:read']);
+  });
+
+  it('gates forecasting behind Forecasting + forecasting:view', () => {
+    expect(MODULES_REQUIRED_BY_FIRST_SEGMENT['forecasting']).toEqual([AppModule.Forecasting]);
+    expect(PERMISSIONS_ALL_REQUIRED_BY_FIRST_SEGMENT['forecasting']).toEqual(['forecasting:view']);
+  });
+
+  it('gates studio behind Studio + studio:design_entities', () => {
+    expect(MODULES_REQUIRED_BY_FIRST_SEGMENT['studio']).toEqual([AppModule.Studio]);
+    expect(PERMISSIONS_ALL_REQUIRED_BY_FIRST_SEGMENT['studio']).toEqual(['studio:design_entities']);
+  });
+
+  it('gates recurring-contracts behind RecurringContracts + recurring_contracts:read', () => {
+    expect(MODULES_REQUIRED_BY_FIRST_SEGMENT['recurring-contracts']).toEqual([AppModule.RecurringContracts]);
+    expect(PERMISSIONS_ALL_REQUIRED_BY_FIRST_SEGMENT['recurring-contracts']).toEqual(['recurring_contracts:read']);
+  });
+
+  it('leaves documentation/exchanges/firm unrestricted by design (dedicated guards, no matching AppModule)', () => {
+    expect(MODULES_REQUIRED_BY_FIRST_SEGMENT['documentation']).toBeUndefined();
+    expect(MODULES_REQUIRED_BY_FIRST_SEGMENT['exchanges']).toBeUndefined();
+    expect(MODULES_REQUIRED_BY_FIRST_SEGMENT['firm']).toBeUndefined();
+  });
+});

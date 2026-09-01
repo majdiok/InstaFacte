@@ -11,12 +11,15 @@ export const MODULES_REQUIRED_BY_FIRST_SEGMENT: Record<string, AppModule[]> = {
   quotes: [AppModule.Sales],
   'delivery-notes': [AppModule.Sales],
   'return-notes': [AppModule.Sales],
+  'sales-orders': [AppModule.Sales],
+  pricing: [AppModule.Sales],
   clients: [AppModule.Clients],
   products: [AppModule.Products],
   'product-categories': [AppModule.Products],
   reports: [AppModule.Reports],
   payments: [AppModule.Treasury],
   treasury: [AppModule.Treasury],
+  forecasting: [AppModule.Forecasting],
   stock: [AppModule.Stock],
   inventory: [AppModule.Stock],
   transfers: [AppModule.Stock],
@@ -29,8 +32,10 @@ export const MODULES_REQUIRED_BY_FIRST_SEGMENT: Record<string, AppModule[]> = {
   audit: [AppModule.Accounting],
   crm: [AppModule.CRM],
   'withholding-tax': [AppModule.Fiscal],
+  studio: [AppModule.Studio],
   payroll: [AppModule.Payroll],
-  projects: [AppModule.Projects]
+  projects: [AppModule.Projects],
+  'recurring-contracts': [AppModule.RecurringContracts]
 };
 
 /**
@@ -43,6 +48,8 @@ export const PERMISSIONS_ALL_REQUIRED_BY_FIRST_SEGMENT: Record<string, string[]>
   'delivery-notes': ['delivery_notes:read'],
   'return-notes': ['return_notes:read'],
   invoices: ['invoices:read'],
+  'sales-orders': ['sales_orders:read'],
+  pricing: ['pricing:read'],
   clients: ['clients:read'],
   products: ['products:read'],
   'product-categories': ['products:read'],
@@ -57,14 +64,17 @@ export const PERMISSIONS_ALL_REQUIRED_BY_FIRST_SEGMENT: Record<string, string[]>
   // Le prévisionnel s'adresse au comptable, qui n'a pas forcément `payments:read` :
   // la garde du segment porte donc sa propre permission.
   treasury: ['treasury_forecast:view'],
+  forecasting: ['forecasting:view'],
   reports: ['reports:view'],
   settings: ['settings:read'],
   accounting: ['accounting:read'],
   audit: ['audit:read'],
   crm: ['crm:read'],
   'withholding-tax': ['withholding_tax:read'],
+  studio: ['studio:design_entities'],
   payroll: ['payroll:read'],
-  projects: ['projects:read']
+  projects: ['projects:read'],
+  'recurring-contracts': ['recurring_contracts:read']
 };
 
 /** POS loads products, warehouses (stock), and creates invoices. */

@@ -20,9 +20,17 @@ namespace FactuTrust.Infrastructure.Persistence.Seeds;
 /// dependency edges, data templates, ...) are never touched, and nothing is ever deleted.
 /// </para>
 /// <para>
-/// <see cref="SectorModuleDependency"/> and <see cref="SectorDataTemplate"/> rows are intentionally
-/// never seeded here — the static catalog has none of either; they only exist once authored through
-/// the admin CRUD (WP-B5/WP-B6).
+/// <see cref="SectorModuleDependency"/> and <see cref="SectorDataTemplate"/> rows: the catalog-declared
+/// edges/templates (plan §4.2/§4.3) are seeded below the same way as segments/domains
+/// (insert-if-missing, reset-on-force). Dependency edges are a link-type row over a bounded,
+/// enumerable (ModuleId, RequiredModuleId) space — exactly like the segment↔domain link matrix
+/// above — so on <c>force=true</c> any edge in that space that is no longer catalog-declared is
+/// deactivated (never deleted), including one an admin added directly between two existing
+/// modules. Templates are an entity-type row identified by <c>Code</c> (like segments/domains): a
+/// template whose <c>Code</c> isn't in the catalog is never touched. Template items have no
+/// natural business key beyond <c>(ItemKind, SortOrder)</c> within their template and are
+/// insert-if-missing only — never reset/deactivated on force, since the entity exposes no
+/// <c>UpdatePayload</c> mutator.
 /// </para>
 /// </summary>
 public static class SectorRuleSeeder
@@ -252,6 +260,122 @@ public static class SectorRuleSeeder
                 }
 
                 sortOrder++;
+            }
+        }
+
+        // ---------- Module dependencies (plan §4.2: catalog-declared edges only) ----------
+        var existingDependencies = (await context.SectorModuleDependencies.ToListAsync(cancellationToken))
+            .ToDictionary(d => (d.ModuleId, d.RequiredModuleId));
+
+        var catalogDependencyKeys = new HashSet<(int ModuleId, int RequiredModuleId)>();
+        foreach (var edge in SectorConfigurationCatalog.ModuleDependencies)
+        {
+            var key = (ModuleId: (int)edge.Module, RequiredModuleId: (int)edge.RequiredModule);
+            catalogDependencyKeys.Add(key);
+
+            if (existingDependencies.TryGetValue(key, out var existingDependency))
+            {
+                if (force)
+                {
+                    existingDependency.Reactivate();
+                    updated++;
+                }
+                else
+                {
+                    skippedExisting++;
+                }
+            }
+            else
+            {
+                var created = SectorModuleDependency.Create(key.ModuleId, key.RequiredModuleId);
+                context.SectorModuleDependencies.Add(created);
+                existingDependencies[key] = created;
+                inserted++;
+            }
+        }
+
+        if (force)
+        {
+            foreach (var (key, dependency) in existingDependencies)
+            {
+                if (!catalogDependencyKeys.Contains(key) && dependency.IsActive)
+                {
+                    // Catalog-known-turned-removed edge: same "deactivate, never delete" semantics
+                    // as the segment↔domain link matrix above. Non-catalog edges authored by an
+                    // admin (key never appeared in a past catalog run) are indistinguishable from
+                    // this case at the DB level, so force=true also retires those — acceptable
+                    // because force is an explicit "restore factory defaults" operation.
+                    dependency.Deactivate();
+                    updated++;
+                }
+            }
+        }
+
+        // ---------- Data templates + items (plan §4.3: additive sector presets) ----------
+        var existingTemplatesByCode = (await context.SectorDataTemplates.ToListAsync(cancellationToken))
+            .ToDictionary(t => t.Code, StringComparer.Ordinal);
+
+        foreach (var templateDef in SectorConfigurationCatalog.DataTemplates)
+        {
+            SectorDataTemplate template;
+            if (existingTemplatesByCode.TryGetValue(templateDef.Code, out var existingTemplate))
+            {
+                template = existingTemplate;
+                if (force)
+                {
+                    existingTemplate.UpdateDetails(templateDef.LabelFr, templateDef.DescriptionFr, templateDef.Version, templateDef.SortOrder);
+                    existingTemplate.Reactivate();
+                    updated++;
+                }
+                else
+                {
+                    skippedExisting++;
+                }
+            }
+            else
+            {
+                template = SectorDataTemplate.Create(
+                    templateDef.Code,
+                    templateDef.SegmentCode,
+                    templateDef.DomainCode,
+                    templateDef.LabelFr,
+                    templateDef.DescriptionFr,
+                    templateDef.Version,
+                    templateDef.SortOrder);
+                context.SectorDataTemplates.Add(template);
+                existingTemplatesByCode[templateDef.Code] = template;
+                inserted++;
+            }
+
+            // Items have no natural business key beyond (ItemKind, SortOrder) within their
+            // template — insert-if-missing only, no reset-on-force (no UpdatePayload mutator).
+            var existingItemsByKey = (await context.SectorDataTemplateItems
+                    .Where(i => i.TemplateId == template.Id)
+                    .ToListAsync(cancellationToken))
+                .ToDictionary(i => (i.ItemKind, i.SortOrder));
+
+            foreach (var itemDef in templateDef.Items)
+            {
+                var itemKey = (itemDef.ItemKind, itemDef.SortOrder);
+                if (existingItemsByKey.TryGetValue(itemKey, out var existingItem))
+                {
+                    if (force && !existingItem.IsActive)
+                    {
+                        existingItem.Reactivate();
+                        updated++;
+                    }
+                    else
+                    {
+                        skippedExisting++;
+                    }
+                }
+                else
+                {
+                    var createdItem = SectorDataTemplateItem.Create(template.Id, itemDef.ItemKind, itemDef.PayloadJson, itemDef.SortOrder);
+                    context.SectorDataTemplateItems.Add(createdItem);
+                    existingItemsByKey[itemKey] = createdItem;
+                    inserted++;
+                }
             }
         }
 

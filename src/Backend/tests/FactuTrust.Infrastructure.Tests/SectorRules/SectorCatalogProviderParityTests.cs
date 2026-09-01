@@ -84,6 +84,56 @@ public sealed class SectorCatalogProviderParityTests
     }
 
     [Fact]
+    public async Task Parity_checker_reports_difference_when_module_dependency_deactivated()
+    {
+        // Seed, then deactivate one catalog-declared SectorModuleDependency row so the DB rule set
+        // drifts from the static catalog (plan §4.2/§4.6) — the checker must surface the divergence.
+        await using var db = NewDb();
+        await SectorRuleSeeder.SeedAsync(db, force: false, actor: "parity-test", CancellationToken.None);
+
+        var firstDependency = await db.SectorModuleDependencies.FirstAsync(CancellationToken.None);
+        firstDependency.Deactivate();
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        var stamp = await db.SectorRuleSetStamps.SingleAsync(CancellationToken.None);
+        stamp.Bump("parity-test");
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        var staticSnapshot = new StaticSectorCatalogProvider().GetSnapshot();
+        var dbSnapshot = NewDbProvider(db).GetSnapshot();
+
+        var result = SectorRuleParityChecker.Check(staticSnapshot, dbSnapshot);
+
+        Assert.False(result.IsMatch);
+        Assert.Contains(result.Differences, d => d.Contains("dépendance[", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Parity_checker_reports_difference_when_data_template_item_deactivated()
+    {
+        // Seed, then deactivate one catalog-declared SectorDataTemplateItem row (plan §4.3/§4.6) —
+        // the checker must surface the missing item as a divergence on that template.
+        await using var db = NewDb();
+        await SectorRuleSeeder.SeedAsync(db, force: false, actor: "parity-test", CancellationToken.None);
+
+        var firstItem = await db.SectorDataTemplateItems.FirstAsync(CancellationToken.None);
+        firstItem.Deactivate();
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        var stamp = await db.SectorRuleSetStamps.SingleAsync(CancellationToken.None);
+        stamp.Bump("parity-test");
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        var staticSnapshot = new StaticSectorCatalogProvider().GetSnapshot();
+        var dbSnapshot = NewDbProvider(db).GetSnapshot();
+
+        var result = SectorRuleParityChecker.Check(staticSnapshot, dbSnapshot);
+
+        Assert.False(result.IsMatch);
+        Assert.Contains(result.Differences, d => d.Contains("modèle[", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Parity_checker_reports_match_when_both_snapshots_are_the_static_catalog()
     {
         // Two identical static snapshots trivially match — a guard against a checker that would

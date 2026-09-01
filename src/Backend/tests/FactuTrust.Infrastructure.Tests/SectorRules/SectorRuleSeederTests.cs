@@ -1,4 +1,5 @@
 using FactuTrust.Domain.Entities.SectorRules;
+using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.SectorConfiguration;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Persistence.Seeds;
@@ -23,6 +24,9 @@ public sealed class SectorRuleSeederTests
     private static int ExpectedSegmentDomainLinkCount() =>
         SectorConfigurationCatalog.Segments.Sum(s => s.AllowedDomainCodes.Count);
 
+    private static int ExpectedDataTemplateItemCount() =>
+        SectorConfigurationCatalog.DataTemplates.Sum(t => t.Items.Count);
+
     [Fact]
     public async Task Seed_on_empty_db_inserts_full_catalog()
     {
@@ -36,12 +40,60 @@ public sealed class SectorRuleSeederTests
         Assert.Equal(ExpectedModuleRuleCount(), await db.SectorModuleRules.CountAsync());
         // 5 of the 6 segments have a DefaultWarehouseName + 1 global plan-comptable-variant row.
         Assert.Equal(7, await db.SectorDefaultSettings.CountAsync());
-        Assert.Equal(0, await db.SectorModuleDependencies.CountAsync());
-        Assert.Equal(0, await db.SectorDataTemplates.CountAsync());
+        // Phase 2 (plan §4.2/§4.3): the catalog now declares 4 module dependency edges and 3
+        // additive data templates (one chart-account item each).
+        Assert.Equal(SectorConfigurationCatalog.ModuleDependencies.Count, await db.SectorModuleDependencies.CountAsync());
+        Assert.Equal(4, await db.SectorModuleDependencies.CountAsync());
+        Assert.Equal(SectorConfigurationCatalog.DataTemplates.Count, await db.SectorDataTemplates.CountAsync());
+        Assert.Equal(3, await db.SectorDataTemplates.CountAsync());
+        Assert.Equal(ExpectedDataTemplateItemCount(), await db.SectorDataTemplateItems.CountAsync());
         Assert.Equal(1, result.NewVersion);
         Assert.False(result.Forced);
         Assert.Equal(0, result.Updated);
         Assert.Equal(0, result.SkippedExisting);
+    }
+
+    /// <summary>Seed_projette_les_dependances_du_catalogue (plan §4.6): the 4 approved edges land as active rows.</summary>
+    [Fact]
+    public async Task Seed_projette_les_dependances_du_catalogue()
+    {
+        await using var db = NewDb();
+
+        await SectorRuleSeeder.SeedAsync(db, force: false, actor: "test", CancellationToken.None);
+
+        var rows = await db.SectorModuleDependencies.ToListAsync();
+        Assert.Equal(4, rows.Count);
+        Assert.All(rows, r => Assert.True(r.IsActive));
+
+        var pairs = rows.Select(r => (r.ModuleId, r.RequiredModuleId)).ToHashSet();
+        foreach (var edge in SectorConfigurationCatalog.ModuleDependencies)
+        {
+            Assert.Contains(((int)edge.Module, (int)edge.RequiredModule), pairs);
+        }
+    }
+
+    /// <summary>Seeding the data templates also projects their items (plan §4.3/§4.6).</summary>
+    [Fact]
+    public async Task Seed_projette_les_templates_de_donnees_du_catalogue()
+    {
+        await using var db = NewDb();
+
+        await SectorRuleSeeder.SeedAsync(db, force: false, actor: "test", CancellationToken.None);
+
+        var templates = await db.SectorDataTemplates.ToListAsync();
+        Assert.Equal(3, templates.Count);
+        Assert.All(templates, t => Assert.True(t.IsActive));
+
+        foreach (var templateDef in SectorConfigurationCatalog.DataTemplates)
+        {
+            var template = templates.Single(t => t.Code == templateDef.Code);
+            Assert.Equal(templateDef.DomainCode, template.DomainCode);
+            Assert.Equal(templateDef.SegmentCode, template.SegmentCode);
+
+            var items = await db.SectorDataTemplateItems.Where(i => i.TemplateId == template.Id).ToListAsync();
+            Assert.Equal(templateDef.Items.Count, items.Count);
+            Assert.All(items, i => Assert.True(i.IsActive));
+        }
     }
 
     /// <summary>Seed_ne_cree_que_les_liens_de_la_matrice (plan §3.5): only matrix pairs are inserted, never every combination.</summary>
@@ -133,6 +185,9 @@ public sealed class SectorRuleSeederTests
         var linkCountBefore = await db.SectorSegmentDomains.CountAsync();
         var ruleCountBefore = await db.SectorModuleRules.CountAsync();
         var settingCountBefore = await db.SectorDefaultSettings.CountAsync();
+        var dependencyCountBefore = await db.SectorModuleDependencies.CountAsync();
+        var templateCountBefore = await db.SectorDataTemplates.CountAsync();
+        var templateItemCountBefore = await db.SectorDataTemplateItems.CountAsync();
 
         var second = await SectorRuleSeeder.SeedAsync(db, force: false, actor: "test", CancellationToken.None);
 
@@ -143,6 +198,9 @@ public sealed class SectorRuleSeederTests
         Assert.Equal(linkCountBefore, await db.SectorSegmentDomains.CountAsync());
         Assert.Equal(ruleCountBefore, await db.SectorModuleRules.CountAsync());
         Assert.Equal(settingCountBefore, await db.SectorDefaultSettings.CountAsync());
+        Assert.Equal(dependencyCountBefore, await db.SectorModuleDependencies.CountAsync());
+        Assert.Equal(templateCountBefore, await db.SectorDataTemplates.CountAsync());
+        Assert.Equal(templateItemCountBefore, await db.SectorDataTemplateItems.CountAsync());
         Assert.Equal(2, second.NewVersion);
     }
 
@@ -185,6 +243,64 @@ public sealed class SectorRuleSeederTests
         var stillThere = await db.SectorDomains.SingleOrDefaultAsync(d => d.Code == "domaine-maison");
         Assert.NotNull(stillThere);
         Assert.Equal(11, await db.SectorDomains.CountAsync()); // 10 catalog domains + 1 admin-added, none deleted.
+    }
+
+    /// <summary>
+    /// Module dependency edges are a bounded, enumerable link-type row (like segment↔domain
+    /// links): force=true deactivates any (ModuleId, RequiredModuleId) pair no longer catalog-declared,
+    /// but never deletes it.
+    /// </summary>
+    [Fact]
+    public async Task Force_desactive_une_dependance_de_module_retiree_du_catalogue_sans_supprimer()
+    {
+        await using var db = NewDb();
+        await SectorRuleSeeder.SeedAsync(db, force: false, actor: "test", CancellationToken.None);
+
+        // Admin-added edge not in the catalog list.
+        var extraEdge = SectorModuleDependency.Create((int)AppModule.CRM, (int)AppModule.Clients);
+        db.SectorModuleDependencies.Add(extraEdge);
+        await db.SaveChangesAsync();
+
+        await SectorRuleSeeder.SeedAsync(db, force: true, actor: "admin", CancellationToken.None);
+
+        var all = await db.SectorModuleDependencies.ToListAsync();
+        Assert.Equal(5, all.Count); // 4 catalog edges + 1 admin-added, none deleted.
+
+        var extra = all.Single(d => d.ModuleId == (int)AppModule.CRM && d.RequiredModuleId == (int)AppModule.Clients);
+        Assert.False(extra.IsActive);
+
+        var catalogEdges = all.Where(d => d.ModuleId != (int)AppModule.CRM || d.RequiredModuleId != (int)AppModule.Clients).ToList();
+        Assert.Equal(4, catalogEdges.Count);
+        Assert.All(catalogEdges, d => Assert.True(d.IsActive));
+    }
+
+    /// <summary>
+    /// A data template is an entity-type row identified by Code (like segments/domains): force=true
+    /// resets its details back to the catalog's and reactivates it, but never touches a template item
+    /// beyond insert-if-missing (no reset-on-force, no deletion of an admin-added item).
+    /// </summary>
+    [Fact]
+    public async Task Seed_with_force_resets_template_details_but_keeps_admin_added_item()
+    {
+        await using var db = NewDb();
+        await SectorRuleSeeder.SeedAsync(db, force: false, actor: "test", CancellationToken.None);
+
+        var templateDef = SectorConfigurationCatalog.DataTemplates[0];
+        var template = await db.SectorDataTemplates.SingleAsync(t => t.Code == templateDef.Code);
+        template.UpdateDetails("Libellé personnalisé", template.DescriptionFr, template.Version, template.SortOrder);
+
+        var extraItem = SectorDataTemplateItem.Create(template.Id, "chart-account", "{\"accountNumber\":\"7099\"}", 99);
+        db.SectorDataTemplateItems.Add(extraItem);
+        await db.SaveChangesAsync();
+
+        await SectorRuleSeeder.SeedAsync(db, force: true, actor: "admin", CancellationToken.None);
+
+        var resetTemplate = await db.SectorDataTemplates.SingleAsync(t => t.Code == templateDef.Code);
+        Assert.Equal(templateDef.LabelFr, resetTemplate.LabelFr);
+
+        var items = await db.SectorDataTemplateItems.Where(i => i.TemplateId == template.Id).ToListAsync();
+        Assert.Equal(templateDef.Items.Count + 1, items.Count); // catalog item(s) + admin-added, none deleted.
+        Assert.Contains(items, i => i.SortOrder == 99 && i.ItemKind == "chart-account");
     }
 
     [Fact]

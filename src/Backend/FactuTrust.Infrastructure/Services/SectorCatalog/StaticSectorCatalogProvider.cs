@@ -58,15 +58,46 @@ public sealed class StaticSectorCatalogProvider : ISectorCatalogProvider
             })
             .ToList();
 
+        var moduleDependencies = SectorConfigurationCatalog.ModuleDependencies
+            .Select(e => new ModuleDependencySnapshot
+            {
+                ModuleId = (int)e.Module,
+                RequiredModuleId = (int)e.RequiredModule
+            })
+            .ToList();
+
+        var dataTemplates = SectorConfigurationCatalog.DataTemplates
+            .OrderBy(t => t.SortOrder)
+            .Select(t => new DataTemplateSnapshot
+            {
+                Code = t.Code,
+                SegmentCode = t.SegmentCode,
+                DomainCode = t.DomainCode,
+                LabelFr = t.LabelFr,
+                DescriptionFr = t.DescriptionFr,
+                Version = t.Version,
+                SortOrder = t.SortOrder,
+                Items = t.Items
+                    .OrderBy(i => i.SortOrder)
+                    .Select(i => new DataTemplateItemSnapshot
+                    {
+                        ItemKind = i.ItemKind,
+                        PayloadJson = i.PayloadJson,
+                        SortOrder = i.SortOrder
+                    })
+                    .ToList()
+            })
+            .ToList();
+
         return new SectorRuleSnapshot
         {
             Source = SectorRuleSource.Static,
             Version = 0,
             Segments = segments,
             Domains = domains,
-            ModuleDependencies = Array.Empty<ModuleDependencySnapshot>(),
+            ModuleDependencies = moduleDependencies,
             DefaultSettings = defaultSettings,
-            DataTemplates = Array.Empty<DataTemplateSnapshot>()
+            DataTemplates = dataTemplates
         };
     }
 }
