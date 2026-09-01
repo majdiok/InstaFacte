@@ -814,6 +814,11 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         {
             var statusSet = task.SetStatus(dto.Status.Value);
             if (statusSet.IsFailure) return statusSet;
+            if (dto.Status.Value != ProjectTaskStatus.Done)
+            {
+                var progressSet = task.SetProgressPercent(dto.ProgressPercent);
+                if (progressSet.IsFailure) return progressSet;
+            }
         }
         Audit(task, true);
         await _db.SaveChangesAsync(cancellationToken);

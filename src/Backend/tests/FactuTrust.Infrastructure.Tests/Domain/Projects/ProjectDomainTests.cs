@@ -105,6 +105,64 @@ public sealed class ProjectTaskMoveTests
         Assert.Equal(ProjectTaskStatus.Done, task.Status);
         Assert.Equal(100, task.ProgressPercent);
     }
+
+    [Fact]
+    public void MoveToPhase_DoneToInProgress_ClearsProgressToZero()
+    {
+        var task = ProjectTask.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "Tâche", null,
+            ProjectTaskPriority.Normal, null, null, null, 0m).Value;
+        Assert.True(task.MoveToPhase(Guid.NewGuid(), ProjectTaskStatus.Done).IsSuccess);
+        Assert.Equal(100, task.ProgressPercent);
+
+        var moved = task.MoveToPhase(Guid.NewGuid(), ProjectTaskStatus.InProgress);
+        Assert.True(moved.IsSuccess);
+        Assert.Equal(ProjectTaskStatus.InProgress, task.Status);
+        Assert.Equal(0, task.ProgressPercent);
+    }
+
+    [Fact]
+    public void MoveToPhase_InProgressToWaiting_KeepsManualProgress()
+    {
+        var task = ProjectTask.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "Tâche", null,
+            ProjectTaskPriority.Normal, null, null, null, 0m).Value;
+        Assert.True(task.Update("Tâche", null, ProjectTaskPriority.Normal, null, null, null, 0m, 40).IsSuccess);
+        Assert.True(task.SetStatus(ProjectTaskStatus.InProgress).IsSuccess);
+        Assert.Equal(40, task.ProgressPercent);
+
+        var moved = task.MoveToPhase(Guid.NewGuid(), ProjectTaskStatus.Waiting);
+        Assert.True(moved.IsSuccess);
+        Assert.Equal(ProjectTaskStatus.Waiting, task.Status);
+        Assert.Equal(40, task.ProgressPercent);
+    }
+
+    [Fact]
+    public void SetStatus_ToDone_SetsProgressTo100()
+    {
+        var task = ProjectTask.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "Tâche", null,
+            ProjectTaskPriority.Normal, null, null, null, 0m).Value;
+
+        var set = task.SetStatus(ProjectTaskStatus.Done);
+        Assert.True(set.IsSuccess);
+        Assert.Equal(100, task.ProgressPercent);
+    }
+
+    [Fact]
+    public void SetStatus_DoneToInProgress_ClearsProgressToZero()
+    {
+        var task = ProjectTask.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "Tâche", null,
+            ProjectTaskPriority.Normal, null, null, null, 0m).Value;
+        Assert.True(task.SetStatus(ProjectTaskStatus.Done).IsSuccess);
+        Assert.Equal(100, task.ProgressPercent);
+
+        var set = task.SetStatus(ProjectTaskStatus.InProgress);
+        Assert.True(set.IsSuccess);
+        Assert.Equal(ProjectTaskStatus.InProgress, task.Status);
+        Assert.Equal(0, task.ProgressPercent);
+    }
 }
 
 public sealed class ProjectBillingReadinessTests

@@ -99,18 +99,34 @@ public sealed class ProjectTask : Entity
         PhaseId = phaseId;
         if (status.HasValue)
         {
+            var previous = Status;
             Status = status.Value;
-            if (status.Value == ProjectTaskStatus.Done)
-                ProgressPercent = 100;
+            ApplyProgressForStatusTransition(previous, status.Value);
         }
         return Result.Success();
     }
 
     public Result SetStatus(ProjectTaskStatus status)
     {
+        var previous = Status;
         Status = status;
-        if (status == ProjectTaskStatus.Done)
-            ProgressPercent = 100;
+        ApplyProgressForStatusTransition(previous, status);
         return Result.Success();
+    }
+
+    public Result SetProgressPercent(int progressPercent)
+    {
+        if (progressPercent is < 0 or > 100)
+            return Result.Failure(Error.Validation("ProgressPercent", "L'avancement doit être entre 0 et 100"));
+        ProgressPercent = progressPercent;
+        return Result.Success();
+    }
+
+    private void ApplyProgressForStatusTransition(ProjectTaskStatus previous, ProjectTaskStatus next)
+    {
+        if (next == ProjectTaskStatus.Done)
+            ProgressPercent = 100;
+        else if (previous == ProjectTaskStatus.Done)
+            ProgressPercent = 0;
     }
 }
