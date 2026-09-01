@@ -29,9 +29,6 @@ namespace FactuTrust.API.Controllers;
 [Authorize]
 public sealed class CompanyModulesController : ControllerBase
 {
-    /// <summary>Cap on the number of users a single update touches (mirrors <c>TenantSectorReconfigurationService.MaxUsersPerRun</c>).</summary>
-    private const int MaxUsersPerRun = 500;
-
     private readonly MasterDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
@@ -184,9 +181,12 @@ public sealed class CompanyModulesController : ControllerBase
             warnings.Add($"{computation.DroppedInvalidIds.Count} identifiant(s) de module invalide(s) ignoré(s).");
         }
 
+        // D4 — the change applies to EVERY active user of the tenant (no cap): a tenant's active-user
+        // count is bounded by its subscription plan quota, so a single self-service admin action
+        // safely keeps all active users in sync and never silently leaves a tail with stale grants.
         var users = await _db.Users.AsNoTracking()
             .Where(u => u.TenantId == tenantId.Value && u.IsActive)
-            .Take(MaxUsersPerRun)
+            .OrderBy(u => u.Id)
             .Select(u => u.Id)
             .ToListAsync(cancellationToken);
 
@@ -233,8 +233,16 @@ public sealed class CompanyModulesController : ControllerBase
 
     private async Task<SubscriptionPlan> ResolveTenantPlanAsync(Guid tenantId, CancellationToken cancellationToken)
     {
+        // Deterministic plan resolution: only Active/Trial subscriptions carry an effective plan
+        // (Expired/Cancelled/Suspended/PastDue rows are historical), and when more than one active
+        // row exists we take the most recently started one — same active-subscription filter used by
+        // the platform tenant metrics resolver (PlatformTenantQueryService). Without the status
+        // filter + ordering, FirstOrDefault over a tenant with several subscription rows is
+        // non-deterministic and could resolve a stale/expired plan.
         return await _db.Subscriptions.AsNoTracking()
-            .Where(s => s.TenantId == tenantId)
+            .Where(s => s.TenantId == tenantId
+                && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trial))
+            .OrderByDescending(s => s.StartDate)
             .Select(s => s.Plan)
             .FirstOrDefaultAsync(cancellationToken);
     }

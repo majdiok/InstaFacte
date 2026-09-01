@@ -89,6 +89,7 @@ public sealed class CompanySectorController : ControllerBase
     /// <summary>Side-effect-free preview of the requested segment/domain change.</summary>
     [HttpPost("preview")]
     [Authorize(Policy = PermissionPolicies.SettingsUpdate)]
+    [Authorize(Roles = nameof(UserRole.Administrator))]
     [ProducesResponseType(typeof(ApiResponse<CompanySectorPreviewDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -121,10 +122,13 @@ public sealed class CompanySectorController : ControllerBase
     /// Applies the requested segment/domain change: recomputes module grants for every active user,
     /// applies matching sector data templates additively, and audits the change. Rate-limited to one
     /// change per rolling 24h window per tenant (429) — platform admins are not subject to this
-    /// limit (see <c>PlatformTenantSectorConfigurationController</c>).
+    /// limit (see <c>PlatformTenantSectorConfigurationController</c>). Plan §2.3: requires the
+    /// <c>SettingsUpdate</c> permission AND the <c>Administrateur</c> role, so a non-admin with the
+    /// permission cannot trigger tenant-wide sector re-provisioning.
     /// </summary>
     [HttpPut]
     [Authorize(Policy = PermissionPolicies.SettingsUpdate)]
+    [Authorize(Roles = nameof(UserRole.Administrator))]
     [ProducesResponseType(typeof(ApiResponse<CompanySectorApplyResultDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

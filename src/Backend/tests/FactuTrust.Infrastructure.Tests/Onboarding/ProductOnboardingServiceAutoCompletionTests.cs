@@ -1,8 +1,10 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Configuration;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ProductOnboarding;
+using FactuTrust.Domain.SectorConfiguration;
 using FactuTrust.Domain.Services;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.MultiTenancy;
@@ -59,6 +61,87 @@ public sealed class ProductOnboardingServiceAutoCompletionTests
         });
 
         Assert.Contains(ProductOnboardingDefaults.CompanyItemIds.CheckDefaultWarehouse, ids);
+    }
+
+    [Fact]
+    public async Task Commerce_default_warehouse_at_segment_seed_name_is_not_auto_completed()
+    {
+        // Code-review fix (plan §2.6): a fresh Commerce tenant's default warehouse is seeded as
+        // "Magasin principal" (the Commerce segment DefaultWarehouseName), NOT "Entrepôt Principal".
+        // The old hard-coded baseline wrongly treated this as "renamed ⇒ done" at day 0.
+        var ids = await CollectIdsAsync(tenantDb =>
+        {
+            AddWarehouse(tenantDb, "PRINCIPAL", "Magasin principal", isDefault: true);
+        }, segment: CompanySegments.Commerce);
+
+        Assert.DoesNotContain(ProductOnboardingDefaults.CompanyItemIds.CheckDefaultWarehouse, ids);
+    }
+
+    [Fact]
+    public async Task Btp_default_warehouse_at_segment_seed_name_is_not_auto_completed()
+    {
+        // BTP seeds "Dépôt chantier" — same rationale as the Commerce case above.
+        var ids = await CollectIdsAsync(tenantDb =>
+        {
+            AddWarehouse(tenantDb, "PRINCIPAL", "Dépôt chantier", isDefault: true);
+        }, segment: CompanySegments.BtpConstruction);
+
+        Assert.DoesNotContain(ProductOnboardingDefaults.CompanyItemIds.CheckDefaultWarehouse, ids);
+    }
+
+    [Fact]
+    public async Task Commerce_with_only_template_seeded_reserves_is_not_auto_completed()
+    {
+        // Plan §3.4 templates auto-seed "Boutique"/"Réserve" for Commerce at provisioning — those are
+        // provisioning artifacts, not user engagement, so they must not trip the "second warehouse"
+        // signal. Without the exclusion, warehouses.Count > 1 was a tautology for a fresh Commerce
+        // tenant and auto-completed the item at day 0.
+        var ids = await CollectIdsAsync(tenantDb =>
+        {
+            AddWarehouse(tenantDb, "PRINCIPAL", "Magasin principal", isDefault: true);
+            AddWarehouse(tenantDb, "BOUTIQUE", "Boutique", isDefault: false);
+            AddWarehouse(tenantDb, "RESERVE", "Réserve", isDefault: false);
+        }, segment: CompanySegments.Commerce);
+
+        Assert.DoesNotContain(ProductOnboardingDefaults.CompanyItemIds.CheckDefaultWarehouse, ids);
+    }
+
+    [Fact]
+    public async Task Commerce_renamed_default_warehouse_is_auto_completed()
+    {
+        var ids = await CollectIdsAsync(tenantDb =>
+        {
+            AddWarehouse(tenantDb, "PRINCIPAL", "Mon Magasin Central", isDefault: true);
+        }, segment: CompanySegments.Commerce);
+
+        Assert.Contains(ProductOnboardingDefaults.CompanyItemIds.CheckDefaultWarehouse, ids);
+    }
+
+    [Fact]
+    public async Task Commerce_with_user_created_extra_warehouse_is_auto_completed()
+    {
+        // A genuinely user-created warehouse (code neither BOUTIQUE nor RESERVE) still counts as
+        // engagement even when the default keeps its Commerce seed name.
+        var ids = await CollectIdsAsync(tenantDb =>
+        {
+            AddWarehouse(tenantDb, "PRINCIPAL", "Magasin principal", isDefault: true);
+            AddWarehouse(tenantDb, "ANNEXE", "Annexe", isDefault: false);
+        }, segment: CompanySegments.Commerce);
+
+        Assert.Contains(ProductOnboardingDefaults.CompanyItemIds.CheckDefaultWarehouse, ids);
+    }
+
+    [Fact]
+    public async Task Unknown_segment_falls_back_to_generic_seed_name_baseline()
+    {
+        // An unrecognized segment resolves no profile ⇒ the legacy generic baseline
+        // ("Entrepôt Principal") is used, preserving pre-sector behavior.
+        var ids = await CollectIdsAsync(tenantDb =>
+        {
+            AddWarehouse(tenantDb, "Entrepôt Principal", isDefault: true);
+        }, segment: "unknown-segment");
+
+        Assert.DoesNotContain(ProductOnboardingDefaults.CompanyItemIds.CheckDefaultWarehouse, ids);
     }
 
     [Fact]
@@ -185,6 +268,13 @@ public sealed class ProductOnboardingServiceAutoCompletionTests
         return warehouse;
     }
 
+    private static Warehouse AddWarehouse(TenantDbContext tenantDb, string code, string name, bool isDefault)
+    {
+        var warehouse = Warehouse.Create(code, name, isDefault: isDefault).Value;
+        tenantDb.Warehouses.Add(warehouse);
+        return warehouse;
+    }
+
     private static void AddStockVoucher(TenantDbContext tenantDb, Warehouse warehouse, StockVoucherKind kind, StockVoucherStatus status)
     {
         var number = StockVoucherNumber.Create(kind.DefaultPrefix(), DateTime.UtcNow.Year, 1);
@@ -202,7 +292,10 @@ public sealed class ProductOnboardingServiceAutoCompletionTests
         tenantDb.StockVouchers.Add(voucher);
     }
 
-    private static async Task<IReadOnlyList<string>> CollectIdsAsync(Action<TenantDbContext> seedTenantDb)
+    private static async Task<IReadOnlyList<string>> CollectIdsAsync(
+        Action<TenantDbContext> seedTenantDb,
+        string? segment = null,
+        string? domain = null)
     {
         await using var masterDb = new MasterDbContext(new DbContextOptionsBuilder<MasterDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -237,6 +330,10 @@ public sealed class ProductOnboardingServiceAutoCompletionTests
         var phone = PhoneNumber.Create("20123456").Value;
         var tenant = Tenant.Create("Ste Test", nif, address, email, phone, TaxRegime.RealRegime).Value;
         typeof(Tenant).GetProperty(nameof(Tenant.Id))!.SetValue(tenant, user.TenantId);
+        if (segment is not null)
+            typeof(Tenant).GetProperty(nameof(Tenant.CompanySegment))!.SetValue(tenant, segment);
+        if (domain is not null)
+            typeof(Tenant).GetProperty(nameof(Tenant.BusinessDomain))!.SetValue(tenant, domain);
         masterDb.Tenants.Add(tenant);
         await masterDb.SaveChangesAsync();
 
@@ -252,9 +349,21 @@ public sealed class ProductOnboardingServiceAutoCompletionTests
             current.Object,
             factory.Object,
             Options.Create(new ProductOnboardingSettings { Enabled = true }),
-            NullLogger<ProductOnboardingService>.Instance);
+            NullLogger<ProductOnboardingService>.Instance,
+            BuildRegistrationSectorService());
 
         var dto = await service.GetMineAsync(CancellationToken.None);
         return dto.AutoCompletedIds;
+    }
+
+    private static IRegistrationSectorService BuildRegistrationSectorService()
+    {
+        // Mirrors the production RegistrationSectorService: resolves against the static catalog so
+        // the segment-aware warehouse baseline matches what TenantService seeds at registration.
+        var mock = new Mock<IRegistrationSectorService>();
+        mock.Setup(r => r.ResolveProfile(It.IsAny<string?>(), It.IsAny<string?>()))
+            .Returns<string?, string?>((seg, dom) =>
+                Result<SectorProfile?>.Success(SectorConfigurationCatalog.Resolve(seg, dom)));
+        return mock.Object;
     }
 }

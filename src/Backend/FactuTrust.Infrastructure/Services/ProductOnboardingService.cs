@@ -19,32 +19,45 @@ namespace FactuTrust.Infrastructure.Services;
 public sealed class ProductOnboardingService : IProductOnboardingService
 {
     /// <summary>
-    /// Generic fallback name assigned by <c>TenantService.SeedDefaultWarehouseAsync</c> when the
-    /// registration wizard leaves <c>warehouseName</c> blank — used as the "still untouched" signal
-    /// for the plan §2.6 <c>check-default-warehouse</c> onboarding item. A tenant whose default
-    /// warehouse already carries a different name (typed at registration or renamed afterwards)
-    /// is considered to have engaged with warehouse setup either way.
+    /// Generic fallback default-warehouse name, used as the "still untouched" baseline for the
+    /// plan §2.6 <c>check-default-warehouse</c> onboarding item when no sector-specific name
+    /// resolves. The segment-aware baseline is <c>SectorProfile.DefaultWarehouseName</c>
+    /// (e.g. "Magasin principal" for Commerce, "Dépôt chantier" for BTP) — the same value
+    /// <c>AuthController</c> passes into tenant DB provisioning at registration — so a fresh
+    /// Commerce/BTP tenant is not wrongly flagged as "renamed ⇒ done" at day 0.
     /// </summary>
     private const string DefaultWarehouseSeedName = "Entrepôt Principal";
+
+    /// <summary>
+    /// Warehouse codes auto-seeded by the plan §3.4 sector data templates (Commerce provisions
+    /// "Boutique"/"Réserve" reserves). They are provisioning artifacts, not user engagement, so they
+    /// are excluded from the "created a second warehouse" auto-completion signal — otherwise a fresh
+    /// Commerce tenant would be auto-completed at day 0 merely for having its provisioned reserves.
+    /// </summary>
+    private static readonly HashSet<string> SectorTemplateSeededWarehouseCodes =
+        new(StringComparer.OrdinalIgnoreCase) { "BOUTIQUE", "RESERVE" };
 
     private readonly MasterDbContext _master;
     private readonly ICurrentUser _currentUser;
     private readonly ITenantDbContextFactory _tenantDbFactory;
     private readonly ProductOnboardingSettings _settings;
     private readonly ILogger<ProductOnboardingService> _logger;
+    private readonly IRegistrationSectorService _registrationSectorService;
 
     public ProductOnboardingService(
         MasterDbContext master,
         ICurrentUser currentUser,
         ITenantDbContextFactory tenantDbFactory,
         IOptions<ProductOnboardingSettings> settings,
-        ILogger<ProductOnboardingService> logger)
+        ILogger<ProductOnboardingService> logger,
+        IRegistrationSectorService registrationSectorService)
     {
         _master = master;
         _currentUser = currentUser;
         _tenantDbFactory = tenantDbFactory;
         _settings = settings.Value;
         _logger = logger;
+        _registrationSectorService = registrationSectorService;
     }
 
     public async Task<ProductOnboardingDto> GetMineAsync(CancellationToken cancellationToken)
@@ -206,15 +219,28 @@ public sealed class ProductOnboardingService : IProductOnboardingService
             ids.Add(ProductOnboardingDefaults.CompanyItemIds.CreateInvoice);
 
         // Plan §2.6 — "check-default-warehouse": the tenant engaged with warehouse setup, either by
-        // renaming the default warehouse away from the generic seed name or by creating a second one.
+        // renaming the default warehouse away from its segment-specific seed name or by creating an
+        // extra warehouse of its own. The seed baseline is the tenant's segment DefaultWarehouseName
+        // (same source TenantService uses to seed at registration); the §3.4 template-seeded reserve
+        // warehouses (Commerce "Boutique"/"Réserve") are excluded so a fresh Commerce tenant isn't
+        // auto-completed at day 0 just for having its provisioned reserves.
         var warehouses = await tenantDb.Warehouses.AsNoTracking()
             .Where(w => w.IsActive)
-            .Select(w => new { w.IsDefault, w.Name })
+            .Select(w => new { w.IsDefault, w.Code, w.Name })
             .ToListAsync(cancellationToken);
+        var sectorProfile = _registrationSectorService.ResolveProfile(tenant.CompanySegment, tenant.BusinessDomain);
+        var expectedDefaultName = sectorProfile.IsSuccess && sectorProfile.Value is not null
+            ? sectorProfile.Value.DefaultWarehouseName
+            : null;
+        var untouchedDefaultName = !string.IsNullOrWhiteSpace(expectedDefaultName)
+            ? expectedDefaultName!
+            : DefaultWarehouseSeedName;
         var defaultWarehouseRenamed = warehouses
             .FirstOrDefault(w => w.IsDefault)?.Name is { } defaultName
-            && !string.Equals(defaultName, DefaultWarehouseSeedName, StringComparison.Ordinal);
-        if (warehouses.Count > 1 || defaultWarehouseRenamed)
+            && !string.Equals(defaultName, untouchedDefaultName, StringComparison.Ordinal);
+        var userCreatedExtraWarehouses = warehouses
+            .Count(w => !w.IsDefault && !SectorTemplateSeededWarehouseCodes.Contains(w.Code));
+        if (userCreatedExtraWarehouses > 0 || defaultWarehouseRenamed)
             ids.Add(ProductOnboardingDefaults.CompanyItemIds.CheckDefaultWarehouse);
 
         // Plan §2.6 — "commerce-stock-receipt": at least one validated stock entry ("bon d'entrée").

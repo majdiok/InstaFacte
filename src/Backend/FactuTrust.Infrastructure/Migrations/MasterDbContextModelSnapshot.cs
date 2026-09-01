@@ -1555,6 +1555,32 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.ToTable("ModuleGrantAuditEntries", (string)null);
                 });
 
+            modelBuilder.Entity("FactuTrust.Domain.Entities.ModuleRecommendationDismissal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("DismissedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DismissedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Module")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Module")
+                        .IsUnique();
+
+                    b.ToTable("ModuleRecommendationDismissals", (string)null);
+                });
+
             modelBuilder.Entity("FactuTrust.Domain.Entities.AccountingFirmProfile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2017,6 +2043,55 @@ namespace FactuTrust.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("SectorDefaultSettings", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.SectorRules.SectorTaxRegimeSuggestion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+                    b.Property<bool>("IsManagedByCatalog")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("NoteFr")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Regime")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SegmentCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SegmentCode", "Regime")
+                        .IsUnique();
+
+                    b.ToTable("SectorTaxRegimeSuggestions", (string)null);
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.SectorRules.SectorDataTemplate", b =>
