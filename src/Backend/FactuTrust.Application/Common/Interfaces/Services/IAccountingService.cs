@@ -1,4 +1,4 @@
-using FactuTrust.Application.DTOs;
+﻿using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Payroll;
@@ -154,6 +154,47 @@ public interface IAccountingService
     /// <summary>Extourne l'écriture de paiement paie lors de l'annulation d'un paiement.</summary>
     Task<Result> ReversePayrollPaymentEntryAsync(
         Guid payrollPaymentId,
+        string reason,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Écriture de décaissement d'une avance sur salaire : débit 421 « Personnel - avances et
+    /// acomptes » / crédit trésorerie.
+    /// </summary>
+    /// <remarks>
+    /// Sans cette écriture, le versement de l'avance ne laisse aucune trace comptable : la retenue
+    /// opérée le mois suivant crédite alors 421 sans contrepartie, et ce compte d'actif reste
+    /// durablement créditeur. Idempotente par source (<c>EmployeeAdvance</c> + id de l'avance).
+    /// No-op quand le décaissement automatique est désactivé pour le dossier.
+    /// </remarks>
+    Task<Result> GenerateEmployeeAdvanceDisbursementEntryAsync(
+        EmployeeAdvance advance,
+        string? employeeName,
+        PaymentMethod method,
+        BankAccount? bankAccount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Extourne l'écriture de décaissement d'une avance lors de sa suppression.</summary>
+    Task<Result> ReverseEmployeeAdvanceDisbursementEntryAsync(
+        Guid advanceId,
+        string reason,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Écriture de décaissement d'un prêt salarié : débit du compte de prêts (421.1 par défaut) /
+    /// crédit trésorerie. Mêmes garanties que l'avance (idempotence par source, no-op si désactivé).
+    /// </summary>
+    Task<Result> GenerateEmployeeLoanDisbursementEntryAsync(
+        EmployeeLoan loan,
+        string? employeeName,
+        DateTime disbursementDate,
+        PaymentMethod method,
+        BankAccount? bankAccount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Extourne l'écriture de décaissement d'un prêt lors de son annulation.</summary>
+    Task<Result> ReverseEmployeeLoanDisbursementEntryAsync(
+        Guid loanId,
         string reason,
         CancellationToken cancellationToken = default);
 

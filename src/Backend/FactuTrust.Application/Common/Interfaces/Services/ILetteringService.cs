@@ -1,4 +1,4 @@
-using FactuTrust.Domain.Common;
+﻿using FactuTrust.Domain.Common;
 
 namespace FactuTrust.Application.Common.Interfaces.Services;
 
@@ -29,7 +29,7 @@ public interface ILetteringService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lettrage automatique d'un paiement paie contre l'écriture OD du cycle (comptes 421xxxx).
+    /// Lettrage automatique d'un paiement paie contre l'écriture OD du cycle (comptes 425xxxx).
     /// </summary>
     Task<Result> AutoLetterPayrollPaymentAsync(
         Guid payrollPaymentId,

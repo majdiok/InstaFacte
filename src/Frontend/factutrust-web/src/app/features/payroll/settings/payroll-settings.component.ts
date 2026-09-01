@@ -7,8 +7,9 @@ import { InputSwitchModule } from 'primeng/inputswitch';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TabsModule } from 'primeng/tabs';
-import { PayrollService, PayrollParameters, PayrollGarnishmentBracket, PayrollFeatureFlags, PayrollLegalPreset } from '@core/services/payroll.service';
+import { PayrollService, PayrollParameters, PayrollGarnishmentBracket, PayrollFeatureFlags, PayrollLegalPreset, PayrollAccountingSettings } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { TooltipModule } from 'primeng/tooltip';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -42,47 +43,96 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
       <app-button type="button" variant="secondary" label="Recharger défauts LF" icon="pi pi-refresh" (clicked)="reloadLegalPreset()" class="ml-3" />
     </div>
 
-    @if (featureFlags()) {
-      <div class="sce-config-card mb-3" role="status" aria-live="polite">
+    @if (accountingForm(); as acc) {
+      <div class="sce-config-card mb-3">
         <div class="sce-config-card__title">
-          <i class="pi pi-info-circle"></i>
-          Comptabilisation de la paie — configuration SCE effective
+          <i class="pi pi-calculator"></i>
+          Comptabilisation de la paie — imputation comptable du dossier
         </div>
         <div class="sce-config-card__grid">
           <div>
-            <span class="sce-config-card__label">Profil de comptabilisation</span>
-            <span class="sce-config-card__value">
-              {{ featureFlags()?.payrollAccountProfile === 'Sce2026' ? 'SCE 2026 (comptes normalisés)' : 'Legacy (historique)' }}
-            </span>
+            <label class="sce-config-card__label" for="sceProfile">Profil de comptabilisation</label>
+            <p-select
+              inputId="sceProfile"
+              [options]="accountProfileOptions"
+              [(ngModel)]="acc.accountProfile"
+              [ngModelOptions]="{ standalone: true }"
+              (ngModelChange)="onProfileChange($event)"
+              optionLabel="label"
+              optionValue="value"
+              appendTo="body"
+              styleClass="w-full" />
           </div>
           <div>
-            <span class="sce-config-card__label">Date d'effet du bascule</span>
-            <span class="sce-config-card__value">
-              {{ featureFlags()?.payrollAccountProfileEffectiveDate ? (featureFlags()?.payrollAccountProfileEffectiveDate | date:'dd/MM/yyyy') : '— (appliqué à tous les cycles)' }}
-            </span>
+            <label class="sce-config-card__label" for="sceEffectiveDate">Date de bascule (1er du mois)</label>
+            <input
+              id="sceEffectiveDate"
+              type="month"
+              class="form-control"
+              [ngModel]="effectiveMonth()"
+              [ngModelOptions]="{ standalone: true }"
+              (ngModelChange)="onEffectiveMonthChange($event)"
+              [min]="earliestMonth()" />
+            <small class="sce-config-card__hint">
+              @if (accountingSettings()?.lastSettledPeriod) {
+                Dernier cycle arrêté : {{ accountingSettings()?.lastSettledPeriod }}.
+              } @else {
+                Aucun cycle arrêté à ce jour.
+              }
+            </small>
           </div>
           <div>
-            <span class="sce-config-card__label">Compte de compensation avantage en nature</span>
-            <span class="sce-config-card__value">{{ featureFlags()?.payrollInKindOffsetAccount || '4386' }}</span>
+            <label class="sce-config-card__label" for="sceInKindAccount">Compte de compensation avantage en nature</label>
+            <input
+              id="sceInKindAccount"
+              type="text"
+              class="form-control"
+              maxlength="20"
+              [(ngModel)]="acc.inKindOffsetAccount"
+              [ngModelOptions]="{ standalone: true }" />
           </div>
           <div>
             <span class="sce-config-card__label">Règlement strict (avances/prêts/saisies)</span>
             <span class="sce-config-card__value">{{ featureFlags()?.payrollStrictSettlementEnabled ? 'Activé' : 'Désactivé' }}</span>
           </div>
           <div>
-            <span class="sce-config-card__label">Écritures de décaissement (avances/prêts)</span>
-            <span class="sce-config-card__value">{{ featureFlags()?.payrollDisbursementEntriesEnabled ? 'Activé' : 'Désactivé' }}</span>
+            <label class="sce-config-card__label" for="sceDisbursement">Écritures de décaissement (avances/prêts)</label>
+            <p-inputSwitch inputId="sceDisbursement" [(ngModel)]="acc.disbursementEntriesEnabled" [ngModelOptions]="{ standalone: true }" />
           </div>
           <div>
-            <span class="sce-config-card__label">Ventilation détaillée des salaires (640)</span>
-            <span class="sce-config-card__value">{{ featureFlags()?.payrollDetailedSalarySplitEnabled ? 'Activé' : 'Désactivé' }}</span>
+            <label class="sce-config-card__label" for="sceSalarySplit">Ventilation détaillée des salaires (640)</label>
+            <p-inputSwitch inputId="sceSalarySplit" [(ngModel)]="acc.detailedSalarySplitEnabled" [ngModelOptions]="{ standalone: true }" />
           </div>
         </div>
+
+        @if (acc.accountProfile === 'Sce2026' && !acc.accountProfileEffectiveDate) {
+          <p class="sce-warn-panel mt-2" role="alert">
+            <i class="pi pi-exclamation-triangle"></i>
+            <span>
+              Le profil SCE 2026 exige une date de bascule. Sans elle, il s'appliquerait aussi aux cycles
+              antérieurs : rouvrir puis revalider l'un d'eux en réécrirait l'imputation.
+            </span>
+          </p>
+        }
+
         <p class="sce-config-card__note">
-          Configuration globale gérée par l'administrateur (appsettings). Pour modifier le profil SCE ou planifier
-          un bascule, contactez l'administrateur. Les comptes SCE par régime de fonds social
-          (part salarié / part employeur) sont configurés ci-dessous par régime.
+          @if (accountingSettings()?.isTenantOverride) {
+            Réglage propre à ce dossier.
+          } @else {
+            Ce dossier hérite de la configuration globale ; enregistrer créera son réglage propre.
+          }
+          Les cycles antérieurs à la date de bascule conservent leur imputation d'origine.
+          Les comptes SCE par régime de fonds social (part salarié / part employeur) sont configurés ci-dessous.
         </p>
+        <div class="sce-config-card__actions">
+          <app-button
+            type="button"
+            variant="primary"
+            label="Enregistrer l'imputation"
+            icon="pi pi-save"
+            [disabled]="savingAccounting()"
+            (clicked)="saveAccountingSettings()" />
+        </div>
       </div>
     }
 
@@ -417,6 +467,8 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
     .sce-config-card__label { display: block; font-size: .75rem; color: var(--text-color-secondary, #64748b); }
     .sce-config-card__value { display: block; font-weight: 600; }
     .sce-config-card__note { margin: var(--spacing-2) 0 0; font-size: .8rem; color: var(--text-color-secondary, #64748b); }
+    .sce-config-card__hint { display: block; margin-top: 2px; font-size: .72rem; color: var(--text-color-secondary, #64748b); }
+    .sce-config-card__actions { display: flex; justify-content: flex-end; margin-top: var(--spacing-2); }
     .sce-warn-panel {
       display: flex; gap: var(--spacing-2); align-items: flex-start;
       margin: var(--spacing-2) 0 0; padding: var(--spacing-2) var(--spacing-3);
@@ -437,11 +489,34 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
 export class PayrollSettingsComponent implements OnInit {
   private readonly payroll = inject(PayrollService);
   private readonly toast = inject(ToastService);
+  private readonly confirmation = inject(ConfirmationService);
   fiscalYear = new Date().getFullYear();
   params = signal<PayrollParameters | null>(null);
   garnishmentBrackets = signal<GarnishmentBracketFormRow[]>([]);
-  /** Configuration SCE de comptabilisation paie (lecture seule — plan §5.3). */
+  /** Drapeaux paie du dossier (dont le réglage d'imputation effectivement appliqué). */
   featureFlags = signal<PayrollFeatureFlags | null>(null);
+  /** Réglage d'imputation renvoyé par le serveur (référence pour les bornes et l'état d'origine). */
+  accountingSettings = signal<PayrollAccountingSettings | null>(null);
+  /** Copie éditable liée au formulaire. */
+  accountingForm = signal<PayrollAccountingSettings | null>(null);
+  savingAccounting = signal(false);
+
+  readonly accountProfileOptions = [
+    { label: 'Legacy (historique)', value: 'Legacy' },
+    { label: 'SCE 2026 (comptes NCT 01)', value: 'Sce2026' }
+  ];
+
+  /** Date de bascule au format `yyyy-MM` attendu par l'input `type="month"`. */
+  effectiveMonth = computed(() => {
+    const value = this.accountingForm()?.accountProfileEffectiveDate;
+    return value ? value.substring(0, 7) : '';
+  });
+
+  /** Borne basse proposée par le serveur : le mois suivant le dernier cycle arrêté. */
+  earliestMonth = computed(() => {
+    const value = this.accountingSettings()?.earliestEffectiveDate;
+    return value ? value.substring(0, 7) : '';
+  });
   /** Preset légal officiel de l'exercice (pour la bannière de dérive preset vs tenant). */
   legalPreset = signal<PayrollLegalPreset | null>(null);
   readonly smigExemptionModeOptions = [
@@ -485,6 +560,115 @@ export class PayrollSettingsComponent implements OnInit {
     this.payroll.getFeatureFlags().subscribe({
       next: res => this.featureFlags.set(res.data ?? null),
       error: () => this.featureFlags.set(null)
+    });
+    this.loadAccountingSettings();
+  }
+
+  private loadAccountingSettings(): void {
+    this.payroll.getAccountingSettings().subscribe({
+      next: res => {
+        const data = res.data ?? null;
+        this.accountingSettings.set(data);
+        this.accountingForm.set(data ? { ...data } : null);
+      },
+      error: () => {
+        this.accountingSettings.set(null);
+        this.accountingForm.set(null);
+      }
+    });
+  }
+
+  /**
+   * Passer à SCE 2026 sans date de bascule appliquerait le profil à tous les cycles, y compris
+   * arrêtés. On prérenseigne donc la première date acceptable calculée par le serveur, ou le mois
+   * prochain quand aucun cycle n'est encore arrêté.
+   */
+  onProfileChange(profile: string): void {
+    const form = this.accountingForm();
+    if (!form) return;
+
+    if (profile === 'Sce2026' && !form.accountProfileEffectiveDate) {
+      const earliest = this.accountingSettings()?.earliestEffectiveDate;
+      const fallback = new Date();
+      fallback.setDate(1);
+      fallback.setMonth(fallback.getMonth() + 1);
+      const suggested = earliest ?? `${fallback.getFullYear()}-${String(fallback.getMonth() + 1).padStart(2, '0')}-01`;
+      this.accountingForm.set({ ...form, accountProfile: profile, accountProfileEffectiveDate: suggested });
+      return;
+    }
+
+    this.accountingForm.set({ ...form, accountProfile: profile });
+  }
+
+  onEffectiveMonthChange(month: string): void {
+    const form = this.accountingForm();
+    if (!form) return;
+    this.accountingForm.set({
+      ...form,
+      accountProfileEffectiveDate: month ? `${month}-01` : null
+    });
+  }
+
+  saveAccountingSettings(): void {
+    const form = this.accountingForm();
+    if (!form) return;
+
+    const wasLegacy = (this.accountingSettings()?.accountProfile ?? 'Legacy') !== 'Sce2026';
+    const becomesSce = form.accountProfile === 'Sce2026';
+
+    // La bascule engage toutes les OD de paie à venir : on la fait confirmer explicitement, en
+    // rappelant que les cycles antérieurs à la date d'effet gardent leur imputation.
+    if (wasLegacy && becomesSce) {
+      const from = form.accountProfileEffectiveDate
+        ? new Date(form.accountProfileEffectiveDate).toLocaleDateString('fr-TN')
+        : '—';
+      this.confirmation.confirm({
+        header: 'Basculer en imputation SCE 2026',
+        message:
+          `À partir du ${from}, les écritures de paie utiliseront les comptes NCT 01 : TFP en 6611, `
+          + 'FOPROLOS en 6612, taxes patronales en 437, indemnités de rupture en 64602. Les cycles '
+          + 'antérieurs à cette date conservent leur imputation actuelle et ne sont pas réécrits. Continuer ?',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Basculer',
+        rejectLabel: 'Annuler',
+        size: 'md',
+        accept: () => this.submitAccountingSettings(form)
+      });
+      return;
+    }
+
+    this.submitAccountingSettings(form);
+  }
+
+  private submitAccountingSettings(form: PayrollAccountingSettings): void {
+    this.savingAccounting.set(true);
+    this.payroll.updateAccountingSettings({
+      accountProfile: form.accountProfile,
+      accountProfileEffectiveDate: form.accountProfileEffectiveDate ?? null,
+      inKindOffsetAccount: form.inKindOffsetAccount?.trim() || null,
+      disbursementEntriesEnabled: form.disbursementEntriesEnabled,
+      detailedSalarySplitEnabled: form.detailedSalarySplitEnabled
+    }).subscribe({
+      next: res => {
+        this.savingAccounting.set(false);
+        const data = res.data ?? null;
+        this.accountingSettings.set(data);
+        this.accountingForm.set(data ? { ...data } : null);
+        this.loadFeatureFlags();
+        this.toast.add({
+          severity: 'success',
+          summary: 'Comptabilisation',
+          detail: "Profil d'imputation comptable enregistré."
+        });
+      },
+      error: err => {
+        this.savingAccounting.set(false);
+        this.toast.add({
+          severity: 'error',
+          summary: 'Comptabilisation',
+          detail: err?.error?.message ?? "Profil d'imputation non enregistré."
+        });
+      }
     });
   }
 

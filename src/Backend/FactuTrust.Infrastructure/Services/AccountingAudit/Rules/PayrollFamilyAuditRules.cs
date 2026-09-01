@@ -1,4 +1,4 @@
-using FactuTrust.Application.Common.Interfaces.Services;
+﻿using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Audit;
 using FactuTrust.Domain.Common;
@@ -356,12 +356,14 @@ public sealed class PayrollOvertimeOutOfRegimeAuditRule : AccountingAuditRuleBas
                 $"{invalid.Count} ligne(s) d'heures supplémentaires à un taux incompatible avec le " +
                 "régime hebdomadaire du contrat.",
                 "Majoration sans fondement légal : rappel de salaire ou redressement possible.",
-                accountRef: "641",
+                // NCT 01 6401 « Heures supplémentaires » (sous-compte de 640). L'ancrage précédent
+                // sur 641 visait le compte des indemnités de rupture — sans rapport avec les HS.
+                accountRef: "6401",
                 amount: MillimeRounding.Round(invalid.Sum(i => i.Amount)),
                 periodFrom: null,
                 periodTo: null,
                 lines: invalid.Take(PayrollRuleConstants.MaxDetailLines).Select(i => new AnomalyLineCandidate(
-                    null, null, new DateTime(ctx.FiscalYear, i.Month, 1), "641",
+                    null, null, new DateTime(ctx.FiscalYear, i.Month, 1), "6401",
                     $"{i.Employee} — {i.Rate:N0} % sous régime {i.Regime}", i.Amount, 0,
                     $"{i.Month:D2}/{ctx.FiscalYear}", null)).ToList(),
                 recommendations:
@@ -459,12 +461,14 @@ public sealed class PayrollBelowSmigAuditRule : AccountingAuditRuleBase
                 $"{below.Count} bulletin(s) dont le brut reconstitué à temps plein est inférieur au " +
                 $"SMIG de l'exercice ({monthlySmig:N3} TND).",
                 "Infraction au salaire minimum : rappel de salaire et sanction possibles.",
-                accountRef: "641",
+                // NCT 01 640 « Salaires et compléments de salaires » : l'écart porte sur la
+                // rémunération elle-même, pas sur les indemnités de rupture (ex-ancrage 641).
+                accountRef: "640",
                 amount: MillimeRounding.Round(below.Sum(b => monthlySmig - b.FullTime)),
                 periodFrom: null,
                 periodTo: null,
                 lines: below.Take(PayrollRuleConstants.MaxDetailLines).Select(b => new AnomalyLineCandidate(
-                    null, null, new DateTime(ctx.FiscalYear, b.Month, 1), "641",
+                    null, null, new DateTime(ctx.FiscalYear, b.Month, 1), "640",
                     $"{b.Employee} — {b.FullTime:N3} TND reconstitués (versé {b.Gross:N3})",
                     b.Gross, 0, $"{b.Month:D2}/{ctx.FiscalYear}", null)).ToList(),
                 recommendations:

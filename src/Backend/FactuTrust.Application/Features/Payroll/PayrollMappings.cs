@@ -1,4 +1,4 @@
-using FactuTrust.Application.DTOs;
+﻿using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Services.Payroll;
@@ -45,6 +45,7 @@ public static class PayrollMappings
         {
             Id = e.Id,
             EmployeeNumber = e.EmployeeNumber,
+            AuxiliaryAccountNumber = e.AuxiliaryAccountNumber,
             FirstName = e.FirstName,
             LastName = e.LastName,
             FullName = e.FullName,

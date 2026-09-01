@@ -1,4 +1,4 @@
-using FactuTrust.Application.Common.Interfaces.Repositories;
+﻿using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Domain.Common;
@@ -182,7 +182,7 @@ public sealed class AccountingServicePayrollReclassificationTests
     public async Task Reclassification_SplitsOrdinaryAndTermination641_AndIsolatesInKindOffset()
     {
         // M1 : le reclassement dérive la ventilation des lignes figées (EarningKind), non des sommes
-        // brutes des comptes legacy. 641 → 640 (ordinaires 300) + 64602 (rupture 500) ; 421 → 4386
+        // brutes des comptes legacy. 641 → 640 (ordinaires 300) + 64602 (rupture 500) ; 421 → 4286
         // pour la seule compensation AN (200) — les avances (300) restent au 421.
         var run = BuildRunWithMixed641And421();
         var legacy = BuildMixedLegacyEntry(run.Id);
@@ -200,9 +200,12 @@ public sealed class AccountingServicePayrollReclassificationTests
         Assert.Equal(500m, entry.Lines.Where(l => l.AccountNumber == "64602").Sum(l => l.DebitAmount.Amount));
         Assert.Equal(800m, entry.Lines.Where(l => l.AccountNumber == "641").Sum(l => l.CreditAmount.Amount));
 
-        // 421 : seule la compensation AN (200) est reclassée vers 4386 — les avances (300) restent au 421.
+        // 421 : seule la compensation AN (200) est reclassée — les avances (300) restent au 421.
+        // Cible 4286 « Personnel - autres charges à payer » : la dette est envers le salarié, pas
+        // envers l'État (l'ancien 4386 la rangeait sous 438 « État - charges à payer »).
         Assert.Equal(200m, entry.Lines.Where(l => l.AccountNumber == "421").Sum(l => l.DebitAmount.Amount));
-        Assert.Equal(200m, entry.Lines.Where(l => l.AccountNumber == "4386").Sum(l => l.CreditAmount.Amount));
+        Assert.Equal(200m, entry.Lines.Where(l => l.AccountNumber == "4286").Sum(l => l.CreditAmount.Amount));
+        Assert.DoesNotContain(entry.Lines, l => l.AccountNumber == "4386");
         Assert.DoesNotContain(entry.Lines, l => l.AccountNumber == "421" && l.DebitAmount.Amount > 200m);
     }
 }

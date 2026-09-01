@@ -1,3 +1,4 @@
+﻿using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
@@ -46,11 +47,24 @@ public sealed class AccountingService : IAccountingService
     public const string SourcePayrollRunCancelled = "PayrollRunCancelled";
     public const string SourcePayrollPayment = "PayrollPayment";
     public const string SourcePayrollPaymentCancelled = "PayrollPaymentCancelled";
+
+    /// <summary>Décaissement d'une avance sur salaire (débit 421 / crédit trésorerie).</summary>
+    public const string SourceEmployeeAdvance = "EmployeeAdvance";
+    public const string SourceEmployeeAdvanceCancelled = "EmployeeAdvanceCancelled";
+    /// <summary>Décaissement d'un prêt salarié (débit 421.1 / crédit trésorerie).</summary>
+    public const string SourceEmployeeLoan = "EmployeeLoan";
+    public const string SourceEmployeeLoanCancelled = "EmployeeLoanCancelled";
     public const string SourceCnssContributionPayment = "CnssContributionPayment";
     public const string SourceCnssContributionPaymentCancelled = "CnssContributionPaymentCancelled";
 
     /// <summary>Clé d'idempotence de l'OD de reclassement SCE paie (plan §5.2.1), sur l'id du cycle.</summary>
     public const string SourcePayrollReclassification = "PayrollReclassification";
+    /// <summary>
+    /// Extourne de l'OD de reclassement SCE. Un cycle rouvert doit perdre son reclassement en même
+    /// temps que son OD d'origine : sinon la revalidation empilerait une nouvelle OD sur une
+    /// correction encore active, et les taxes sur salaires seraient comptées deux fois.
+    /// </summary>
+    public const string SourcePayrollReclassificationCancelled = "PayrollReclassificationCancelled";
 
     /// <summary>Clé d'idempotence du 2ᵉ volet d'un effet (encaissement/paiement à échéance), sur l'id du paiement.</summary>
     public const string SourceEffetSettlement = "EffetSettlement";
@@ -111,6 +125,13 @@ public sealed class AccountingService : IAccountingService
     /// </summary>
     private readonly IAuditService? _audit;
 
+    /// <summary>
+    /// Réglage d'imputation paie du dossier (profil, date de bascule, comptes, drapeaux). Optionnel
+    /// en construction (null = tests sans résolveur) ; toujours injecté par la DI en production.
+    /// Absent, on retombe sur la configuration globale — le comportement historique exactement.
+    /// </summary>
+    private readonly IPayrollAccountingProfileResolver? _payrollProfileResolver;
+
     public AccountingService(
         IChartOfAccountRepository chartOfAccounts,
         IAccountingPeriodService periodService,
@@ -120,7 +141,8 @@ public sealed class AccountingService : IAccountingService
         ITenantDbContextFactory contextFactory,
         ILogger<AccountingService> logger,
         IOptions<AccountingSettings> settings,
-        IAuditService? audit = null)
+        IAuditService? audit = null,
+        IPayrollAccountingProfileResolver? payrollProfileResolver = null)
     {
         _chartOfAccounts = chartOfAccounts;
         _periodService = periodService;
@@ -131,6 +153,7 @@ public sealed class AccountingService : IAccountingService
         _logger = logger;
         _settings = settings.Value;
         _audit = audit;
+        _payrollProfileResolver = payrollProfileResolver;
     }
 
     /// <summary>
@@ -190,6 +213,42 @@ public sealed class AccountingService : IAccountingService
     }
 
     /// <summary>
+    /// Libellé d'un sous-compte auto-créé : libellé du parent, débarrassé de ses propres suffixes
+    /// numériques, suivi du numéro du compte.
+    /// </summary>
+    /// <remarks>
+    /// L'ancienne formule concaténait le libellé parent tel quel. Sur une chaîne d'auto-créations
+    /// (42 → 421 → 4218744456), les suffixes s'empilaient et produisaient
+    /// « Personnel et comptes rattachés — 421 — 4218744456 » : un libellé qui cite un numéro de
+    /// compte différent de celui qu'il désigne, et d'autant plus trompeur après un remap de plan
+    /// comptable, qui réécrit les numéros mais pas les libellés.
+    /// </remarks>
+    internal static string BuildAutoSubAccountLabel(string parentLabel, string accountNumber)
+    {
+        var label = (parentLabel ?? string.Empty).Trim();
+
+        // Retire les segments terminaux « — <chiffres> » hérités d'une auto-création précédente.
+        while (true)
+        {
+            var separator = label.LastIndexOf(" — ", StringComparison.Ordinal);
+            if (separator < 0)
+                break;
+
+            var tail = label[(separator + 3)..].Trim();
+            if (tail.Length == 0 || !tail.All(char.IsAsciiDigit))
+                break;
+
+            label = label[..separator].TrimEnd();
+        }
+
+        // Un libellé parent réduit à un numéro n'apporte rien et propagerait un numéro de plus.
+        if (label.Length == 0 || label.All(char.IsAsciiDigit))
+            return accountNumber;
+
+        return $"{label} — {accountNumber}";
+    }
+
+    /// <summary>
     /// Attempts to auto-create a missing sub-account by finding its nearest parent
     /// in the chart of accounts hierarchy. This follows standard ERP practice for
     /// Tunisian SCE where sub-accounts are created as needed.
@@ -209,7 +268,7 @@ public sealed class AccountingService : IAccountingService
 
             // Found a valid parent — create the sub-account
             var accountClass = int.Parse(accountNumber[..1].ToString());
-            var label = $"{parent.Label} — {accountNumber}";
+            var label = BuildAutoSubAccountLabel(parent.Label, accountNumber);
             var createResult = ChartOfAccount.Create(
                 accountNumber,
                 label,
@@ -2068,12 +2127,14 @@ public sealed class AccountingService : IAccountingService
     /// Résout le profil d'imputation comptable d'un cycle paie (plan §5.3). Avant la date de bascule
     /// (<see cref="AccountingSettings.PayrollAccountProfileEffectiveDate"/>) → <c>Legacy</c> (la
     /// réouverture→revalidation régénère les mêmes comptes qu'à l'origine) ; à partir de la date →
-    /// <see cref="AccountingSettings.PayrollAccountProfile"/>. Sans date de bascule, le profil
-    /// configuré s'applique à tous les cycles. Délégué à <see cref="AccountingSettings.ResolvePayrollAccountProfile"/>
-    /// (source unique partagée avec la simulation du journal de paie).
+    /// le profil du dossier. Sans date de bascule, le profil configuré s'applique à tous les cycles.
+    /// Délégué à <see cref="PayrollAccountingProfileSnapshot.ResolveForPeriod"/> (source unique
+    /// partagée avec la simulation du journal de paie et l'écran de paramètres).
     /// </summary>
-    private PayrollAccountProfile ResolvePayrollAccountProfile(int year, int month)
-        => _settings.ResolvePayrollAccountProfile(year, month);
+    private async Task<PayrollAccountingProfileSnapshot> GetPayrollProfileAsync(CancellationToken cancellationToken)
+        => _payrollProfileResolver is null
+            ? _settings.ToPayrollProfileSnapshot()
+            : await _payrollProfileResolver.GetAsync(cancellationToken);
 
     public async Task<Result> GeneratePayrollRunEntryAsync(PayrollRun payrollRun, CancellationToken cancellationToken = default)
     {
@@ -2111,9 +2172,28 @@ public sealed class AccountingService : IAccountingService
 
         // Profil d'imputation par cycle (plan §5.3) : avant la date de bascule → Legacy (la
         // réouverture→revalidation régénère les mêmes comptes), à partir de la date → profil configuré.
-        var profile = ResolvePayrollAccountProfile(payrollRun.Year, payrollRun.Month);
+        var payrollProfile = await GetPayrollProfileAsync(cancellationToken);
+        var profile = payrollProfile.ResolveForPeriod(payrollRun.Year, payrollRun.Month);
 
-        var accountMap = _settings.BuildPayrollAccountMap(profile);
+        // B8 : une OD de reclassement corrige une écriture Legacy vers la cartographie SCE. En
+        // régénérer une directement en SCE alors que la correction est encore active compterait
+        // TFP/FOPROLOS deux fois. La réouverture extourne normalement le reclassement ; ce garde-fou
+        // couvre le cas où il a été recréé entre-temps.
+        if (profile == PayrollAccountProfile.Sce2026)
+        {
+            var activeReclassification = await _journalEntries.GetActiveBySourceAsync(
+                SourcePayrollReclassification, payrollRun.Id, cancellationToken);
+            if (activeReclassification is not null)
+            {
+                return Result.Failure(Error.Validation(
+                    "PayrollReclassification",
+                    $"Le cycle {payrollRun.Month:D2}/{payrollRun.Year} porte une OD de reclassement SCE active "
+                    + $"(écriture #{activeReclassification.EntryNumber}). Extournez-la avant de régénérer "
+                    + "l'écriture de paie : cumuler les deux compterait les taxes sur salaires deux fois."));
+            }
+        }
+
+        var accountMap = payrollProfile.BuildAccountMap(profile);
 
         // H2 : la ventilation des gains par nature (rupture → 64602, avantage en nature → 6404) ne doit
         // pas dépendre de la présence de retenues typées. Un cycle de rupture (ou d'avantage en nature)
@@ -2129,7 +2209,13 @@ public sealed class AccountingService : IAccountingService
             ? PayrollJournalEntryBuilder.ResolveInKindBenefits(payrollRun)
             : 0m;
 
-        var auxiliaryCredits = _settings.PayrollEmployeeAuxiliaryEnabled && payrollRun.Payslips.Count > 0
+        // Ventilation optionnelle du débit 640 en 6400/6401/6402/6409 (R-31). Éteinte, la liste est
+        // nulle et le débit reste sur le compte collectif — comportement par défaut inchangé.
+        var salaryDebits = payrollProfile.DetailedSalarySplitEnabled && payrollRun.Payslips.Count > 0
+            ? PayrollJournalEntryBuilder.ResolveSalaryDebits(payrollRun)
+            : null;
+
+        var auxiliaryCredits = payrollProfile.EmployeeAuxiliaryEnabled && payrollRun.Payslips.Count > 0
             ? payrollRun.Payslips
                 .Where(p => p.NetSalary > 0)
                 .Select(p => new PayrollJournalEntryBuilder.EmployeeAuxiliaryCredit(
@@ -2142,8 +2228,8 @@ public sealed class AccountingService : IAccountingService
             : null;
 
         var linesResult = hasTypedDeductions
-            ? PayrollJournalEntryBuilder.BuildLinesFromRun(payrollRun, label, accountMap, auxiliaryCredits, profile)
-            : _settings.PayrollEmployeeAuxiliaryEnabled && auxiliaryCredits is { Count: > 0 }
+            ? PayrollJournalEntryBuilder.BuildLinesFromRun(payrollRun, label, accountMap, auxiliaryCredits, profile, salaryDebits)
+            : payrollProfile.EmployeeAuxiliaryEnabled && auxiliaryCredits is { Count: > 0 }
                 ? PayrollJournalEntryBuilder.BuildLines(
                     payrollRun.TotalGross,
                     payrollRun.TotalNet,
@@ -2162,7 +2248,8 @@ public sealed class AccountingService : IAccountingService
                     payrollRun.TotalCssEmployer,
                     terminationFromRun,
                     inKindFromRun,
-                    profile)
+                    profile,
+                    salaryDebits)
                 : PayrollJournalEntryBuilder.BuildLines(
                     payrollRun.TotalGross,
                     payrollRun.TotalNet,
@@ -2180,11 +2267,18 @@ public sealed class AccountingService : IAccountingService
                     payrollRun.TotalCssEmployer,
                     terminationFromRun,
                     inKindFromRun,
-                    profile);
+                    profile,
+                    salaryDebits);
         if (linesResult.IsFailure)
             return Result.Failure(linesResult.Error);
 
         var lines = linesResult.Value;
+
+        // Les comptes auxiliaires salariés sont créés ici, typés et nommés, avant le filet générique
+        // d'auto-création : celui-ci les produirait en comptes généraux au libellé « <parent> — <numéro> »,
+        // inexploitables comme tiers (plan tiers, FEC, états auxiliaires).
+        if (auxiliaryCredits is { Count: > 0 })
+            await EnsureEmployeeAuxiliaryAccountsAsync(auxiliaryCredits, cancellationToken);
 
         var accountValidation = await ValidateAccountsExistAsync(lines, "PayrollRun", cancellationToken);
         if (accountValidation.IsFailure)
@@ -2215,6 +2309,75 @@ public sealed class AccountingService : IAccountingService
         return Result.Success();
     }
 
+    /// <summary>
+    /// Crée les comptes auxiliaires 425xxxx manquants, marqués auxiliaires et rattachés au collectif
+    /// 425, avec le nom du salarié pour libellé.
+    /// </summary>
+    /// <remarks>
+    /// Sans cela, <see cref="TryAutoCreateSubAccountAsync"/> les crée en comptes généraux au libellé
+    /// « Personnel - rémunérations dues — 4256854545 » : le plan tiers ne les reconnaît pas, le FEC
+    /// n'a pas de nom de tiers à exporter et la balance auxiliaire reste muette. Les comptes déjà
+    /// présents ne sont pas modifiés — un compte mouvementé ne se requalifie pas au passage d'une
+    /// écriture ; le runbook <c>docs/runbooks/sql/RequalifyPayrollAuxiliaryAccounts.idempotent.sql</c>
+    /// s'en charge à la demande.
+    /// </remarks>
+    private async Task EnsureEmployeeAuxiliaryAccountsAsync(
+        IReadOnlyList<PayrollJournalEntryBuilder.EmployeeAuxiliaryCredit> credits,
+        CancellationToken cancellationToken)
+    {
+        var parent = await _chartOfAccounts.GetByAccountNumberAsync(
+            PayrollJournalEntryBuilder.PersonnelPayableAccount, cancellationToken);
+
+        // Sans compte collectif 425, rien à rattacher : on laisse le filet générique opérer.
+        if (parent is null || !parent.IsActive)
+            return;
+
+        foreach (var credit in credits.DistinctBy(c => c.AuxiliaryAccount, StringComparer.Ordinal))
+        {
+            var account = credit.AuxiliaryAccount?.Trim();
+            if (string.IsNullOrEmpty(account)
+                || string.Equals(account, parent.AccountNumber, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (await _chartOfAccounts.GetByAccountNumberAsync(account, cancellationToken) is not null)
+                continue;
+
+            var label = string.IsNullOrWhiteSpace(credit.EmployeeName)
+                ? $"{parent.Label} — {account}"
+                : credit.EmployeeName.Trim();
+
+            var created = ChartOfAccount.Create(
+                account,
+                label,
+                parent.AccountClass,
+                parent.AccountNumber,
+                parent.NatureType,
+                isSystem: false,
+                accountType: AccountType.Other,
+                isAuxiliary: true,
+                affectationAccountNumber: parent.AccountNumber);
+
+            if (created.IsFailure)
+            {
+                // On n'échoue pas ici : le filet générique reprendra la main à la validation des
+                // comptes, et c'est lui qui produira l'erreur si le compte reste introuvable.
+                _logger.LogWarning(
+                    "Compte auxiliaire salarié {AccountNumber} non créé : {Error}",
+                    account, created.Error.Description);
+                continue;
+            }
+
+            created.Value.SetAuditInfo("system");
+            await _chartOfAccounts.AddAsync(created.Value, cancellationToken);
+
+            _logger.LogInformation(
+                "Created employee auxiliary account {AccountNumber} ({Label}) under {Parent}",
+                account, label, parent.AccountNumber);
+        }
+    }
+
     public async Task<Result> ReversePayrollRunEntryAsync(
         Guid payrollRunId,
         string reason,
@@ -2235,6 +2398,13 @@ public sealed class AccountingService : IAccountingService
             SourcePayrollRunCancelled, payrollRunId, cancellationToken);
         if (existingReversal is not null)
             return Result.Success();
+
+        // B8 : le reclassement corrige l'OD d'origine. Il doit disparaître avec elle, sinon la
+        // revalidation produirait une OD (éventuellement déjà conforme) par-dessus une correction
+        // toujours active — TFP/FOPROLOS reclassés deux fois.
+        var reclassReversal = await ReversePayrollReclassificationEntryAsync(payrollRunId, reason, cancellationToken);
+        if (reclassReversal.IsFailure)
+            return reclassReversal;
 
         var original = await _journalEntries.GetActiveBySourceAsync(SourcePayrollRun, payrollRunId, cancellationToken);
         if (original is null)
@@ -2285,6 +2455,324 @@ public sealed class AccountingService : IAccountingService
             period.Id,
             true,
             SourcePayrollRunCancelled,
+            payrollRunId,
+            revLines,
+            currency);
+
+        if (create.IsFailure)
+            return Result.Failure(create.Error);
+
+        var reversal = create.Value;
+        reversal.MarkInitialStatus(NewEntryStatus);
+        reversal.SetAuditInfo("system", false);
+        await _journalEntries.AddAsync(reversal, cancellationToken);
+        original.MarkReversedBy(reversal.Id);
+        await _journalEntries.UpdateAsync(original, cancellationToken);
+        return Result.Success();
+    }
+
+    // ── Décaissement des avances et prêts salariés ──────────────────────────────────────────────
+    // Sans ces écritures, le versement d'une avance ne laisse aucune trace comptable : la retenue
+    // opérée le mois suivant crédite 421 sans contrepartie, et ce compte d'actif reste durablement
+    // créditeur. Les deux générateurs sont derrière le drapeau de décaissement du dossier (éteint
+    // par défaut) : un dossier qui saisit ses OD à la main ne voit strictement aucun changement.
+
+    public Task<Result> GenerateEmployeeAdvanceDisbursementEntryAsync(
+        EmployeeAdvance advance,
+        string? employeeName,
+        PaymentMethod method,
+        BankAccount? bankAccount,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(advance);
+
+        var who = string.IsNullOrWhiteSpace(employeeName) ? string.Empty : $" — {employeeName.Trim()}";
+        return GeneratePayrollDisbursementEntryAsync(
+            SourceEmployeeAdvance,
+            advance.Id,
+            debitAccount: PayrollJournalEntryBuilder.AdvancesAccount,
+            amount: advance.Amount,
+            entryDate: advance.Date.Date,
+            label: $"Avance sur salaire{who}",
+            pieceRef: $"AVANCE-{advance.Date:yyyyMMdd}-{advance.Id.ToString("N")[..8].ToUpperInvariant()}",
+            method,
+            bankAccount,
+            cancellationToken);
+    }
+
+    public Task<Result> ReverseEmployeeAdvanceDisbursementEntryAsync(
+        Guid advanceId,
+        string reason,
+        CancellationToken cancellationToken = default) =>
+        ReversePayrollDisbursementEntryAsync(
+            SourceEmployeeAdvance, SourceEmployeeAdvanceCancelled, advanceId,
+            "Annulation du décaissement d'avance", reason, cancellationToken);
+
+    public async Task<Result> GenerateEmployeeLoanDisbursementEntryAsync(
+        EmployeeLoan loan,
+        string? employeeName,
+        DateTime disbursementDate,
+        PaymentMethod method,
+        BankAccount? bankAccount,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(loan);
+
+        // Le compte de prêts est paramétrable par dossier (421.1 par défaut) : on le lit sur la
+        // carte de comptes plutôt que de figer une constante.
+        var payrollProfile = await GetPayrollProfileAsync(cancellationToken);
+        var loansAccount = payrollProfile
+            .BuildAccountMap(payrollProfile.Profile)
+            .LoansAccount;
+
+        var who = string.IsNullOrWhiteSpace(employeeName) ? string.Empty : $" — {employeeName.Trim()}";
+        return await GeneratePayrollDisbursementEntryAsync(
+            SourceEmployeeLoan,
+            loan.Id,
+            debitAccount: loansAccount,
+            amount: loan.Principal,
+            entryDate: disbursementDate.Date,
+            label: $"Prêt salarié {loan.Reference}{who}",
+            pieceRef: $"PRET-{loan.Reference}",
+            method,
+            bankAccount,
+            cancellationToken);
+    }
+
+    public Task<Result> ReverseEmployeeLoanDisbursementEntryAsync(
+        Guid loanId,
+        string reason,
+        CancellationToken cancellationToken = default) =>
+        ReversePayrollDisbursementEntryAsync(
+            SourceEmployeeLoan, SourceEmployeeLoanCancelled, loanId,
+            "Annulation du décaissement de prêt salarié", reason, cancellationToken);
+
+    /// <summary>
+    /// Noyau commun des décaissements avance / prêt : débit du compte de créance sur le salarié,
+    /// crédit de la trésorerie. Idempotent par source, no-op quand le drapeau du dossier est éteint.
+    /// </summary>
+    private async Task<Result> GeneratePayrollDisbursementEntryAsync(
+        string sourceType,
+        Guid sourceId,
+        string debitAccount,
+        decimal amount,
+        DateTime entryDate,
+        string label,
+        string pieceRef,
+        PaymentMethod method,
+        BankAccount? bankAccount,
+        CancellationToken cancellationToken)
+    {
+        var payrollProfile = await GetPayrollProfileAsync(cancellationToken);
+        if (!payrollProfile.DisbursementEntriesEnabled)
+            return Result.Success();
+
+        if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
+            return Result.Success();
+
+        // Idempotence : une écriture existante (même extournée) suffit à ne pas en recréer une.
+        var existing = await _journalEntries.GetBySourceAsync(sourceType, sourceId, cancellationToken);
+        if (existing is not null)
+            return Result.Success();
+
+        var rounded = Math.Round(amount, 3, MidpointRounding.AwayFromZero);
+        if (rounded <= 0)
+            return Result.Success();
+
+        var periodResult = await _periodService.EnsureOpenPeriodAsync(entryDate, cancellationToken);
+        if (periodResult.IsFailure)
+            return Result.Failure(periodResult.Error);
+
+        var creditAccount = method == PaymentMethod.Cash
+            ? TreasuryAccount(PaymentMethod.Cash)
+            : (bankAccount?.ChartOfAccountNumber ?? TreasuryAccount(method));
+
+        // ThirdPartyKind.None, comme le crédit 421 de l'OD de paie : 421 et 421.1 sont des comptes
+        // collectifs, sans auxiliaire par salarié. Les deux jambes se rapprochent donc sur le même
+        // compte, et le FEC n'exporte pas un code auxiliaire qui n'existe pas.
+        var lines = new List<JournalLineInput>
+        {
+            new(debitAccount, label, rounded, 0, null, ThirdPartyKind.None),
+            new(creditAccount, label, 0, rounded, null, ThirdPartyKind.None)
+        };
+
+        var accountValidation = await ValidateAccountsExistAsync(lines, sourceType, cancellationToken);
+        if (accountValidation.IsFailure)
+            return accountValidation;
+
+        var journal = method == PaymentMethod.Cash ? "JC" : BankJournalCode;
+        var n = await _journalEntries.ReserveNextEntryNumberAsync(journal, entryDate.Year, cancellationToken);
+        var create = JournalEntry.Create(
+            n,
+            journal,
+            entryDate,
+            label,
+            periodResult.Value.Id,
+            true,
+            sourceType,
+            sourceId,
+            lines,
+            Money.DefaultCurrency,
+            pieceRef: pieceRef,
+            pieceDate: entryDate);
+
+        if (create.IsFailure)
+            return Result.Failure(create.Error);
+
+        var entry = create.Value;
+        entry.MarkInitialStatus(NewEntryStatus);
+        entry.SetAuditInfo("system", false);
+        await _journalEntries.AddAsync(entry, cancellationToken);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Extourne commune des décaissements avance / prêt : suppression si l'écriture est encore au
+    /// brouillon, contre-passation sinon. Anti-double-extourne par type source d'annulation.
+    /// </summary>
+    private async Task<Result> ReversePayrollDisbursementEntryAsync(
+        string sourceType,
+        string cancelledSourceType,
+        Guid sourceId,
+        string labelPrefix,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
+            return Result.Success();
+
+        var existingReversal = await _journalEntries.GetBySourceAsync(
+            cancelledSourceType, sourceId, cancellationToken);
+        if (existingReversal is not null)
+            return Result.Success();
+
+        var original = await _journalEntries.GetActiveBySourceAsync(sourceType, sourceId, cancellationToken);
+        if (original is null)
+            return Result.Success();
+
+        if (original.IsDraft)
+        {
+            await _journalEntries.RemoveAsync(original, cancellationToken);
+            return Result.Success();
+        }
+
+        var reversalDate = original.EntryDate;
+        var periodResult = await _periodService.EnsureOpenPeriodAsync(reversalDate, cancellationToken);
+        if (periodResult.IsFailure)
+        {
+            reversalDate = DateTime.UtcNow.Date;
+            periodResult = await _periodService.EnsureOpenPeriodAsync(reversalDate, cancellationToken);
+        }
+
+        if (periodResult.IsFailure)
+            return Result.Failure(periodResult.Error);
+
+        var firstLine = original.Lines.First();
+        var currency = firstLine.DebitAmount.Amount > 0
+            ? firstLine.DebitAmount.Currency
+            : firstLine.CreditAmount.Currency;
+
+        var revLines = original.Lines
+            .OrderBy(l => l.LineNumber)
+            .Select(l => new JournalLineInput(
+                l.AccountNumber,
+                l.Label,
+                l.CreditAmount.Amount,
+                l.DebitAmount.Amount,
+                l.ThirdPartyId,
+                l.ThirdPartyKind))
+            .ToList();
+
+        var n = await _journalEntries.ReserveNextEntryNumberAsync(
+            original.JournalCode, reversalDate.Year, cancellationToken);
+        var create = JournalEntry.Create(
+            n,
+            original.JournalCode,
+            reversalDate,
+            $"{labelPrefix} — {reason.Trim()}",
+            periodResult.Value.Id,
+            true,
+            cancelledSourceType,
+            sourceId,
+            revLines,
+            currency);
+
+        if (create.IsFailure)
+            return Result.Failure(create.Error);
+
+        var reversal = create.Value;
+        reversal.MarkInitialStatus(NewEntryStatus);
+        reversal.SetAuditInfo("system", false);
+        await _journalEntries.AddAsync(reversal, cancellationToken);
+        original.MarkReversedBy(reversal.Id);
+        await _journalEntries.UpdateAsync(original, cancellationToken);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Extourne l'OD de reclassement SCE active d'un cycle, s'il en existe une. Appelée à la
+    /// réouverture, avant l'extourne de l'OD d'origine. Sans effet (succès) quand le cycle n'a
+    /// jamais été reclassé — le cas de très loin le plus fréquent.
+    /// </summary>
+    private async Task<Result> ReversePayrollReclassificationEntryAsync(
+        Guid payrollRunId,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        // Anti-double-extourne, symétrique de celle de l'OD de paie.
+        var existingReversal = await _journalEntries.GetBySourceAsync(
+            SourcePayrollReclassificationCancelled, payrollRunId, cancellationToken);
+        if (existingReversal is not null)
+            return Result.Success();
+
+        var original = await _journalEntries.GetActiveBySourceAsync(
+            SourcePayrollReclassification, payrollRunId, cancellationToken);
+        if (original is null)
+            return Result.Success();
+
+        if (original.IsDraft)
+        {
+            await _journalEntries.RemoveAsync(original, cancellationToken);
+            return Result.Success();
+        }
+
+        var reversalDate = original.EntryDate;
+        var periodResult = await _periodService.EnsureOpenPeriodAsync(reversalDate, cancellationToken);
+        if (periodResult.IsFailure)
+        {
+            reversalDate = DateTime.UtcNow.Date;
+            periodResult = await _periodService.EnsureOpenPeriodAsync(reversalDate, cancellationToken);
+        }
+
+        if (periodResult.IsFailure)
+            return Result.Failure(periodResult.Error);
+
+        var firstLine = original.Lines.First();
+        var currency = firstLine.DebitAmount.Amount > 0
+            ? firstLine.DebitAmount.Currency
+            : firstLine.CreditAmount.Currency;
+
+        var revLines = original.Lines
+            .OrderBy(l => l.LineNumber)
+            .Select(l => new JournalLineInput(
+                l.AccountNumber,
+                l.Label,
+                l.CreditAmount.Amount,
+                l.DebitAmount.Amount,
+                l.ThirdPartyId,
+                l.ThirdPartyKind))
+            .ToList();
+
+        var n = await _journalEntries.ReserveNextEntryNumberAsync(
+            original.JournalCode, reversalDate.Year, cancellationToken);
+        var create = JournalEntry.Create(
+            n,
+            original.JournalCode,
+            reversalDate,
+            $"Annulation du reclassement de paie — {reason.Trim()}",
+            periodResult.Value.Id,
+            true,
+            SourcePayrollReclassificationCancelled,
             payrollRunId,
             revLines,
             currency);
@@ -2368,8 +2856,8 @@ public sealed class AccountingService : IAccountingService
         var total = payment.Amount.Amount;
 
         // Le règlement doit débiter le compte sur lequel la dette a été constatée. Les cycles
-        // validés avant les comptes auxiliaires portent un crédit 421 agrégé (sans tiers) : y
-        // opposer des débits 421xxxx rendrait le lettrage impossible (groupe multi-comptes).
+        // validés avant les comptes auxiliaires portent un crédit 425 agrégé (sans tiers) : y
+        // opposer des débits 425xxxx rendrait le lettrage impossible (groupe multi-comptes).
         var runEntry = await _journalEntries.GetActiveBySourceAsync(SourcePayrollRun, payrollRun.Id, cancellationToken);
 
         var hasAuxiliaryCredits = runEntry?.Lines.Any(l =>
@@ -2397,11 +2885,22 @@ public sealed class AccountingService : IAccountingService
         }
         else
         {
+            // Le règlement porte le nom du salarié, comme l'OD d'engagement : un même tiers doit
+            // apparaître sous le même libellé des deux côtés du lettrage et dans le FEC. Repli sur
+            // le numéro de compte si le bulletin n'est pas chargé.
+            var employeeNames = payrollRun.Payslips
+                .GroupBy(p => p.EmployeeId)
+                .ToDictionary(g => g.Key, g => g.First().EmployeeName);
+
             foreach (var line in payment.Lines)
             {
+                var who = employeeNames.TryGetValue(line.EmployeeId, out var name) && !string.IsNullOrWhiteSpace(name)
+                    ? name
+                    : line.EmployeeAuxiliaryAccount;
+
                 lines.Add(new JournalLineInput(
                     line.EmployeeAuxiliaryAccount,
-                    $"{label} — {line.EmployeeAuxiliaryAccount}",
+                    $"{label} — {who}",
                     line.Amount.Amount,
                     0,
                     line.EmployeeId,
@@ -2728,6 +3227,14 @@ public sealed class AccountingService : IAccountingService
             ? R(PayrollJournalEntryBuilder.ResolveInKindBenefitOffset(payrollRun))
             : 0m;
 
+        // Le reclassement doit viser le compte de compensation réellement configuré pour le dossier,
+        // sinon un dossier ayant surchargé PayrollInKindOffsetAccount verrait la correction atterrir
+        // sur un compte qu'il n'utilise pas.
+        var reclassProfile = await GetPayrollProfileAsync(cancellationToken);
+        var inKindOffsetAccount = reclassProfile
+            .BuildAccountMap(PayrollAccountProfile.Sce2026)
+            .InKindBenefitOffsetAccount;
+
         // On ne peut pas reclasser plus que ce qui est effectivement comptabilisé au 641 / au 421.
         var terminationToReclass = R(Math.Min(terminationFromRun, indemnites641));
         var ordinaryToReclass = R(Math.Max(0m, indemnites641 - terminationToReclass));
@@ -2758,7 +3265,7 @@ public sealed class AccountingService : IAccountingService
             terminationToReclass, "Indemnités de rupture");
 
         // Compensation avantage en nature : 421 (crédit fictif) → 4386 (à payer). Les avances restent au 421.
-        Pair(PayrollJournalEntryBuilder.AdvancesAccount, PayrollJournalEntryBuilder.InKindBenefitOffsetPayableAccount,
+        Pair(PayrollJournalEntryBuilder.AdvancesAccount, inKindOffsetAccount,
             inKindOffsetToReclass, "Compensation avantage en nature");
 
         if (lines.Count < 2)

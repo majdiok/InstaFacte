@@ -1,4 +1,4 @@
-using FactuTrust.Domain.Common;
+﻿using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
 using FactuTrust.Domain.Services.Payroll;
@@ -135,27 +135,75 @@ public sealed class PayrollRun : AggregateRoot
     /// R-15 : fige le compte auxiliaire 425 de chaque bulletin à la validation (et non plus
     /// paresseusement au paiement/OD). Le compte devient déterministe et traçable : un changement
     /// de matricule entre validation et paiement n'a plus d'effet. Renvoie un échec nominatif si un
-    /// matricule ne contient aucun chiffre (compte SCE strictement numérique). En cas de succès,
-    /// retourne la liste des bulletins dont le compte vient d'être figé (à persister).
+    /// matricule ne contient aucun chiffre (compte SCE strictement numérique) ou si deux salariés
+    /// du cycle aboutissent au même compte auxiliaire. En cas de succès, retourne la liste des
+    /// bulletins dont le compte vient d'être figé (à persister).
     /// </summary>
-    public Result<IReadOnlyList<Payslip>> FreezeEmployeeAuxiliaryAccounts()
+    /// <param name="auxiliaryAccountsByEmployee">
+    /// Comptes auxiliaires alloués sur les fiches salariés. Ils font foi ; un salarié absent de la
+    /// carte (fiche antérieure à l'allocation explicite) retombe sur la dérivation historique du
+    /// matricule, ce qui laisse les cycles existants strictement inchangés.
+    /// </param>
+    public Result<IReadOnlyList<Payslip>> FreezeEmployeeAuxiliaryAccounts(
+        IReadOnlyDictionary<Guid, string?>? auxiliaryAccountsByEmployee = null)
     {
         var frozen = new List<Payslip>();
+        // Compte auxiliaire → premier bulletin qui l'occupe. Le compte n'utilise que les 7 derniers
+        // chiffres du matricule : deux matricules distincts peuvent donc produire le même compte
+        // (« 1 » et « 0000001 », ou deux CIN aux 7 derniers chiffres identiques). Sans ce contrôle,
+        // les deux salariés partageraient une seule dette 425 — leurs soldes fusionneraient et le
+        // lettrage du règlement deviendrait arbitraire. On refuse la validation plutôt que de
+        // produire une écriture irréconciliable.
+        var byAccount = new Dictionary<string, Payslip>(StringComparer.Ordinal);
+
         foreach (var payslip in _payslips)
         {
-            if (!string.IsNullOrWhiteSpace(payslip.EmployeeAuxiliaryAccount))
-                continue; // déjà figé (cycle recalculé conserve le compte existant)
+            string account;
 
-            if (!PayrollEmployeeAuxiliaryAccountResolver.CanResolve(payslip.EmployeeNumber))
+            if (!string.IsNullOrWhiteSpace(payslip.EmployeeAuxiliaryAccount))
+            {
+                // Déjà figé (cycle recalculé conserve le compte existant) — mais il entre quand même
+                // dans le contrôle d'unicité : la collision peut naître d'un bulletin figé.
+                account = payslip.EmployeeAuxiliaryAccount!;
+            }
+            else if (auxiliaryAccountsByEmployee is not null
+                     && auxiliaryAccountsByEmployee.TryGetValue(payslip.EmployeeId, out var assigned)
+                     && !string.IsNullOrWhiteSpace(assigned))
+            {
+                // Compte alloué sur la fiche : il prime sur toute dérivation.
+                account = assigned!.Trim();
+            }
+            else
+            {
+                if (!PayrollEmployeeAuxiliaryAccountResolver.CanResolve(payslip.EmployeeNumber))
+                {
+                    return Result.Failure<IReadOnlyList<Payslip>>(Error.Validation(
+                        "EmployeeNumber",
+                        $"Le matricule « {payslip.EmployeeNumber} » du salarié {payslip.EmployeeName} ne contient "
+                        + "aucun chiffre : impossible de générer le compte auxiliaire 425 (SCE strictement numérique)."));
+                }
+
+                account = PayrollEmployeeAuxiliaryAccountResolver.Resolve(payslip.EmployeeNumber);
+            }
+
+            if (byAccount.TryGetValue(account, out var other) && other.EmployeeId != payslip.EmployeeId)
             {
                 return Result.Failure<IReadOnlyList<Payslip>>(Error.Validation(
                     "EmployeeNumber",
-                    $"Le matricule « {payslip.EmployeeNumber} » du salarié {payslip.EmployeeName} ne contient "
-                    + "aucun chiffre : impossible de générer le compte auxiliaire 425 (SCE strictement numérique)."));
+                    $"Les matricules « {other.EmployeeNumber} » ({other.EmployeeName}) et "
+                    + $"« {payslip.EmployeeNumber} » ({payslip.EmployeeName}) produisent le même compte "
+                    + $"auxiliaire {account} : leurs dettes de salaire se confondraient. "
+                    + "Différenciez les matricules sur leurs 7 derniers chiffres, ou faites attribuer "
+                    + "un compte auxiliaire distinct à l'un des deux salariés."));
             }
 
-            payslip.EnsureAuxiliaryAccount(PayrollEmployeeAuxiliaryAccountResolver.Resolve(payslip.EmployeeNumber));
-            frozen.Add(payslip);
+            byAccount[account] = payslip;
+
+            if (string.IsNullOrWhiteSpace(payslip.EmployeeAuxiliaryAccount))
+            {
+                payslip.EnsureAuxiliaryAccount(account);
+                frozen.Add(payslip);
+            }
         }
 
         return Result.Success<IReadOnlyList<Payslip>>(frozen);

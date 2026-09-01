@@ -71,7 +71,9 @@ describe('PayrollSettingsComponent', () => {
       'updateGarnishmentBrackets',
       'listSocialFunds',
       'getFeatureFlags',
-      'getLegalPreset'
+      'getLegalPreset',
+      'getAccountingSettings',
+      'updateAccountingSettings'
     ]);
     payrollSpy.getParameters.and.returnValue(of({ success: true, data: { ...params, irppBrackets: params.irppBrackets.map(b => ({ ...b })) } }));
     payrollSpy.updateParameters.and.returnValue(of({ success: true, data: null }));
@@ -94,10 +96,37 @@ describe('PayrollSettingsComponent', () => {
         legalPresetsHistoryEnabled: false,
         payrollAccountProfile: 'Legacy',
         payrollAccountProfileEffectiveDate: null,
-        payrollInKindOffsetAccount: '4386',
+        payrollInKindOffsetAccount: '4286',
         payrollDisbursementEntriesEnabled: false,
         payrollDetailedSalarySplitEnabled: false,
-        payrollStrictSettlementEnabled: true
+        payrollStrictSettlementEnabled: true,
+        payrollAccountProfileIsTenantOverride: false
+      }
+    }));
+    payrollSpy.getAccountingSettings.and.returnValue(of({
+      success: true,
+      data: {
+        accountProfile: 'Legacy',
+        accountProfileEffectiveDate: null,
+        inKindOffsetAccount: '4286',
+        disbursementEntriesEnabled: false,
+        detailedSalarySplitEnabled: false,
+        isTenantOverride: false,
+        lastSettledPeriod: null,
+        earliestEffectiveDate: null
+      }
+    }));
+    payrollSpy.updateAccountingSettings.and.returnValue(of({
+      success: true,
+      data: {
+        accountProfile: 'Sce2026',
+        accountProfileEffectiveDate: '2026-10-01',
+        inKindOffsetAccount: '4286',
+        disbursementEntriesEnabled: false,
+        detailedSalarySplitEnabled: false,
+        isTenantOverride: true,
+        lastSettledPeriod: null,
+        earliestEffectiveDate: null
       }
     }));
     toastSpy = jasmine.createSpyObj('ToastService', ['add']);

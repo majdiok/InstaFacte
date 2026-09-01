@@ -1,4 +1,4 @@
-using FactuTrust.API.Authorization;
+﻿using FactuTrust.API.Authorization;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Payroll.Commands;
 using FactuTrust.Application.Features.Payroll.Queries;
@@ -28,6 +28,37 @@ public class PayrollSettingsController : ControllerBase
     {
         var result = await _mediator.Send(new GetPayrollFeatureFlagsQuery(), cancellationToken);
         return Ok(ApiResponse<PayrollFeatureFlagsDto>.Ok(result));
+    }
+
+    // ── Profil d'imputation comptable de la paie (par dossier) ──
+    // Les écritures de paie n'ont qu'une cartographie de comptes à la fois : la modifier engage
+    // toutes les OD à venir. Mêmes politiques que la mise à jour des paramètres d'exercice —
+    // PayrollSettings (droit métier) ET PayrollFirmOperation (contexte cabinet délégué actif).
+
+    [HttpGet("accounting")]
+    [Authorize(Policy = PermissionPolicies.PayrollRead)]
+    [ProducesResponseType(typeof(ApiResponse<PayrollAccountingSettingsDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAccountingSettings(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetPayrollAccountingSettingsQuery(), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<PayrollAccountingSettingsDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<PayrollAccountingSettingsDto>.Ok(result.Value));
+    }
+
+    [HttpPut("accounting")]
+    [Authorize(Policy = PermissionPolicies.PayrollSettings)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
+    [ProducesResponseType(typeof(ApiResponse<PayrollAccountingSettingsDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateAccountingSettings(
+        [FromBody] UpdatePayrollAccountingSettingsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new UpdatePayrollAccountingSettingsCommand(request), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<PayrollAccountingSettingsDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<PayrollAccountingSettingsDto>.Ok(
+            result.Value, "Profil d'imputation comptable de la paie mis à jour."));
     }
 
     [HttpGet("parameters")]

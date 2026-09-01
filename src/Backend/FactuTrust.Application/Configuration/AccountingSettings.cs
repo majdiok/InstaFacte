@@ -1,4 +1,4 @@
-using FactuTrust.Domain.Enums;
+﻿using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Services.Payroll;
 
 namespace FactuTrust.Application.Configuration;
@@ -209,12 +209,6 @@ public sealed class AccountingSettings
     /// <summary>Compte SCE pour les retenues salariales mutuelle / caisse complémentaire.</summary>
     public string PayrollMutuelleEmployeeAccount { get; set; } = "428.1";
 
-    /// <summary>Compte SCE pour les charges patronales mutuelle / caisse complémentaire.</summary>
-    [Obsolete("La part employeur des fonds sociaux/mutuelle est pilotée par le compte SCE figé sur la ligne "
-        + "(R-01/R-14) — la charge patronale agrégée reste au 647. Conservé pour compatibilité de configuration ; "
-        + "aucun chemin d'écriture ne le lit (suppression envisagée après audit des dossiers existants).")]
-    public string PayrollMutuelleEmployerAccount { get; set; } = "647";
-
     /// <summary>
     /// Profil d'imputation comptable de la paie (Legacy | Sce2026). Repli <c>Legacy</c> par défaut :
     /// le comportement historique est strictement préservé tant que le dossier ne bascule pas
@@ -234,10 +228,12 @@ public sealed class AccountingSettings
 
     /// <summary>
     /// Compte SCE de compensation des avantages en nature (retenue salarié) sous le profil Sce2026.
-    /// Défaut doctrinal 4386 « Autres charges à payer » (clearing bilantiel, réversible) ;
-    /// surchargeable par dossier. Le repli Legacy conserve le compte historique 421.
+    /// Défaut 4286 « Personnel - autres charges à payer » : la contrepartie d'un avantage accordé au
+    /// salarié appartient à la branche 42. Le défaut historique 4386 la rangeait sous 438
+    /// « État - charges à payer », créant une dette envers l'État qui ne se solde jamais.
+    /// Surchargeable par dossier ; le repli Legacy conserve le compte historique 421.
     /// </summary>
-    public string PayrollInKindOffsetAccount { get; set; } = "4386";
+    public string PayrollInKindOffsetAccount { get; set; } = PayrollJournalEntryBuilder.InKindBenefitOffsetPayableAccount;
 
     /// <summary>
     /// Résout le profil d'imputation comptable d'un cycle paie (plan §5.3). Avant la date de bascule
@@ -246,18 +242,28 @@ public sealed class AccountingSettings
     /// Sans date de bascule, le profil configuré s'applique à tous les cycles. Source unique partagée
     /// par la génération réelle (AccountingService) et la simulation du journal de paie.
     /// </summary>
-    public PayrollAccountProfile ResolvePayrollAccountProfile(int year, int month)
-    {
-        var effective = PayrollAccountProfileEffectiveDate;
-        if (effective is null)
-            return PayrollAccountProfile;
+    public PayrollAccountProfile ResolvePayrollAccountProfile(int year, int month) =>
+        ToPayrollProfileSnapshot().ResolveForPeriod(year, month);
 
-        // Dernier jour du mois du cycle.
-        var periodEnd = new DateTime(year, month, 1).AddMonths(1).AddDays(-1);
-        return periodEnd < effective.Value
-            ? PayrollAccountProfile.Legacy
-            : PayrollAccountProfile;
-    }
+    /// <summary>
+    /// Instantané d'imputation issu de la configuration globale. Sert de repli quand le dossier ne
+    /// porte pas de réglage propre (cf. <c>IPayrollAccountingProfileResolver</c>) et de source unique
+    /// pour la résolution du profil et la carte de comptes.
+    /// </summary>
+    public PayrollAccountingProfileSnapshot ToPayrollProfileSnapshot() => new()
+    {
+        Profile = PayrollAccountProfile,
+        EffectiveDate = PayrollAccountProfileEffectiveDate,
+        InKindOffsetAccount = PayrollInKindOffsetAccount,
+        LoansAccount = PayrollEmployeeLoansAccount,
+        GarnishmentsAccount = PayrollGarnishmentsAccount,
+        MutuelleEmployeeAccount = PayrollMutuelleEmployeeAccount,
+        MealVoucherEmployeeAccount = PayrollMealVoucherEmployeeAccount,
+        DisbursementEntriesEnabled = PayrollDisbursementEntriesEnabled,
+        DetailedSalarySplitEnabled = PayrollDetailedSalarySplitEnabled,
+        EmployeeAuxiliaryEnabled = PayrollEmployeeAuxiliaryEnabled,
+        IsTenantOverride = false
+    };
 
     /// <summary>
     /// Construit la carte de comptes SCE de l'OD de paie pour le profil résolu. La compensation
@@ -265,29 +271,32 @@ public sealed class AccountingSettings
     /// compte historique 421 sous Legacy. Source unique partagée par la génération réelle
     /// (AccountingService) et la simulation du journal de paie.
     /// </summary>
-    public PayrollJournalEntryAccountMap BuildPayrollAccountMap(PayrollAccountProfile profile) => new()
-    {
-        LoansAccount = PayrollEmployeeLoansAccount,
-        GarnishmentsAccount = PayrollGarnishmentsAccount,
-        MutuelleEmployeeAccount = PayrollMutuelleEmployeeAccount,
-        MealVoucherEmployeeAccount = PayrollMealVoucherEmployeeAccount,
-        InKindBenefitOffsetAccount = profile == PayrollAccountProfile.Sce2026
-            ? PayrollInKindOffsetAccount
-            : PayrollJournalEntryBuilder.AdvancesAccount
-    };
+    public PayrollJournalEntryAccountMap BuildPayrollAccountMap(PayrollAccountProfile profile) =>
+        ToPayrollProfileSnapshot().BuildAccountMap(profile);
 
     /// <summary>
-    /// Génère l'écriture de décaissement (OD 421/421.1 → 532/5411) à la création d'une avance / au
-    /// décaissement d'un prêt. OFF par défaut : l'OD de décaissement reste manuelle (documentée dans
-    /// docs/payroll/treasury-link.md). Idempotente par source (<c>EmployeeAdvance</c>/<c>EmployeeLoan</c>).
+    /// Génère l'écriture de décaissement (débit 421 / 421.1, crédit 5321 ou 5411) à la création
+    /// d'une avance et au versement d'un prêt salarié, et son extourne à la suppression / annulation.
     /// </summary>
+    /// <remarks>
+    /// OFF par défaut, réglable par dossier. Sans elle, le versement de l'avance ne laisse aucune
+    /// trace : la retenue du mois suivant crédite 421 sans contrepartie et ce compte d'actif reste
+    /// durablement créditeur — le comptable doit alors saisir l'OD à la main. Idempotente par source
+    /// (<c>EmployeeAdvance</c> / <c>EmployeeLoan</c>).
+    /// </remarks>
     public bool PayrollDisbursementEntriesEnabled { get; set; }
 
     /// <summary>
-    /// Ventile le débit 640 (rémunérations du personnel) en sous-comptes 6400/6401/6402/6403/6404
-    /// selon la nature du gain (<see cref="EarningKind"/>). OFF par défaut : non requis pour la
-    /// conformité SCE (ventilation optionnelle R-31).
+    /// Ventile le débit 640 (rémunérations du personnel) en sous-comptes 6400/6401/6402/6409 selon
+    /// la nature du gain (<see cref="EarningKind"/>) ; les avantages en nature (6404) et les
+    /// indemnités de rupture (64602) sont déjà isolés indépendamment de ce réglage.
     /// </summary>
+    /// <remarks>
+    /// OFF par défaut, réglable par dossier, et sans effet sous le profil <c>Legacy</c> : la
+    /// ventilation est un confort d'analyse, non une exigence de conformité NCT 01 (640 est un
+    /// compte de niveau 3 valide). Le reliquat non ventilable (prorata, absences) va au 6400, de
+    /// sorte que le total débité reste exactement le brut.
+    /// </remarks>
     public bool PayrollDetailedSalarySplitEnabled { get; set; }
 
     /// <summary>

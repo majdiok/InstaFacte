@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
@@ -122,9 +122,16 @@ public sealed class PayrollSettlementTests
 
         var collaboratorCostSync = new Mock<IFirmCollaboratorCostSyncService>();
 
+        // Aucun salarié ne porte de compte auxiliaire alloué : le figeage retombe sur la dérivation
+        // historique du matricule, comme pour tous les dossiers antérieurs.
+        var employees = new Mock<IEmployeeRepository>();
+        employees.Setup(e => e.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, Employee>());
+
         var handler = new ValidatePayrollRunCommandHandler(
             runs.Object, advances.Object, leaves.Object, accruals.Object, loans.Object, garnishments.Object,
-            parameters.Object, accounting.Object, uow.Object, currentUser.Object, collaboratorCostSync.Object,
+            employees.Object, parameters.Object, accounting.Object, uow.Object, currentUser.Object,
+            collaboratorCostSync.Object,
             Options.Create(new FirmGovernanceOptions { AutoImportOnPayrollValidate = false }),
             Options.Create(new AccountingSettings { PayrollStrictSettlementEnabled = true }),
             NullLogger<ValidatePayrollRunCommandHandler>.Instance);

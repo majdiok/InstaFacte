@@ -1,4 +1,4 @@
-using FactuTrust.Domain.Common;
+﻿using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
@@ -8,7 +8,8 @@ namespace FactuTrust.Domain.Services.Payroll;
 /// <summary>
 /// Construit les lignes d'écriture OD de paie (comptes SCE) à partir des totaux d'un cycle.
 /// Fonction pure : omet les buckets à montant nul pour respecter les invariants de
-/// <see cref="JournalEntry"/>, et crédite le compte 421 pour les autres retenues (avances).
+/// <see cref="JournalEntry"/>. Les avances retenues sont créditées au 421 (extinction de la créance
+/// constatée au décaissement) ; les retenues non typées suivent <see cref="PayrollJournalEntryAccountMap.DefaultOtherAccount"/>.
 /// </summary>
 public static class PayrollJournalEntryBuilder
 {
@@ -32,8 +33,27 @@ public static class PayrollJournalEntryBuilder
     public const string TerminationIndemnityAccount = "64602";
     /// <summary>Avantages en nature (débit 6404) sous le profil SCE.</summary>
     public const string InKindBenefitExpenseAccount = "6404";
-    /// <summary>Compensation avantage en nature (crédit clearing) — défaut doctrinal 4386.</summary>
-    public const string InKindBenefitOffsetPayableAccount = "4386";
+    /// <summary>Salaires (NCT 01 6400) — ventilation optionnelle du débit 640.</summary>
+    public const string BaseSalaryExpenseAccount = "6400";
+    /// <summary>Heures supplémentaires (NCT 01 6401).</summary>
+    public const string OvertimeExpenseAccount = "6401";
+    /// <summary>Primes (NCT 01 6402).</summary>
+    public const string BonusExpenseAccount = "6402";
+    /// <summary>Autres compléments de salaires (NCT 01 6409).</summary>
+    public const string OtherSalaryComplementExpenseAccount = "6409";
+    /// <summary>
+    /// Personnel - autres charges à payer (NCT 01 4286). Réceptacle des retenues salariales qui ne
+    /// sont ni une avance (421), ni un prêt (421.1), ni une opposition (427), ni une cotisation
+    /// typée : les imputer au 421 y laisserait un solde créditeur sur un compte d'actif.
+    /// </summary>
+    public const string OtherDeductionsPayableAccount = "4286";
+    /// <summary>
+    /// Compensation avantage en nature (crédit clearing) sous le profil SCE. Défaut 4286
+    /// « Personnel - autres charges à payer » : la contrepartie d'un avantage accordé au salarié
+    /// appartient à la branche 42, pas au 4386 « État - autres charges à payer », qui y logerait une
+    /// dette fiscale fictive ne se soldant jamais. Surchargeable par dossier.
+    /// </summary>
+    public const string InKindBenefitOffsetPayableAccount = OtherDeductionsPayableAccount;
     /// <summary>Organismes sociaux - charges à payer (dette patronale fonds sociaux/mutuelle).</summary>
     public const string SocialFundEmployerPayableAccount = "4538";
 
@@ -59,7 +79,8 @@ public static class PayrollJournalEntryBuilder
         decimal totalCssEmployer = 0m,
         decimal totalTerminationIndemnities = 0m,
         decimal totalInKindBenefits = 0m,
-        PayrollAccountProfile profile = PayrollAccountProfile.Legacy)
+        PayrollAccountProfile profile = PayrollAccountProfile.Legacy,
+        IReadOnlyList<SalaryDebitBucket>? salaryDebits = null)
     {
         return BuildLines(
             totalGross,
@@ -79,7 +100,8 @@ public static class PayrollJournalEntryBuilder
             totalCssEmployer,
             totalTerminationIndemnities,
             totalInKindBenefits,
-            profile);
+            profile,
+            salaryDebits);
     }
 
     /// <summary>
@@ -103,7 +125,8 @@ public static class PayrollJournalEntryBuilder
         decimal totalCssEmployer = 0m,
         decimal totalTerminationIndemnities = 0m,
         decimal totalInKindBenefits = 0m,
-        PayrollAccountProfile profile = PayrollAccountProfile.Legacy)
+        PayrollAccountProfile profile = PayrollAccountProfile.Legacy,
+        IReadOnlyList<SalaryDebitBucket>? salaryDebits = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
 
@@ -149,7 +172,7 @@ public static class PayrollJournalEntryBuilder
             : IndemnityAccount;
 
         var lines = new List<JournalLineInput>();
-        AddDebit(lines, SalaryAccount, entryLabel, salaries);
+        AddSalaryDebits(lines, entryLabel, salaries, salaryDebits, profile);
         AddDebit(lines, indemnityAccount, entryLabel, terminationIndemnities);
         AddDebit(lines, InKindBenefitExpenseAccount, entryLabel, inKindBenefits);
 
@@ -212,7 +235,8 @@ public static class PayrollJournalEntryBuilder
         string label,
         PayrollJournalEntryAccountMap accountMap,
         IReadOnlyList<EmployeeAuxiliaryCredit>? employeeAuxiliaryCredits = null,
-        PayrollAccountProfile profile = PayrollAccountProfile.Sce2026)
+        PayrollAccountProfile profile = PayrollAccountProfile.Sce2026,
+        IReadOnlyList<SalaryDebitBucket>? salaryDebits = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
         ArgumentNullException.ThrowIfNull(payrollRun);
@@ -263,7 +287,7 @@ public static class PayrollJournalEntryBuilder
         var typedDeductions = AggregateTypedDeductions(payrollRun, accountMap);
 
         var lines = new List<JournalLineInput>();
-        AddDebit(lines, SalaryAccount, entryLabel, salaries);
+        AddSalaryDebits(lines, entryLabel, salaries, salaryDebits, profile);
         AddDebit(lines, IndemnityAccount, entryLabel, profile == PayrollAccountProfile.Sce2026 ? 0m : terminationIndemnities);
         AddDebit(lines, TerminationIndemnityAccount, entryLabel, profile == PayrollAccountProfile.Sce2026 ? terminationIndemnities : 0m);
         AddDebit(lines, InKindBenefitExpenseAccount, entryLabel, inKindBenefits);
@@ -439,6 +463,95 @@ public static class PayrollJournalEntryBuilder
         line.EarningKind == EarningKind.InKindBenefit
         || (line.EarningKind is null
             && line.Label.StartsWith("Avantage en nature", StringComparison.Ordinal));
+
+    /// <summary>Part du débit 640 imputable à un sous-compte (6400/6401/6402/6409).</summary>
+    public readonly record struct SalaryDebitBucket(string Account, decimal Amount);
+
+    /// <summary>
+    /// Ventile le débit des rémunérations sur les sous-comptes de 640 quand une ventilation est
+    /// fournie, sinon impute le total au compte collectif 640 (comportement par défaut).
+    /// </summary>
+    /// <remarks>
+    /// Le reliquat — le brut ne se réduit pas toujours à la somme des lignes de gain (absences,
+    /// prorata d'entrée/sortie) — est imputé au 6400. Une ventilation qui dépasserait le total
+    /// est ignorée au profit du compte collectif : mieux vaut un débit moins détaillé qu'un débit
+    /// faux. La ventilation ne s'applique jamais sous <c>Legacy</c>, dont l'imputation doit rester
+    /// identique à l'octet près.
+    /// </remarks>
+    private static void AddSalaryDebits(
+        List<JournalLineInput> lines,
+        string entryLabel,
+        decimal salaries,
+        IReadOnlyList<SalaryDebitBucket>? salaryDebits,
+        PayrollAccountProfile profile)
+    {
+        if (salaries <= 0)
+            return;
+
+        if (profile != PayrollAccountProfile.Sce2026 || salaryDebits is not { Count: > 0 })
+        {
+            AddDebit(lines, SalaryAccount, entryLabel, salaries);
+            return;
+        }
+
+        var buckets = salaryDebits
+            .Where(b => b.Amount > 0 && !string.IsNullOrWhiteSpace(b.Account))
+            .GroupBy(b => b.Account, StringComparer.Ordinal)
+            .Select(g => new SalaryDebitBucket(g.Key, R(g.Sum(b => b.Amount))))
+            .OrderBy(b => b.Account, StringComparer.Ordinal)
+            .ToList();
+
+        var allocated = R(buckets.Sum(b => b.Amount));
+        if (buckets.Count == 0 || allocated > salaries)
+        {
+            AddDebit(lines, SalaryAccount, entryLabel, salaries);
+            return;
+        }
+
+        foreach (var bucket in buckets)
+            AddDebit(lines, bucket.Account, entryLabel, bucket.Amount);
+
+        // Reliquat non ventilable (prorata, absences) : au compte de salaires de base.
+        AddDebit(lines, BaseSalaryExpenseAccount, entryLabel, R(salaries - allocated));
+    }
+
+    /// <summary>
+    /// Ventilation du brut par nature de gain (<see cref="EarningKind"/> figé sur les lignes de
+    /// bulletin), destinée à <c>AddSalaryDebits</c>. Les indemnités de rupture et les avantages en
+    /// nature en sont exclus : ils portent déjà leur propre compte (64602, 6404).
+    /// </summary>
+    public static IReadOnlyList<SalaryDebitBucket> ResolveSalaryDebits(PayrollRun payrollRun)
+    {
+        ArgumentNullException.ThrowIfNull(payrollRun);
+
+        var buckets = new Dictionary<string, decimal>(StringComparer.Ordinal);
+
+        foreach (var line in payrollRun.Payslips
+                     .SelectMany(p => p.Lines)
+                     .Where(l => l.Kind == PayslipLineKind.Earning && l.Amount > 0))
+        {
+            // Sans EarningKind (bulletins antérieurs à son introduction), aucune ventilation fiable
+            // n'est possible : on abandonne pour tout le cycle plutôt que d'en deviner une partie.
+            if (line.EarningKind is not { } kind)
+                return Array.Empty<SalaryDebitBucket>();
+
+            if (kind is EarningKind.TerminationIndemnity or EarningKind.InKindBenefit)
+                continue;
+
+            var account = kind switch
+            {
+                EarningKind.Overtime => OvertimeExpenseAccount,
+                EarningKind.Bonus => BonusExpenseAccount,
+                EarningKind.OrdinaryAllowance => OtherSalaryComplementExpenseAccount,
+                EarningKind.Other => OtherSalaryComplementExpenseAccount,
+                _ => BaseSalaryExpenseAccount
+            };
+
+            buckets[account] = R(buckets.GetValueOrDefault(account) + line.Amount);
+        }
+
+        return buckets.Select(kv => new SalaryDebitBucket(kv.Key, kv.Value)).ToList();
+    }
 
     private readonly record struct TypedDeductionBucket(string Account, string Label, decimal Amount);
 

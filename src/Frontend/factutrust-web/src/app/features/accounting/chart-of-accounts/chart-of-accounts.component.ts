@@ -1,4 +1,4 @@
-import { Component, OnInit, ViewChild, inject, signal } from '@angular/core';
+import { Component, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
@@ -80,9 +80,19 @@ export const SCE_ACCOUNT_NUMBER_PATTERN = /^[1-7]\d*(?:\.\d+)*$/;
             density="toolbar"
             [payloadBuilder]="buildChartAnalyzePayload"
             [disabled]="loading()" />
+          @if (auxiliaryCount() > 0) {
+            <label class="coa-aux-filter">
+              <input
+                type="checkbox"
+                [ngModel]="hideAuxiliary()"
+                (ngModelChange)="hideAuxiliary.set($event)"
+                [ngModelOptions]="{ standalone: true }" />
+              <span>Masquer les comptes auxiliaires ({{ auxiliaryCount() }})</span>
+            </label>
+          }
           <p class="coa-count" aria-live="polite">
-            <span class="coa-count-value">{{ rows().length }}</span>
-            <span class="coa-count-label"> compte{{ rows().length === 1 ? '' : 's' }}</span>
+            <span class="coa-count-value">{{ visibleRows().length }}</span>
+            <span class="coa-count-label"> compte{{ visibleRows().length === 1 ? '' : 's' }}</span>
           </p>
         </div>
       </app-accounting-filter-bar>
@@ -94,7 +104,7 @@ export const SCE_ACCOUNT_NUMBER_PATTERN = /^[1-7]\d*(?:\.\d+)*$/;
         (retry)="load()" />
       <p-table
         #dt
-        [value]="rows()"
+        [value]="visibleRows()"
         [paginator]="true"
         [rows]="25"
         [rowsPerPageOptions]="[25, 50, 100]"
@@ -118,6 +128,7 @@ export const SCE_ACCOUNT_NUMBER_PATTERN = /^[1-7]\d*(?:\.\d+)*$/;
               Classe <p-sortIcon field="accountClass" />
             </th>
             <th scope="col" class="coa-col-narrow">Système</th>
+            <th scope="col" class="coa-col-narrow">Auxiliaire</th>
             <th scope="col" class="coa-col-narrow">Statut</th>
           </tr>
         </ng-template>
@@ -135,6 +146,17 @@ export const SCE_ACCOUNT_NUMBER_PATTERN = /^[1-7]\d*(?:\.\d+)*$/;
                 [class.coa-badge--no]="!r.isSystem">
                 {{ r.isSystem ? 'Oui' : 'Non' }}
               </span>
+            </td>
+            <td class="coa-col-narrow" data-label="Auxiliaire">
+              @if (r.isAuxiliary) {
+                <span
+                  class="coa-badge coa-badge--aux"
+                  [title]="r.affectationAccountNumber ? 'Rattaché au compte ' + r.affectationAccountNumber : ''">
+                  {{ r.affectationAccountNumber || 'Oui' }}
+                </span>
+              } @else {
+                <span class="coa-aux-none">—</span>
+              }
             </td>
             <td class="coa-col-narrow" data-label="Statut">
               <span class="coa-status-cell">
@@ -283,6 +305,11 @@ export const SCE_ACCOUNT_NUMBER_PATTERN = /^[1-7]\d*(?:\.\d+)*$/;
       font-size: var(--font-size-sm);
       color: var(--color-text-secondary);
     }
+    .coa-aux-filter { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem;
+      color: var(--text-color-secondary, #64748b); cursor: pointer; white-space: nowrap; }
+    .coa-badge--aux { background: var(--surface-100, #f1f5f9); color: var(--text-color, #334155);
+      font-variant-numeric: tabular-nums; }
+    .coa-aux-none { color: var(--text-color-secondary, #94a3b8); }
     .coa-count-value {
       font-weight: var(--font-weight-semibold);
       color: var(--color-text-primary);
@@ -432,6 +459,20 @@ export class ChartOfAccountsComponent implements OnInit {
   @ViewChild('dt') dt?: Table;
 
   readonly rows = signal<ChartOfAccountDto[]>([]);
+
+  /**
+   * Masque les comptes auxiliaires (salariés, comptes bancaires…). Décoché par défaut : on ne
+   * cache rien tant que l'utilisateur ne le demande pas.
+   *
+   * Le filtre porte sur `visibleRows`, pas sur `rows` : le dialogue de création lit `rows` pour
+   * proposer les comptes parents, et masquer une partie du plan l'amputerait silencieusement.
+   */
+  readonly hideAuxiliary = signal(false);
+
+  readonly auxiliaryCount = computed(() => this.rows().filter(r => r.isAuxiliary).length);
+
+  readonly visibleRows = computed(() =>
+    this.hideAuxiliary() ? this.rows().filter(r => !r.isAuxiliary) : this.rows());
   readonly error = signal<string | null>(null);
   readonly createError = signal<string | null>(null);
   readonly loading = signal(false);

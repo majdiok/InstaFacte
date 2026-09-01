@@ -1,4 +1,4 @@
-using FactuTrust.Application.Common.Enums;
+﻿using FactuTrust.Application.Common.Enums;
 using FactuTrust.Domain.Services.Payroll;
 
 namespace FactuTrust.Application.Features.Payroll.Reports;
@@ -43,9 +43,14 @@ internal static class PayrollReportHelpers
     };
 
     /// <summary>
-    /// Libellé lisible d'un compte de la ventilation de paie. Les comptes auxiliaires 421xxxx
+    /// Libellé lisible d'un compte de la ventilation de paie. Les comptes auxiliaires 425xxxx
     /// (option « comptes auxiliaires salariés ») retombent sur le libellé du compte collectif.
     /// </summary>
+    /// <remarks>
+    /// La table couvre les deux profils d'imputation. Sans les comptes du profil SCE, la colonne
+    /// « Libellé » du journal de paie et de ses exports se vidait dès la bascule — les montants
+    /// s'affichaient en face d'un compte sans nom.
+    /// </remarks>
     public static string AccountLabel(string accountNumber)
     {
         if (string.IsNullOrWhiteSpace(accountNumber))
@@ -56,11 +61,32 @@ internal static class PayrollReportHelpers
 
         return accountNumber switch
         {
+            // ── Charges (classe 6), communes aux deux profils ──
             PayrollJournalEntryBuilder.SalaryAccount => "Charges de personnel",
             PayrollJournalEntryBuilder.EmployerChargesAccount => "Charges sociales de l'employeur",
+            PayrollJournalEntryBuilder.IndemnityAccount => "Indemnités de rupture et soldes de tout compte",
+
+            // ── Charges ventilées du profil SCE ──
+            PayrollJournalEntryBuilder.TfpExpenseAccount => "TFP",
+            PayrollJournalEntryBuilder.FoprolosExpenseAccount => "FOPROLOS",
+            PayrollJournalEntryBuilder.TerminationIndemnityAccount => "Indemnités de préavis et de licenciement",
+            PayrollJournalEntryBuilder.InKindBenefitExpenseAccount => "Avantages en nature",
+            "6401" => "Heures supplémentaires",
+            "6402" => "Primes",
+            "6403" => "Gratifications",
+
+            // ── Dettes et créances (classe 4) ──
             PayrollJournalEntryBuilder.StateWithholdingAccount => "État — retenues et taxes sur salaires",
+            PayrollJournalEntryBuilder.PayrollTaxesPayableAccount => "État — autres impôts et taxes sur rémunérations",
             PayrollJournalEntryBuilder.SocialOrgAccount => "Organismes sociaux",
+            PayrollJournalEntryBuilder.SocialFundEmployerPayableAccount => "Organismes sociaux — charges à payer",
             PayrollJournalEntryBuilder.AdvancesAccount => "Personnel — avances et acomptes",
+            PayrollJournalEntryBuilder.OtherDeductionsPayableAccount => "Personnel — autres charges à payer",
+            "4386" => "État — autres charges à payer",
+            "421.1" => "Personnel — prêts en cours",
+            "427" => "Personnel — oppositions et saisies",
+            "428.1" => "Personnel — mutuelle et caisses complémentaires",
+            "428.2" => "Personnel — tickets restaurant (part salariale)",
             _ => string.Empty
         };
     }

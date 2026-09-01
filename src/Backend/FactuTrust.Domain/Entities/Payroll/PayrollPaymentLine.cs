@@ -1,4 +1,4 @@
-using FactuTrust.Domain.Common;
+﻿using FactuTrust.Domain.Common;
 using FactuTrust.Domain.ValueObjects;
 
 namespace FactuTrust.Domain.Entities.Payroll;
@@ -12,7 +12,7 @@ public sealed class PayrollPaymentLine : Entity
     public Guid PayslipId { get; private set; }
     public Guid EmployeeId { get; private set; }
     public Money Amount { get; private set; } = null!;
-    /// <summary>Snapshot du compte auxiliaire 421xxxx utilisé pour la comptabilité.</summary>
+    /// <summary>Snapshot du compte auxiliaire 425xxxx utilisé pour la comptabilité.</summary>
     public string EmployeeAuxiliaryAccount { get; private set; } = null!;
 
     private PayrollPaymentLine() { }

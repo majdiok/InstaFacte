@@ -1,4 +1,4 @@
-using FactuTrust.Domain.Entities.Payroll;
+﻿using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
@@ -63,6 +63,7 @@ public partial class TenantDbContext
             entity.Property(e => e.Category).HasMaxLength(100);
             entity.Property(e => e.Echelon).HasMaxLength(50);
             entity.Property(e => e.Rib).HasMaxLength(40);
+            entity.Property(e => e.AuxiliaryAccountNumber).HasMaxLength(32);
             entity.Property(e => e.MaritalStatus).IsRequired();
             entity.Property(e => e.IsHeadOfFamily).IsRequired();
             entity.Property(e => e.DependentChildren).IsRequired();

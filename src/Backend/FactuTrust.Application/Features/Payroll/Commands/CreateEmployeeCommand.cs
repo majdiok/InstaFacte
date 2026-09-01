@@ -1,7 +1,8 @@
-using FactuTrust.Application.Common.Validation;
+﻿using FactuTrust.Application.Common.Validation;
 using FactuTrust.Application.Features.Payroll.Validation;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Payroll;
@@ -49,15 +50,18 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
     private readonly IEmployeeRepository _employees;
     private readonly IEmployeeDependentParentRepository _dependentParents;
     private readonly ITenantContext _tenantContext;
+    private readonly IPayrollEmployeeChartProvisioningService _chartProvisioning;
 
     public CreateEmployeeCommandHandler(
         IEmployeeRepository employees,
         IEmployeeDependentParentRepository dependentParents,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IPayrollEmployeeChartProvisioningService chartProvisioning)
     {
         _employees = employees;
         _dependentParents = dependentParents;
         _tenantContext = tenantContext;
+        _chartProvisioning = chartProvisioning;
     }
 
     public async Task<Result<Guid>> Handle(CreateEmployeeCommand request, CancellationToken cancellationToken)
@@ -72,6 +76,13 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
 
         if (await _employees.ExistsByEmployeeNumberAsync(dto.EmployeeNumber, null, cancellationToken))
             return Result.Failure<Guid>(Error.Conflict("Un salarié existe déjà avec ce matricule."));
+
+        // Deux matricules distincts peuvent produire le même compte auxiliaire 425xxxx (seuls les 7
+        // derniers chiffres sont repris) : on le refuse ici, tant que le matricule est libre.
+        var auxiliaryCollision = await PayrollAuxiliaryAccountGuard.EnsureNoCollisionAsync(
+            _employees, dto.EmployeeNumber, excludeEmployeeId: null, cancellationToken);
+        if (auxiliaryCollision.IsFailure)
+            return Result.Failure<Guid>(auxiliaryCollision.Error);
 
         Address? address = null;
         if (!string.IsNullOrWhiteSpace(dto.Street) && !string.IsNullOrWhiteSpace(dto.City) && !string.IsNullOrWhiteSpace(dto.Governorate))
@@ -148,6 +159,19 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
                 return Result.Failure<Guid>(conflictCheck.Error);
 
             employee.SyncDependentParentsCount(claimEntities.Count);
+        }
+
+        // Compte auxiliaire 425 alloué séquentiellement et rattaché au collectif : le compte devient
+        // une donnée de la fiche au lieu d'être dérivé du matricule par troncature — plus de
+        // collision possible, et le matricule cesse d'être recopié dans le plan comptable et le FEC.
+        // Si le plan comptable n'est pas encore en place, on n'échoue pas : le salarié se crée et le
+        // repli historique (dérivation) reprendra la main à la validation du cycle.
+        var auxiliary = await _chartProvisioning.AllocateAsync(employee.FullName, cancellationToken);
+        if (auxiliary.IsSuccess)
+        {
+            var assign = employee.SetAuxiliaryAccountNumber(auxiliary.Value);
+            if (assign.IsFailure)
+                return Result.Failure<Guid>(assign.Error);
         }
 
         await _employees.AddAsync(employee, cancellationToken);

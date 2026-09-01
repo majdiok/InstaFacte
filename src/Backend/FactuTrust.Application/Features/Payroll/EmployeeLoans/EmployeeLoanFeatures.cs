@@ -1,8 +1,12 @@
+﻿using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Payroll;
 using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Payroll;
+using FactuTrust.Domain.Enums;
 using FluentValidation;
 using MediatR;
 
@@ -71,28 +75,66 @@ public sealed class CreateEmployeeLoanCommandHandler : IRequestHandler<CreateEmp
 {
     private readonly IEmployeeLoanRepository _loans;
     private readonly IEmployeeRepository _employees;
+    private readonly IBankAccountRepository _bankAccounts;
+    private readonly IAccountingService _accounting;
+    private readonly ITenantUnitOfWork _unitOfWork;
 
-    public CreateEmployeeLoanCommandHandler(IEmployeeLoanRepository loans, IEmployeeRepository employees)
+    public CreateEmployeeLoanCommandHandler(
+        IEmployeeLoanRepository loans,
+        IEmployeeRepository employees,
+        IBankAccountRepository bankAccounts,
+        IAccountingService accounting,
+        ITenantUnitOfWork unitOfWork)
     {
         _loans = loans;
         _employees = employees;
+        _bankAccounts = bankAccounts;
+        _accounting = accounting;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Result<Guid>> Handle(CreateEmployeeLoanCommand request, CancellationToken cancellationToken)
     {
-        var dto = request.Dto;
-        if (await _employees.GetByIdAsync(dto.EmployeeId, cancellationToken) is null)
-            return Result.Failure<Guid>(Error.NotFound("Employee", dto.EmployeeId));
+        // Prêt et décaissement dans une seule transaction : un échéancier sans écriture, ou une
+        // écriture sans échéancier, seraient l'un comme l'autre irrattrapables sans intervention.
+        return await _unitOfWork.ExecuteAsync(async ct =>
+        {
+            var dto = request.Dto;
+            var employee = await _employees.GetByIdAsync(dto.EmployeeId, ct);
+            if (employee is null)
+                return Result.Failure<Guid>(Error.NotFound("Employee", dto.EmployeeId));
 
-        var result = EmployeeLoan.Create(
-            dto.EmployeeId, dto.Reference, dto.Principal, dto.InstallmentCount,
-            dto.StartYear, dto.StartMonth, dto.Notes);
+            var result = EmployeeLoan.Create(
+                dto.EmployeeId, dto.Reference, dto.Principal, dto.InstallmentCount,
+                dto.StartYear, dto.StartMonth, dto.Notes);
 
-        if (result.IsFailure)
-            return Result.Failure<Guid>(result.Error);
+            if (result.IsFailure)
+                return Result.Failure<Guid>(result.Error);
 
-        await _loans.AddAsync(result.Value, cancellationToken);
-        return Result.Success(result.Value.Id);
+            var loan = result.Value;
+            await _loans.AddAsync(loan, ct);
+
+            var method = dto.Method ?? PaymentMethod.BankTransfer;
+            BankAccount? bankAccount = null;
+            if (dto.BankAccountId is { } bankAccountId)
+            {
+                bankAccount = await _bankAccounts.GetByIdAsync(bankAccountId, ct);
+                if (bankAccount is null)
+                    return Result.Failure<Guid>(Error.NotFound("BankAccount", bankAccountId));
+            }
+
+            var entry = await _accounting.GenerateEmployeeLoanDisbursementEntryAsync(
+                loan,
+                employee.FullName,
+                dto.DisbursementDate ?? DateTime.UtcNow.Date,
+                method,
+                bankAccount,
+                ct);
+            if (entry.IsFailure)
+                return Result.Failure<Guid>(entry.Error);
+
+            return Result.Success(loan.Id);
+        }, cancellationToken);
     }
 }
 
@@ -101,25 +143,44 @@ public sealed record CancelEmployeeLoanCommand(Guid Id) : IRequest<Result>;
 public sealed class CancelEmployeeLoanCommandHandler : IRequestHandler<CancelEmployeeLoanCommand, Result>
 {
     private readonly IEmployeeLoanRepository _loans;
+    private readonly IAccountingService _accounting;
+    private readonly ITenantUnitOfWork _unitOfWork;
 
-    public CancelEmployeeLoanCommandHandler(IEmployeeLoanRepository loans) => _loans = loans;
+    public CancelEmployeeLoanCommandHandler(
+        IEmployeeLoanRepository loans,
+        IAccountingService accounting,
+        ITenantUnitOfWork unitOfWork)
+    {
+        _loans = loans;
+        _accounting = accounting;
+        _unitOfWork = unitOfWork;
+    }
 
     public async Task<Result> Handle(CancelEmployeeLoanCommand request, CancellationToken cancellationToken)
     {
-        var loan = await _loans.GetByIdWithInstallmentsAsync(request.Id, cancellationToken);
-        if (loan is null)
-            return Result.Failure(Error.NotFound("EmployeeLoan", request.Id));
-
-        try
+        return await _unitOfWork.ExecuteAsync(async ct =>
         {
-            loan.Cancel();
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Result.Failure(Error.Validation("Status", ex.Message));
-        }
+            var loan = await _loans.GetByIdWithInstallmentsAsync(request.Id, ct);
+            if (loan is null)
+                return Result.Failure(Error.NotFound("EmployeeLoan", request.Id));
 
-        await _loans.UpdateAsync(loan, cancellationToken);
-        return Result.Success();
+            try
+            {
+                loan.Cancel();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Result.Failure(Error.Validation("Status", ex.Message));
+            }
+
+            // Annuler le prêt sans extourner son décaissement laisserait un débit 421.1 orphelin.
+            var reversal = await _accounting.ReverseEmployeeLoanDisbursementEntryAsync(
+                loan.Id, "Annulation du prêt salarié", ct);
+            if (reversal.IsFailure)
+                return reversal;
+
+            await _loans.UpdateAsync(loan, ct);
+            return Result.Success();
+        }, cancellationToken);
     }
 }

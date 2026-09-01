@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
@@ -316,7 +316,7 @@ public sealed class LetteringService : ILetteringService
         // Les groupes sont indexés par numéro de compte : un groupe de lettrage porte un compte
         // unique (invariant de LetteringGroup, vérifié par ValidateLinesAsync). Construire les
         // groupes à partir du compte rend cet invariant vrai par construction, et couvre
-        // indifféremment l'OD ventilée par salarié (421xxxx) et l'OD agrégée (421) des cycles
+        // indifféremment l'OD ventilée par salarié (425xxxx) et l'OD agrégée (425) des cycles
         // validés avant les comptes auxiliaires.
         var runCredits = payrollEntry.Lines
             .Where(l => IsPersonnelPayable(l.AccountNumber)

@@ -1,4 +1,4 @@
-using FactuTrust.Application.Features.Payroll.AnnualBonuses;
+﻿using FactuTrust.Application.Features.Payroll.AnnualBonuses;
 using FactuTrust.Application.Features.Payroll.Commands;
 using FactuTrust.Application.Features.Payroll.Declarations.CnssRemittance;
 using FactuTrust.Application.Features.Payroll.Payments;
@@ -20,6 +20,7 @@ public static class PayrollFirmExclusiveRequests
         typeof(ReopenPayrollRunCommand),
         typeof(ClosePayrollRunCommand),
         typeof(UpdatePayrollParametersCommand),
+        typeof(UpdatePayrollAccountingSettingsCommand),
         typeof(UpdatePayrollGarnishmentBracketsCommand),
         typeof(GenerateIrppRegularizationsCommand),
         typeof(UpsertIrppRegularizationCommand),

@@ -1,4 +1,4 @@
-using FactuTrust.Domain.Common;
+﻿using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
 
@@ -43,6 +43,18 @@ public sealed class Employee : AggregateRoot
     public PhoneNumber? Phone { get; private set; }
     /// <summary>RIB bancaire pour le virement du salaire.</summary>
     public string? Rib { get; private set; }
+
+    /// <summary>
+    /// Compte auxiliaire 425 du salarié, quand il a été alloué explicitement.
+    /// </summary>
+    /// <remarks>
+    /// <c>null</c> pour les salariés antérieurs à ce champ : leur compte reste dérivé du matricule
+    /// par <c>PayrollEmployeeAuxiliaryAccountResolver</c>, exactement comme avant — aucun compte
+    /// existant ne se déplace. Renseigné, il fait foi : c'est ce qui permet de sortir de la
+    /// dérivation par troncature (collisions possibles, et matricule recopié dans le plan comptable
+    /// et le FEC) sans toucher à l'existant.
+    /// </remarks>
+    public string? AuxiliaryAccountNumber { get; private set; }
 
     public bool IsActive { get; private set; }
 
@@ -127,6 +139,47 @@ public sealed class Employee : AggregateRoot
     }
 
     public string FullName => $"{FirstName} {LastName}".Trim();
+
+    /// <summary>
+    /// Fixe le compte auxiliaire 425 du salarié. Volontairement hors de <see cref="Update"/> :
+    /// changer ce compte déplace une dette de salaire, ce n'est pas une modification de fiche
+    /// ordinaire. L'appelant vérifie qu'aucune écriture n'utilise déjà le compte remplacé.
+    /// </summary>
+    public Result SetAuxiliaryAccountNumber(string? accountNumber)
+    {
+        var normalized = string.IsNullOrWhiteSpace(accountNumber) ? null : accountNumber.Trim();
+
+        if (normalized is null)
+        {
+            AuxiliaryAccountNumber = null;
+            return Result.Success();
+        }
+
+        if (normalized.Length > 32)
+            return Result.Failure(Error.Validation("AuxiliaryAccountNumber", "Numéro de compte trop long."));
+
+        if (!normalized.All(char.IsAsciiDigit))
+        {
+            return Result.Failure(Error.Validation(
+                "AuxiliaryAccountNumber",
+                "Le compte auxiliaire d'un salarié doit être strictement numérique (compte SCE)."));
+        }
+
+        if (!normalized.StartsWith(PersonnelPayableCollectiveAccount, StringComparison.Ordinal)
+            || normalized.Length == PersonnelPayableCollectiveAccount.Length)
+        {
+            return Result.Failure(Error.Validation(
+                "AuxiliaryAccountNumber",
+                $"Le compte auxiliaire doit être un sous-compte de {PersonnelPayableCollectiveAccount} "
+                + "« Personnel - rémunérations dues »."));
+        }
+
+        AuxiliaryAccountNumber = normalized;
+        return Result.Success();
+    }
+
+    /// <summary>Compte collectif de rattachement des auxiliaires salariés (NCT 01).</summary>
+    public const string PersonnelPayableCollectiveAccount = "425";
 
     public Result Update(
         string firstName,

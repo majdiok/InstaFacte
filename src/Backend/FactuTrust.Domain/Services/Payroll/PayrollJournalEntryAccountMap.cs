@@ -1,4 +1,4 @@
-using FactuTrust.Domain.Enums;
+﻿using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Domain.Services.Payroll;
 
@@ -13,8 +13,8 @@ public sealed class PayrollJournalEntryAccountMap
     public string MutuelleEmployeeAccount { get; init; } = "428.1";
     public string MealVoucherEmployeeAccount { get; init; } = "428.2";
     /// <summary>
-    /// Compte SCE de compensation de l'avantage en nature (retenue salarié). Défaut doctrinal 4386
-    /// « Autres charges à payer » (plan §4.1.1 m / Q3). Le profil Legacy force le compte historique 421.
+    /// Compte SCE de compensation de l'avantage en nature (retenue salarié). Défaut 4286
+    /// « Personnel - autres charges à payer ». Le profil Legacy force le compte historique 421.
     /// </summary>
     public string InKindBenefitOffsetAccount { get; init; } = PayrollJournalEntryBuilder.InKindBenefitOffsetPayableAccount;
     /// <summary>
@@ -23,6 +23,12 @@ public sealed class PayrollJournalEntryAccountMap
     /// (<c>SocialFundScheme.EmployerAccountSce</c>) figé sur la ligne de bulletin.
     /// </summary>
     public string SocialFundEmployerPayableAccount { get; init; } = PayrollJournalEntryBuilder.SocialFundEmployerPayableAccount;
+    /// <summary>
+    /// Compte des retenues salariales non typées (<see cref="DeductionKind.Other"/> et bucket agrégé
+    /// « Autres retenues » des cycles sans lignes typées). Défaut 421 pour préserver l'imputation
+    /// historique ; le profil SCE le porte à 4286 « Personnel - autres charges à payer », le 421
+    /// étant une créance sur le salarié et non une dette.
+    /// </summary>
     public string DefaultOtherAccount { get; init; } = PayrollJournalEntryBuilder.AdvancesAccount;
 
     public string ResolveCreditAccount(DeductionKind kind, string? schemeAccountSce = null) => kind switch

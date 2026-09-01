@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Features.Accounting;
 using FactuTrust.Domain.Common;
@@ -414,8 +414,27 @@ public sealed class PayrollComplianceDiagnosticQueryHandler
 
     private static PayrollDiagnosticCheckDto CheckAuxiliaryCollisions(IReadOnlyList<Employee> employees)
     {
-        var findings = employees
+        var active = employees
             .Where(e => e.IsActive && !string.IsNullOrWhiteSpace(e.EmployeeNumber))
+            .ToList();
+
+        // Un matricule sans chiffre ne produit aucun compte auxiliaire : Resolve lèverait, et un
+        // diagnostic en lecture seule ne doit pas échouer sur une donnée qu'il est justement là pour
+        // signaler. On le remonte comme anomalie et on l'écarte du calcul de collisions.
+        var findings = active
+            .Where(e => !PayrollEmployeeAuxiliaryAccountResolver.CanResolve(e.EmployeeNumber))
+            .Select(e => new PayrollDiagnosticFindingDto
+            {
+                Label = $"Matricule non auxiliarisable — {e.FullName}",
+                EntityType = "Employee",
+                EntityId = e.Id,
+                Detail = $"Le matricule « {e.EmployeeNumber} » ne contient aucun chiffre : la validation "
+                    + "d'un cycle incluant ce salarié sera refusée (compte SCE strictement numérique)."
+            })
+            .ToList();
+
+        findings.AddRange(active
+            .Where(e => PayrollEmployeeAuxiliaryAccountResolver.CanResolve(e.EmployeeNumber))
             .Select(e => (Employee: e, Auxiliary: PayrollEmployeeAuxiliaryAccountResolver.Resolve(e.EmployeeNumber)))
             .GroupBy(x => x.Auxiliary, StringComparer.Ordinal)
             .Where(g => g.Count() > 1)
@@ -424,8 +443,7 @@ public sealed class PayrollComplianceDiagnosticQueryHandler
                 Label = $"Auxiliaire {g.Key} — {g.Count()} salariés",
                 Amount = g.Count(),
                 Detail = string.Join(", ", g.Select(x => $"{x.Employee.FullName} ({x.Employee.EmployeeNumber})"))
-            })
-            .ToList();
+            }));
 
         return Check("auxiliary_collisions", "Collisions de comptes auxiliaires 425", findings);
     }

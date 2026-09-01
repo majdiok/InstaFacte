@@ -1,4 +1,4 @@
-namespace FactuTrust.Application.Features.Accounting;
+﻿namespace FactuTrust.Application.Features.Accounting;
 
 /// <summary>
 /// Garde-fou partagé des écritures générées par le module Paie : une écriture dont
@@ -15,6 +15,10 @@ public static class PayrollSourcedEntryGuard
         "PayrollRun",
         "PayrollPayment",
         "CnssContributionPayment",
+        // Le reclassement SCE est protégé par le même index unique DB que les autres écritures
+        // sourcées paie ; l'omettre ici le rendait extournable et supprimable depuis la
+        // comptabilité, alors que son extourne appartient au workflow de réouverture du cycle.
+        "PayrollReclassification",
         "EmployeeAdvance",
         "EmployeeLoan"
     };

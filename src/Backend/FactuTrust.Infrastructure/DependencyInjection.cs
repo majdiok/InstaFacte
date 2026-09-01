@@ -1,4 +1,4 @@
-using FactuTrust.Application.Configuration;
+﻿using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Forecasting;
 using FactuTrust.Application.Common.Interfaces.Treasury;
@@ -248,6 +248,7 @@ public static class DependencyInjection
         services.AddScoped<IFiscalScheduleRepository, FiscalScheduleRepository>();
         services.AddScoped<IFixedAssetRepository, FixedAssetRepository>();
         services.AddScoped<IFixedAssetSettingsRepository, FixedAssetSettingsRepository>();
+        services.AddScoped<IPayrollAccountingSettingsRepository, PayrollAccountingSettingsRepository>();
         services.AddScoped<ILoanRepository, LoanRepository>();
         services.AddScoped<IDepreciationRateCategoryRepository, DepreciationRateCategoryRepository>();
 
@@ -304,6 +305,10 @@ public static class DependencyInjection
         services.AddScoped<IStorefrontCaptchaValidator, StorefrontCaptchaValidator>();
 
         services.AddScoped<IAccountingPeriodService, AccountingPeriodService>();
+        // Enregistrement inconditionnel : les handlers MediatR le prennent en dépendance et
+        // ValidateOnBuild échouerait au démarrage s'il était conditionné à un drapeau.
+        services.AddScoped<IPayrollAccountingProfileResolver, PayrollAccountingProfileResolver>();
+        services.AddScoped<IPayrollEmployeeChartProvisioningService, PayrollEmployeeChartProvisioningService>();
         services.AddScoped<IAccountingService, AccountingService>();
         services.AddScoped<IFiscalStampResolver, FiscalStampResolver>();
         services.AddScoped<IAccountingReportingService, AccountingReportingService>();
@@ -760,6 +765,7 @@ public static class DependencyInjection
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OpenPeriodsAuditRule>();
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SequenceGapsAuditRule>();
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OrphanAccountsAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PayrollAuxiliaryAccountShapeAuditRule>();
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OutOfPeriodAuditRule>();
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PieceDuplicatesAuditRule>();
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.ThirdPartyMislinkAuditRule>();
@@ -814,6 +820,7 @@ public static class DependencyInjection
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OpenPeriodsAuditRule>();
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SequenceGapsAuditRule>();
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OrphanAccountsAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PayrollAuxiliaryAccountShapeAuditRule>();
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OutOfPeriodAuditRule>();
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PieceDuplicatesAuditRule>();
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.ThirdPartyMislinkAuditRule>();

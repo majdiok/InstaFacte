@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Common;
@@ -75,6 +75,14 @@ public sealed class FecExportService : IFecExportService
             .AsNoTracking()
             .ToDictionaryAsync(p => (p.Kind, p.ThirdPartyId), p => p.AuxiliaryCode, cancellationToken);
 
+        // Salariés : le FEC attend un nom de tiers en CompAuxLib. Sans cette table, les lignes de
+        // paie exportaient le libellé complet de l'écriture (« Paie 08/2026 — Untel »), qui n'est
+        // pas une identité de tiers.
+        var employeeNames = await ctx.Employees
+            .AsNoTracking()
+            .Select(e => new { e.Id, e.FirstName, e.LastName })
+            .ToDictionaryAsync(e => e.Id, e => $"{e.FirstName} {e.LastName}".Trim(), cancellationToken);
+
         // Load lettering group dates for DateLet
         var letteringDates = await ctx.LetteringGroups
             .AsNoTracking()
@@ -117,7 +125,22 @@ public sealed class FecExportService : IFecExportService
                     else if (line.ThirdPartyKind == Domain.Enums.ThirdPartyKind.Supplier)
                         supplierNames.TryGetValue(line.ThirdPartyId.Value, out compAuxLib);
                     else if (line.ThirdPartyKind == Domain.Enums.ThirdPartyKind.Employee)
-                        compAuxLib = line.Label;
+                    {
+                        // Le salarié n'a pas de fiche au plan tiers : son compte auxiliaire 425xxxx
+                        // est déjà le code lisible attendu, et son nom le libellé du tiers. Exporter
+                        // le GUID et le libellé d'écriture rendait le FEC inexploitable.
+                        if (!auxiliaryCodes.ContainsKey((line.ThirdPartyKind, line.ThirdPartyId.Value)))
+                            compAuxNum = line.AccountNumber;
+                        if (employeeNames.TryGetValue(line.ThirdPartyId.Value, out var employeeName)
+                            && !string.IsNullOrWhiteSpace(employeeName))
+                        {
+                            compAuxLib = employeeName;
+                        }
+                        else
+                        {
+                            compAuxLib = line.Label;
+                        }
+                    }
                     compAuxLib ??= string.Empty;
                 }
 

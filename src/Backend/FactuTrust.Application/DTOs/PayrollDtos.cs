@@ -1,4 +1,4 @@
-using FactuTrust.Domain.Enums;
+﻿using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Application.DTOs;
 
@@ -59,6 +59,12 @@ public sealed record EmployeeDetailDto
 {
     public Guid Id { get; init; }
     public string EmployeeNumber { get; init; } = null!;
+
+    /// <summary>
+    /// Compte auxiliaire 425 alloué au salarié, ou <c>null</c> s'il est encore dérivé du matricule
+    /// (fiches antérieures à l'allocation explicite). Lecture seule.
+    /// </summary>
+    public string? AuxiliaryAccountNumber { get; init; }
     public string FirstName { get; init; } = null!;
     public string LastName { get; init; } = null!;
     public string FullName { get; init; } = null!;
@@ -631,6 +637,15 @@ public sealed record CreateAdvanceDto
     public DateTime Date { get; init; }
     public decimal Amount { get; init; }
     public string? Reason { get; init; }
+
+    /// <summary>
+    /// Moyen de décaissement, pour l'écriture débit 421 / crédit trésorerie. Optionnel : absent, le
+    /// virement bancaire est retenu. Sans effet tant que le décaissement automatique est désactivé.
+    /// </summary>
+    public PaymentMethod? Method { get; init; }
+
+    /// <summary>Compte bancaire débité ; absent, le compte de banque par défaut (5321) est utilisé.</summary>
+    public Guid? BankAccountId { get; init; }
 }
 
 // ─────────────────────────────── Overtime ───────────────────────────────
@@ -997,6 +1012,18 @@ public sealed record CreateEmployeeLoanDto
     public int StartYear { get; init; }
     public int StartMonth { get; init; }
     public string? Notes { get; init; }
+
+    /// <summary>Date de mise à disposition des fonds ; absente, la date du jour est retenue.</summary>
+    public DateTime? DisbursementDate { get; init; }
+
+    /// <summary>
+    /// Moyen de décaissement, pour l'écriture débit 421.1 / crédit trésorerie. Optionnel : absent,
+    /// le virement bancaire est retenu. Sans effet tant que le décaissement automatique est désactivé.
+    /// </summary>
+    public PaymentMethod? Method { get; init; }
+
+    /// <summary>Compte bancaire débité ; absent, le compte de banque par défaut (5321) est utilisé.</summary>
+    public Guid? BankAccountId { get; init; }
 }
 
 // ─────────────────────────────── Garnishments ───────────────────────────────

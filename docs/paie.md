@@ -405,16 +405,29 @@ Activables via `PayrollStatutorySickLeaveEnabled`, `PayrollStatutoryMaternityLea
 La régularisation est servie **avant** les saisies : la créance de l'État prime, et la quotité
 saisissable se calcule donc sur le net réellement perçu.
 
-### Comptes SCE
+### Comptes NCT 01
 
-| Rubrique | Compte par défaut |
-|----------|-------------------|
-| Avances | 425 |
-| Prêts salariés | 425.1 |
-| Saisies / pensions | 427 |
-| Mutuelle (retenue) | 428.1 |
-| Tickets restaurant (part employée) | 428.2 |
-| Charges patronales mutuelle | 647 |
+Le module suit deux profils d'imputation, réglables **par dossier** depuis *Paramètres →
+Comptabilisation de la paie* : `Legacy` (historique, défaut) et `Sce2026` (conforme NCT 01).
+Cartographie complète, différences entre profils et procédure de bascule :
+**`docs/payroll/nct01-mapping.md`**.
+
+Comptes des retenues salariales (identiques dans les deux profils sauf mention) :
+
+| Rubrique | Compte | Libellé NCT 01 |
+|----------|--------|----------------|
+| Net à payer | 425 / 425xxxxxxx | Personnel - rémunérations dues |
+| Avances | 421 | Personnel - avances et acomptes |
+| Prêts salariés | 421.1 *(overlay)* | Prêts au personnel - retenues en cours |
+| Saisies / pensions | 427 | Personnel - oppositions |
+| Mutuelle (retenue) | 428.1 *(overlay)* | Mutuelle / caisse complémentaire - part salariale |
+| Tickets restaurant (part employée) | 428.2 *(overlay)* | Tickets restaurant - part salariale |
+| Compensation avantage en nature | 421 *(Legacy)* → **4286** *(SCE)* | Personnel - autres charges à payer |
+| Retenues non typées | 421 *(Legacy)* → **4286** *(SCE)* | Personnel - autres charges à payer |
+| Charges patronales mutuelle | 647 (charge) / 4538 (dette) | Charges sociales légales / Organismes sociaux - charges à payer |
+
+Les taxes patronales suivent le profil : **TFP et FOPROLOS** passent de 647/432 (`Legacy`) à
+**6611/6612 au débit et 437 au crédit** (`Sce2026`), et les indemnités de rupture de 641 à **64602**.
 
 L'export virement CSV inclut les lignes **bénéficiaires de saisie** (avec RIB valide) en plus des salaires.
 

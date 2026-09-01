@@ -116,13 +116,37 @@ export interface PayrollFeatureFlags {
   civpEnhancementsEnabled: boolean;
   cnssCeilingsEnabled: boolean;
   legalPresetsHistoryEnabled: boolean;
-  /** Configuration SCE de comptabilisation paie (lecture seule — config globale admin). Plan §5.3. */
+  /** Configuration SCE de comptabilisation paie effectivement appliquée au dossier. Plan §5.3. */
   payrollAccountProfile?: string | null;
   payrollAccountProfileEffectiveDate?: string | null;
   payrollInKindOffsetAccount?: string | null;
   payrollDisbursementEntriesEnabled?: boolean;
   payrollDetailedSalarySplitEnabled?: boolean;
   payrollStrictSettlementEnabled?: boolean;
+  /** Vrai si le dossier porte un réglage propre (faux = valeurs globales héritées). */
+  payrollAccountProfileIsTenantOverride?: boolean;
+}
+
+/** Réglage d'imputation comptable de la paie du dossier (GET/PUT settings/accounting). */
+export interface PayrollAccountingSettings {
+  accountProfile: string;
+  accountProfileEffectiveDate?: string | null;
+  inKindOffsetAccount: string;
+  disbursementEntriesEnabled: boolean;
+  detailedSalarySplitEnabled: boolean;
+  isTenantOverride: boolean;
+  /** Période du dernier cycle validé ou clôturé (`yyyy-MM`), ou null. */
+  lastSettledPeriod?: string | null;
+  /** Première date de bascule acceptable (1er du mois suivant le dernier cycle arrêté). */
+  earliestEffectiveDate?: string | null;
+}
+
+export interface UpdatePayrollAccountingSettingsRequest {
+  accountProfile: string;
+  accountProfileEffectiveDate?: string | null;
+  inKindOffsetAccount?: string | null;
+  disbursementEntriesEnabled: boolean;
+  detailedSalarySplitEnabled: boolean;
 }
 
 export interface PayrollCalculationWarning {
@@ -1236,6 +1260,16 @@ export class PayrollService {
 
   getFeatureFlags(): Observable<ApiResponse<PayrollFeatureFlags>> {
     return this.http.get<ApiResponse<PayrollFeatureFlags>>(`${this.settingsUrl}/feature-flags`);
+  }
+
+  getAccountingSettings(): Observable<ApiResponse<PayrollAccountingSettings>> {
+    return this.http.get<ApiResponse<PayrollAccountingSettings>>(`${this.settingsUrl}/accounting`);
+  }
+
+  updateAccountingSettings(
+    request: UpdatePayrollAccountingSettingsRequest
+  ): Observable<ApiResponse<PayrollAccountingSettings>> {
+    return this.http.put<ApiResponse<PayrollAccountingSettings>>(`${this.settingsUrl}/accounting`, request);
   }
 
   downloadEmploymentCertificatePdf(employeeId: string): Observable<Blob> {

@@ -1,12 +1,11 @@
+﻿using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
-using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Services.Payroll;
 using MediatR;
-using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.Payroll.Reports;
 
@@ -25,16 +24,16 @@ public sealed class GeneratePayrollJournalQueryHandler
 {
     private readonly IPayrollRunRepository _runs;
     private readonly IJournalEntryRepository _journalEntries;
-    private readonly AccountingSettings _settings;
+    private readonly IPayrollAccountingProfileResolver _profileResolver;
 
     public GeneratePayrollJournalQueryHandler(
         IPayrollRunRepository runs,
         IJournalEntryRepository journalEntries,
-        IOptions<AccountingSettings> settings)
+        IPayrollAccountingProfileResolver profileResolver)
     {
         _runs = runs;
         _journalEntries = journalEntries;
-        _settings = settings.Value;
+        _profileResolver = profileResolver;
     }
 
     public async Task<Result<PayrollJournalDto>> Handle(GeneratePayrollJournalQuery request, CancellationToken cancellationToken)
@@ -199,8 +198,9 @@ public sealed class GeneratePayrollJournalQueryHandler
             : run.TotalOtherDeductions;
 
         // Simulation alignée sur la génération réelle : même profil (§5.3) et même carte de comptes.
-        var profile = _settings.ResolvePayrollAccountProfile(run.Year, run.Month);
-        var accountMap = _settings.BuildPayrollAccountMap(profile);
+        var payrollProfile = await _profileResolver.GetAsync(cancellationToken);
+        var profile = payrollProfile.ResolveForPeriod(run.Year, run.Month);
+        var accountMap = payrollProfile.BuildAccountMap(profile);
 
         var label = $"Paie {run.Month:D2}/{run.Year}";
         var hasTypedDeductions = run.Payslips.Any(p =>
@@ -215,8 +215,14 @@ public sealed class GeneratePayrollJournalQueryHandler
             ? PayrollJournalEntryBuilder.ResolveInKindBenefits(run)
             : 0m;
 
+        // Même ventilation optionnelle du 640 que la génération réelle : la simulation doit montrer
+        // l'écriture qui sera produite, pas une variante.
+        var salaryDebits = payrollProfile.DetailedSalarySplitEnabled && run.Payslips.Count > 0
+            ? PayrollJournalEntryBuilder.ResolveSalaryDebits(run)
+            : null;
+
         var built = hasTypedDeductions
-            ? PayrollJournalEntryBuilder.BuildLinesFromRun(run, label, accountMap, null, profile)
+            ? PayrollJournalEntryBuilder.BuildLinesFromRun(run, label, accountMap, null, profile, salaryDebits)
             : PayrollJournalEntryBuilder.BuildLines(
                 run.TotalGross,
                 run.TotalNet,
@@ -234,7 +240,8 @@ public sealed class GeneratePayrollJournalQueryHandler
                 run.TotalCssEmployer,
                 terminationFromRun,
                 inKindFromRun,
-                profile);
+                profile,
+                salaryDebits);
 
         if (built.IsFailure)
             return new AccountingView(Array.Empty<PayrollJournalAccountingLineDto>(), false, null, null, null);

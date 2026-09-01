@@ -1,4 +1,4 @@
-using FactuTrust.Domain.Common;
+﻿using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.AI;
 using FactuTrust.Domain.Entities.Channels;
@@ -215,6 +215,7 @@ public partial class TenantDbContext : DbContext
     public DbSet<NctNoteOverride> NctNoteOverrides => Set<NctNoteOverride>();
     public DbSet<FixedAssetEvent> FixedAssetEvents => Set<FixedAssetEvent>();
     public DbSet<FixedAssetSettings> FixedAssetSettings => Set<FixedAssetSettings>();
+    public DbSet<PayrollAccountingSettings> PayrollAccountingSettings => Set<PayrollAccountingSettings>();
 
     // Sector data templates — applied-tracking (plan §WP-B6)
     public DbSet<AppliedSectorTemplate> AppliedSectorTemplates => Set<AppliedSectorTemplate>();
@@ -476,6 +477,7 @@ public partial class TenantDbContext : DbContext
         ConfigureDepreciationScheduleLine(builder);
         ConfigureFixedAssetEvent(builder);
         ConfigureFixedAssetSettings(builder);
+        ConfigurePayrollAccountingSettings(builder);
         ConfigureAppliedSectorTemplate(builder);
         ConfigureLoan(builder);
         ConfigureLoanScheduleLine(builder);
@@ -4432,6 +4434,25 @@ public partial class TenantDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.FiscalYearStartMonth).HasDefaultValue(FactuTrust.Domain.Entities.FixedAssetSettings.DefaultFiscalYearStartMonth);
             entity.Property(e => e.FiscalYearLabelFormat).HasMaxLength(10).IsRequired().HasDefaultValue(FactuTrust.Domain.Entities.FixedAssetSettings.LabelFormatNn1);
+        });
+    }
+
+    /// <summary>
+    /// Profil d'imputation comptable de la paie du dossier. Une seule ligne par base tenant ;
+    /// l'absence de ligne vaut repli sur la configuration globale (<c>AccountingSettings</c>).
+    /// </summary>
+    private static void ConfigurePayrollAccountingSettings(ModelBuilder builder)
+    {
+        builder.Entity<PayrollAccountingSettings>(entity =>
+        {
+            entity.ToTable("PayrollAccountingSettings");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.AccountProfile).HasConversion<int>().HasDefaultValue(PayrollAccountProfile.Legacy);
+            entity.Property(e => e.InKindOffsetAccount)
+                .HasMaxLength(FactuTrust.Domain.Entities.PayrollAccountingSettings.MaxAccountNumberLength);
+            entity.Property(e => e.DisbursementEntriesEnabled).HasDefaultValue(false);
+            entity.Property(e => e.DetailedSalarySplitEnabled).HasDefaultValue(false);
+            entity.Property(e => e.EmployeeAuxiliaryEnabled).HasDefaultValue(true);
         });
     }
 

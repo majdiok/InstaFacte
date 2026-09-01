@@ -1,4 +1,4 @@
-using FactuTrust.Application.Common.Interfaces;
+﻿using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
@@ -29,6 +29,7 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
     private readonly ILeaveBalanceAccrualRepository _accruals;
     private readonly IEmployeeLoanRepository _loans;
     private readonly IEmployeeGarnishmentRepository _garnishments;
+    private readonly IEmployeeRepository _employees;
     private readonly IPayrollParametersRepository _parameters;
     private readonly IAccountingService _accountingService;
     private readonly ITenantUnitOfWork _unitOfWork;
@@ -45,6 +46,7 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
         ILeaveBalanceAccrualRepository accruals,
         IEmployeeLoanRepository loans,
         IEmployeeGarnishmentRepository garnishments,
+        IEmployeeRepository employees,
         IPayrollParametersRepository parameters,
         IAccountingService accountingService,
         ITenantUnitOfWork unitOfWork,
@@ -60,6 +62,7 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
         _accruals = accruals;
         _loans = loans;
         _garnishments = garnishments;
+        _employees = employees;
         _parameters = parameters;
         _accountingService = accountingService;
         _unitOfWork = unitOfWork;
@@ -89,7 +92,14 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
 
             // R-15 : fige le compte auxiliaire 425 de chaque bulletin à la validation (compte
             // déterministe et traçable ; refus si un matricule ne contient aucun chiffre).
-            var freezeResult = run.FreezeEmployeeAuxiliaryAccounts();
+            // Le compte alloué sur la fiche salarié prime ; à défaut (fiches antérieures à
+            // l'allocation explicite), la dérivation historique du matricule s'applique.
+            var employeesById = await _employees.GetByIdsAsync(employeeIds, ct);
+            var auxiliaryAccounts = employeesById.ToDictionary(
+                kv => kv.Key,
+                kv => kv.Value.AuxiliaryAccountNumber);
+
+            var freezeResult = run.FreezeEmployeeAuxiliaryAccounts(auxiliaryAccounts);
             if (freezeResult.IsFailure)
                 return freezeResult;
 

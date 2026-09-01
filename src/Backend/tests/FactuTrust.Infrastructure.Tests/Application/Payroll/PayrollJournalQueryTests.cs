@@ -1,4 +1,4 @@
-using FactuTrust.Application.Common.Interfaces.Repositories;
+﻿using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Features.Payroll.Reports;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Payroll;
@@ -67,9 +67,9 @@ public sealed class PayrollJournalQueryTests
         entries.Setup(e => e.GetActiveBySourceAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(postedEntry);
 
-        var settings = Microsoft.Extensions.Options.Options.Create(new FactuTrust.Application.Configuration.AccountingSettings());
+        var resolver = new PayrollProfileResolverStub(new FactuTrust.Application.Configuration.AccountingSettings());
 
-        return new GeneratePayrollJournalQueryHandler(runs.Object, entries.Object, settings);
+        return new GeneratePayrollJournalQueryHandler(runs.Object, entries.Object, resolver);
     }
 
     private static JournalEntry BuildPostedEntry(PayrollRun run)
@@ -239,9 +239,9 @@ public sealed class PayrollJournalQueryTests
         var entries = new Mock<IJournalEntryRepository>();
         entries.Setup(e => e.GetActiveBySourceAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((JournalEntry?)null);
-        var settings = Microsoft.Extensions.Options.Options.Create(
+        var resolver = new PayrollProfileResolverStub(
             new FactuTrust.Application.Configuration.AccountingSettings { PayrollAccountProfile = PayrollAccountProfile.Sce2026 });
-        var handler = new GeneratePayrollJournalQueryHandler(runs.Object, entries.Object, settings);
+        var handler = new GeneratePayrollJournalQueryHandler(runs.Object, entries.Object, resolver);
 
         var result = await handler.Handle(new GeneratePayrollJournalQuery(2026, 8), CancellationToken.None);
 

@@ -1,4 +1,4 @@
-using FactuTrust.Application.Authorization;
+﻿using FactuTrust.Application.Authorization;
 using FactuTrust.Application.Features.Payroll.Commands;
 using FactuTrust.Application.Features.Payroll.Reports;
 using Xunit;
@@ -21,6 +21,22 @@ public sealed class PayrollFirmExclusiveRequestsWs5Tests
         Assert.True(PayrollFirmExclusiveRequests.IsFirmExclusiveRequest(typeof(UnsettleLoanInstallmentCommand)));
         Assert.True(PayrollFirmExclusiveRequests.IsFirmExclusiveRequest(typeof(GetPayrollExposureReportQuery)));
         Assert.True(PayrollFirmExclusiveRequests.IsFirmExclusiveRequest(typeof(ExportPayrollExposureReportQuery)));
+    }
+
+    [Fact]
+    public void Registers_accounting_profile_update_as_firm_exclusive()
+    {
+        // Le profil d'imputation détermine les comptes de toutes les OD de paie à venir : sa mise à
+        // jour relève du cabinet délégué, au même titre que les paramètres d'exercice.
+        Assert.True(PayrollFirmExclusiveRequests.IsFirmExclusiveRequest(typeof(UpdatePayrollAccountingSettingsCommand)));
+    }
+
+    [Fact]
+    public void Does_not_flag_accounting_profile_read_as_firm_exclusive()
+    {
+        // La lecture reste ouverte à la société cliente : elle sert à afficher l'écran, pas à agir.
+        Assert.False(PayrollFirmExclusiveRequests.IsFirmExclusiveRequest(
+            typeof(FactuTrust.Application.Features.Payroll.Queries.GetPayrollAccountingSettingsQuery)));
     }
 
     [Fact]

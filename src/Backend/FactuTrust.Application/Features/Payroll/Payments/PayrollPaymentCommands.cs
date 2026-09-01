@@ -1,4 +1,4 @@
-using FactuTrust.Application.Common.Interfaces;
+﻿using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
@@ -188,18 +188,22 @@ public sealed class RecordPayrollRunPaymentCommandHandler
                 if (amount <= 0)
                     continue;
 
-                var auxiliary = payslip.EmployeeAuxiliaryAccount
-                    ?? PayrollEmployeeAuxiliaryAccountResolver.Resolve(payslip.EmployeeNumber);
-                inputs.Add((payslip, amount, auxiliary));
+                var auxiliary = ResolveAuxiliaryAccount(payslip);
+                if (auxiliary.IsFailure)
+                    return Result.Failure<IReadOnlyList<(Payslip, decimal, string)>>(auxiliary.Error);
+
+                inputs.Add((payslip, amount, auxiliary.Value));
             }
         }
         else
         {
             foreach (var payslip in run.Payslips.Where(p => p.RemainingToPay > 0))
             {
-                var auxiliary = payslip.EmployeeAuxiliaryAccount
-                    ?? PayrollEmployeeAuxiliaryAccountResolver.Resolve(payslip.EmployeeNumber);
-                inputs.Add((payslip, payslip.RemainingToPay, auxiliary));
+                var auxiliary = ResolveAuxiliaryAccount(payslip);
+                if (auxiliary.IsFailure)
+                    return Result.Failure<IReadOnlyList<(Payslip, decimal, string)>>(auxiliary.Error);
+
+                inputs.Add((payslip, payslip.RemainingToPay, auxiliary.Value));
             }
         }
 
@@ -210,6 +214,29 @@ public sealed class RecordPayrollRunPaymentCommandHandler
         }
 
         return Result.Success<IReadOnlyList<(Payslip, decimal, string)>>(inputs);
+    }
+
+    /// <summary>
+    /// Compte auxiliaire du bulletin : celui figé à la validation, sinon dérivé du matricule. Le
+    /// repli couvre les bulletins antérieurs au figeage ; il échoue proprement plutôt que de lever
+    /// quand le matricule ne contient aucun chiffre, un règlement ne devant pas se solder par une
+    /// erreur serveur.
+    /// </summary>
+    private static Result<string> ResolveAuxiliaryAccount(Payslip payslip)
+    {
+        if (!string.IsNullOrWhiteSpace(payslip.EmployeeAuxiliaryAccount))
+            return Result.Success(payslip.EmployeeAuxiliaryAccount!);
+
+        if (!PayrollEmployeeAuxiliaryAccountResolver.CanResolve(payslip.EmployeeNumber))
+        {
+            return Result.Failure<string>(Error.Validation(
+                "EmployeeNumber",
+                $"Le matricule « {payslip.EmployeeNumber} » du salarié {payslip.EmployeeName} ne contient "
+                + "aucun chiffre : impossible de déterminer son compte auxiliaire 425. Corrigez le "
+                + "matricule, puis rouvrez et revalidez le cycle."));
+        }
+
+        return Result.Success(PayrollEmployeeAuxiliaryAccountResolver.Resolve(payslip.EmployeeNumber));
     }
 }
 

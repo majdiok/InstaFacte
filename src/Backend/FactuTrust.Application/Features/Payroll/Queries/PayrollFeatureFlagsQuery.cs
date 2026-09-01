@@ -1,3 +1,4 @@
+﻿using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Configuration;
 using MediatR;
 using Microsoft.Extensions.Options;
@@ -17,15 +18,21 @@ public sealed record PayrollFeatureFlagsDto
     public bool CnssCeilingsEnabled { get; init; }
     public bool LegalPresetsHistoryEnabled { get; init; }
 
-    /// <summary>Configuration SCE de comptabilisation de la paie (plan §4 WS-1 / §5.3).
-    /// Lecture seule : <see cref="AccountingSettings"/> est une configuration globale (IOptions),
-    /// non persistée par tenant — la modification est réservée à l'administrateur (appsettings).</summary>
+    /// <summary>
+    /// Configuration SCE de comptabilisation de la paie effectivement appliquée au dossier :
+    /// réglage propre du dossier s'il existe, sinon configuration globale
+    /// (<see cref="AccountingSettings"/>). Le réglage s'édite via
+    /// <c>PUT api/payroll/settings/accounting</c>.
+    /// </summary>
     public string? PayrollAccountProfile { get; init; }
     public DateTime? PayrollAccountProfileEffectiveDate { get; init; }
     public string? PayrollInKindOffsetAccount { get; init; }
     public bool PayrollDisbursementEntriesEnabled { get; init; }
     public bool PayrollDetailedSalarySplitEnabled { get; init; }
     public bool PayrollStrictSettlementEnabled { get; init; }
+
+    /// <summary>Vrai si le dossier porte un réglage propre (faux = valeurs globales héritées).</summary>
+    public bool PayrollAccountProfileIsTenantOverride { get; init; }
 }
 
 public sealed record GetPayrollFeatureFlagsQuery : IRequest<PayrollFeatureFlagsDto>;
@@ -33,14 +40,21 @@ public sealed record GetPayrollFeatureFlagsQuery : IRequest<PayrollFeatureFlagsD
 public sealed class GetPayrollFeatureFlagsQueryHandler : IRequestHandler<GetPayrollFeatureFlagsQuery, PayrollFeatureFlagsDto>
 {
     private readonly AccountingSettings _settings;
+    private readonly IPayrollAccountingProfileResolver _profileResolver;
 
-    public GetPayrollFeatureFlagsQueryHandler(IOptions<AccountingSettings> settings)
+    public GetPayrollFeatureFlagsQueryHandler(
+        IOptions<AccountingSettings> settings,
+        IPayrollAccountingProfileResolver profileResolver)
     {
         _settings = settings.Value;
+        _profileResolver = profileResolver;
     }
 
-    public Task<PayrollFeatureFlagsDto> Handle(GetPayrollFeatureFlagsQuery request, CancellationToken cancellationToken) =>
-        Task.FromResult(new PayrollFeatureFlagsDto
+    public async Task<PayrollFeatureFlagsDto> Handle(GetPayrollFeatureFlagsQuery request, CancellationToken cancellationToken)
+    {
+        var payrollProfile = await _profileResolver.GetAsync(cancellationToken);
+
+        return new PayrollFeatureFlagsDto
         {
             StatutorySickLeaveEnabled = _settings.PayrollStatutorySickLeaveEnabled,
             StatutoryMaternityLeaveEnabled = _settings.PayrollStatutoryMaternityLeaveEnabled,
@@ -52,11 +66,13 @@ public sealed class GetPayrollFeatureFlagsQueryHandler : IRequestHandler<GetPayr
             CivpEnhancementsEnabled = _settings.PayrollCivpEnhancementsEnabled,
             CnssCeilingsEnabled = _settings.PayrollCnssCeilingsEnabled,
             LegalPresetsHistoryEnabled = _settings.PayrollLegalPresetsHistoryEnabled,
-            PayrollAccountProfile = _settings.PayrollAccountProfile.ToString(),
-            PayrollAccountProfileEffectiveDate = _settings.PayrollAccountProfileEffectiveDate,
-            PayrollInKindOffsetAccount = _settings.PayrollInKindOffsetAccount,
-            PayrollDisbursementEntriesEnabled = _settings.PayrollDisbursementEntriesEnabled,
-            PayrollDetailedSalarySplitEnabled = _settings.PayrollDetailedSalarySplitEnabled,
-            PayrollStrictSettlementEnabled = _settings.PayrollStrictSettlementEnabled
-        });
+            PayrollAccountProfile = payrollProfile.Profile.ToString(),
+            PayrollAccountProfileEffectiveDate = payrollProfile.EffectiveDate,
+            PayrollInKindOffsetAccount = payrollProfile.InKindOffsetAccount,
+            PayrollDisbursementEntriesEnabled = payrollProfile.DisbursementEntriesEnabled,
+            PayrollDetailedSalarySplitEnabled = payrollProfile.DetailedSalarySplitEnabled,
+            PayrollStrictSettlementEnabled = _settings.PayrollStrictSettlementEnabled,
+            PayrollAccountProfileIsTenantOverride = payrollProfile.IsTenantOverride
+        };
+    }
 }
