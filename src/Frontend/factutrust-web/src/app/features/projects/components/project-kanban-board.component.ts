@@ -19,6 +19,7 @@ import { ProjectDetail, ProjectTask } from '../project-api.service';
 import {
   PROJECT_TASK_STATUS_OPTIONS,
   ProjectTaskStatusCode,
+  parseProjectTaskStatus,
   taskStatusForPhaseSortOrder
 } from '../project-enums';
 
@@ -188,7 +189,7 @@ export class ProjectKanbanBoardComponent implements OnInit, OnChanges {
 
   private buildSyncKey(): string {
     const phases = this.project?.phases.map(p => p.id).join(',') ?? '';
-    const tasks = this.tasks.map(t => `${t.id}:${t.phaseId}:${t.status}`).join('|');
+    const tasks = this.tasks.map(t => `${t.id}:${t.phaseId}:${t.status}:${t.progressPercent}`).join('|');
     return `${phases}::${tasks}`;
   }
 
@@ -216,10 +217,13 @@ export class ProjectKanbanBoardComponent implements OnInit, OnChanges {
       task.phaseName = phaseName;
     }
     if (!status) return;
+    const previousStatus = parseProjectTaskStatus(task.status);
     task.status = status;
     task.statusDisplay = statusLabel(status);
     if (status === 'Done') {
       task.progressPercent = 100;
+    } else if (previousStatus === 'Done') {
+      task.progressPercent = 0;
     }
   }
 }

@@ -308,6 +308,59 @@ describe('ProjectKanbanBoardComponent', () => {
     expect(dragged.progressPercent).toBe(100);
   });
 
+  it('clears progress when dragging from Done to InProgress', () => {
+    const moves: unknown[] = [];
+    component.move.subscribe(ev => moves.push(ev));
+    const dragged = task('t1', 'phase-done', {
+      status: 'Done',
+      statusDisplay: 'Terminé',
+      progressPercent: 100
+    });
+    component.columnTasks = {
+      'phase-todo': [],
+      'phase-doing': [],
+      'phase-done': [dragged]
+    };
+
+    component.onDrop(
+      dropEvent(component.columnTasks['phase-done'], component.columnTasks['phase-doing'], dragged, 0),
+      'phase-doing'
+    );
+
+    expect(moves).toEqual([{ taskId: 't1', phaseId: 'phase-doing', status: 'InProgress' }]);
+    expect(dragged.status).toBe('InProgress');
+    expect(dragged.progressPercent).toBe(0);
+  });
+
+  it('toggles progress on repeated Done and non-Done moves', () => {
+    const dragged = task('t1', 'phase-todo');
+    component.columnTasks = {
+      'phase-todo': [dragged],
+      'phase-doing': [],
+      'phase-done': []
+    };
+
+    component.onDrop(
+      dropEvent(component.columnTasks['phase-todo'], component.columnTasks['phase-done'], dragged, 0),
+      'phase-done'
+    );
+    expect(dragged.progressPercent).toBe(100);
+
+    component.onDrop(
+      dropEvent(component.columnTasks['phase-done'], component.columnTasks['phase-todo'], dragged, 0),
+      'phase-todo'
+    );
+    expect(dragged.status).toBe('Todo');
+    expect(dragged.progressPercent).toBe(0);
+
+    component.onDrop(
+      dropEvent(component.columnTasks['phase-todo'], component.columnTasks['phase-done'], dragged, 0),
+      'phase-done'
+    );
+    expect(dragged.status).toBe('Done');
+    expect(dragged.progressPercent).toBe(100);
+  });
+
   it('allows moving the same task to another column without a page reload', () => {
     const moves: unknown[] = [];
     component.move.subscribe(ev => moves.push(ev));
