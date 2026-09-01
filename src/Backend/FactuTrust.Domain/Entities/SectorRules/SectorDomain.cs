@@ -13,6 +13,12 @@ public sealed class SectorDomain : Entity
     public int SortOrder { get; private set; }
     public bool IsActive { get; private set; } = true;
 
+    /// <summary>
+    /// True when this row is owned by the catalog seeder (as opposed to an admin-authored/edited
+    /// row). Startup reconciliation only ever refreshes/reactivates/deactivates catalog-owned rows.
+    /// </summary>
+    public bool IsManagedByCatalog { get; private set; } = true;
+
     private SectorDomain() { }
 
     public static SectorDomain Create(string code, string labelFr, int sortOrder)
@@ -41,4 +47,10 @@ public sealed class SectorDomain : Entity
     public void Deactivate() => IsActive = false;
 
     public void Reactivate() => IsActive = true;
+
+    /// <summary>Marks the row as admin-authored/edited so startup reconciliation never overwrites it.</summary>
+    public void MarkAdminManaged() => IsManagedByCatalog = false;
+
+    /// <summary>Reclaims the row as catalog-owned (used by a factory-reset force seed).</summary>
+    public void MarkCatalogManaged() => IsManagedByCatalog = true;
 }

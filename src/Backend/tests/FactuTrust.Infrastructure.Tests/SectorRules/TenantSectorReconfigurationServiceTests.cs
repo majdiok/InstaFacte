@@ -99,6 +99,17 @@ public sealed class TenantSectorReconfigurationServiceTests
             throw new InvalidOperationException("templates-boom");
     }
 
+    /// <summary>
+    /// Review R1: <see cref="StaticSectorCatalogProvider"/> deliberately reports empty
+    /// <c>DataTemplates</c> (rollback gating for <c>UseDbRules=false</c>) — the tenant-isolation
+    /// test below needs a catalog that actually applies a real template (a new chart account) to
+    /// prove per-tenant isolation, so it uses this full-catalog reference instead.
+    /// </summary>
+    private sealed class CatalogReferenceSectorCatalogProvider : ISectorCatalogProvider
+    {
+        public SectorRuleSnapshot GetSnapshot() => SectorConfigurationCatalog.BuildCatalogSnapshot();
+    }
+
     /// <summary>Registration sector service stub that resolves a profile whose core covers the entire
     /// module universe — drives the canonical no-rows grant path (plan §WP-B7 "canonical form preserved").</summary>
     private sealed class FullCoreRegistrationSectorService : IRegistrationSectorService
@@ -116,6 +127,61 @@ public sealed class TenantSectorReconfigurationServiceTests
 
         public Task ApplyModuleSelectionAsync(Guid userId, SectorProfile? profile, IReadOnlyList<int>? requestedModules, SubscriptionPlan plan, CancellationToken cancellationToken) =>
             throw new NotImplementedException();
+    }
+
+    /// <summary>
+    /// Multi-tenant isolation fake: routes <see cref="ITenantDbContextFactory.CreateIsolatedContext(string)"/>
+    /// to a distinct InMemory database per connection string — exactly the fan-out
+    /// <see cref="TenantSectorReconfigurationService"/> and <see cref="SectorDataTemplateApplier"/> rely on
+    /// to reach the CORRECT tenant DB (never the single shared context <see cref="InMemoryTenantDbContextFactory"/>
+    /// uses for single-tenant tests).
+    /// </summary>
+    private sealed class RoutingTenantDbContextFactory : ITenantDbContextFactory
+    {
+        private readonly Dictionary<string, DbContextOptions<TenantDbContext>> _optionsByConnectionString;
+
+        public RoutingTenantDbContextFactory(IReadOnlyDictionary<string, string> databaseNameByConnectionString)
+        {
+            _optionsByConnectionString = databaseNameByConnectionString.ToDictionary(
+                kvp => kvp.Key,
+                kvp => new DbContextOptionsBuilder<TenantDbContext>()
+                    .UseInMemoryDatabase(kvp.Value)
+                    .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+                    .Options);
+        }
+
+        public TenantDbContext CreateContext() =>
+            throw new NotImplementedException("Not exercised by the reconfiguration/template-applier path — only CreateIsolatedContext(connectionString) is.");
+
+        public TenantDbContext CreateIsolatedContext() =>
+            throw new NotImplementedException("Not exercised by the reconfiguration/template-applier path — only CreateIsolatedContext(connectionString) is.");
+
+        public TenantDbContext CreateIsolatedContext(string connectionString) =>
+            new(_optionsByConnectionString[connectionString]);
+    }
+
+    /// <summary>Tenant service fake that maps each tenant to its own distinct connection string.</summary>
+    private sealed class TwoTenantFakeTenantService : ITenantService
+    {
+        private readonly IReadOnlyDictionary<Guid, string> _connectionStringByTenantId;
+        public TwoTenantFakeTenantService(IReadOnlyDictionary<Guid, string> connectionStringByTenantId) =>
+            _connectionStringByTenantId = connectionStringByTenantId;
+
+        public Task<string?> GetConnectionStringAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_connectionStringByTenantId.TryGetValue(tenantId, out var cs) ? cs : null);
+
+        public Task<string> CreateTenantDatabaseAsync(Guid tenantId, string databaseName, string? warehouseName = null, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
+        public Task<string> CreateAccountingFirmDatabaseAsync(Guid tenantId, string databaseName, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
+        public Task<bool> DatabaseExistsAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
+        public Task ApplyMigrationsAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+        public Task TryDropDatabaseAsync(string databaseName, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+        public Task EnsureTenantTemplateAsync(CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     // ---------- helpers ----------
@@ -509,5 +575,83 @@ public sealed class TenantSectorReconfigurationServiceTests
 
         Assert.Equal(finalSet2, enabledFromGrants2.ToHashSet());
         Assert.DoesNotContain(AppModule.Stock, finalSet2); // denied module excluded by both
+    }
+
+    // ---------- Multi-tenant isolation ----------
+
+    /// <summary>
+    /// Cross-tenant isolation proof (no existing coverage): reconfiguring tenant A must never leak
+    /// into tenant B — neither the master-DB rows (classification, module grants) nor the isolated
+    /// tenant-DB rows (chart-of-accounts additions from the template, applied-template markers,
+    /// audit log). Uses <see cref="RoutingTenantDbContextFactory"/>/<see cref="TwoTenantFakeTenantService"/>
+    /// so each tenant genuinely resolves to its OWN backing database, unlike the single shared
+    /// <see cref="InMemoryTenantDbContextFactory"/> used by every other test in this file.
+    /// </summary>
+    [Fact]
+    public async Task Apply_for_tenant_A_never_writes_to_tenant_B()
+    {
+        await using var db = NewDb();
+        var tenantA = await SeedTenantAsync(db);
+        var tenantB = await SeedTenantAsync(db);
+        var userA = await SeedUserAsync(db, tenantA.Id);
+        var userB = await SeedUserAsync(db, tenantB.Id);
+
+        const string connStringA = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=fake-tenant-a;Integrated Security=True";
+        const string connStringB = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=fake-tenant-b;Integrated Security=True";
+
+        var routingFactory = new RoutingTenantDbContextFactory(new Dictionary<string, string>
+        {
+            [connStringA] = $"tenant-a-{Guid.NewGuid()}",
+            [connStringB] = $"tenant-b-{Guid.NewGuid()}",
+        });
+        var tenantService = new TwoTenantFakeTenantService(new Dictionary<Guid, string>
+        {
+            [tenantA.Id] = connStringA,
+            [tenantB.Id] = connStringB,
+        });
+
+        var planResolver = new AllowAllPlanResolver();
+        var catalog = new CatalogReferenceSectorCatalogProvider();
+        var registrationService = new RegistrationSectorService(
+            db, planResolver, catalog,
+            Options.Create(new RegistrationSectorOptions { Enabled = true }),
+            NullLogger<RegistrationSectorService>.Instance);
+        var applier = new SectorDataTemplateApplier(catalog, routingFactory, NullLogger<SectorDataTemplateApplier>.Instance);
+        var service = new TenantSectorReconfigurationService(
+            db, registrationService, catalog, applier, planResolver,
+            tenantService, routingFactory, NullLogger<TenantSectorReconfigurationService>.Instance);
+
+        var request = new SectorReconfigurationRequestDto
+        {
+            CompanySegment = CompanySegments.Commerce,
+            BusinessDomain = BusinessDomains.AlimentationAgroalimentaire,
+            RecomputeModuleGrants = true,
+            ApplyDataTemplates = true
+        };
+
+        var result = await service.ApplyAsync(tenantA.Id, request, actorAdminId: Guid.NewGuid(), CancellationToken.None);
+        Assert.True(result.IsSuccess);
+
+        // Tenant A: template applied (new chart account), classification + grants updated, audit written.
+        using var tenantACtx = routingFactory.CreateIsolatedContext(connStringA);
+        Assert.True(await tenantACtx.ChartOfAccounts.AnyAsync(a => a.AccountNumber == "7071"));
+        Assert.Equal(1, await tenantACtx.AuditLogs.CountAsync(a => a.Action == TenantSectorReconfigurationService.AuditAction));
+
+        var tenantARow = await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == tenantA.Id);
+        Assert.Equal(CompanySegments.Commerce, tenantARow.CompanySegment);
+        Assert.Equal(AppModuleExtensions.AllValues.Length, await db.UserModuleGrants.AsNoTracking().CountAsync(g => g.UserId == userA.Id));
+
+        // Tenant B: master-DB classification and grants left completely untouched.
+        var tenantBRow = await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == tenantB.Id);
+        Assert.Null(tenantBRow.CompanySegment);
+        Assert.Null(tenantBRow.BusinessDomain);
+        Assert.Equal(0, await db.UserModuleGrants.AsNoTracking().CountAsync(g => g.UserId == userB.Id));
+
+        // Tenant B: isolated tenant DB never touched — zero rows in every sector-reconfiguration
+        // surface (chart of accounts, applied-template markers, audit log).
+        using var tenantBCtx = routingFactory.CreateIsolatedContext(connStringB);
+        Assert.Equal(0, await tenantBCtx.ChartOfAccounts.CountAsync());
+        Assert.Equal(0, await tenantBCtx.AppliedSectorTemplates.CountAsync());
+        Assert.Equal(0, await tenantBCtx.AuditLogs.CountAsync());
     }
 }

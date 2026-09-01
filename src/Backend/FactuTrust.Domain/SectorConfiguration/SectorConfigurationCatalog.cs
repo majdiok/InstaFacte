@@ -18,6 +18,16 @@ public sealed record SegmentDefinition
 
     /// <summary>Warehouse name used when the registration payload leaves <c>warehouseName</c> blank.</summary>
     public string? DefaultWarehouseName { get; init; }
+
+    /// <summary>
+    /// Business domain codes offered/accepted for this segment (plan §3.1 matrix, Phase 1 dynamic
+    /// configuration). <c>autre</c> is always included as the universal safety-net fallback.
+    /// Consumed by <see cref="StaticSectorCatalogProvider"/> (projected into
+    /// <c>SegmentSnapshot.DomainCodes</c>) and enforced by <c>RegistrationSectorService</c> — this
+    /// is the single source of truth for the segment↔domain link, mirrored by the frontend fallback
+    /// matrix in <c>registration-catalog.ts</c> (<c>SEGMENT_ALLOWED_DOMAINS</c>).
+    /// </summary>
+    public required IReadOnlyList<string> AllowedDomainCodes { get; init; }
 }
 
 /// <summary>
@@ -31,6 +41,46 @@ public sealed record DomainDefinition
 
     /// <summary>Modules added on top of the segment base when this domain is selected.</summary>
     public required IReadOnlyList<AppModule> OverlayModules { get; init; }
+}
+
+/// <summary>
+/// Declares that enabling <see cref="Module"/> also requires <see cref="RequiredModule"/> to be
+/// enabled (plan §4.2). Consumed by <see cref="SectorModuleSetCalculator"/> (transitive-closure
+/// pull) and projected into <c>SectorRuleSnapshot.ModuleDependencies</c>/seeded as
+/// <c>SectorModuleDependency</c> rows for DB-driven resolution.
+/// </summary>
+public sealed record ModuleDependencyEdge
+{
+    public required AppModule Module { get; init; }
+    public required AppModule RequiredModule { get; init; }
+}
+
+/// <summary>
+/// One data-template item (plan §4.3 additive sector presets). <c>ItemKind</c>/<c>PayloadJson</c>
+/// match what <c>SectorDataTemplateApplier.ApplyItemAsync</c> understands (e.g. <c>"chart-account"</c>).
+/// </summary>
+public sealed record DataTemplateItemDefinition
+{
+    public required string ItemKind { get; init; }
+    public required string PayloadJson { get; init; }
+    public required int SortOrder { get; init; }
+}
+
+/// <summary>
+/// A named, additive sector data template (plan §4.3) — e.g. "add these extra chart-of-accounts
+/// sub-accounts for this domain". Never modifies/removes pre-existing tenant rows; items are only
+/// inserted if the matching row does not already exist (see <c>SectorDataTemplateApplier</c>).
+/// </summary>
+public sealed record DataTemplateDefinition
+{
+    public required string Code { get; init; }
+    public string? SegmentCode { get; init; }
+    public string? DomainCode { get; init; }
+    public required string LabelFr { get; init; }
+    public string? DescriptionFr { get; init; }
+    public required int Version { get; init; }
+    public required int SortOrder { get; init; }
+    public required IReadOnlyList<DataTemplateItemDefinition> Items { get; init; }
 }
 
 /// <summary>
@@ -67,7 +117,20 @@ public static class SectorConfigurationCatalog
             IconKey = "briefcase",
             SortOrder = 0,
             BaseRecommendedModules = new[] { AppModule.Purchases, AppModule.Stock, AppModule.Accounting, AppModule.CRM, AppModule.Fiscal },
-            DefaultWarehouseName = "Entrepôt Principal"
+            DefaultWarehouseName = "Entrepôt Principal",
+            AllowedDomainCodes = new[]
+            {
+                BusinessDomains.TechnologieInformatique,
+                BusinessDomains.AlimentationAgroalimentaire,
+                BusinessDomains.SanteParamedical,
+                BusinessDomains.TextileHabillement,
+                BusinessDomains.TransportLogistique,
+                BusinessDomains.Immobilier,
+                BusinessDomains.EnergieEnvironnement,
+                BusinessDomains.CommunicationMarketing,
+                BusinessDomains.Artisanat,
+                BusinessDomains.Autre
+            }
         },
         new SegmentDefinition
         {
@@ -77,7 +140,16 @@ public static class SectorConfigurationCatalog
             IconKey = "shopping-cart",
             SortOrder = 1,
             BaseRecommendedModules = new[] { AppModule.Purchases, AppModule.Stock, AppModule.Fiscal },
-            DefaultWarehouseName = "Magasin principal"
+            DefaultWarehouseName = "Magasin principal",
+            AllowedDomainCodes = new[]
+            {
+                BusinessDomains.AlimentationAgroalimentaire,
+                BusinessDomains.TextileHabillement,
+                BusinessDomains.TechnologieInformatique,
+                BusinessDomains.SanteParamedical,
+                BusinessDomains.Artisanat,
+                BusinessDomains.Autre
+            }
         },
         new SegmentDefinition
         {
@@ -87,7 +159,16 @@ public static class SectorConfigurationCatalog
             IconKey = "handshake",
             SortOrder = 2,
             BaseRecommendedModules = new[] { AppModule.CRM, AppModule.Projects, AppModule.RecurringContracts, AppModule.Fiscal },
-            DefaultWarehouseName = "Entrepôt Principal"
+            DefaultWarehouseName = "Entrepôt Principal",
+            AllowedDomainCodes = new[]
+            {
+                BusinessDomains.TechnologieInformatique,
+                BusinessDomains.CommunicationMarketing,
+                BusinessDomains.SanteParamedical,
+                BusinessDomains.TransportLogistique,
+                BusinessDomains.Immobilier,
+                BusinessDomains.Autre
+            }
         },
         new SegmentDefinition
         {
@@ -97,7 +178,14 @@ public static class SectorConfigurationCatalog
             IconKey = "hard-hat",
             SortOrder = 3,
             BaseRecommendedModules = new[] { AppModule.Purchases, AppModule.Stock, AppModule.Projects, AppModule.Fiscal },
-            DefaultWarehouseName = "Dépôt chantier"
+            DefaultWarehouseName = "Dépôt chantier",
+            AllowedDomainCodes = new[]
+            {
+                BusinessDomains.Immobilier,
+                BusinessDomains.EnergieEnvironnement,
+                BusinessDomains.Artisanat,
+                BusinessDomains.Autre
+            }
         },
         new SegmentDefinition
         {
@@ -107,7 +195,15 @@ public static class SectorConfigurationCatalog
             IconKey = "heart-handshake",
             SortOrder = 4,
             BaseRecommendedModules = new[] { AppModule.Accounting, AppModule.Fiscal },
-            DefaultWarehouseName = "Entrepôt Principal"
+            DefaultWarehouseName = "Entrepôt Principal",
+            AllowedDomainCodes = new[]
+            {
+                BusinessDomains.SanteParamedical,
+                BusinessDomains.EnergieEnvironnement,
+                BusinessDomains.CommunicationMarketing,
+                BusinessDomains.Artisanat,
+                BusinessDomains.Autre
+            }
         },
         new SegmentDefinition
         {
@@ -117,7 +213,15 @@ public static class SectorConfigurationCatalog
             IconKey = "graduation-cap",
             SortOrder = 5,
             BaseRecommendedModules = new[] { AppModule.RecurringContracts, AppModule.Accounting, AppModule.Fiscal },
-            DefaultWarehouseName = "Entrepôt Principal"
+            DefaultWarehouseName = "Entrepôt Principal",
+            AllowedDomainCodes = new[]
+            {
+                BusinessDomains.TechnologieInformatique,
+                BusinessDomains.SanteParamedical,
+                BusinessDomains.Artisanat,
+                BusinessDomains.CommunicationMarketing,
+                BusinessDomains.Autre
+            }
         }
     };
 
@@ -195,6 +299,90 @@ public static class SectorConfigurationCatalog
         }
     };
 
+    /// <summary>
+    /// Module dependency edges (plan §4.2, approved matrix). Note: because
+    /// <see cref="CoreModules"/> already includes Products, Sales and Treasury, these 4 edges are
+    /// currently no-ops in the real registration/reconfiguration flow (the required module is
+    /// always already granted) — implemented exactly as approved regardless, for when
+    /// <see cref="CoreModules"/> composition changes or a module becomes optional later.
+    /// </summary>
+    public static readonly IReadOnlyList<ModuleDependencyEdge> ModuleDependencies = new[]
+    {
+        new ModuleDependencyEdge { Module = AppModule.Stock, RequiredModule = AppModule.Products },
+        new ModuleDependencyEdge { Module = AppModule.Purchases, RequiredModule = AppModule.Products },
+        new ModuleDependencyEdge { Module = AppModule.Forecasting, RequiredModule = AppModule.Treasury },
+        new ModuleDependencyEdge { Module = AppModule.RecurringContracts, RequiredModule = AppModule.Sales }
+    };
+
+    /// <summary>
+    /// Additive sector data templates (plan §4.3). Domain-scoped chart-of-accounts sub-accounts
+    /// verified against the real Tunisian seeded chart (<c>TunisianPostingAccounts</c>): parents
+    /// 707 "Ventes de marchandises" and 705 "Prestations de services" both exist, are top-level,
+    /// class 7, nature Credit; account numbers 7071/7072/7051 do not already exist. Applied
+    /// exclusively through <c>SectorDataTemplateApplier.ApplyChartAccountAsync</c>'s existing
+    /// insert-if-not-exists path — never touches accounting seeding/migrations.
+    /// </summary>
+    public static readonly IReadOnlyList<DataTemplateDefinition> DataTemplates = new[]
+    {
+        new DataTemplateDefinition
+        {
+            Code = "chart-account-detail-alimentation-agroalimentaire",
+            SegmentCode = null,
+            DomainCode = BusinessDomains.AlimentationAgroalimentaire,
+            LabelFr = "Sous-compte ventes — Alimentation & agroalimentaire",
+            DescriptionFr = "Ajoute un sous-compte 7071 dédié aux ventes de marchandises alimentaires.",
+            Version = 1,
+            SortOrder = 0,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "chart-account",
+                    PayloadJson = "{\"accountNumber\":\"7071\",\"label\":\"Ventes de marchandises - Alimentation & agroalimentaire\",\"accountClass\":7,\"parentAccountNumber\":\"707\",\"natureType\":\"Credit\",\"isSystem\":false}",
+                    SortOrder = 0
+                }
+            }
+        },
+        new DataTemplateDefinition
+        {
+            Code = "chart-account-detail-textile-habillement",
+            SegmentCode = null,
+            DomainCode = BusinessDomains.TextileHabillement,
+            LabelFr = "Sous-compte ventes — Textile & habillement",
+            DescriptionFr = "Ajoute un sous-compte 7072 dédié aux ventes de marchandises textiles.",
+            Version = 1,
+            SortOrder = 1,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "chart-account",
+                    PayloadJson = "{\"accountNumber\":\"7072\",\"label\":\"Ventes de marchandises - Textile & habillement\",\"accountClass\":7,\"parentAccountNumber\":\"707\",\"natureType\":\"Credit\",\"isSystem\":false}",
+                    SortOrder = 0
+                }
+            }
+        },
+        new DataTemplateDefinition
+        {
+            Code = "chart-account-detail-technologie-informatique",
+            SegmentCode = null,
+            DomainCode = BusinessDomains.TechnologieInformatique,
+            LabelFr = "Sous-compte prestations — Technologie & informatique",
+            DescriptionFr = "Ajoute un sous-compte 7051 dédié aux prestations de services technologiques.",
+            Version = 1,
+            SortOrder = 2,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "chart-account",
+                    PayloadJson = "{\"accountNumber\":\"7051\",\"label\":\"Prestations de services - Technologie & informatique\",\"accountClass\":7,\"parentAccountNumber\":\"705\",\"natureType\":\"Credit\",\"isSystem\":false}",
+                    SortOrder = 0
+                }
+            }
+        }
+    };
+
     private static readonly IReadOnlyDictionary<string, SegmentDefinition> SegmentsByCode =
         Segments.ToDictionary(s => s.Code, StringComparer.Ordinal);
 
@@ -248,6 +436,109 @@ public static class SectorConfigurationCatalog
             RecommendedModules = recommended,
             OptionalModules = optional,
             DefaultWarehouseName = segment.DefaultWarehouseName
+        };
+    }
+
+    /// <summary>
+    /// Full reference <see cref="SectorRuleSnapshot"/> built straight from the in-memory catalog —
+    /// deps and templates INCLUDED (review R1). Two consumers need this exact "everything the
+    /// catalog knows" view and must never see it silently emptied:
+    /// <list type="bullet">
+    /// <item><see cref="Persistence.Seeds.SectorRuleSeeder"/> (indirectly, via the catalog source
+    /// types themselves) uses the same data to seed the master DB — this method mirrors that
+    /// projection so parity checks compare like-for-like.</item>
+    /// <item><c>PlatformSectorRulesController.GetParity</c> and
+    /// <c>SectorRuleParityChecker</c> diff this against the DB snapshot to detect catalog/DB drift
+    /// — they need the real dependency edges and templates, not the rollback-gated static provider
+    /// view.</item>
+    /// </list>
+    /// <see cref="StaticSectorCatalogProvider"/> deliberately does NOT expose this directly: per
+    /// its own contract (see <c>ISectorDataTemplateApplier</c> doc), that provider always reports
+    /// empty <c>ModuleDependencies</c>/<c>DataTemplates</c> so that <c>UseDbRules=false</c> (or a
+    /// DB outage) is a true, complete rollback to Phase 1 behavior — module dependencies and
+    /// chart-account templates are Phase 2/3 additive features that must stay off when the DB
+    /// rules are off.
+    /// </summary>
+    public static SectorRuleSnapshot BuildCatalogSnapshot()
+    {
+        var segments = Segments
+            .OrderBy(s => s.SortOrder)
+            .Select(s => new SegmentSnapshot
+            {
+                Code = s.Code,
+                LabelFr = s.LabelFr,
+                DescriptionFr = s.DescriptionFr,
+                IconKey = s.IconKey,
+                SortOrder = s.SortOrder,
+                DefaultWarehouseName = s.DefaultWarehouseName,
+                BaseRecommendedModules = s.BaseRecommendedModules,
+                DomainCodes = s.AllowedDomainCodes
+            })
+            .ToList();
+
+        var domains = Domains
+            .OrderBy(d => d.SortOrder)
+            .Select(d => new DomainSnapshot
+            {
+                Code = d.Code,
+                LabelFr = d.LabelFr,
+                SortOrder = d.SortOrder,
+                OverlayModules = d.OverlayModules
+            })
+            .ToList();
+
+        var defaultSettings = Segments
+            .Where(s => s.DefaultWarehouseName is not null)
+            .Select(s => new DefaultSettingSnapshot
+            {
+                SegmentCode = s.Code,
+                DomainCode = null,
+                SettingKey = "default-warehouse-name",
+                SettingValue = s.DefaultWarehouseName!,
+                ValueType = "string"
+            })
+            .ToList();
+
+        var moduleDependencies = ModuleDependencies
+            .Select(e => new ModuleDependencySnapshot
+            {
+                ModuleId = (int)e.Module,
+                RequiredModuleId = (int)e.RequiredModule
+            })
+            .ToList();
+
+        var dataTemplates = DataTemplates
+            .OrderBy(t => t.SortOrder)
+            .Select(t => new DataTemplateSnapshot
+            {
+                Code = t.Code,
+                SegmentCode = t.SegmentCode,
+                DomainCode = t.DomainCode,
+                LabelFr = t.LabelFr,
+                DescriptionFr = t.DescriptionFr,
+                Version = t.Version,
+                SortOrder = t.SortOrder,
+                Items = t.Items
+                    .OrderBy(i => i.SortOrder)
+                    .Select(i => new DataTemplateItemSnapshot
+                    {
+                        ItemKind = i.ItemKind,
+                        PayloadJson = i.PayloadJson,
+                        SortOrder = i.SortOrder
+                    })
+                    .ToList()
+            })
+            .ToList();
+
+        return new SectorRuleSnapshot
+        {
+            Source = SectorRuleSource.Static,
+            Version = 0,
+            Segments = segments,
+            Domains = domains,
+            ModuleDependencies = moduleDependencies,
+            DefaultSettings = defaultSettings,
+            DataTemplates = dataTemplates
         };
     }
 }

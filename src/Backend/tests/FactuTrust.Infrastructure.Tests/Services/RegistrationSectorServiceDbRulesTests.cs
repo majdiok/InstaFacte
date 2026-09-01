@@ -1,11 +1,15 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Domain.Billing;
+using FactuTrust.Domain.Entities.SectorRules;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.SectorConfiguration;
 using FactuTrust.Infrastructure.Persistence;
+using FactuTrust.Infrastructure.Persistence.Seeds;
 using FactuTrust.Infrastructure.Services;
+using FactuTrust.Infrastructure.Services.SectorCatalog;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -96,12 +100,13 @@ public sealed class RegistrationSectorServiceDbRulesTests
         MasterDbContext db,
         IPlanResolver planResolver,
         ISectorCatalogProvider catalogProvider,
-        bool enabled = true) =>
+        bool enabled = true,
+        bool enforceSegmentDomainLinks = true) =>
         new(
             db,
             planResolver,
             catalogProvider,
-            Options.Create(new RegistrationSectorOptions { Enabled = enabled }),
+            Options.Create(new RegistrationSectorOptions { Enabled = enabled, EnforceSegmentDomainLinks = enforceSegmentDomainLinks }),
             NullLogger<RegistrationSectorService>.Instance);
 
     // ---------- ResolveProfile: domain↔segment link validation ----------
@@ -122,17 +127,40 @@ public sealed class RegistrationSectorServiceDbRulesTests
         Assert.Equal("Domaine d'activité non disponible pour ce type de société.", result.Error.Description);
     }
 
+    /// <summary>
+    /// Phase 1 dynamic configuration (plan §3.2 D4): the segment↔domain link is now enforced
+    /// regardless of the snapshot source — a restrictive link list on a STATIC snapshot rejects
+    /// the couple exactly like a DB snapshot would. This supersedes the old Phase 2 "only enforced
+    /// on Source==Db" behavior.
+    /// </summary>
     [Fact]
-    public void ResolveProfile_allows_any_known_domain_when_static_fallback_active()
+    public void ResolveProfile_rejects_domain_not_linked_to_segment_even_when_snapshot_source_is_static()
     {
-        // Same restrictive segment link list as above, but Source = Static — a segment link
-        // restriction must never be enforced against the permanent Phase 1 static catalog.
         var snapshot = MakeSnapshot(
             SectorRuleSource.Static,
             new[] { MakeSegment(CompanySegments.Commerce, new[] { BusinessDomains.Autre }) },
             domains: new[] { MakeDomain(BusinessDomains.Autre), MakeDomain(BusinessDomains.SanteParamedical) });
 
         var service = NewService(NewDb(), new AllowAllPlanResolver(), new FixedSnapshotProvider(snapshot));
+        var result = service.ResolveProfile(CompanySegments.Commerce, BusinessDomains.SanteParamedical);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.BusinessDomain", result.Error.Code);
+    }
+
+    /// <summary>
+    /// The kill-switch (<see cref="RegistrationSectorOptions.EnforceSegmentDomainLinks"/> = false)
+    /// restores the fully permissive behavior even against a restrictive DB snapshot.
+    /// </summary>
+    [Fact]
+    public void ResolveProfile_allows_any_known_domain_when_EnforceSegmentDomainLinks_is_false()
+    {
+        var snapshot = MakeSnapshot(
+            SectorRuleSource.Db,
+            new[] { MakeSegment(CompanySegments.Commerce, new[] { BusinessDomains.Autre }) },
+            domains: new[] { MakeDomain(BusinessDomains.Autre), MakeDomain(BusinessDomains.SanteParamedical) });
+
+        var service = NewService(NewDb(), new AllowAllPlanResolver(), new FixedSnapshotProvider(snapshot), enforceSegmentDomainLinks: false);
         var result = service.ResolveProfile(CompanySegments.Commerce, BusinessDomains.SanteParamedical);
 
         Assert.True(result.IsSuccess);
@@ -152,6 +180,39 @@ public sealed class RegistrationSectorServiceDbRulesTests
         var result = service.ResolveProfile(CompanySegments.Commerce, BusinessDomains.SanteParamedical);
 
         Assert.True(result.IsSuccess);
+    }
+
+    /// <summary>
+    /// Plan §4.6 — extend with the real DB matrix: seed the master-DB rule tables straight from
+    /// the catalog via <see cref="SectorRuleSeeder"/>, deactivate one catalog-known
+    /// <see cref="SectorSegmentDomain"/> link, then read it back through the real
+    /// <see cref="DbSectorCatalogProvider"/> (not the <see cref="FixedSnapshotProvider"/> stub) —
+    /// the deactivated couple must be rejected exactly like an unknown couple.
+    /// </summary>
+    [Fact]
+    public async Task ResolveProfile_rejects_couple_when_link_is_deactivated_in_db()
+    {
+        await using var db = NewDb();
+        await SectorRuleSeeder.SeedAsync(db, force: false, actor: "test", CancellationToken.None);
+
+        var segment = await db.SectorSegments.SingleAsync(s => s.Code == CompanySegments.Commerce, CancellationToken.None);
+        var domain = await db.SectorDomains.SingleAsync(d => d.Code == BusinessDomains.AlimentationAgroalimentaire, CancellationToken.None);
+        var link = await db.SectorSegmentDomains.SingleAsync(
+            sd => sd.SegmentId == segment.Id && sd.DomainId == domain.Id, CancellationToken.None);
+        link.Deactivate();
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        var stamp = await db.SectorRuleSetStamps.SingleAsync(CancellationToken.None);
+        stamp.Bump("test");
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        var provider = new DbSectorCatalogProvider(db, new MemoryCache(new MemoryCacheOptions()));
+        var service = NewService(db, new AllowAllPlanResolver(), provider);
+
+        var result = service.ResolveProfile(CompanySegments.Commerce, BusinessDomains.AlimentationAgroalimentaire);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.BusinessDomain", result.Error.Code);
     }
 
     // ---------- ApplyModuleSelectionAsync: dependency transitive closure ----------

@@ -8,7 +8,8 @@ namespace FactuTrust.Infrastructure.Services.SectorRules;
 /// <c>UseDbRules</c> flag flips (plan §WP-B9). Compares two <see cref="SectorRuleSnapshot"/>s for
 /// structural equality across every observable surface a tenant sees at registration time:
 /// segment/domain sets, labels, sort orders, default warehouse names, the segment↔domain link lists,
-/// and — for all <c>6 segments × (10 domains + null) = 66 combos</c> — the resolved
+/// the module dependency edges (plan §4.2), the data templates + their items (plan §4.3), and — for
+/// all <c>6 segments × (10 domains + null) = 66 combos</c> — the resolved
 /// <see cref="SectorProfile"/> (core/recommended/optional modules + warehouse). Returns
 /// <see cref="IsMatch"/> + a flat <see cref="Differences"/> list (one difference string per detected
 /// divergence) so the platform UI can show exactly what drifted.
@@ -27,6 +28,8 @@ public static class SectorRuleParityChecker
         CompareSegments(staticSnap, dbSnap, differences);
         CompareDomains(staticSnap, dbSnap, differences);
         CompareProfiles(staticSnap, dbSnap, differences);
+        CompareModuleDependencies(staticSnap, dbSnap, differences);
+        CompareDataTemplates(staticSnap, dbSnap, differences);
 
         return new SectorRuleParityResult
         {
@@ -148,6 +151,75 @@ public static class SectorRuleParityChecker
 
         if (!string.Equals(staticProfile.DefaultWarehouseName, dbProfile.DefaultWarehouseName, StringComparison.Ordinal))
             differences.Add($"{combo}: entrepôt attendu «{staticProfile.DefaultWarehouseName}», obtenu «{dbProfile.DefaultWarehouseName}».");
+    }
+
+    // ---------- module dependency edges (plan §4.2) ----------
+
+    private static void CompareModuleDependencies(SectorRuleSnapshot staticSnap, SectorRuleSnapshot dbSnap, List<string> differences)
+    {
+        var staticEdges = staticSnap.ModuleDependencies
+            .Select(e => (e.ModuleId, e.RequiredModuleId))
+            .OrderBy(e => e.ModuleId).ThenBy(e => e.RequiredModuleId)
+            .ToList();
+        var dbEdges = dbSnap.ModuleDependencies
+            .Select(e => (e.ModuleId, e.RequiredModuleId))
+            .OrderBy(e => e.ModuleId).ThenBy(e => e.RequiredModuleId)
+            .ToList();
+
+        var staticSet = new HashSet<(int ModuleId, int RequiredModuleId)>(staticEdges);
+        var dbSet = new HashSet<(int ModuleId, int RequiredModuleId)>(dbEdges);
+
+        foreach (var missing in staticSet.Except(dbSet).OrderBy(e => e.ModuleId).ThenBy(e => e.RequiredModuleId))
+            differences.Add($"dépendance[{missing.ModuleId}->{missing.RequiredModuleId}] attendue, manquante en BDD.");
+
+        foreach (var extra in dbSet.Except(staticSet).OrderBy(e => e.ModuleId).ThenBy(e => e.RequiredModuleId))
+            differences.Add($"dépendance[{extra.ModuleId}->{extra.RequiredModuleId}] présente en BDD, absente du catalogue statique.");
+    }
+
+    // ---------- data templates + items (plan §4.3) ----------
+
+    private static void CompareDataTemplates(SectorRuleSnapshot staticSnap, SectorRuleSnapshot dbSnap, List<string> differences)
+    {
+        var staticByCode = staticSnap.DataTemplates.ToDictionary(t => t.Code, StringComparer.Ordinal);
+        var dbByCode = dbSnap.DataTemplates.ToDictionary(t => t.Code, StringComparer.Ordinal);
+
+        CompareKeys(staticByCode.Keys, dbByCode.Keys, "modèle", differences);
+
+        foreach (var code in staticByCode.Keys.Intersect(dbByCode.Keys, StringComparer.Ordinal))
+        {
+            var s = staticByCode[code];
+            var d = dbByCode[code];
+
+            if (!string.Equals(s.SegmentCode, d.SegmentCode, StringComparison.Ordinal))
+                differences.Add($"modèle[{code}]: segment attendu «{s.SegmentCode}», obtenu «{d.SegmentCode}».");
+
+            if (!string.Equals(s.DomainCode, d.DomainCode, StringComparison.Ordinal))
+                differences.Add($"modèle[{code}]: domaine attendu «{s.DomainCode}», obtenu «{d.DomainCode}».");
+
+            if (!string.Equals(s.LabelFr, d.LabelFr, StringComparison.Ordinal))
+                differences.Add($"modèle[{code}]: libellé attendu «{s.LabelFr}», obtenu «{d.LabelFr}».");
+
+            if (s.Version != d.Version)
+                differences.Add($"modèle[{code}]: version attendue {s.Version}, obtenue {d.Version}.");
+
+            var sItems = s.Items.OrderBy(i => i.SortOrder).ToList();
+            var dItems = d.Items.OrderBy(i => i.SortOrder).ToList();
+
+            if (sItems.Count != dItems.Count)
+            {
+                differences.Add($"modèle[{code}]: {sItems.Count} élément(s) attendu(s), {dItems.Count} obtenu(s).");
+                continue;
+            }
+
+            for (var i = 0; i < sItems.Count; i++)
+            {
+                if (!string.Equals(sItems[i].ItemKind, dItems[i].ItemKind, StringComparison.Ordinal)
+                    || !string.Equals(sItems[i].PayloadJson, dItems[i].PayloadJson, StringComparison.Ordinal))
+                {
+                    differences.Add($"modèle[{code}]: élément #{sItems[i].SortOrder} diffère du catalogue statique.");
+                }
+            }
+        }
     }
 
     // ---------- shared helpers ----------

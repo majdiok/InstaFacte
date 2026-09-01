@@ -55,7 +55,9 @@ export const COMPANY_CHECKLIST_IDS = {
   createProduct: 'create-product',
   createInvoice: 'create-invoice',
   numbering: 'numbering',
-  inviteUser: 'invite-user'
+  inviteUser: 'invite-user',
+  checkDefaultWarehouse: 'check-default-warehouse',
+  commerceStockReceipt: 'commerce-stock-receipt'
 } as const;
 
 export const FIRM_CHECKLIST_IDS = {

@@ -168,6 +168,29 @@ describe('DashboardComponent — gating par permission (§7.3.3)', () => {
     expect(getDeliveryNotes).not.toHaveBeenCalled();
   });
 
+  it('Phase 2 — showDeliveryUrgent/showInvoiceUrgent restent false si le module Sales ' +
+    'est désactivé même quand la permission est présente (défense en profondeur, cf. showStockUrgent)', () => {
+    configure();
+    const auth = TestBed.inject(AuthService);
+    // Permissions présentes mais module Sales absent des modules activés : les deux computed
+    // doivent rester false, à l'image de showStockUrgent (AppModule.Stock).
+    setUser(
+      auth,
+      makeUser(
+        ['invoices:read', 'delivery_notes:read'],
+        ALL_MODULES.filter((m) => m !== AppModule.Sales)
+      )
+    );
+
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    expect(component.showDeliveryUrgent()).toBeFalse();
+    expect(component.showInvoiceUrgent()).toBeFalse();
+    expect(getDeliveryNotes).not.toHaveBeenCalled();
+  });
+
   it('loadAccountingKpis() a un early-return sans hasAccountingModule (pas d\'appel API)', () => {
     configure();
     const auth = TestBed.inject(AuthService);

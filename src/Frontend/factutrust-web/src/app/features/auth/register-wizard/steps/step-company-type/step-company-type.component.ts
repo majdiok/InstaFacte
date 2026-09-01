@@ -35,7 +35,7 @@ export class StepCompanyTypeComponent {
     return this.catalog.segments;
   }
 
-  /** Segment-filtered, ordered domain list (plan WP-F2). Full unfiltered list in static/fallback mode. */
+  /** Segment-filtered, ordered domain list (plan §3.1/§3.3). Matrix-filtered in both remote and fallback modes. */
   get domains(): readonly DomainOption[] {
     return this.catalog.domainsForSegment(this.selectedSegmentCode);
   }
@@ -51,11 +51,15 @@ export class StepCompanyTypeComponent {
       && this.domains.length === 1 && this.domains[0].code === 'autre';
   }
 
-  /** « N domaines adaptés à votre segment : X » chip shown above the filtered domain list. */
+  /** « N domaines adaptés à votre segment : X » chip shown above the filtered domain list.
+   * Shown in both remote and fallback modes (plan §3.5), but only when the list is
+   * genuinely restricted (fewer domains than the full catalog) — otherwise the chip
+   * would misleadingly claim a segment is "adapted" when every domain is available. */
   get filteredDomainsChipLabel(): string | null {
-    if (!this.catalog.isRemote || !this.selectedSegmentCode || this.showNoSpecificDomainHint) return null;
+    if (!this.selectedSegmentCode || this.showNoSpecificDomainHint) return null;
     const count = this.domains.length;
-    if (count === 0) return null;
+    const total = this.catalog.domains.length;
+    if (count === 0 || count >= total) return null;
     const plural = count > 1 ? 's' : '';
     return `${count} domaine${plural} adapté${plural} à votre segment : ${this.selectedSegmentLabel}`;
   }

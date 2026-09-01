@@ -17,10 +17,12 @@ const MODULE_FEATURE_OPTIONS: Record<AppModule, ModuleFeatureOption[]> = {
     { key: 'manage', label: 'Création / modification / suppression' }
   ],
   [AppModule.Sales]: [
+    { key: 'sales_orders', label: 'Commandes clients' },
     { key: 'quotes', label: 'Devis' },
     { key: 'delivery_notes', label: 'Bons de livraison' },
     { key: 'return_notes', label: 'Bons de retour' },
-    { key: 'invoices', label: 'Factures' }
+    { key: 'invoices', label: 'Factures' },
+    { key: 'pricing', label: 'Tarification' }
   ],
   [AppModule.Treasury]: [
     { key: 'read', label: 'Consultation' },
@@ -49,7 +51,8 @@ const MODULE_FEATURE_OPTIONS: Record<AppModule, ModuleFeatureOption[]> = {
     { key: 'stock', label: 'Mouvements de stock' },
     { key: 'stock_transfers', label: 'Transferts' },
     { key: 'inventory', label: 'Inventaires' },
-    { key: 'stock_vouchers', label: 'Bons d’entrée / sortie' }
+    { key: 'stock_vouchers', label: 'Bons d’entrée / sortie' },
+    { key: 'stock_lots', label: 'Lots de stock' }
   ],
   [AppModule.Accounting]: [
     { key: 'journal', label: 'Journal / écritures' },
@@ -64,14 +67,12 @@ const MODULE_FEATURE_OPTIONS: Record<AppModule, ModuleFeatureOption[]> = {
     { key: 'opportunities', label: 'Opportunités' },
     { key: 'activities', label: 'Activités' },
     { key: 'targets', label: 'Objectifs commerciaux' },
-    { key: 'quote_templates', label: 'Modèles de devis' }
+    { key: 'templates', label: 'Modèles de devis' },
+    { key: 'dashboard', label: 'Tableau de bord commercial' }
   ],
   [AppModule.Fiscal]: [],
   [AppModule.AI]: [],
-  [AppModule.Forecasting]: [
-    { key: 'view', label: 'Consultation des prévisions' },
-    { key: 'manage', label: 'Approbation / dismiss / recalcul' }
-  ],
+  [AppModule.Forecasting]: [],
   [AppModule.Studio]: [],
   [AppModule.Payroll]: [],
   [AppModule.Honoraires]: [

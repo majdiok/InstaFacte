@@ -15,6 +15,15 @@ public sealed class SectorRuleSetStamp
     public DateTime UpdatedAtUtc { get; private set; }
     public string? UpdatedBy { get; private set; }
 
+    /// <summary>
+    /// SHA-256 hex digest of the in-memory catalog's content at the last seed run (review R2) —
+    /// lets <c>SectorRuleSeeder.ReconcileOnStartupAsync</c> detect a catalog change (new/removed
+    /// segment, dependency edge, template, ...) across app restarts, WITHOUT re-running a full
+    /// force-seed on every single startup when nothing changed. <c>null</c> for rows created
+    /// before this column existed or by a seed run older than the hash tracking.
+    /// </summary>
+    public string? CatalogContentHash { get; private set; }
+
     private SectorRuleSetStamp() { }
 
     public static SectorRuleSetStamp CreateInitial()
@@ -34,4 +43,6 @@ public sealed class SectorRuleSetStamp
         UpdatedAtUtc = DateTime.UtcNow;
         UpdatedBy = actor;
     }
+
+    public void SetCatalogHash(string hash) => CatalogContentHash = hash;
 }

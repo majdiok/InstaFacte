@@ -20,4 +20,15 @@ public sealed class RegistrationSectorOptions
     /// throwing — an error or an empty table set always falls back to static.
     /// </summary>
     public bool UseDbRules { get; set; } = false;
+
+    /// <summary>
+    /// Phase 1 dynamic configuration (plan §3.2 D4/rollback §3.6): when <c>true</c> (default),
+    /// <c>RegistrationSectorService.ResolveProfile</c> rejects a segment/domain couple whose domain
+    /// isn't in the active snapshot's segment↔domain link list, regardless of the snapshot source
+    /// (static catalog or DB rules). Setting this to <c>false</c> is the kill-switch: registration
+    /// reverts instantly to the fully permissive Phase 0 behavior (any known domain accepted for any
+    /// known segment) without a redeploy — an empty link list on a segment is always "no
+    /// restriction", independent of this flag.
+    /// </summary>
+    public bool EnforceSegmentDomainLinks { get; set; } = true;
 }

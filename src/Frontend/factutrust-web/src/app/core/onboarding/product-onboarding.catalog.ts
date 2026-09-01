@@ -1,3 +1,4 @@
+import { AppModule } from '@core/models/app-module';
 import {
   FIRM_CHECKLIST_IDS,
   COMPANY_CHECKLIST_IDS,
@@ -218,12 +219,6 @@ export const FIRM_TOUR_STEPS: readonly ProductTourStepDef[] = [
 ];
 
 export const COMPANY_CHECKLIST_ITEMS: readonly OnboardingChecklistItemDef[] = [
-  // TODO (plan WP-F4): consider additive, segment/module-gated first-run items once
-  // confirmed with product — e.g. a Stock module item ("Vérifier votre entrepôt par
-  // défaut", route '/stock', modules: [AppModule.Stock]) or a 'commerce' segment item.
-  // None of the 6 items below is stock/segment-specific today; `modules`/`segments`
-  // on OnboardingChecklistItemDef are wired end-to-end (see canSee() below) and ready
-  // to use as soon as the exact list is decided — keep additions additive-only.
   {
     id: COMPANY_CHECKLIST_IDS.companyProfile,
     label: 'Compléter la fiche entreprise',
@@ -266,6 +261,25 @@ export const COMPANY_CHECKLIST_ITEMS: readonly OnboardingChecklistItemDef[] = [
     route: '/settings/users',
     permission: 'users:create',
     adminOnly: true
+  },
+  // Phase 2 (plan §4.4) — additive, module/segment-gated items (canSee() in
+  // onboarding-checklist.component.ts already evaluates `modules`/`segments`).
+  {
+    id: COMPANY_CHECKLIST_IDS.checkDefaultWarehouse,
+    label: 'Vérifier votre entrepôt par défaut',
+    description: 'Nom, adresse et paramètres de l’entrepôt créé automatiquement à l’inscription.',
+    route: '/settings/warehouses',
+    permission: 'settings:read',
+    modules: [AppModule.Stock]
+  },
+  {
+    id: COMPANY_CHECKLIST_IDS.commerceStockReceipt,
+    label: 'Réceptionner votre premier stock',
+    description: 'Enregistrez une entrée de stock pour vos premiers articles en négoce.',
+    route: '/stock/entries/new',
+    permission: 'stock_vouchers:create',
+    modules: [AppModule.Stock],
+    segments: ['commerce']
   }
 ];
 

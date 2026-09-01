@@ -8,6 +8,8 @@ using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Services.SectorRules;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace FactuTrust.Infrastructure.Services;
 
@@ -38,6 +40,24 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Review R4 — logs must never carry a raw, client-supplied segment/domain string that hasn't
+    /// yet been validated against the catalog (an unrecognized value could be arbitrary free text
+    /// typed into a registration form field). Returns a length + short SHA-256 fingerprint instead
+    /// — enough to correlate repeated/identical rejected inputs in logs and metrics without ever
+    /// exposing their content. Once a segment/domain IS a known catalog code (the "incoherent
+    /// couple" rejection below), it is safe to log verbatim — it can only be one of a small,
+    /// non-sensitive, publicly documented set of values.
+    /// </summary>
+    private static string SafeInputSummary(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+            return "empty";
+
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)))[..8];
+        return $"len={raw.Length};sha256_8={hash}";
+    }
+
     public Result<SectorProfile?> ResolveProfile(string? companySegment, string? businessDomain)
     {
         if (!_options.Enabled)
@@ -51,6 +71,10 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
 
         if (normalizedDomain is not null && normalizedSegment is null)
         {
+            _logger.LogWarning(
+                "RegistrationSectorService.ResolveProfile: rejected domain without segment (domain={DomainSummary}).",
+                SafeInputSummary(normalizedDomain));
+
             return Result.Failure<SectorProfile?>(
                 Error.Validation("CompanySegment", "Type de société requis lorsque le domaine est fourni."));
         }
@@ -62,27 +86,42 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
 
         if (normalizedSegment is not null && segmentSnapshot is null)
         {
+            _logger.LogWarning(
+                "RegistrationSectorService.ResolveProfile: rejected unknown segment (segmentSummary={SegmentSummary}).",
+                SafeInputSummary(normalizedSegment));
+
             return Result.Failure<SectorProfile?>(
                 Error.Validation("CompanySegment", "Type de société invalide."));
         }
 
         if (normalizedDomain is not null && !snapshot.Domains.Any(d => string.Equals(d.Code, normalizedDomain, StringComparison.Ordinal)))
         {
+            _logger.LogWarning(
+                "RegistrationSectorService.ResolveProfile: rejected unknown domain (domainSummary={DomainSummary}).",
+                SafeInputSummary(normalizedDomain));
+
             return Result.Failure<SectorProfile?>(
                 Error.Validation("BusinessDomain", "Domaine d'activité invalide."));
         }
 
-        // Phase 2 (plan §WP-B4, D4): only enforced when the active snapshot comes from the DB
-        // AND the segment has an explicit, non-empty domain link list — an empty list (or the
-        // static snapshot, which always lists every domain) means "no restriction", preserving
-        // Phase 1 behavior and protecting against an admin accidentally bricking registration by
-        // pruning every link.
-        if (normalizedDomain is not null
-            && snapshot.Source == SectorRuleSource.Db
+        // Phase 1 dynamic configuration (plan §3.2 D4): enforced whenever the segment has an
+        // explicit, non-empty domain link list — regardless of the snapshot source (static catalog
+        // or DB rules). An empty list means "no restriction" (defense against an admin
+        // accidentally pruning every link and bricking registration), and the kill-switch
+        // `EnforceSegmentDomainLinks=false` restores the fully permissive Phase 0 behavior
+        // instantly without a redeploy.
+        if (_options.EnforceSegmentDomainLinks
+            && normalizedDomain is not null
             && segmentSnapshot is not null
             && segmentSnapshot.DomainCodes.Count > 0
             && !segmentSnapshot.DomainCodes.Contains(normalizedDomain, StringComparer.Ordinal))
         {
+            _logger.LogWarning(
+                "RegistrationSectorService.ResolveProfile: rejected incoherent segment/domain couple (segment={Segment}, domain={Domain}, snapshotSource={Source}).",
+                normalizedSegment,
+                normalizedDomain,
+                snapshot.Source);
+
             return Result.Failure<SectorProfile?>(
                 Error.Validation("BusinessDomain", "Domaine d'activité non disponible pour ce type de société."));
         }

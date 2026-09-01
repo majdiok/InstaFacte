@@ -6,6 +6,7 @@ import {
   filterTourSteps,
   mergeChecklistDone
 } from './product-onboarding.catalog';
+import { AppModule } from '@core/models/app-module';
 import { canStartProductTour, normalizeOnboardingStatus, shouldAutoStartTour } from './product-onboarding.models';
 
 describe('filterTourSteps', () => {
@@ -98,13 +99,31 @@ describe('canStartProductTour', () => {
   });
 });
 
-describe('checklist catalog module/segment gating metadata (plan WP-F4)', () => {
-  it('no shipped company checklist item is module/segment-gated yet (TODO, additive only)', () => {
-    // Pins the current state: OnboardingChecklistItemDef.modules/segments are wired
-    // end-to-end (see onboarding-checklist.component.ts canSee()) but not yet used by
-    // any real catalog entry — exact list is a product decision (see the TODO comment
-    // above COMPANY_CHECKLIST_ITEMS). Update this pin deliberately once items are added.
-    expect(COMPANY_CHECKLIST_ITEMS.every(item => !item.modules && !item.segments)).toBeTrue();
+describe('checklist catalog module/segment gating metadata (plan §4.4 / WP-F4)', () => {
+  it('exactly the two additive items introduced in Phase 2 carry modules/segments gating; ' +
+    'the 6 original items remain ungated', () => {
+    const gated = COMPANY_CHECKLIST_ITEMS.filter(item => item.modules || item.segments);
+    expect(gated.map(item => item.id).sort()).toEqual(
+      ['check-default-warehouse', 'commerce-stock-receipt'].sort()
+    );
+
+    const ungated = COMPANY_CHECKLIST_ITEMS.filter(item => !item.modules && !item.segments);
+    expect(ungated.length).toBe(6);
+
     expect(FIRM_CHECKLIST_ITEMS.every(item => !item.modules && !item.segments)).toBeTrue();
+  });
+
+  it('"check-default-warehouse" requires the Stock module and no segment restriction', () => {
+    const item = COMPANY_CHECKLIST_ITEMS.find(i => i.id === 'check-default-warehouse');
+    expect(item?.modules).toEqual([AppModule.Stock]);
+    expect(item?.segments).toBeUndefined();
+    expect(item?.route).toBe('/settings/warehouses');
+  });
+
+  it('"commerce-stock-receipt" requires the Stock module and is restricted to the commerce segment', () => {
+    const item = COMPANY_CHECKLIST_ITEMS.find(i => i.id === 'commerce-stock-receipt');
+    expect(item?.modules).toEqual([AppModule.Stock]);
+    expect(item?.segments).toEqual(['commerce']);
+    expect(item?.route).toBe('/stock/entries/new');
   });
 });

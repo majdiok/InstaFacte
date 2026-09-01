@@ -17,58 +17,19 @@ public sealed class StaticSectorCatalogProvider : ISectorCatalogProvider
 
     private static SectorRuleSnapshot BuildSnapshot()
     {
-        // Phase 1 semantics: every domain is available to every segment — no restriction.
-        var allDomainCodes = SectorConfigurationCatalog.Domains
-            .OrderBy(d => d.SortOrder)
-            .Select(d => d.Code)
-            .ToList();
+        // Review R1: this provider is used both when UseDbRules=false AND as the DB-outage
+        // fallback inside CompositeSectorCatalogProvider — either way it must be a COMPLETE
+        // rollback to Phase 1 behavior. Module dependencies (Phase 2) and chart-account data
+        // templates (Phase 3) are additive features gated behind the DB rules; exposing them here
+        // would silently keep them active even with the flag off, contradicting
+        // ISectorDataTemplateApplier's documented contract ("the static provider always returns
+        // an empty list, so this is a no-op for free whenever UseDbRules is off"). Segments,
+        // domains and default settings are Phase 1 and stay fully populated from the catalog.
+        var reference = SectorConfigurationCatalog.BuildCatalogSnapshot();
 
-        var segments = SectorConfigurationCatalog.Segments
-            .OrderBy(s => s.SortOrder)
-            .Select(s => new SegmentSnapshot
-            {
-                Code = s.Code,
-                LabelFr = s.LabelFr,
-                DescriptionFr = s.DescriptionFr,
-                IconKey = s.IconKey,
-                SortOrder = s.SortOrder,
-                DefaultWarehouseName = s.DefaultWarehouseName,
-                BaseRecommendedModules = s.BaseRecommendedModules,
-                DomainCodes = allDomainCodes
-            })
-            .ToList();
-
-        var domains = SectorConfigurationCatalog.Domains
-            .OrderBy(d => d.SortOrder)
-            .Select(d => new DomainSnapshot
-            {
-                Code = d.Code,
-                LabelFr = d.LabelFr,
-                SortOrder = d.SortOrder,
-                OverlayModules = d.OverlayModules
-            })
-            .ToList();
-
-        var defaultSettings = SectorConfigurationCatalog.Segments
-            .Where(s => s.DefaultWarehouseName is not null)
-            .Select(s => new DefaultSettingSnapshot
-            {
-                SegmentCode = s.Code,
-                DomainCode = null,
-                SettingKey = "default-warehouse-name",
-                SettingValue = s.DefaultWarehouseName!,
-                ValueType = "string"
-            })
-            .ToList();
-
-        return new SectorRuleSnapshot
+        return reference with
         {
-            Source = SectorRuleSource.Static,
-            Version = 0,
-            Segments = segments,
-            Domains = domains,
             ModuleDependencies = Array.Empty<ModuleDependencySnapshot>(),
-            DefaultSettings = defaultSettings,
             DataTemplates = Array.Empty<DataTemplateSnapshot>()
         };
     }

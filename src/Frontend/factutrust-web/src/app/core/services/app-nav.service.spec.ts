@@ -391,6 +391,48 @@ describe('AppNavService — secondary nav parity', () => {
     expect(labels).not.toContain('RH & Paie');
   });
 
+  it('hides "CRM Commercial" from the sidebar for a BTP & Construction company without the CRM module (plan §6.2)', () => {
+    const auth = TestBed.inject(AuthService);
+    // Mirrors a BTP & Construction sector provisioning: core modules + BTP's recommended set
+    // (Purchases, Stock, Projects, Fiscal) — CRM is not part of that segment's matrix.
+    setUser(auth, {
+      ...companyUser,
+      enabledModuleIds: [
+        AppModule.Administration,
+        AppModule.Clients,
+        AppModule.Products,
+        AppModule.Sales,
+        AppModule.Treasury,
+        AppModule.Reports,
+        AppModule.Purchases,
+        AppModule.Stock,
+        AppModule.Projects,
+        AppModule.Fiscal
+      ]
+    });
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const nav = TestBed.inject(AppNavService);
+    const labels = nav.navItems().map(i => i.label);
+
+    expect(labels).not.toContain('CRM Commercial');
+  });
+
+  it('shows "CRM Commercial" in the sidebar once the CRM module + crm:read are granted', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, {
+      ...companyUser,
+      enabledModuleIds: [AppModule.Administration, AppModule.Sales, AppModule.CRM],
+      effectivePermissions: ['crm:read']
+    });
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const nav = TestBed.inject(AppNavService);
+    const labels = nav.navItems().map(i => i.label);
+
+    expect(labels).toContain('CRM Commercial');
+  });
+
   function settingsChildRoutes(nav: AppNavService): string[] {
     return (
       nav

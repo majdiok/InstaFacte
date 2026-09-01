@@ -1432,6 +1432,12 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.ToTable("SectorDataTemplateItems");
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.TemplateId);
+            // At most one ACTIVE row per natural key (TemplateId, ItemKind, SortOrder).
+            // Inactive rows are soft-deactivated (catalog removal / admin template replacement)
+            // and may share a key, hence the filtered uniqueness on IsActive.
+            entity.HasIndex(e => new { e.TemplateId, e.ItemKind, e.SortOrder })
+                .IsUnique()
+                .HasFilter("[IsActive] = 1");
             entity.Property(e => e.ItemKind).HasMaxLength(30).IsRequired();
             entity.Property(e => e.PayloadJson).IsRequired();
             entity.Property(e => e.CreatedBy).HasMaxLength(450);
@@ -1443,6 +1449,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.ToTable("SectorRuleSetStamps");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+            entity.Property(e => e.CatalogContentHash).HasMaxLength(64);
         });
     }
 }
