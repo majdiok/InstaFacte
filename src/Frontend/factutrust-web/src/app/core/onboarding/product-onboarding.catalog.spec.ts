@@ -99,12 +99,12 @@ describe('canStartProductTour', () => {
   });
 });
 
-describe('checklist catalog module/segment gating metadata (plan §4.4 / WP-F4)', () => {
-  it('exactly the two additive items introduced in Phase 2 carry modules/segments gating; ' +
+describe('checklist catalog module/segment gating metadata (plan §4.4 / WP-F4 + plan v1 §2.6)', () => {
+  it('exactly the four additive items (Phase 2 + plan v1 §2.6) carry modules/segments gating; ' +
     'the 6 original items remain ungated', () => {
     const gated = COMPANY_CHECKLIST_ITEMS.filter(item => item.modules || item.segments);
     expect(gated.map(item => item.id).sort()).toEqual(
-      ['check-default-warehouse', 'commerce-stock-receipt'].sort()
+      ['btp-first-project', 'check-default-warehouse', 'commerce-stock-receipt', 'recurring-contract-setup'].sort()
     );
 
     const ungated = COMPANY_CHECKLIST_ITEMS.filter(item => !item.modules && !item.segments);
@@ -125,5 +125,26 @@ describe('checklist catalog module/segment gating metadata (plan §4.4 / WP-F4)'
     expect(item?.modules).toEqual([AppModule.Stock]);
     expect(item?.segments).toEqual(['commerce']);
     expect(item?.route).toBe('/stock/entries/new');
+  });
+
+  it('"btp-first-project" (plan v1 §2.6) requires the Projects module and the btp-construction segment', () => {
+    const item = COMPANY_CHECKLIST_ITEMS.find(i => i.id === 'btp-first-project');
+    expect(item?.modules).toEqual([AppModule.Projects]);
+    expect(item?.segments).toEqual(['btp-construction']);
+    expect(item?.route).toBe('/projects');
+  });
+
+  it('"recurring-contract-setup" (plan v1 §2.6) requires the RecurringContracts module and Services/Éducatif segments', () => {
+    const item = COMPANY_CHECKLIST_ITEMS.find(i => i.id === 'recurring-contract-setup');
+    expect(item?.modules).toEqual([AppModule.RecurringContracts]);
+    expect(item?.segments).toEqual(['services', 'etablissement-educatif']);
+    expect(item?.route).toBe('/recurring-contracts/new');
+  });
+
+  it('un tenant BTP ne voit pas de widget/gating croisé avec le segment commerce (isolation des items sectoriels)', () => {
+    const btpItem = COMPANY_CHECKLIST_ITEMS.find(i => i.id === 'btp-first-project');
+    const commerceItem = COMPANY_CHECKLIST_ITEMS.find(i => i.id === 'commerce-stock-receipt');
+    expect(btpItem?.segments).not.toContain('commerce');
+    expect(commerceItem?.segments).not.toContain('btp-construction');
   });
 });

@@ -44,6 +44,7 @@ public class AuthController : ControllerBase
     private readonly IEmailService _emailService;
     private readonly IClientPortalService _clientPortalService;
     private readonly IRegistrationSectorService _registrationSectorService;
+    private readonly ISectorCatalogProvider _sectorCatalogProvider;
     private readonly RegistrationSectorOptions _registrationSectorOptions;
     private readonly EmailVerificationOptions _emailVerificationOptions;
     private readonly ILogger<AuthController> _logger;
@@ -63,6 +64,7 @@ public class AuthController : ControllerBase
         IEmailService emailService,
         IClientPortalService clientPortalService,
         IRegistrationSectorService registrationSectorService,
+        ISectorCatalogProvider sectorCatalogProvider,
         IOptions<RegistrationSectorOptions> registrationSectorOptions,
         IOptions<EmailVerificationOptions> emailVerificationOptions,
         ILogger<AuthController> logger)
@@ -81,6 +83,7 @@ public class AuthController : ControllerBase
         _emailService = emailService;
         _clientPortalService = clientPortalService;
         _registrationSectorService = registrationSectorService;
+        _sectorCatalogProvider = sectorCatalogProvider;
         _registrationSectorOptions = registrationSectorOptions.Value;
         _emailVerificationOptions = emailVerificationOptions.Value;
         _logger = logger;
@@ -211,6 +214,15 @@ public class AuthController : ControllerBase
             // known profile) sectorProfile is null and both columns stay NULL — this is the
             // kill-switch gate for storage, mirroring the gate already applied in ResolveProfile.
             tenant.SetSectorClassification(sectorProfile?.SegmentCode, sectorProfile?.DomainCode);
+
+            // Plan §2.1 — records the catalog version tag active when the classification above was
+            // resolved (null when sectorProfile itself is null, matching CompanySegment/BusinessDomain
+            // staying null in that same case: kill-switch off, or an unresolved/legacy payload).
+            if (sectorProfile is not null)
+            {
+                var catalogSnapshot = _sectorCatalogProvider.GetSnapshot();
+                tenant.SetSectorCatalogVersion(catalogSnapshot.CatalogVersionTag);
+            }
 
             var masterSw = Stopwatch.StartNew();
             _masterContext.Tenants.Add(tenant);

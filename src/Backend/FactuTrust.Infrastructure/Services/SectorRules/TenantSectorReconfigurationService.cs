@@ -26,7 +26,8 @@ public sealed class TenantSectorReconfigurationService : ITenantSectorReconfigur
     /// <summary>Cap on the number of users a single re-configuration touches (plan §WP-B7 security matrix).</summary>
     private const int MaxUsersPerRun = 500;
 
-    internal const string AuditAction = "sector-reconfiguration";
+    /// <summary>Kept as a same-named alias for existing internal call sites/tests; canonical value now lives on the interface (plan §2.3, cross-assembly visibility for <c>CompanySectorController</c>).</summary>
+    internal const string AuditAction = ITenantSectorReconfigurationService.AuditAction;
 
     private readonly MasterDbContext _db;
     private readonly IRegistrationSectorService _registrationSectorService;
@@ -431,32 +432,14 @@ public sealed class TenantSectorReconfigurationService : ITenantSectorReconfigur
     /// Administration is always on (guaranteed by the calculator). Never touches
     /// <c>TenantModuleOverrides</c>, plans or role assignments.
     /// </summary>
+    /// <summary>
+    /// Rewrites a user's <c>UserModuleGrant</c> rows via the shared <see cref="UserModuleGrantWriter"/>
+    /// (plan §2.2) and immediately persists (single-user call site, unlike the batch
+    /// <c>CompanyModulesController</c> apply path).
+    /// </summary>
     private async Task RewriteUserGrantsAsync(Guid userId, HashSet<AppModule> finalSet, CancellationToken cancellationToken)
-    {
-        var existing = await _db.UserModuleGrants.Where(g => g.UserId == userId).ToListAsync(cancellationToken);
-        if (existing.Count > 0)
-            _db.UserModuleGrants.RemoveRange(existing);
+        => await UserModuleGrantWriter.RewriteGrantsAsync(_db, userId, finalSet, saveChanges: true, cancellationToken);
 
-        // Canonical "all modules enabled" = no rows. We still SaveChanges so any prior rows that were
-        // just marked for deletion are actually persisted away — otherwise a user reconfigured to the
-        // full set would keep their old (restricted) grants instead of reaching the 0-rows form.
-        if (finalSet.Count != AppModuleExtensions.AllValues.Length)
-        {
-            foreach (var module in AppModuleExtensions.AllValues)
-            {
-                _db.UserModuleGrants.Add(new UserModuleGrant
-                {
-                    Id = Guid.NewGuid(),
-                    UserId = userId,
-                    Module = module,
-                    IsEnabled = finalSet.Contains(module),
-                    EnabledFeatureKeys = null
-                });
-            }
-        }
-
-        await _db.SaveChangesAsync(cancellationToken);
-    }
 
     /// <summary>
     /// Appends a hash-chained audit row to the tenant DB. Details JSON carries segment/domain

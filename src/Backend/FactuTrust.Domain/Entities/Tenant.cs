@@ -52,6 +52,16 @@ public sealed class Tenant : AggregateRoot
     /// <summary>Normalized catalog code, e.g. "sante-paramedical". Null when no domain was captured.</summary>
     public string? BusinessDomain { get; private set; }
 
+    /// <summary>
+    /// Plan §2.1 — <see cref="FactuTrust.Domain.SectorConfiguration.SectorRuleSnapshot.CatalogVersionTag"/>
+    /// (e.g. "static:0", "db:12") captured at the moment <see cref="CompanySegment"/>/<see cref="BusinessDomain"/>
+    /// were last resolved from the sector catalog (registration, or a later reconfiguration). Null for
+    /// tenants created before this field existed, or when no sector classification was ever set.
+    /// Informational only — never gates behavior; lets support/diagnostics tell which catalog
+    /// version drove a given tenant's module set.
+    /// </summary>
+    public string? SectorCatalogVersion { get; private set; }
+
     private Tenant() { }
 
     public static Result<Tenant> Create(
@@ -211,6 +221,19 @@ public sealed class Tenant : AggregateRoot
             var trimmed = code.Trim().ToLowerInvariant();
             return trimmed.Length > 50 ? trimmed[..50] : trimmed;
         }
+    }
+
+    /// <summary>Plan §2.1 — records the catalog version tag active when the sector classification was last resolved. Null clears it.</summary>
+    public void SetSectorCatalogVersion(string? catalogVersionTag)
+    {
+        if (string.IsNullOrWhiteSpace(catalogVersionTag))
+        {
+            SectorCatalogVersion = null;
+            return;
+        }
+
+        var trimmed = catalogVersionTag.Trim();
+        SectorCatalogVersion = trimmed.Length > 50 ? trimmed[..50] : trimmed;
     }
 
     public void Deactivate()

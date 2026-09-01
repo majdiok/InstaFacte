@@ -824,6 +824,14 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         platformSettingsOnly: true
       },
       {
+        label: 'Modules',
+        route: '/settings/modules',
+        icon: 'fa-solid fa-th-large',
+        modules: [M.Administration],
+        permissionsAll: ['settings:update'],
+        platformSettingsOnly: true
+      },
+      {
         label: 'Promotions',
         route: '/settings/promotions',
         icon: 'fa-solid fa-bullhorn',

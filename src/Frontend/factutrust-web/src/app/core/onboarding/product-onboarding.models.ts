@@ -57,7 +57,9 @@ export const COMPANY_CHECKLIST_IDS = {
   numbering: 'numbering',
   inviteUser: 'invite-user',
   checkDefaultWarehouse: 'check-default-warehouse',
-  commerceStockReceipt: 'commerce-stock-receipt'
+  commerceStockReceipt: 'commerce-stock-receipt',
+  btpFirstProject: 'btp-first-project',
+  recurringContractSetup: 'recurring-contract-setup'
 } as const;
 
 export const FIRM_CHECKLIST_IDS = {

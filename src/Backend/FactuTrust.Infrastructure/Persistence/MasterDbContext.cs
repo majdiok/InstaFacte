@@ -29,6 +29,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
     public DbSet<TenantConnectionString> TenantConnectionStrings => Set<TenantConnectionString>();
     public DbSet<UserModuleGrant> UserModuleGrants => Set<UserModuleGrant>();
+    public DbSet<ModuleGrantAuditEntry> ModuleGrantAuditEntries => Set<ModuleGrantAuditEntry>();
     public DbSet<AccountingFirmProfile> AccountingFirmProfiles => Set<AccountingFirmProfile>();
     public DbSet<FirmClientAssignment> FirmClientAssignments => Set<FirmClientAssignment>();
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
@@ -235,6 +236,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             // Sector-aware registration wizard (plan §6.1 B2) — additive, nullable.
             entity.Property(t => t.CompanySegment).HasMaxLength(50);
             entity.Property(t => t.BusinessDomain).HasMaxLength(50);
+            entity.Property(t => t.SectorCatalogVersion).HasMaxLength(50);
 
             // Provisioning mini-saga (plan §1.5) — additive, defaults Ready so every pre-existing
             // row (and every non-restructured creation flow) reads as already-provisioned.
@@ -391,6 +393,16 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.HasKey(g => g.Id);
             entity.HasIndex(g => new { g.UserId, g.Module }).IsUnique();
             entity.Property(g => g.EnabledFeatureKeys).HasMaxLength(2000);
+        });
+
+        // Plan §2.2 — audit trail for module-grant changes made via CompanyModulesController.
+        builder.Entity<ModuleGrantAuditEntry>(entity =>
+        {
+            entity.ToTable("ModuleGrantAuditEntries");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Action).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.DiffJson).HasColumnType("nvarchar(max)").IsRequired();
+            entity.HasIndex(e => new { e.TenantId, e.CreatedAtUtc });
         });
 
         // Lot B2 — Platform admin 2FA profile (1-to-1 avec ApplicationUser).

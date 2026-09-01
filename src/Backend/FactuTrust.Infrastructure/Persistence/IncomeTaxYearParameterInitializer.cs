@@ -17,7 +17,8 @@ public static class IncomeTaxYearParameterInitializer
     private const int FirstYear = 2018;
     private const int LastYear = 2040;
 
-    public static async Task EnsureDefaultsSeededAsync(TenantDbContext context, CancellationToken cancellationToken = default)
+    /// <returns><c>true</c> when at least one year parameter row was inserted or refreshed, otherwise <c>false</c>.</returns>
+    public static async Task<bool> EnsureDefaultsSeededAsync(TenantDbContext context, CancellationToken cancellationToken = default)
     {
         var rows = await context.IncomeTaxYearParameters.ToListAsync(cancellationToken);
         var byYear = rows.ToDictionary(p => p.FiscalYear);
@@ -53,6 +54,8 @@ public static class IncomeTaxYearParameterInitializer
 
         if (changed)
             await context.SaveChangesAsync(cancellationToken);
+
+        return changed;
     }
 
     private static bool DiffersFromDefaults(IncomeTaxYearParameter a, IncomeTaxYearParameter b) =>

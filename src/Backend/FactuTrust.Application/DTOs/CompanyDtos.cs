@@ -34,6 +34,14 @@ public sealed record CompanyDto
     // master Tenant row; null for tenants registered before this feature or via register-firm.
     public string? CompanySegment { get; init; }
     public string? BusinessDomain { get; init; }
+
+    // Plan §2.4 — populated only on a request that changed TaxRegime and actually re-seeded
+    // something (French labels of what was updated); null otherwise.
+    public IReadOnlyList<string>? FiscalUpdateMessages { get; init; }
+
+    // Plan §2.4 point 3 — non-blocking French warning when the new regime is atypical for the
+    // tenant's segment; null when the regime is usual (or unchanged).
+    public string? TaxRegimeWarning { get; init; }
 }
 
 /// <summary>

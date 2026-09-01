@@ -1524,6 +1524,37 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.ToTable("TenantModalSettings", (string)null);
                 });
 
+            modelBuilder.Entity("FactuTrust.Domain.Entities.ModuleGrantAuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DiffJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CreatedAtUtc");
+
+                    b.ToTable("ModuleGrantAuditEntries", (string)null);
+                });
+
             modelBuilder.Entity("FactuTrust.Domain.Entities.AccountingFirmProfile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4488,6 +4519,10 @@ namespace FactuTrust.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
                         .HasDefaultValue(0);
+
+                    b.Property<string>("SectorCatalogVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<int>("TaxRegime")
                         .HasColumnType("int");

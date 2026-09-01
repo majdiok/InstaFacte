@@ -23,6 +23,14 @@
   white-space: nowrap;
 }
 
+/** Plan 2.1: discreet indicator shown when the remote sector catalog was unreachable and the wizard fell back to the static recommendation table. */
+.based-chip--fallback {
+  color: #92400e;
+  background: #fffaf0;
+  border-color: #fbe3b7;
+  margin-left: 0.4rem;
+}
+
 .mod-group {
   margin-bottom: 1.2rem;
 

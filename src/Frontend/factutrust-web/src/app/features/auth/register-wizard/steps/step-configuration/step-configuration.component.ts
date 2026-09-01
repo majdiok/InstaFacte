@@ -46,6 +46,11 @@ export class StepConfigurationComponent {
     return [segmentLabel, domainLabel].filter(Boolean).join(' · ');
   }
 
+  /** Discreet indicator (plan 2.1): the remote catalog was unreachable after retries. */
+  get usedStaticFallback(): boolean {
+    return this.catalog.usedStaticFallback();
+  }
+
   enabledModuleIds(): AppModule[] {
     return this.form.get('enabledModules')?.value ?? [];
   }

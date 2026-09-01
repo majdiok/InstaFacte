@@ -170,6 +170,38 @@ describe('OnboardingChecklistComponent', () => {
     });
   });
 
+  describe('plan v1 §2.6 — items sectoriels additionnels (BTP / Services & Éducatif)', () => {
+    it('tenant BTP avec module Projets actif voit « Créer votre premier projet », pas le tenant Commerce', () => {
+      setup({ admin: true, enabledModuleIds: [AppModule.Projects], companySegment: 'btp-construction' });
+      expect(fixture.nativeElement.textContent).toContain('Créer votre premier projet');
+    });
+
+    it('tenant Commerce ne voit pas « Créer votre premier projet » même avec le module Projets actif', () => {
+      setup({ admin: true, enabledModuleIds: [AppModule.Projects], companySegment: 'commerce' });
+      expect(fixture.nativeElement.textContent).not.toContain('Créer votre premier projet');
+    });
+
+    it('masque « Créer votre premier projet » pour un tenant BTP sans le module Projets', () => {
+      setup({ admin: true, enabledModuleIds: [], companySegment: 'btp-construction' });
+      expect(fixture.nativeElement.textContent).not.toContain('Créer votre premier projet');
+    });
+
+    it('tenant Services avec module RecurringContracts actif voit « Configurer un contrat récurrent »', () => {
+      setup({ admin: true, enabledModuleIds: [AppModule.RecurringContracts], companySegment: 'services' });
+      expect(fixture.nativeElement.textContent).toContain('Configurer un contrat récurrent');
+    });
+
+    it('tenant Établissement éducatif avec module RecurringContracts actif voit aussi cet item', () => {
+      setup({ admin: true, enabledModuleIds: [AppModule.RecurringContracts], companySegment: 'etablissement-educatif' });
+      expect(fixture.nativeElement.textContent).toContain('Configurer un contrat récurrent');
+    });
+
+    it('tenant BTP ne voit pas « Configurer un contrat récurrent » (réservé Services/Éducatif)', () => {
+      setup({ admin: true, enabledModuleIds: [AppModule.RecurringContracts], companySegment: 'btp-construction' });
+      expect(fixture.nativeElement.textContent).not.toContain('Configurer un contrat récurrent');
+    });
+  });
+
   describe('progress counts the filtered list (plan WP-F5)', () => {
     // Two shipped catalog items ARE module/segment-gated now ('check-default-warehouse',
     // 'commerce-stock-receipt' — see the 'real catalog items' describe block above), but this

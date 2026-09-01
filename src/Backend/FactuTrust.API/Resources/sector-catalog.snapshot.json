@@ -1,0 +1,363 @@
+{
+  "segments": [
+    {
+      "code": "entreprise",
+      "labelFr": "Entreprise",
+      "descriptionFr": "Soci\u00E9t\u00E9s commerciales et de services aux entreprises.",
+      "iconKey": "briefcase",
+      "sortOrder": 0,
+      "coreModuleIds": [
+        5,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "recommendedModuleIds": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "defaultWarehouseName": "Entrep\u00F4t Principal",
+      "domainCodes": [
+        "technologie-informatique",
+        "alimentation-agroalimentaire",
+        "sante-paramedical",
+        "textile-habillement",
+        "transport-logistique",
+        "immobilier",
+        "energie-environnement",
+        "communication-marketing",
+        "artisanat",
+        "autre"
+      ]
+    },
+    {
+      "code": "commerce",
+      "labelFr": "Commerce",
+      "descriptionFr": "N\u00E9goce et distribution.",
+      "iconKey": "shopping-cart",
+      "sortOrder": 1,
+      "coreModuleIds": [
+        5,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "recommendedModuleIds": [
+        6,
+        7,
+        10
+      ],
+      "defaultWarehouseName": "Magasin principal",
+      "domainCodes": [
+        "alimentation-agroalimentaire",
+        "textile-habillement",
+        "technologie-informatique",
+        "sante-paramedical",
+        "artisanat",
+        "autre"
+      ]
+    },
+    {
+      "code": "services",
+      "labelFr": "Prestations de services",
+      "descriptionFr": "Services et conseils.",
+      "iconKey": "handshake",
+      "sortOrder": 2,
+      "coreModuleIds": [
+        5,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "recommendedModuleIds": [
+        9,
+        16,
+        17,
+        10
+      ],
+      "defaultWarehouseName": "Entrep\u00F4t Principal",
+      "domainCodes": [
+        "technologie-informatique",
+        "communication-marketing",
+        "sante-paramedical",
+        "transport-logistique",
+        "immobilier",
+        "autre"
+      ]
+    },
+    {
+      "code": "btp-construction",
+      "labelFr": "BTP \u0026 Construction",
+      "descriptionFr": "B\u00E2timent et travaux publics.",
+      "iconKey": "hard-hat",
+      "sortOrder": 3,
+      "coreModuleIds": [
+        5,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "recommendedModuleIds": [
+        6,
+        7,
+        16,
+        10
+      ],
+      "defaultWarehouseName": "D\u00E9p\u00F4t chantier",
+      "domainCodes": [
+        "immobilier",
+        "energie-environnement",
+        "artisanat",
+        "autre"
+      ]
+    },
+    {
+      "code": "association",
+      "labelFr": "Association",
+      "descriptionFr": "Organismes \u00E0 but non lucratif.",
+      "iconKey": "heart-handshake",
+      "sortOrder": 4,
+      "coreModuleIds": [
+        5,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "recommendedModuleIds": [
+        8,
+        10
+      ],
+      "defaultWarehouseName": "Entrep\u00F4t Principal",
+      "domainCodes": [
+        "sante-paramedical",
+        "energie-environnement",
+        "communication-marketing",
+        "artisanat",
+        "autre"
+      ]
+    },
+    {
+      "code": "etablissement-educatif",
+      "labelFr": "\u00C9tablissement \u00E9ducatif",
+      "descriptionFr": "\u00C9coles, universit\u00E9s, centres de formation.",
+      "iconKey": "graduation-cap",
+      "sortOrder": 5,
+      "coreModuleIds": [
+        5,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "recommendedModuleIds": [
+        17,
+        8,
+        10
+      ],
+      "defaultWarehouseName": "Entrep\u00F4t Principal",
+      "domainCodes": [
+        "technologie-informatique",
+        "sante-paramedical",
+        "artisanat",
+        "communication-marketing",
+        "autre"
+      ]
+    }
+  ],
+  "domains": [
+    {
+      "code": "technologie-informatique",
+      "labelFr": "Technologie \u0026 Informatique",
+      "sortOrder": 0,
+      "additionalModuleIds": [
+        16,
+        17
+      ]
+    },
+    {
+      "code": "alimentation-agroalimentaire",
+      "labelFr": "Alimentation \u0026 Agroalimentaire",
+      "sortOrder": 1,
+      "additionalModuleIds": [
+        7,
+        6
+      ]
+    },
+    {
+      "code": "sante-paramedical",
+      "labelFr": "Sant\u00E9 \u0026 Param\u00E9dical",
+      "sortOrder": 2,
+      "additionalModuleIds": [
+        9
+      ]
+    },
+    {
+      "code": "textile-habillement",
+      "labelFr": "Textile \u0026 Habillement",
+      "sortOrder": 3,
+      "additionalModuleIds": [
+        7
+      ]
+    },
+    {
+      "code": "transport-logistique",
+      "labelFr": "Transport \u0026 Logistique",
+      "sortOrder": 4,
+      "additionalModuleIds": [
+        7
+      ]
+    },
+    {
+      "code": "immobilier",
+      "labelFr": "Immobilier",
+      "sortOrder": 5,
+      "additionalModuleIds": []
+    },
+    {
+      "code": "energie-environnement",
+      "labelFr": "\u00C9nergie \u0026 Environnement",
+      "sortOrder": 6,
+      "additionalModuleIds": []
+    },
+    {
+      "code": "communication-marketing",
+      "labelFr": "Communication \u0026 Marketing",
+      "sortOrder": 7,
+      "additionalModuleIds": [
+        9
+      ]
+    },
+    {
+      "code": "artisanat",
+      "labelFr": "Artisanat",
+      "sortOrder": 8,
+      "additionalModuleIds": []
+    },
+    {
+      "code": "autre",
+      "labelFr": "Autre domaine",
+      "sortOrder": 9,
+      "additionalModuleIds": []
+    }
+  ],
+  "modules": [
+    {
+      "id": 0,
+      "code": "Clients",
+      "labelFr": "Clients",
+      "isCore": true
+    },
+    {
+      "id": 1,
+      "code": "Products",
+      "labelFr": "Produits et services",
+      "isCore": true
+    },
+    {
+      "id": 2,
+      "code": "Sales",
+      "labelFr": "Ventes (factures)",
+      "isCore": true
+    },
+    {
+      "id": 3,
+      "code": "Treasury",
+      "labelFr": "Tr\u00E9sorerie (paiements)",
+      "isCore": true
+    },
+    {
+      "id": 4,
+      "code": "Reports",
+      "labelFr": "Rapports",
+      "isCore": true
+    },
+    {
+      "id": 5,
+      "code": "Administration",
+      "labelFr": "Param\u00E8tres et utilisateurs",
+      "isCore": true
+    },
+    {
+      "id": 6,
+      "code": "Purchases",
+      "labelFr": "Achats",
+      "isCore": false
+    },
+    {
+      "id": 7,
+      "code": "Stock",
+      "labelFr": "Stock",
+      "isCore": false
+    },
+    {
+      "id": 8,
+      "code": "Accounting",
+      "labelFr": "Comptabilit\u00E9",
+      "isCore": false
+    },
+    {
+      "id": 9,
+      "code": "CRM",
+      "labelFr": "CRM Commercial",
+      "isCore": false
+    },
+    {
+      "id": 10,
+      "code": "Fiscal",
+      "labelFr": "Fiscal / TEJ",
+      "isCore": false
+    },
+    {
+      "id": 11,
+      "code": "AI",
+      "labelFr": "Assistant IA",
+      "isCore": false
+    },
+    {
+      "id": 12,
+      "code": "Forecasting",
+      "labelFr": "Pr\u00E9visions IA",
+      "isCore": false
+    },
+    {
+      "id": 13,
+      "code": "Studio",
+      "labelFr": "Studio (low-code)",
+      "isCore": false
+    },
+    {
+      "id": 14,
+      "code": "Payroll",
+      "labelFr": "RH \u0026 Paie",
+      "isCore": false
+    },
+    {
+      "id": 16,
+      "code": "Projects",
+      "labelFr": "Projets",
+      "isCore": false
+    },
+    {
+      "id": 17,
+      "code": "RecurringContracts",
+      "labelFr": "Contrats r\u00E9currents",
+      "isCore": false
+    }
+  ],
+  "moduleDependencies": [],
+  "catalogVersion": "static:0"
+}

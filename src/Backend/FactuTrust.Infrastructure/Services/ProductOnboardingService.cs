@@ -7,6 +7,7 @@ using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Constants;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ProductOnboarding;
+using FactuTrust.Domain.Services;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,15 @@ namespace FactuTrust.Infrastructure.Services;
 
 public sealed class ProductOnboardingService : IProductOnboardingService
 {
+    /// <summary>
+    /// Generic fallback name assigned by <c>TenantService.SeedDefaultWarehouseAsync</c> when the
+    /// registration wizard leaves <c>warehouseName</c> blank — used as the "still untouched" signal
+    /// for the plan §2.6 <c>check-default-warehouse</c> onboarding item. A tenant whose default
+    /// warehouse already carries a different name (typed at registration or renamed afterwards)
+    /// is considered to have engaged with warehouse setup either way.
+    /// </summary>
+    private const string DefaultWarehouseSeedName = "Entrepôt Principal";
+
     private readonly MasterDbContext _master;
     private readonly ICurrentUser _currentUser;
     private readonly ITenantDbContextFactory _tenantDbFactory;
@@ -195,6 +205,46 @@ public sealed class ProductOnboardingService : IProductOnboardingService
         if (hasInvoice)
             ids.Add(ProductOnboardingDefaults.CompanyItemIds.CreateInvoice);
 
+        // Plan §2.6 — "check-default-warehouse": the tenant engaged with warehouse setup, either by
+        // renaming the default warehouse away from the generic seed name or by creating a second one.
+        var warehouses = await tenantDb.Warehouses.AsNoTracking()
+            .Where(w => w.IsActive)
+            .Select(w => new { w.IsDefault, w.Name })
+            .ToListAsync(cancellationToken);
+        var defaultWarehouseRenamed = warehouses
+            .FirstOrDefault(w => w.IsDefault)?.Name is { } defaultName
+            && !string.Equals(defaultName, DefaultWarehouseSeedName, StringComparison.Ordinal);
+        if (warehouses.Count > 1 || defaultWarehouseRenamed)
+            ids.Add(ProductOnboardingDefaults.CompanyItemIds.CheckDefaultWarehouse);
+
+        // Plan §2.6 — "commerce-stock-receipt": at least one validated stock entry ("bon d'entrée").
+        var hasStockReceipt = await tenantDb.StockVouchers.AsNoTracking()
+            .AnyAsync(v => v.Kind == StockVoucherKind.Entry && v.Status == StockVoucherStatus.Validated, cancellationToken);
+        if (hasStockReceipt)
+            ids.Add(ProductOnboardingDefaults.CompanyItemIds.CommerceStockReceipt);
+
+        // Plan §2.6 — "numbering": at least one numbering scheme's format or start number diverges
+        // from the document type's default (StartNumber initializes to 1 and only an explicit
+        // UpdateStartNumber call changes it; blocks are compared after deserialization — not as raw
+        // JSON — so legacy PascalCase-persisted defaults still compare equal to the current
+        // camelCase default serialization).
+        var numberingSchemes = await tenantDb.DocumentNumberingSchemes.AsNoTracking()
+            .Select(s => new { s.DocumentType, s.StartNumber, s.FormatBlocksJson })
+            .ToListAsync(cancellationToken);
+        var numberingCustomized = numberingSchemes.Any(s =>
+            s.StartNumber != 1 || !MatchesDefaultBlocks(s.DocumentType, s.FormatBlocksJson));
+        if (numberingCustomized)
+            ids.Add(ProductOnboardingDefaults.CompanyItemIds.Numbering);
+
         return ids;
+    }
+
+    private static bool MatchesDefaultBlocks(NumberingDocumentType documentType, string formatBlocksJson)
+    {
+        var actual = NumberingSchemeDefaults.DeserializeBlocks(formatBlocksJson);
+        var expected = NumberingSchemeDefaults.GetDefaultBlocks(documentType);
+
+        return actual.Count == expected.Count
+            && actual.Zip(expected, (a, e) => a.Type == e.Type && a.Order == e.Order && a.Value == e.Value).All(match => match);
     }
 }

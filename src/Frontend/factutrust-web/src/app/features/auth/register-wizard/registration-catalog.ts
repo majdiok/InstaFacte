@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { catchError, of, retry } from 'rxjs';
+import { catchError, of, retry, timer } from 'rxjs';
 import { environment } from '@environments/environment';
 import { AppModule, APP_MODULE_OPTIONS } from '@core/models/app-module';
 
@@ -560,13 +560,29 @@ export class RegistrationCatalogService {
     return enabled.filter(id => id !== moduleId && this.requiredBy(id).includes(moduleId));
   }
 
+  /** Number of retries attempted after the initial request before falling back (plan 2.1 — 3 attempts total). */
+  private static readonly RETRY_COUNT = 2;
+  /** Backoff base delay (ms); attempt N waits `RETRY_BACKOFF_MS_BASE * N` before retrying. */
+  private static readonly RETRY_BACKOFF_MS_BASE = 1500;
+
+  /**
+   * True once the catalog has fallen back to the bundled static table after exhausting
+   * its retries (plan 2.1). Drives the discreet "recommandations par défaut" wizard
+   * indicator — kept separate from `loadState() === 'fallback'` so a future caller
+   * (telemetry dashboard, support tooling) can query it independently of the load
+   * lifecycle enum.
+   */
+  readonly usedStaticFallback = signal(false);
+
   /**
    * Fetches the live sector catalog once per SPA session and caches it in-memory
    * (plan WP-F1). No-op when already loading/loaded, or when the frontend kill-switch
-   * `featureFlags.sectorCatalogHttp` is off. Never surfaces an error to the caller —
-   * registration must never be blocked by this endpoint. Root-provided means an admin
-   * editing rules mid-session won't be reflected without a hard reload; acceptable for
-   * the registration flow.
+   * `featureFlags.sectorCatalogHttp` is off. Never surfaces a blocking error to the
+   * caller — registration must never be blocked by this endpoint — but a failure after
+   * retries is now "loud": logged to the console/telemetry sink and reflected through
+   * `usedStaticFallback()` so the wizard can show a discreet indicator (plan 2.1).
+   * Root-provided means an admin editing rules mid-session won't be reflected without a
+   * hard reload; acceptable for the registration flow.
    */
   load(): void {
     if (this.loadState() !== 'idle') return;
@@ -577,19 +593,38 @@ export class RegistrationCatalogService {
     this.http
       .get<ApiResponse<SectorCatalogDto>>(`${environment.apiUrl}/public/sector-catalog`)
       .pipe(
-        retry({ count: 1, delay: 1500 }),
+        // Plan 2.1: 3 attempts total (initial + 2 retries) with linear backoff before
+        // falling back to the static catalog — was a single retry (2 attempts) in Phase 1.
+        retry({
+          count: RegistrationCatalogService.RETRY_COUNT,
+          delay: (_error, retryCount) => timer(RegistrationCatalogService.RETRY_BACKOFF_MS_BASE * retryCount)
+        }),
         catchError(() => of(null))
       )
       .subscribe(res => {
         const data = res?.data;
         if (!res || !res.success || !data || !Array.isArray(data.segments) || data.segments.length === 0) {
-          console.warn('[RegistrationCatalogService] Sector catalog unavailable or empty — using static fallback.');
-          this.loadState.set('fallback');
+          this.reportStaticFallback(res);
           return;
         }
         this.remoteCatalog.set(data);
         this.loadState.set('remote');
       });
+  }
+
+  /**
+   * Loud fallback reporting (plan 2.1 — "bruyant" instead of silent): console telemetry
+   * with enough context to diagnose an endpoint outage, plus the `usedStaticFallback`
+   * signal the wizard reads to show its discreet indicator.
+   */
+  private reportStaticFallback(res: ApiResponse<SectorCatalogDto> | null): void {
+    console.warn(
+      '[RegistrationCatalogService] Sector catalog unavailable or empty after ' +
+        `${RegistrationCatalogService.RETRY_COUNT + 1} attempt(s) — using static fallback catalog.`,
+      { lastResponseSuccess: res?.success ?? null, hasData: !!res?.data }
+    );
+    this.usedStaticFallback.set(true);
+    this.loadState.set('fallback');
   }
 
   private get dependencyEdges(): readonly { moduleId: AppModule; requiresModuleId: AppModule }[] {

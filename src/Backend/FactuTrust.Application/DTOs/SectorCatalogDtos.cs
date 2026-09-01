@@ -12,6 +12,14 @@ public sealed record SectorCatalogDto
 
     /// <summary>Phase 2 (plan §WP-B4) — empty with the static provider; populated once dependencies are authored via the admin CRUD.</summary>
     public IReadOnlyList<SectorModuleDependencyDto> ModuleDependencies { get; init; } = Array.Empty<SectorModuleDependencyDto>();
+
+    /// <summary>
+    /// Plan §2.1 — opaque version tag (<c>"{source}:{version}"</c>, e.g. <c>"static:0"</c> or
+    /// <c>"db:12"</c>), mirrors <c>SectorRuleSnapshot.CatalogVersionTag</c>. Clients cache the
+    /// catalog and compare this to detect a change without re-fetching. Also echoed as the
+    /// response's <c>ETag</c> header.
+    /// </summary>
+    public required string CatalogVersion { get; init; }
 }
 
 public sealed record SectorSegmentDto

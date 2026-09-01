@@ -28,6 +28,7 @@ describe('dashboard-layout.config', () => {
       const stored: DashboardBlockId[] = [
         'chart',
         'kpi',
+        'sector',
         'urgent',
         'quick-actions',
         'accounting',
@@ -38,9 +39,10 @@ describe('dashboard-layout.config', () => {
     });
 
     it('appends missing known blocks at their default position', () => {
-      // 'urgent' (default index 1) is missing → must be reinserted right after 'kpi'.
+      // 'urgent' (default index 2) is missing → must be reinserted right after 'sector'.
       const stored: DashboardBlockId[] = [
         'kpi',
+        'sector',
         'quick-actions',
         'accounting',
         'crm',
@@ -49,6 +51,30 @@ describe('dashboard-layout.config', () => {
       ];
       expect(reconcileOrder(stored)).toEqual([
         'kpi',
+        'sector',
+        'urgent',
+        'quick-actions',
+        'accounting',
+        'crm',
+        'chart',
+        'bottom-grid'
+      ]);
+    });
+
+    it("insère 'sector' juste après 'kpi' pour un ordre stocké antérieur à son introduction (rétrocompatibilité)", () => {
+      // Disposition enregistrée avant l'ajout du bloc 'sector' (plan v1 §2.5).
+      const legacyStored: DashboardBlockId[] = [
+        'kpi',
+        'urgent',
+        'quick-actions',
+        'accounting',
+        'crm',
+        'chart',
+        'bottom-grid'
+      ];
+      expect(reconcileOrder(legacyStored)).toEqual([
+        'kpi',
+        'sector',
         'urgent',
         'quick-actions',
         'accounting',

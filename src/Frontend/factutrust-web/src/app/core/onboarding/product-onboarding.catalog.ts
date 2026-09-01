@@ -280,6 +280,27 @@ export const COMPANY_CHECKLIST_ITEMS: readonly OnboardingChecklistItemDef[] = [
     permission: 'stock_vouchers:create',
     modules: [AppModule.Stock],
     segments: ['commerce']
+  },
+  // Plan v1 §2.6 — items sectoriels supplémentaires (BTP / Services & Éducatif).
+  {
+    id: COMPANY_CHECKLIST_IDS.btpFirstProject,
+    label: 'Créer votre premier projet',
+    description: 'Suivez son avancement, ses tâches et sa facturation.',
+    // NB : la création de projet se fait via une boîte de dialogue depuis la liste
+    // (pas de route dédiée `/projects/new`) — on renvoie donc vers la liste des projets.
+    route: '/projects',
+    permission: 'projects:read',
+    modules: [AppModule.Projects],
+    segments: ['btp-construction']
+  },
+  {
+    id: COMPANY_CHECKLIST_IDS.recurringContractSetup,
+    label: 'Configurer un contrat récurrent',
+    description: 'Facturez automatiquement vos abonnements ou missions récurrentes.',
+    route: '/recurring-contracts/new',
+    permission: 'recurring_contracts:create',
+    modules: [AppModule.RecurringContracts],
+    segments: ['services', 'etablissement-educatif']
   }
 ];
 

@@ -28,6 +28,16 @@ import { PERMISSIONS } from '@core/config/permission-keys';
 import { AppModule } from '@core/models/app-module';
 import { AccountingService, AccountingDashboardDto } from '../accounting/services/accounting.service';
 import { CrmService } from '../crm/services/crm.service';
+import { PurchaseOrderService } from '@core/services/purchase-order.service';
+import { ProjectApiService } from '../projects/project-api.service';
+import { RecurringContractService } from '@core/services/recurring-contract.service';
+import { APP_MODULE_OPTIONS } from '@core/models/app-module';
+import {
+  SectorKpiWidgetDef,
+  isQuickActionWidgetVisible,
+  QUICK_ACTION_WIDGETS,
+  visibleSectorKpiWidgets
+} from './dashboard-widgets.registry';
 import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { TenantSystemStatusService } from '@core/services/tenant-system-status.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
@@ -147,6 +157,7 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
           <div class="dash-block__body">
             @switch (block.id) {
               @case ('kpi') { <ng-container [ngTemplateOutlet]="kpiTpl"></ng-container> }
+              @case ('sector') { <ng-container [ngTemplateOutlet]="sectorTpl"></ng-container> }
               @case ('urgent') { <ng-container [ngTemplateOutlet]="urgentTpl"></ng-container> }
               @case ('quick-actions') { <ng-container [ngTemplateOutlet]="quickActionsTpl"></ng-container> }
               @case ('accounting') { <ng-container [ngTemplateOutlet]="accountingTpl"></ng-container> }
@@ -244,6 +255,38 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
 
     </ng-template>
 
+    <ng-template #sectorTpl>
+    <!-- Aperçu sectoriel & modules actifs (plan v1 §2.5 — dashboard adaptatif) -->
+    <div class="sector-block">
+      @if (sectorKpiWidgets().length > 0) {
+        <div class="sector-kpi-row">
+          @for (widget of sectorKpiWidgets(); track widget.widgetId) {
+            <a [routerLink]="widget.route" class="sector-kpi-card" [ngClass]="widget.tone">
+              <span class="sector-kpi-icon"><i [class]="widget.icon" aria-hidden="true"></i></span>
+              <div class="sector-kpi-text">
+                <span class="sector-kpi-label">{{ widget.labelFr }}</span>
+                <span class="sector-kpi-value">{{ sectorKpiValue(widget) ?? '—' }}</span>
+              </div>
+            </a>
+          }
+        </div>
+      }
+      <div class="modules-block">
+        <div class="modules-block__header">
+          <span class="modules-block__title"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i> Modules actifs</span>
+          <a routerLink="/settings/modules" class="modules-block__link">
+            Gérer mes modules <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+          </a>
+        </div>
+        <div class="modules-block__pills">
+          @for (mod of activeModuleOptions(); track mod.value) {
+            <span class="mod-pill">{{ mod.label }}</span>
+          }
+        </div>
+      </div>
+    </div>
+    </ng-template>
+
     <ng-template #urgentTpl>
     <!-- Urgent Actions Banner -->
     @if (!loading() && hasUrgentActions()) {
@@ -333,6 +376,18 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
             <a routerLink="/reports" class="quick-action-card">
               <div class="quick-action-icon qa-report"><i class="fa-solid fa-chart-column"></i></div>
               <span class="quick-action-label">Rapports</span>
+            </a>
+          }
+          @if (canUseStockEntryQuickAction()) {
+            <a routerLink="/stock/entries/new" class="quick-action-card">
+              <div class="quick-action-icon qa-stock"><i class="fa-solid fa-box"></i></div>
+              <span class="quick-action-label">Entrée de stock</span>
+            </a>
+          }
+          @if (canUseNewOpportunityQuickAction()) {
+            <a routerLink="/crm/opportunities" class="quick-action-card">
+              <div class="quick-action-icon qa-crm"><i class="fa-solid fa-heart"></i></div>
+              <span class="quick-action-label">Nouvelle opportunité</span>
             </a>
           }
         </div>
@@ -1019,6 +1074,130 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
     .qa-report {
       background: #eff6ff;
       color: #2563eb;
+    }
+
+    .qa-stock {
+      background: #ecfeff;
+      color: #0e7490;
+    }
+
+    .qa-crm {
+      background: #fdf2f8;
+      color: #db2777;
+    }
+
+    /* ===== Aperçu sectoriel & modules (plan v1 §2.5) ===== */
+    .sector-block {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-4);
+    }
+
+    .sector-kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: var(--spacing-3);
+    }
+
+    .sector-kpi-card {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-3);
+      padding: var(--spacing-3) var(--spacing-4);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--color-border-subtle, var(--color-neutral-200));
+      background: var(--color-surface-card, #fff);
+      text-decoration: none;
+      transition: transform var(--duration-moderate, 260ms) var(--ease-out-soft), box-shadow var(--duration-moderate, 260ms) var(--ease-out-soft);
+    }
+
+    .sector-kpi-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-soft-lg, var(--shadow-lg));
+    }
+
+    .sector-kpi-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-lg);
+      font-size: var(--font-size-lg);
+      flex-shrink: 0;
+    }
+
+    .sector-kpi-card.sector-kpi--amber .sector-kpi-icon { background: var(--color-warning-100); color: var(--color-warning-600); }
+    .sector-kpi-card.sector-kpi--purple .sector-kpi-icon { background: #f3e8ff; color: #9333ea; }
+    .sector-kpi-card.sector-kpi--indigo .sector-kpi-icon { background: #e0e7ff; color: #4f46e5; }
+    .sector-kpi-card.sector-kpi--teal .sector-kpi-icon { background: #ccfbf1; color: #0d9488; }
+
+    .sector-kpi-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sector-kpi-label {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-secondary);
+    }
+
+    .sector-kpi-value {
+      font-size: var(--font-size-lg);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .modules-block {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-2);
+      padding: var(--spacing-3) var(--spacing-4);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--color-border-subtle, var(--color-neutral-200));
+      background: var(--color-surface-subtle, var(--color-neutral-50));
+    }
+
+    .modules-block__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--spacing-2);
+    }
+
+    .modules-block__title {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .modules-block__link {
+      font-size: var(--font-size-sm);
+      color: var(--color-primary-600);
+      text-decoration: none;
+      font-weight: var(--font-weight-medium);
+    }
+
+    .modules-block__link:hover {
+      text-decoration: underline;
+    }
+
+    .modules-block__pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--spacing-2);
+    }
+
+    .mod-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: var(--spacing-1) var(--spacing-3);
+      border-radius: var(--radius-full, 999px);
+      background: var(--color-surface-card, #fff);
+      border: 1px solid var(--color-border-subtle, var(--color-neutral-200));
+      font-size: var(--font-size-xs);
+      color: var(--color-text-secondary);
     }
 
     .quick-action-label {
@@ -1877,7 +2056,9 @@ export class DashboardComponent implements OnInit {
       this.canCreateReturnNote() ||
       this.canReadClients() ||
       this.canReadPayments() ||
-      this.canReadReports()
+      this.canReadReports() ||
+      this.canUseStockEntryQuickAction() ||
+      this.canUseNewOpportunityQuickAction()
   );
   /** Carte latérale « Livraisons en attente » : les bons de livraison sont rattachés au module Ventes. */
   showPendingDeliveriesSideCard = computed(() => this.authService.hasModule(AppModule.Sales));
@@ -1909,6 +2090,67 @@ export class DashboardComponent implements OnInit {
       this.authService.hasModule(AppModule.CRM) && this.authService.hasPermission(PERMISSIONS.crm.read)
   );
 
+  // ===== Aperçu sectoriel & modules (plan v1 §2.5 — dashboard adaptatif) =====
+  private purchaseOrderService = inject(PurchaseOrderService);
+  private projectApiService = inject(ProjectApiService);
+  private recurringContractService = inject(RecurringContractService);
+
+  companySegment = computed(() => this.authService.user()?.companySegment ?? null);
+
+  /** Modules actifs de l'utilisateur, pour le bloc « Modules actifs » (plan §2.5 point 3). */
+  activeModuleOptions = computed(() => {
+    const enabledIds = new Set(this.authService.user()?.enabledModuleIds ?? []);
+    return APP_MODULE_OPTIONS.filter((o) => enabledIds.has(o.value));
+  });
+
+  /** Widgets KPI sectoriels visibles pour le segment courant (modules + permission). */
+  sectorKpiWidgets = computed(() =>
+    visibleSectorKpiWidgets(
+      this.companySegment(),
+      (mods) => this.authService.hasAllModules(mods),
+      (perm) => this.authService.hasPermission(perm)
+    )
+  );
+
+  purchaseOrdersPendingCount = signal<number | null>(null);
+  activeProjectsCount = signal<number | null>(null);
+  activeRecurringContractsCount = signal<number | null>(null);
+
+  /** Résout la valeur numérique affichée pour un widget KPI sectoriel donné. */
+  sectorKpiValue(widget: SectorKpiWidgetDef): number | null {
+    switch (widget.widgetId) {
+      case 'commerce-stock-ruptures':
+        return this.stockAlertsCount();
+      case 'commerce-purchases-pending':
+        return this.purchaseOrdersPendingCount();
+      case 'services-btp-active-projects':
+        return this.activeProjectsCount();
+      case 'services-btp-recurring-contracts':
+      case 'assoc-edu-membership-fees':
+        return this.activeRecurringContractsCount();
+      default:
+        return null;
+    }
+  }
+
+  /** Action rapide dérivée des modules actifs : entrée de stock (plan §2.5 point 3). */
+  canUseStockEntryQuickAction = computed(() =>
+    isQuickActionWidgetVisible(
+      QUICK_ACTION_WIDGETS.find((w) => w.widgetId === 'qa-stock-entry')!,
+      (mods) => this.authService.hasAllModules(mods),
+      (perm) => this.authService.hasPermission(perm)
+    )
+  );
+
+  /** Action rapide dérivée des modules actifs : nouvelle opportunité CRM. */
+  canUseNewOpportunityQuickAction = computed(() =>
+    isQuickActionWidgetVisible(
+      QUICK_ACTION_WIDGETS.find((w) => w.widgetId === 'qa-new-opportunity')!,
+      (mods) => this.authService.hasAllModules(mods),
+      (perm) => this.authService.hasPermission(perm)
+    )
+  );
+
   skeletonColumns: SkeletonColumn[] = [
     { width: '120px' },
     { width: '200px' },
@@ -1938,6 +2180,7 @@ export class DashboardComponent implements OnInit {
     this.loadPendingDeliveries();
     this.loadAccountingKpis();
     this.loadCrmKpis();
+    this.loadSectorKpis();
     this.layoutService.loadLayout();
   }
 
@@ -1953,6 +2196,7 @@ export class DashboardComponent implements OnInit {
       case 'chart':
         return !this.loading() && this.canReadInvoices() && this.monthlyRevenue().length > 0;
       case 'kpi':
+      case 'sector':
       case 'quick-actions':
       case 'bottom-grid':
       default:
@@ -2049,6 +2293,46 @@ export class DashboardComponent implements OnInit {
       },
       error: (err) => this.handlePossibleTenantMigrationError(err)
     });
+  }
+
+  /**
+   * Charge les données des widgets KPI sectoriels visibles (plan v1 §2.5). Chaque
+   * appel est conditionné à la visibilité effective du widget correspondant
+   * (module + permission) pour éviter des requêtes inutiles/interdites.
+   */
+  loadSectorKpis(): void {
+    const widgets = this.sectorKpiWidgets();
+
+    if (widgets.some((w) => w.widgetId === 'commerce-purchases-pending')) {
+      this.purchaseOrderService.getPurchaseOrdersSummary({}).subscribe({
+        next: (res) => {
+          if (res.success && res.data) this.purchaseOrdersPendingCount.set(res.data.pendingCount ?? 0);
+        },
+        error: () => {
+          /* le tableau de bord reste utilisable sans ce widget */
+        }
+      });
+    }
+
+    if (widgets.some((w) => w.widgetId === 'services-btp-active-projects')) {
+      this.projectApiService.dashboard().subscribe({
+        next: (res) => {
+          if (res.success && res.data) this.activeProjectsCount.set(res.data.activeProjects ?? 0);
+        },
+        error: () => {
+          /* le tableau de bord reste utilisable sans ce widget */
+        }
+      });
+    }
+
+    if (widgets.some((w) => w.widgetId === 'services-btp-recurring-contracts' || w.widgetId === 'assoc-edu-membership-fees')) {
+      this.recurringContractService.list({ status: 'Active', page: 1, pageSize: 1 }).subscribe({
+        next: (paged) => this.activeRecurringContractsCount.set(paged?.totalCount ?? 0),
+        error: () => {
+          /* le tableau de bord reste utilisable sans ce widget */
+        }
+      });
+    }
   }
 
   reloadAfterMigrationIssue(): void {

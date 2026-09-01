@@ -386,24 +386,46 @@ describe('registration-catalog', () => {
       expect(service.domainsForSegment('unknown-segment')).toEqual([]);
     });
 
-    it('404 falls back silently: loadState becomes "fallback", static catalog still served', fakeAsync(() => {
+    it('404 fails loudly after retries with backoff: loadState becomes "fallback", static catalog still served, usedStaticFallback flips true', fakeAsync(() => {
+      const warnSpy = spyOn(console, 'warn');
+      expect(service.usedStaticFallback()).toBe(false);
+
       service.load();
       httpMock.expectOne(CATALOG_URL).flush('not found', { status: 404, statusText: 'Not Found' });
-      tick(1500);
+      tick(1500); // 1st retry backoff (1 * 1500ms)
+      httpMock.expectOne(CATALOG_URL).flush('not found', { status: 404, statusText: 'Not Found' });
+      tick(3000); // 2nd retry backoff (2 * 1500ms)
       httpMock.expectOne(CATALOG_URL).flush('not found', { status: 404, statusText: 'Not Found' });
 
       expect(service.loadState()).toBe('fallback');
+      expect(service.usedStaticFallback()).toBe(true);
       expect(service.domainsForSegment('commerce').map(d => d.code)).toEqual(COMMERCE_FALLBACK_DOMAINS);
       expect(service.segments).toEqual(SEGMENT_OPTIONS);
+      expect(warnSpy).toHaveBeenCalled();
     }));
 
-    it('retries once on 500 then falls back to static on repeated failure', fakeAsync(() => {
+    it('retries twice (3 attempts total) with linear backoff on 500 then falls back to static on repeated failure (plan 2.1)', fakeAsync(() => {
       service.load();
       httpMock.expectOne(CATALOG_URL).flush('boom', { status: 500, statusText: 'Server Error' });
       tick(1500);
       httpMock.expectOne(CATALOG_URL).flush('boom again', { status: 500, statusText: 'Server Error' });
+      tick(3000);
+      httpMock.expectOne(CATALOG_URL).flush('boom once more', { status: 500, statusText: 'Server Error' });
 
       expect(service.loadState()).toBe('fallback');
+      expect(service.usedStaticFallback()).toBe(true);
+    }));
+
+    it('recovers on the 2nd retry (3rd attempt) without falling back', fakeAsync(() => {
+      service.load();
+      httpMock.expectOne(CATALOG_URL).flush('boom', { status: 500, statusText: 'Server Error' });
+      tick(1500);
+      httpMock.expectOne(CATALOG_URL).flush('boom again', { status: 500, statusText: 'Server Error' });
+      tick(3000);
+      httpMock.expectOne(CATALOG_URL).flush({ success: true, data: fakeCatalog() } as ApiResponse<SectorCatalogDto>);
+
+      expect(service.loadState()).toBe('remote');
+      expect(service.usedStaticFallback()).toBe(false);
     }));
 
     it('does not fetch at all when the frontend kill-switch is off', () => {

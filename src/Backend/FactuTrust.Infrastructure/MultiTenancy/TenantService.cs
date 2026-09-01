@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Constants;
 using FactuTrust.Domain.Entities;
+using FactuTrust.Domain.SectorConfiguration;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.Persistence;
 using Microsoft.AspNetCore.DataProtection;
@@ -181,6 +183,108 @@ public sealed class TenantService : ITenantService
     {
         var masterConnectionString = GetMasterConnectionString();
         return _provisioner.EnsureTenantTemplateAsync(masterConnectionString, cancellationToken);
+    }
+
+    /// <summary>
+    /// Plan §2.4 — re-seeds the tenant DB's fiscal catalogs after a <see cref="TaxRegime"/> change.
+    /// Purely additive: reuses the same idempotent initializers run at tenant creation, so existing
+    /// rows a bookkeeper already customized (e.g. <c>IncomeTaxYearParameter.IsUserModified</c>) are
+    /// never overwritten and no business data (invoices, journal entries) is touched. Appends a
+    /// hash-chained audit row to the tenant DB (best-effort — an audit failure never fails the
+    /// re-seed itself, mirroring <see cref="TenantSectorReconfigurationService"/>'s fault isolation).
+    /// </summary>
+    public async Task<FiscalReSeedResultDto> ReSeedFiscalParametersAsync(
+        Guid tenantId,
+        TaxRegime oldRegime,
+        TaxRegime newRegime,
+        string? companySegment,
+        CancellationToken cancellationToken = default)
+    {
+        var connectionString = await GetConnectionStringAsync(tenantId, cancellationToken)
+            ?? throw new InvalidOperationException($"Chaîne de connexion introuvable pour l'entreprise {tenantId}");
+
+        var options = new DbContextOptionsBuilder<TenantDbContext>()
+            .UseSqlServer(connectionString, b => b.MigrationsAssembly(typeof(TenantDbContext).Assembly.FullName))
+            .Options;
+
+        var updatedItems = new List<string>();
+
+        await using (var context = new TenantDbContext(options))
+        {
+            if (await WithholdingTaxCatalogInitializer.EnsureSystemTypesSeededAsync(context, cancellationToken))
+                updatedItems.Add("Catalogue des types de retenue à la source (TEJ)");
+
+            if (await WithholdingFiscalYearParameterInitializer.EnsureDefaultsSeededAsync(context, cancellationToken))
+                updatedItems.Add("Paramètres de retenue à la source par exercice");
+
+            if (await IncomeTaxYearParameterInitializer.EnsureDefaultsSeededAsync(context, cancellationToken))
+                updatedItems.Add("Paramètres d'impôt sur les sociétés / IRPP par exercice");
+        }
+
+        _logger.LogInformation(
+            "TenantService.ReSeedFiscalParameters: tenant {TenantId} {OldRegime}->{NewRegime} updated={UpdatedCount}",
+            tenantId, oldRegime, newRegime, updatedItems.Count);
+
+        await WriteFiscalReSeedAuditAsync(connectionString, tenantId, oldRegime, newRegime, updatedItems, cancellationToken);
+
+        var warning = UsualTaxRegimeCatalog.IsAtypical(companySegment, newRegime)
+            ? $"Le régime « {newRegime.ToDisplayString()} » est inhabituel pour le secteur d'activité de cette société. Vérifiez que ce choix est intentionnel."
+            : null;
+
+        return new FiscalReSeedResultDto
+        {
+            UpdatedItems = updatedItems,
+            Warning = warning
+        };
+    }
+
+    /// <summary>Best-effort hash-chained audit row for a fiscal re-seed (plan §2.4) — never throws.</summary>
+    private async Task WriteFiscalReSeedAuditAsync(
+        string connectionString,
+        Guid tenantId,
+        TaxRegime oldRegime,
+        TaxRegime newRegime,
+        IReadOnlyList<string> updatedItems,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var options = new DbContextOptionsBuilder<TenantDbContext>()
+                .UseSqlServer(connectionString, b => b.MigrationsAssembly(typeof(TenantDbContext).Assembly.FullName))
+                .Options;
+
+            await using var context = new TenantDbContext(options);
+
+            var previousHash = await context.AuditLogs
+                .AsNoTracking()
+                .OrderByDescending(a => a.CreatedAt)
+                .ThenByDescending(a => a.Id)
+                .Select(a => a.Hash)
+                .FirstOrDefaultAsync(cancellationToken) ?? "GENESIS";
+
+            var oldValues = System.Text.Json.JsonSerializer.Serialize(new { taxRegime = oldRegime.ToString() });
+            var newValues = System.Text.Json.JsonSerializer.Serialize(new { taxRegime = newRegime.ToString(), updatedItems });
+
+            var auditLog = AuditLog.Create(
+                tenantId: tenantId,
+                userId: null,
+                userEmail: "system",
+                action: "fiscal-reseed-tax-regime-change",
+                entityType: "Tenant",
+                entityId: tenantId,
+                oldValues: oldValues,
+                newValues: newValues,
+                ipAddress: "system",
+                userAgent: null,
+                previousHash: previousHash);
+
+            context.AuditLogs.Add(auditLog);
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fiscal re-seed audit logging failed for tenant {TenantId}", tenantId);
+        }
     }
 
     private string GetMasterConnectionString() =>

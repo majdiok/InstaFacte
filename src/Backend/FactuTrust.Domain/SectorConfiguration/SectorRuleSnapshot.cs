@@ -95,6 +95,14 @@ public sealed record SectorRuleSnapshot
     public required IReadOnlyList<DataTemplateSnapshot> DataTemplates { get; init; }
 
     /// <summary>
+    /// Opaque version tag exposed to clients (plan §2.1 — catalogue sectoriel versionné), e.g.
+    /// <c>"static:0"</c> or <c>"db:12"</c>. Lowercase source name + <see cref="Version"/>. Stable
+    /// across process restarts for the static source (always <c>"static:0"</c>); bumped whenever
+    /// <c>SectorRuleAdminService</c> commits a rule change for the DB source.
+    /// </summary>
+    public string CatalogVersionTag => $"{Source.ToString().ToLowerInvariant()}:{Version}";
+
+    /// <summary>
     /// Merges segment base ∪ domain overlay − core, mirroring
     /// <c>SectorConfigurationCatalog.Resolve</c>'s exact semantics. Null/unknown segment (after
     /// normalization) ⇒ null. Unknown domain resolves as if none was supplied.

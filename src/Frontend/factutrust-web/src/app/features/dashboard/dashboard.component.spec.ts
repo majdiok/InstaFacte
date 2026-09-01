@@ -11,6 +11,9 @@ import { DeliveryNoteService } from '@features/delivery-notes/services/delivery-
 import { DashboardService } from './services/dashboard.service';
 import { AccountingService } from '@features/accounting/services/accounting.service';
 import { CrmService } from '@features/crm/services/crm.service';
+import { PurchaseOrderService } from '@core/services/purchase-order.service';
+import { ProjectApiService } from '@features/projects/project-api.service';
+import { RecurringContractService } from '@core/services/recurring-contract.service';
 import { AppModule } from '@core/models/app-module';
 import { DashboardComponent } from './dashboard.component';
 
@@ -25,7 +28,11 @@ import { DashboardComponent } from './dashboard.component';
 
 const ALL_MODULES = Object.values(AppModule).filter((v): v is number => typeof v === 'number');
 
-function makeUser(effectivePermissions: string[], enabledModuleIds: number[] = ALL_MODULES): User {
+function makeUser(
+  effectivePermissions: string[],
+  enabledModuleIds: number[] = ALL_MODULES,
+  companySegment: string | null = null
+): User {
   return {
     id: 'u-1',
     email: 'u@test.c',
@@ -39,7 +46,8 @@ function makeUser(effectivePermissions: string[], enabledModuleIds: number[] = A
     tenantKind: 'Company',
     twoFactorEnabled: false,
     enabledModuleIds,
-    effectivePermissions
+    effectivePermissions,
+    companySegment
   };
 }
 
@@ -394,5 +402,167 @@ describe('DashboardComponent — tâche 1.7 (sections vides / cartes hors-sujet)
     expect(component.showActiveQuotesSideCard()).toBeTrue();
     const html: string = fixture.nativeElement.textContent ?? '';
     expect(html).toContain('Devis en cours');
+  });
+});
+
+/**
+ * Plan v1 §2.5 — Dashboard adaptatif : widgets sectoriels + actions rapides
+ * dérivées des modules actifs. Vérifie qu'un tenant Commerce·Textile ne voit
+ * pas de KPI Projets, qu'un tenant BTP voit bien le KPI Projets, et qu'aucun
+ * bloc ne s'affiche vide.
+ */
+describe('DashboardComponent — plan v1 §2.5 (dashboard adaptatif sectoriel)', () => {
+  let getPurchaseOrdersSummary: jasmine.Spy;
+  let projectDashboard: jasmine.Spy;
+  let recurringContractList: jasmine.Spy;
+
+  function configure() {
+    const emptyOk = () => of({ success: true, data: { items: [] }, message: null, errors: [] as string[] });
+
+    getPurchaseOrdersSummary = jasmine.createSpy('getPurchaseOrdersSummary').and.returnValue(
+      of({
+        success: true,
+        data: { count: 2, totalTtc: 0, totalHt: 0, totalVat: 0, receivedCount: 0, pendingCount: 2, currency: 'TND' },
+        message: null,
+        errors: []
+      })
+    );
+    projectDashboard = jasmine.createSpy('dashboard').and.returnValue(
+      of({
+        success: true,
+        data: { activeProjects: 5, openTasks: 0, overdueTasks: 0, uninvoicedBillableHours: 0 },
+        message: null,
+        errors: []
+      })
+    );
+    recurringContractList = jasmine.createSpy('list').and.returnValue(
+      of({ items: [], page: 1, pageSize: 1, totalCount: 3, totalPages: 1, hasPreviousPage: false, hasNextPage: false })
+    );
+
+    TestBed.configureTestingModule({
+      imports: [DashboardComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: InvoiceService, useValue: { getInvoices: jasmine.createSpy().and.returnValue(emptyOk()) } },
+        {
+          provide: StockService,
+          useValue: {
+            getStockAlerts: jasmine
+              .createSpy()
+              .and.returnValue(of({ success: true, data: { items: [], totalCount: 0 }, message: null, errors: [] }))
+          }
+        },
+        { provide: DeliveryNoteService, useValue: { getDeliveryNotes: jasmine.createSpy().and.returnValue(emptyOk()) } },
+        {
+          provide: DashboardService,
+          useValue: {
+            loadDashboardData: jasmine.createSpy().and.returnValue(
+              of({
+                allInvoices: [],
+                recentInvoices: [],
+                allQuotes: [],
+                recentQuotes: [],
+                topClients: [],
+                monthlyRevenue: [],
+                recentActivity: [],
+                kpiTrends: { revenueChange: undefined, salesTodayChange: undefined, pendingChange: undefined },
+                kpiSparklines: { revenue: [], salesToday: [], currentMonth: [], pending: [] },
+                activeQuotesCount: 0
+              })
+            )
+          }
+        },
+        { provide: AccountingService, useValue: { getDashboard: jasmine.createSpy().and.returnValue(of({ success: true, data: {}, message: null, errors: [] })) } },
+        {
+          provide: CrmService,
+          useValue: {
+            getMyReminders: jasmine.createSpy().and.returnValue(of({ success: true, data: [], message: null, errors: [] })),
+            getOpportunities: jasmine.createSpy().and.returnValue(of({ success: true, data: [], message: null, errors: [] }))
+          }
+        },
+        { provide: WarehouseContextService, useValue: { selectedWarehouseId: jasmine.createSpy().and.returnValue(null) } },
+        { provide: PurchaseOrderService, useValue: { getPurchaseOrdersSummary } },
+        { provide: ProjectApiService, useValue: { dashboard: projectDashboard } },
+        { provide: RecurringContractService, useValue: { list: recurringContractList } }
+      ]
+    });
+  }
+
+  it("Commerce · Textile : affiche les KPI ruptures/achats, n'affiche PAS le KPI Projets", () => {
+    configure();
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, makeUser(['stock:read', 'purchase_orders:read'], ALL_MODULES, 'commerce'));
+
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    const ids = component.sectorKpiWidgets().map((w) => w.widgetId);
+    expect(ids).toContain('commerce-stock-ruptures');
+    expect(ids).toContain('commerce-purchases-pending');
+    expect(ids).not.toContain('services-btp-active-projects');
+
+    expect(getPurchaseOrdersSummary).toHaveBeenCalled();
+    expect(projectDashboard).not.toHaveBeenCalled();
+
+    const html: string = fixture.nativeElement.textContent ?? '';
+    expect(html).toContain('Ruptures / stock faible');
+    expect(html).toContain('Achats en cours');
+    expect(html).not.toContain('Projets actifs');
+  });
+
+  it('BTP & Construction : affiche le KPI Projets actifs, pas de widget Commerce', () => {
+    configure();
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, makeUser(['projects:read', 'recurring_contracts:read'], ALL_MODULES, 'btp-construction'));
+
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    const ids = component.sectorKpiWidgets().map((w) => w.widgetId);
+    expect(ids).toContain('services-btp-active-projects');
+    expect(ids).toContain('services-btp-recurring-contracts');
+    expect(ids).not.toContain('commerce-stock-ruptures');
+
+    expect(projectDashboard).toHaveBeenCalled();
+    expect(recurringContractList).toHaveBeenCalled();
+    expect(getPurchaseOrdersSummary).not.toHaveBeenCalled();
+
+    const html: string = fixture.nativeElement.textContent ?? '';
+    expect(html).toContain('Projets actifs');
+    expect(html).toContain('5');
+  });
+
+  it("aucun bloc « Aperçu sectoriel & modules » vide : le bloc « Modules actifs » s'affiche toujours", () => {
+    configure();
+    const auth = TestBed.inject(AuthService);
+    // Segment « entreprise » générique : aucun widget KPI sectoriel ne correspond.
+    setUser(auth, makeUser([], [AppModule.Administration], 'entreprise'));
+
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    expect(component.sectorKpiWidgets()).toEqual([]);
+    const html: string = fixture.nativeElement.textContent ?? '';
+    expect(html).toContain('Modules actifs');
+    expect(html).toContain('Gérer mes modules');
+  });
+
+  it('module Stock actif + permission ⇒ action rapide « Entrée de stock » visible dans le bloc Actions rapides', () => {
+    configure();
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, makeUser(['stock_vouchers:create'], ALL_MODULES, 'commerce'));
+
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    expect(component.canUseStockEntryQuickAction()).toBeTrue();
+    const html: string = fixture.nativeElement.textContent ?? '';
+    expect(html).toContain('Entrée de stock');
   });
 });

@@ -242,6 +242,8 @@ public sealed class FixedAssetsIsolationFactory : ChannelsDisabledWebApplication
             => Task.CompletedTask;
         public Task EnsureTenantTemplateAsync(CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+        public Task<FiscalReSeedResultDto> ReSeedFiscalParametersAsync(Guid tenantId, TaxRegime oldRegime, TaxRegime newRegime, string? companySegment, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
     }
 
     /// <summary>Aucune migration réelle en InMemory : le garde-fou réussit toujours.</summary>

@@ -191,17 +191,11 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
             };
         }
 
-        foreach (var module in AppModuleExtensions.AllValues)
-        {
-            _db.UserModuleGrants.Add(new UserModuleGrant
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                Module = module,
-                IsEnabled = finalSet.Contains(module),
-                EnabledFeatureKeys = null
-            });
-        }
+        // Shared with TenantSectorReconfigurationService/CompanyModulesController (plan §2.2) — same
+        // delete-then-insert/"all modules = no rows" semantics. saveChanges=false: this method never
+        // called SaveChangesAsync itself (caller's responsibility, see class summary); a fresh
+        // registration user simply has zero pre-existing rows so the delete is a no-op.
+        await UserModuleGrantWriter.RewriteGrantsAsync(_db, userId, finalSet, saveChanges: false, cancellationToken);
 
         _logger.LogInformation(
             "RegistrationSectorService.ApplyModuleSelectionAsync: wrote {Count} module grant row(s) for user {UserId} (segment={Segment}, domain={Domain}, enabled={Enabled})",

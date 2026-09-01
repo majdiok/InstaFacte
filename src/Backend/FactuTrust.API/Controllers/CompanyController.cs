@@ -26,6 +26,7 @@ public class CompanyController : ControllerBase
     private readonly ICompanyRepository _companyRepository;
     private readonly IEnsureDefaultCompanyService _ensureDefaultCompanyService;
     private readonly ITenantContext _tenantContext;
+    private readonly ITenantService _tenantService;
     private readonly IMediator _mediator;
     private readonly IClientPortalService _clientPortalService;
     private readonly ILogger<CompanyController> _logger;
@@ -35,6 +36,7 @@ public class CompanyController : ControllerBase
         ICompanyRepository companyRepository,
         IEnsureDefaultCompanyService ensureDefaultCompanyService,
         ITenantContext tenantContext,
+        ITenantService tenantService,
         IMediator mediator,
         IClientPortalService clientPortalService,
         ILogger<CompanyController> logger)
@@ -43,6 +45,7 @@ public class CompanyController : ControllerBase
         _companyRepository = companyRepository;
         _ensureDefaultCompanyService = ensureDefaultCompanyService;
         _tenantContext = tenantContext;
+        _tenantService = tenantService;
         _mediator = mediator;
         _clientPortalService = clientPortalService;
         _logger = logger;
@@ -167,6 +170,8 @@ public class CompanyController : ControllerBase
         }
 
         var taxRegime = (TaxRegime)dto.TaxRegime;
+        var previousTaxRegime = tenant.TaxRegime;
+        var taxRegimeChanged = previousTaxRegime != taxRegime;
 
         await using var transaction = await _masterContext.Database.BeginTransactionAsync(cancellationToken);
 
@@ -286,13 +291,39 @@ public class CompanyController : ControllerBase
 
             await transaction.CommitAsync(cancellationToken);
 
+            // Plan §2.4 — additive re-seed of the tenant's fiscal catalogs on TaxRegime change.
+            // Runs AFTER the master DB commit (fault-isolated, never rolls back the company update):
+            // a re-seed failure is logged and surfaced as an empty updatedItems/no warning rather
+            // than failing the whole request.
+            FiscalReSeedResultDto? fiscalReSeedResult = null;
+            if (taxRegimeChanged)
+            {
+                try
+                {
+                    fiscalReSeedResult = await _tenantService.ReSeedFiscalParametersAsync(
+                        tenantId.Value,
+                        previousTaxRegime,
+                        taxRegime,
+                        tenant.CompanySegment,
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Fiscal re-seed failed for tenant {TenantId} after TaxRegime change {Old}->{New}", tenantId.Value, previousTaxRegime, taxRegime);
+                }
+            }
+
             // Reload tenant to get updated values
             await _masterContext.Entry(tenant).ReloadAsync(cancellationToken);
-            var updatedDto = MapToDto(tenant, company, dto.WarehouseName);
+            var updatedDto = MapToDto(tenant, company, dto.WarehouseName, fiscalReSeedResult);
 
             _logger.LogInformation("Company information updated for tenant {TenantId}", tenantId.Value);
 
-            return Ok(ApiResponse<CompanyDto>.Ok(updatedDto, "Informations de l'entreprise mises à jour"));
+            var successMessage = fiscalReSeedResult is { UpdatedItems.Count: > 0 }
+                ? "Informations de l'entreprise mises à jour. Paramètres de retenue à la source actualisés."
+                : "Informations de l'entreprise mises à jour";
+
+            return Ok(ApiResponse<CompanyDto>.Ok(updatedDto, successMessage));
         }
         catch (Exception ex)
         {
@@ -304,7 +335,7 @@ public class CompanyController : ControllerBase
         }
     }
 
-    private static CompanyDto MapToDto(Tenant tenant, Company? company, string? warehouseName)
+    private static CompanyDto MapToDto(Tenant tenant, Company? company, string? warehouseName, FiscalReSeedResultDto? fiscalReSeedResult = null)
     {
         return new CompanyDto
         {
@@ -340,7 +371,9 @@ public class CompanyController : ControllerBase
             CnssEmployerNumber = company?.CnssEmployerNumber,
             ClientPortalEnabled = company?.ClientPortalEnabled ?? true,
             CompanySegment = tenant.CompanySegment,
-            BusinessDomain = tenant.BusinessDomain
+            BusinessDomain = tenant.BusinessDomain,
+            FiscalUpdateMessages = fiscalReSeedResult?.UpdatedItems.Count > 0 ? fiscalReSeedResult.UpdatedItems : null,
+            TaxRegimeWarning = fiscalReSeedResult?.Warning
         };
     }
 

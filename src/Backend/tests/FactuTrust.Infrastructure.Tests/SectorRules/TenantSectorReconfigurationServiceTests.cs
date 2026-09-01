@@ -77,6 +77,8 @@ public sealed class TenantSectorReconfigurationServiceTests
             Task.CompletedTask;
         public Task EnsureTenantTemplateAsync(CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+        public Task<FiscalReSeedResultDto> ReSeedFiscalParametersAsync(Guid tenantId, TaxRegime oldRegime, TaxRegime newRegime, string? companySegment, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
     }
 
     private sealed class InMemoryTenantDbContextFactory : ITenantDbContextFactory
@@ -182,6 +184,8 @@ public sealed class TenantSectorReconfigurationServiceTests
             Task.CompletedTask;
         public Task EnsureTenantTemplateAsync(CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+        public Task<FiscalReSeedResultDto> ReSeedFiscalParametersAsync(Guid tenantId, TaxRegime oldRegime, TaxRegime newRegime, string? companySegment, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
     }
 
     // ---------- helpers ----------
