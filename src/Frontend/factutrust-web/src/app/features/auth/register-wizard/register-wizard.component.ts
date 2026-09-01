@@ -99,6 +99,10 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   currentStep = signal(0);
   /** Once the user manually toggles a module, recommendation auto-recompute stops overwriting their choices. */
   modulesTouched = signal(false);
+  /** True once the user manually picks a `taxRegime` — the auto-suggestion (plan §3.1) then stops overwriting it. */
+  taxRegimeTouched = signal(false);
+  /** Guards the `taxRegime` valueChanges subscription while `applySuggestedTaxRegime()` itself sets the value. */
+  private applyingSuggestedTaxRegime = false;
   /** True right after a segment change auto-cleared an invalid `businessDomain` (plan WP-F2). */
   domainClearedNotice = signal(false);
   /** Module ids auto-enabled as hard dependencies by the last toggle (plan WP-F3). Cleared on the next toggle/reset. */
@@ -239,6 +243,9 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
     return this.form.get('businessDomain')?.value ?? '';
   }
 
+  /** Suggested tax regime for the currently selected segment (plan §3.1). `null` when absent. */
+  suggestedTaxRegime = computed(() => this.catalog.suggestedTaxRegimeFor(this.selectedSegment()) ?? null);
+
   ngOnInit(): void {
     this.form.get('password')?.valueChanges.subscribe(() => {
       this.form.get('confirmPassword')?.updateValueAndValidity();
@@ -268,6 +275,15 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       this.onProfileChanged();
     });
 
+    // Plan §3.1: once the user manually picks a taxRegime, stop overwriting it with
+    // the sector suggestion. Ignored while `applySuggestedTaxRegime()` itself is
+    // setting the value (see the guard flag).
+    this.form.get('taxRegime')?.valueChanges.subscribe(() => {
+      if (!this.applyingSuggestedTaxRegime) {
+        this.taxRegimeTouched.set(true);
+      }
+    });
+
     // Fetch the live sector catalog once; no-op if the frontend kill-switch is off or
     // a fetch already ran this session (see RegistrationCatalogService.load()).
     this.catalog.load();
@@ -283,9 +299,24 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
 
   /** Recomputes recommended modules on segment/domain change, unless the user already customized their selection. */
   private onProfileChanged(): void {
-    if (this.modulesTouched()) return;
-    const recommended = this.catalog.recommendedModules(this.selectedSegment(), this.selectedDomain());
-    this.form.get('enabledModules')?.setValue(recommended);
+    if (!this.modulesTouched()) {
+      const recommended = this.catalog.recommendedModules(this.selectedSegment(), this.selectedDomain());
+      this.form.get('enabledModules')?.setValue(recommended);
+    }
+    this.applySuggestedTaxRegime();
+  }
+
+  /** Pre-selects the sector-suggested tax regime (plan §3.1), unless the user already picked one manually. */
+  private applySuggestedTaxRegime(): void {
+    if (this.taxRegimeTouched()) return;
+    const suggestion = this.catalog.suggestedTaxRegimeFor(this.selectedSegment());
+    if (!suggestion) return;
+    this.applyingSuggestedTaxRegime = true;
+    try {
+      this.form.get('taxRegime')?.setValue(suggestion.regime);
+    } finally {
+      this.applyingSuggestedTaxRegime = false;
+    }
   }
 
   onModuleToggled(moduleId: AppModule): void {

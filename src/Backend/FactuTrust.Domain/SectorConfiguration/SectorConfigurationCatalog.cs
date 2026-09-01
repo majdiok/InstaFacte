@@ -1,3 +1,4 @@
+using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Domain.SectorConfiguration;
@@ -81,6 +82,20 @@ public sealed record DataTemplateDefinition
     public required int Version { get; init; }
     public required int SortOrder { get; init; }
     public required IReadOnlyList<DataTemplateItemDefinition> Items { get; init; }
+}
+
+/// <summary>
+/// One segment → suggested tax regime row (plan §3.1). A richer, admin-editable superseder of the
+/// minimal <c>UsualTaxRegimeCatalog</c> (plan §2.4) — adds a French explanation for each suggested
+/// regime. Purely informational; projected into <c>SectorRuleSnapshot.TaxRegimeSuggestions</c> and
+/// surfaced as <c>SectorCatalogDto.SuggestedTaxRegimes</c>.
+/// </summary>
+public sealed record TaxRegimeSuggestionDefinition
+{
+    public required string SegmentCode { get; init; }
+    public required TaxRegime Regime { get; init; }
+    public required string NoteFr { get; init; }
+    public required int SortOrder { get; init; }
 }
 
 /// <summary>
@@ -380,11 +395,191 @@ public static class SectorConfigurationCatalog
                     SortOrder = 0
                 }
             }
+        },
+        // Plan §3.4 — enriched, additive sector data templates. Every item is check-before-insert
+        // (see SectorDataTemplateApplier) and only affects newly-provisioned tenants: an existing
+        // tenant row is never modified or deleted. New ItemKinds ("product-category", "warehouse")
+        // are also allow-listed in SectorRuleAdminService.AllowedTemplateItemKinds for admin editing.
+        new DataTemplateDefinition
+        {
+            Code = "product-categories-textile-habillement",
+            SegmentCode = null,
+            DomainCode = BusinessDomains.TextileHabillement,
+            LabelFr = "Familles de produits — Textile & habillement",
+            DescriptionFr = "Ajoute deux familles de produits courantes (Vêtements, Accessoires) pour le domaine textile.",
+            Version = 1,
+            SortOrder = 3,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "product-category",
+                    PayloadJson = "{\"code\":\"VETEMENTS\",\"name\":\"Vêtements\",\"displayOrder\":1}",
+                    SortOrder = 0
+                },
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "product-category",
+                    PayloadJson = "{\"code\":\"ACCESSOIRES\",\"name\":\"Accessoires\",\"displayOrder\":2}",
+                    SortOrder = 1
+                }
+            }
+        },
+        new DataTemplateDefinition
+        {
+            Code = "product-categories-alimentation-agroalimentaire",
+            SegmentCode = null,
+            DomainCode = BusinessDomains.AlimentationAgroalimentaire,
+            LabelFr = "Familles de produits — Alimentation & agroalimentaire",
+            DescriptionFr = "Ajoute deux familles de produits courantes (Produits frais, Épicerie) pour le domaine alimentaire.",
+            Version = 1,
+            SortOrder = 4,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "product-category",
+                    PayloadJson = "{\"code\":\"FRAIS\",\"name\":\"Produits frais\",\"displayOrder\":1}",
+                    SortOrder = 0
+                },
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "product-category",
+                    PayloadJson = "{\"code\":\"EPICERIE\",\"name\":\"Épicerie\",\"displayOrder\":2}",
+                    SortOrder = 1
+                }
+            }
+        },
+        new DataTemplateDefinition
+        {
+            Code = "extra-warehouses-commerce",
+            SegmentCode = CompanySegments.Commerce,
+            DomainCode = null,
+            LabelFr = "Entrepôts complémentaires — Commerce",
+            DescriptionFr = "Ajoute un entrepôt « Boutique » (point de vente) et une « Réserve » (stock arrière) pour le segment commerce.",
+            Version = 1,
+            SortOrder = 5,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "warehouse",
+                    PayloadJson = "{\"code\":\"BOUTIQUE\",\"name\":\"Boutique\",\"address\":null,\"isDefault\":false}",
+                    SortOrder = 0
+                },
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "warehouse",
+                    PayloadJson = "{\"code\":\"RESERVE\",\"name\":\"Réserve\",\"address\":null,\"isDefault\":false}",
+                    SortOrder = 1
+                }
+            }
+        },
+        new DataTemplateDefinition
+        {
+            Code = "chart-account-btp-travaux-en-cours",
+            SegmentCode = CompanySegments.BtpConstruction,
+            DomainCode = null,
+            LabelFr = "Sous-compte travaux en cours — BTP",
+            DescriptionFr = "Ajoute le sous-compte 341 « Travaux en cours » rattaché à l'en-cours de production de services (compte 34), spécifique au segment BTP.",
+            Version = 1,
+            SortOrder = 6,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "chart-account",
+                    PayloadJson = "{\"accountNumber\":\"341\",\"label\":\"Travaux en cours - BTP\",\"accountClass\":3,\"parentAccountNumber\":\"34\",\"natureType\":\"Debit\",\"isSystem\":false}",
+                    SortOrder = 0
+                }
+            }
+        },
+        new DataTemplateDefinition
+        {
+            Code = "document-numbering-prefixes-commerce",
+            SegmentCode = CompanySegments.Commerce,
+            DomainCode = null,
+            LabelFr = "Préfixes de numérotation — Commerce",
+            DescriptionFr = "Préfixe les factures (FAC-COM) et devis (DEV-COM) pour le segment commerce. Sans effet si un schéma existe déjà pour l'exercice courant (idempotence par check-before-insert).",
+            Version = 1,
+            SortOrder = 7,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "document-numbering-scheme",
+                    PayloadJson = "{\"documentType\":\"Invoice\",\"prefix\":\"FAC-COM\"}",
+                    SortOrder = 0
+                },
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "document-numbering-scheme",
+                    PayloadJson = "{\"documentType\":\"Quote\",\"prefix\":\"DEV-COM\"}",
+                    SortOrder = 1
+                }
+            }
         }
     };
 
     private static readonly IReadOnlyDictionary<string, SegmentDefinition> SegmentsByCode =
         Segments.ToDictionary(s => s.Code, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Segment → suggested tax regimes with a French explanation (plan §3.1). Mirrors
+    /// <see cref="UsualTaxRegimeCatalog"/>'s segment→regime data (the Phase 2.4 fail-open warning
+    /// source) and adds a human-readable <c>NoteFr</c> for each. Purely informational — surfaced as
+    /// <c>SectorCatalogDto.SuggestedTaxRegimes</c>; the registration wizard uses it to pre-select /
+    /// suggest the usual regime and explain *why*. Stays fully populated on the static/rollback
+    /// path (informational, like <see cref="Segments"/>, not a Phase 2/3 *active* feature).
+    /// </summary>
+    public static readonly IReadOnlyList<TaxRegimeSuggestionDefinition> TaxRegimeSuggestions = new[]
+    {
+        new TaxRegimeSuggestionDefinition
+        {
+            SegmentCode = "entreprise", Regime = TaxRegime.RealRegime, SortOrder = 0,
+            NoteFr = "Régime réel : comptabilité complète et facturation TVA, recommandé pour les sociétés d'entreprise."
+        },
+        new TaxRegimeSuggestionDefinition
+        {
+            SegmentCode = "commerce", Regime = TaxRegime.RealRegime, SortOrder = 1,
+            NoteFr = "Régime réel : généralement adapté au commerce dès lors que le chiffre d'affaires dépasse les seuils du forfait."
+        },
+        new TaxRegimeSuggestionDefinition
+        {
+            SegmentCode = "commerce", Regime = TaxRegime.FlatRateRegime, SortOrder = 2,
+            NoteFr = "Régime forfaitaire : simplifié, possible pour les petits commerces sous les seuils légaux."
+        },
+        new TaxRegimeSuggestionDefinition
+        {
+            SegmentCode = "services", Regime = TaxRegime.RealRegime, SortOrder = 3,
+            NoteFr = "Régime réel : recommandé pour les prestations de services dès lors que les seuils du forfait sont dépassés."
+        },
+        new TaxRegimeSuggestionDefinition
+        {
+            SegmentCode = "services", Regime = TaxRegime.FlatRateRegime, SortOrder = 4,
+            NoteFr = "Régime forfaitaire : simplifié, possible pour les petites prestations de services sous les seuils légaux."
+        },
+        new TaxRegimeSuggestionDefinition
+        {
+            SegmentCode = "btp-construction", Regime = TaxRegime.RealRegime, SortOrder = 5,
+            NoteFr = "Régime réel : obligatoire pour le BTP — comptabilité de chantier et TVA récupérable."
+        },
+        new TaxRegimeSuggestionDefinition
+        {
+            SegmentCode = "association", Regime = TaxRegime.Exempt, SortOrder = 6,
+            NoteFr = "Exonération de TVA : la plupart des associations à but non lucratif sont exonérées."
+        },
+        new TaxRegimeSuggestionDefinition
+        {
+            SegmentCode = "etablissement-educatif", Regime = TaxRegime.Exempt, SortOrder = 7,
+            NoteFr = "Exonération de TVA : applicable aux établissements d'enseignement remplissant les conditions légales."
+        },
+        new TaxRegimeSuggestionDefinition
+        {
+            SegmentCode = "etablissement-educatif", Regime = TaxRegime.RealRegime, SortOrder = 8,
+            NoteFr = "Régime réel : possible pour les activités commerciales annexes d'un établissement éducatif."
+        }
+    };
 
     private static readonly IReadOnlyDictionary<string, DomainDefinition> DomainsByCode =
         Domains.ToDictionary(d => d.Code, StringComparer.Ordinal);
@@ -530,6 +725,17 @@ public static class SectorConfigurationCatalog
             })
             .ToList();
 
+        var taxRegimeSuggestions = TaxRegimeSuggestions
+            .OrderBy(s => s.SortOrder)
+            .Select(s => new TaxRegimeSuggestionSnapshot
+            {
+                SegmentCode = s.SegmentCode,
+                Regime = (int)s.Regime,
+                NoteFr = s.NoteFr,
+                SortOrder = s.SortOrder
+            })
+            .ToList();
+
         return new SectorRuleSnapshot
         {
             Source = SectorRuleSource.Static,
@@ -538,7 +744,8 @@ public static class SectorConfigurationCatalog
             Domains = domains,
             ModuleDependencies = moduleDependencies,
             DefaultSettings = defaultSettings,
-            DataTemplates = dataTemplates
+            DataTemplates = dataTemplates,
+            TaxRegimeSuggestions = taxRegimeSuggestions
         };
     }
 }

@@ -78,6 +78,11 @@ public sealed class DbSectorCatalogProvider : ISectorCatalogProvider
             .OrderBy(s => s.SortOrder)
             .ToList();
 
+        var taxRegimeSuggestionRows = _db.SectorTaxRegimeSuggestions.AsNoTracking()
+            .Where(s => s.IsActive)
+            .OrderBy(s => s.SortOrder)
+            .ToList();
+
         var templateRows = _db.SectorDataTemplates.AsNoTracking()
             .Where(t => t.IsActive)
             .OrderBy(t => t.SortOrder)
@@ -145,6 +150,16 @@ public sealed class DbSectorCatalogProvider : ISectorCatalogProvider
             })
             .ToList();
 
+        var taxRegimeSuggestions = taxRegimeSuggestionRows
+            .Select(s => new TaxRegimeSuggestionSnapshot
+            {
+                SegmentCode = s.SegmentCode,
+                Regime = s.Regime,
+                NoteFr = s.NoteFr,
+                SortOrder = s.SortOrder
+            })
+            .ToList();
+
         var itemsByTemplateId = templateItemRows
             .GroupBy(i => i.TemplateId)
             .ToDictionary(g => g.Key, g => g.Select(i => new DataTemplateItemSnapshot
@@ -176,7 +191,8 @@ public sealed class DbSectorCatalogProvider : ISectorCatalogProvider
             Domains = domains,
             ModuleDependencies = moduleDependencies,
             DefaultSettings = defaultSettings,
-            DataTemplates = dataTemplates
+            DataTemplates = dataTemplates,
+            TaxRegimeSuggestions = taxRegimeSuggestions
         };
     }
 }

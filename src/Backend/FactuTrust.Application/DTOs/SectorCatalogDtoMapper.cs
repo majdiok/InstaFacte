@@ -59,12 +59,22 @@ public static class SectorCatalogDtoMapper
             .Select(d => new SectorModuleDependencyDto { ModuleId = d.ModuleId, RequiredModuleId = d.RequiredModuleId })
             .ToList();
 
+        var suggestedTaxRegimes = snapshot.TaxRegimeSuggestions
+            .Select(s => new SectorTaxRegimeSuggestionDto
+            {
+                SegmentCode = s.SegmentCode,
+                Regime = s.Regime,
+                NoteFr = s.NoteFr
+            })
+            .ToList();
+
         return new SectorCatalogDto
         {
             Segments = segments,
             Domains = domains,
             Modules = modules,
             ModuleDependencies = moduleDependencies,
+            SuggestedTaxRegimes = suggestedTaxRegimes,
             CatalogVersion = snapshot.CatalogVersionTag
         };
     }

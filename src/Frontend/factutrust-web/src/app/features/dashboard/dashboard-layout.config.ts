@@ -14,6 +14,7 @@
 export type DashboardBlockId =
   | 'kpi'
   | 'sector'
+  | 'recommendations'
   | 'urgent'
   | 'quick-actions'
   | 'accounting'
@@ -34,6 +35,7 @@ export interface DashboardBlockDef {
 export const DASHBOARD_BLOCK_DEFS: readonly DashboardBlockDef[] = [
   { id: 'kpi', label: 'Indicateurs clés' },
   { id: 'sector', label: 'Aperçu sectoriel & modules' },
+  { id: 'recommendations', label: 'Recommandé pour vous' },
   { id: 'urgent', label: 'Actions requises' },
   { id: 'quick-actions', label: 'Actions rapides' },
   { id: 'accounting', label: 'Comptabilité' },

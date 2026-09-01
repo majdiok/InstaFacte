@@ -7,7 +7,7 @@ import {
   FIRM_CHECKLIST_ITEMS,
   mergeChecklistDone
 } from '@core/onboarding/product-onboarding.catalog';
-import { OnboardingChecklistItemDef } from '@core/onboarding/product-onboarding.models';
+import { OnboardingChecklistItemDef, isItemAgeEligible } from '@core/onboarding/product-onboarding.models';
 import {
   isProductOnboardingUiEnabled,
   ProductOnboardingApiService
@@ -228,6 +228,11 @@ export class OnboardingChecklistComponent implements OnInit {
       return false;
     }
     if (item.segments?.length && !item.segments.includes(this.auth.user()?.companySegment ?? '')) {
+      return false;
+    }
+    // Plan §3.5 — progressive profiling: hide age-gated items until the tenant is old enough.
+    // Fail-open: an absent/unparseable tenant creation date shows the item (pre-Phase-3 behavior).
+    if (!isItemAgeEligible(item.minAgeDays, this.auth.user()?.tenantCreatedAtUtc)) {
       return false;
     }
     return true;

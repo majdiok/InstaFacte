@@ -20,6 +20,7 @@ describe('OnboardingChecklistComponent', () => {
     admin?: boolean;
     companySegment?: string | null;
     enabledModuleIds?: number[];
+    tenantCreatedAtUtc?: string | null;
   }): void {
     patchSpy = jasmine.createSpy('patch').and.returnValue(of({
       enabled: true,
@@ -38,6 +39,7 @@ describe('OnboardingChecklistComponent', () => {
           useValue: {
             user: () => ({
               companySegment: opts.companySegment ?? null,
+              tenantCreatedAtUtc: opts.tenantCreatedAtUtc ?? undefined,
               productOnboardingChecklist: {
                 dismissed: false,
                 doneIds: opts.doneIds ?? []
@@ -221,6 +223,25 @@ describe('OnboardingChecklistComponent', () => {
 
       expect(fixture.componentInstance.visibleItems().length).toBe(2);
       expect(fixture.componentInstance.progressLabel()).toBe('1 / 2 étapes terminées');
+    });
+  });
+
+  describe('plan §3.5 — minAgeDays gating (progressive profiling)', () => {
+    it('hides the "Complétez votre profil entreprise" item when the tenant is younger than minAgeDays', () => {
+      const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+      setup({ admin: true, tenantCreatedAtUtc: oneDayAgo });
+      expect(fixture.nativeElement.textContent).not.toContain('Complétez votre profil entreprise');
+    });
+
+    it('shows the "Complétez votre profil entreprise" item once the tenant is old enough', () => {
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+      setup({ admin: true, tenantCreatedAtUtc: tenDaysAgo });
+      expect(fixture.nativeElement.textContent).toContain('Complétez votre profil entreprise');
+    });
+
+    it('shows the item when tenantCreatedAtUtc is absent (fail-open = pre-Phase-3 behavior)', () => {
+      setup({ admin: true, tenantCreatedAtUtc: undefined });
+      expect(fixture.nativeElement.textContent).toContain('Complétez votre profil entreprise');
     });
   });
 });

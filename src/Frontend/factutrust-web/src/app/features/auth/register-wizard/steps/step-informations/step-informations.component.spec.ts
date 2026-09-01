@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { StepInformationsComponent } from './step-informations.component';
 
 describe('StepInformationsComponent', () => {
@@ -11,13 +13,14 @@ describe('StepInformationsComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [StepInformationsComponent, ReactiveFormsModule],
-      providers: [FormBuilder, provideNoopAnimations()]
+      providers: [FormBuilder, provideNoopAnimations(), provideHttpClient(), provideHttpClientTesting()]
     }).compileComponents();
 
     fb = TestBed.inject(FormBuilder);
     fixture = TestBed.createComponent(StepInformationsComponent);
     component = fixture.componentInstance;
     component.form = fb.group({
+      companySegment: [''],
       firstName: [''],
       lastName: [''],
       email: [''],

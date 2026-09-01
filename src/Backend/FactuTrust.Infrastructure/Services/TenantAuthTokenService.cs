@@ -343,7 +343,8 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
             ProductOnboardingVersion = user.ProductOnboardingVersion,
             ProductOnboardingChecklist = ProductOnboardingUserDtoMapper.ChecklistOf(user),
             CompanySegment = homeTenant.CompanySegment,
-            BusinessDomain = homeTenant.BusinessDomain
+            BusinessDomain = homeTenant.BusinessDomain,
+            TenantCreatedAtUtc = homeTenant.CreatedAt
         };
     }
 }

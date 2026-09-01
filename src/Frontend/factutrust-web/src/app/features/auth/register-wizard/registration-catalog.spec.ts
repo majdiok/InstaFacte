@@ -471,5 +471,60 @@ describe('registration-catalog', () => {
       expect(result).toContain(AppModule.Forecasting);
       expect(result).toContain(AppModule.Stock);
     });
+
+    // Plan §3.1 — suggestedTaxRegimeFor
+    describe('suggestedTaxRegimeFor (plan §3.1)', () => {
+      it('returns the suggestion when the remote catalog carries suggestedTaxRegimes for the segment', () => {
+        const catalog = fakeCatalog();
+        catalog.suggestedTaxRegimes = [
+          { segmentCode: 'commerce', regime: 1, noteFr: 'Le régime forfaitaire est usuel en commerce.' }
+        ];
+        service.load();
+        httpMock.expectOne(CATALOG_URL).flush({ success: true, data: catalog } as ApiResponse<SectorCatalogDto>);
+
+        const suggestion = service.suggestedTaxRegimeFor('commerce');
+        expect(suggestion).not.toBeUndefined();
+        expect(suggestion!.regime).toBe(1);
+        expect(suggestion!.noteFr).toContain('forfaitaire');
+      });
+
+      it('returns undefined when the remote catalog has no suggestedTaxRegimes field (graceful absence)', () => {
+        service.load();
+        httpMock.expectOne(CATALOG_URL).flush({ success: true, data: fakeCatalog() } as ApiResponse<SectorCatalogDto>);
+
+        expect(service.suggestedTaxRegimeFor('commerce')).toBeUndefined();
+      });
+
+      it('returns undefined when the remote catalog has no entry for the given segment', () => {
+        const catalog = fakeCatalog();
+        catalog.suggestedTaxRegimes = [
+          { segmentCode: 'association', regime: 2, noteFr: 'Exonéré pour les associations.' }
+        ];
+        service.load();
+        httpMock.expectOne(CATALOG_URL).flush({ success: true, data: catalog } as ApiResponse<SectorCatalogDto>);
+
+        expect(service.suggestedTaxRegimeFor('commerce')).toBeUndefined();
+      });
+
+      it('returns undefined when no remote catalog has loaded yet (static/fallback mode)', () => {
+        expect(service.suggestedTaxRegimeFor('commerce')).toBeUndefined();
+      });
+
+      it('returns undefined for an empty/null segment', () => {
+        expect(service.suggestedTaxRegimeFor('')).toBeUndefined();
+        expect(service.suggestedTaxRegimeFor(null)).toBeUndefined();
+        expect(service.suggestedTaxRegimeFor(undefined)).toBeUndefined();
+      });
+
+      it('returns undefined when suggestedTaxRegimes is not an array (defensive)', () => {
+        const catalog = fakeCatalog();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (catalog as any).suggestedTaxRegimes = 'not-an-array';
+        service.load();
+        httpMock.expectOne(CATALOG_URL).flush({ success: true, data: catalog } as ApiResponse<SectorCatalogDto>);
+
+        expect(service.suggestedTaxRegimeFor('commerce')).toBeUndefined();
+      });
+    });
   });
 });

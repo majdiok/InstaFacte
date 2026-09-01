@@ -57,6 +57,19 @@ public sealed record DefaultSettingSnapshot
     public required string ValueType { get; init; }
 }
 
+/// <summary>
+/// One <c>SectorTaxRegimeSuggestions</c> row (plan §3.1), informational only — a segment's
+/// suggested tax regime with a French explanation. Purely advisory; never changes registration
+/// behavior (mirrors <see cref="DefaultSettingSnapshot"/>'s informational status).
+/// </summary>
+public sealed record TaxRegimeSuggestionSnapshot
+{
+    public required string SegmentCode { get; init; }
+    public required int Regime { get; init; }
+    public required string NoteFr { get; init; }
+    public required int SortOrder { get; init; }
+}
+
 /// <summary>One <c>SectorDataTemplateItems</c> row nested under its template (plan §WP-B6).</summary>
 public sealed record DataTemplateItemSnapshot
 {
@@ -93,6 +106,15 @@ public sealed record SectorRuleSnapshot
     public required IReadOnlyList<ModuleDependencySnapshot> ModuleDependencies { get; init; }
     public required IReadOnlyList<DefaultSettingSnapshot> DefaultSettings { get; init; }
     public required IReadOnlyList<DataTemplateSnapshot> DataTemplates { get; init; }
+
+    /// <summary>
+    /// Plan §3.1 — segment → suggested tax regime rows (informational, advisory). Unlike
+    /// <see cref="ModuleDependencies"/>/<see cref="DataTemplates"/> (Phase 2/3 *active* features
+    /// that <c>StaticSectorCatalogProvider</c> deliberately empties so a flag-off is a complete
+    /// rollback), this list is purely informational like <see cref="DefaultSettings"/> and stays
+    /// fully populated from the catalog even on the static/rollback path.
+    /// </summary>
+    public required IReadOnlyList<TaxRegimeSuggestionSnapshot> TaxRegimeSuggestions { get; init; }
 
     /// <summary>
     /// Opaque version tag exposed to clients (plan §2.1 — catalogue sectoriel versionné), e.g.

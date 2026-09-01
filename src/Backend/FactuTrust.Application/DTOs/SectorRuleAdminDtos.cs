@@ -146,6 +146,30 @@ public sealed record UpdateSectorDefaultSettingRequest
     public int SortOrder { get; init; }
 }
 
+public sealed record SectorTaxRegimeSuggestionAdminDto
+{
+    public required Guid Id { get; init; }
+    public required string SegmentCode { get; init; }
+    public required int Regime { get; init; }
+    public required string NoteFr { get; init; }
+    public required int SortOrder { get; init; }
+    public required bool IsActive { get; init; }
+}
+
+public sealed record CreateSectorTaxRegimeSuggestionRequest
+{
+    public required string SegmentCode { get; init; }
+    public required int Regime { get; init; }
+    public required string NoteFr { get; init; }
+    public int SortOrder { get; init; }
+}
+
+public sealed record UpdateSectorTaxRegimeSuggestionRequest
+{
+    public required string NoteFr { get; init; }
+    public int SortOrder { get; init; }
+}
+
 public sealed record SectorDataTemplateItemAdminDto
 {
     public required Guid Id { get; init; }
@@ -208,6 +232,7 @@ public sealed record SectorRuleSetAdminDto
     public required IReadOnlyList<SectorModuleDependencyAdminDto> ModuleDependencies { get; init; }
     public required IReadOnlyList<SectorDefaultSettingAdminDto> Settings { get; init; }
     public required IReadOnlyList<SectorDataTemplateAdminDto> Templates { get; init; }
+    public required IReadOnlyList<SectorTaxRegimeSuggestionAdminDto> TaxRegimeSuggestions { get; init; }
 }
 
 public sealed record SectorRuleSeedResultDto

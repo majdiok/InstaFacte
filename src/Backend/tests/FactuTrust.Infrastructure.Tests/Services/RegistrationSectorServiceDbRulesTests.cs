@@ -93,7 +93,8 @@ public sealed class RegistrationSectorServiceDbRulesTests
         Domains = domains ?? new[] { MakeDomain(BusinessDomains.Autre) },
         ModuleDependencies = moduleDependencies ?? Array.Empty<ModuleDependencySnapshot>(),
         DefaultSettings = Array.Empty<DefaultSettingSnapshot>(),
-        DataTemplates = Array.Empty<DataTemplateSnapshot>()
+        DataTemplates = Array.Empty<DataTemplateSnapshot>(),
+        TaxRegimeSuggestions = Array.Empty<TaxRegimeSuggestionSnapshot>()
     };
 
     private static RegistrationSectorService NewService(

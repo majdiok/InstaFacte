@@ -153,6 +153,12 @@ public class AuthController : ControllerBase
             warnings.Add("La sélection du type de société/domaine d'activité n'a pas été appliquée (fonctionnalité désactivée) ; la configuration par défaut est active.");
         }
 
+        // Plan §3.2: non-blocking coherence check between the NIF's taxpayer category and the
+        // chosen segment. Never blocks registration — fail-open by design (see checker doc).
+        var nifCoherenceWarning = NifCategorySegmentCoherenceChecker.CheckCoherence(nifResult.Value, dto.CompanySegment);
+        if (nifCoherenceWarning is not null)
+            warnings.Add(nifCoherenceWarning);
+
         LogCompanyRegistrationStep("Validation", validationSw.ElapsedMilliseconds, null, correlationId);
 
         var emailCheckSw = Stopwatch.StartNew();
@@ -928,7 +934,8 @@ public class AuthController : ControllerBase
             ProductOnboardingVersion = user.ProductOnboardingVersion,
             ProductOnboardingChecklist = ProductOnboardingUserDtoMapper.ChecklistOf(user),
             CompanySegment = tenant?.CompanySegment,
-            BusinessDomain = tenant?.BusinessDomain
+            BusinessDomain = tenant?.BusinessDomain,
+            TenantCreatedAtUtc = tenant?.CreatedAt ?? DateTime.UtcNow
         };
     }
 

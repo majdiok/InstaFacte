@@ -14,6 +14,7 @@ import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { AuthService } from '@core/services/auth.service';
 import { AppModule } from '@core/models/app-module';
 import { CompanyModuleDto, CompanyModulesService } from '@core/services/company-modules.service';
+import { ModuleRecommendationsService, ModuleRecommendationDto } from '@core/services/module-recommendations.service';
 import { MODULE_ICON_BY_ID } from '@core/utils/module-icon.util';
 
 /**
@@ -42,6 +43,7 @@ export class ModulesSettingsComponent implements OnInit, OnDestroy {
   private readonly authService = inject(AuthService);
   private readonly toastService = inject(ToastService);
   private readonly errorHandler = inject(ErrorHandlerService);
+  private readonly recommendationsService = inject(ModuleRecommendationsService);
   private readonly destroy$ = new Subject<void>();
 
   breadcrumbItems: BreadcrumbItem[] = [
@@ -73,6 +75,11 @@ export class ModulesSettingsComponent implements OnInit, OnDestroy {
     this.modules().filter(m => !m.isCore && !m.recommendedForSector)
   );
 
+  /** Usage-based recommendations (plan §3.3) — distinct from the sector-based `recommendedForSector` flag. */
+  readonly usageRecommendations = signal<ModuleRecommendationDto[]>([]);
+  /** Quick lookup: module ids that have a usage recommendation, for badge display on cards. */
+  private readonly usageRecommendationIds = computed(() => new Set(this.usageRecommendations().map(r => r.moduleId)));
+
   readonly isDirty = computed(() => {
     const initial = new Set(this.modules().filter(m => m.isEnabled).map(m => m.id));
     const current = new Set(this.selectedIds());
@@ -85,6 +92,7 @@ export class ModulesSettingsComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.load();
+    this.loadUsageRecommendations();
   }
 
   ngOnDestroy(): void {
@@ -114,6 +122,35 @@ export class ModulesSettingsComponent implements OnInit, OnDestroy {
         this.loading.set(false);
       }
     });
+  }
+
+  /** Fetches usage-based recommendations (plan §3.3) — non-blocking, fails silently. */
+  loadUsageRecommendations(): void {
+    this.recommendationsService.getRecommendations().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (res) => {
+        if (res.success && res.data) {
+          this.usageRecommendations.set(res.data);
+        }
+      },
+      error: () => {
+        /* les recos d'usage sont optionnelles — la page reste fonctionnelle */
+      }
+    });
+  }
+
+  /** True when a module card should show the "Recommandé pour vous" usage badge (plan §3.3). */
+  hasUsageRecommendation(id: AppModule): boolean {
+    return this.usageRecommendationIds().has(id);
+  }
+
+  /** French reason for a usage recommendation on a given module (for tooltip/display). */
+  usageRecommendationReason(id: AppModule): string {
+    return this.usageRecommendations().find(r => r.moduleId === id)?.reasonFr ?? '';
+  }
+
+  /** Label français d'un module à partir de son id (pour l'affichage du bandeau de recos). */
+  moduleLabel(id: AppModule): string {
+    return this.byId().get(id)?.labelFr ?? String(id);
   }
 
   moduleIcon(id: AppModule): string {

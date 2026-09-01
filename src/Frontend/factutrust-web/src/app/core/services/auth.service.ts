@@ -48,6 +48,13 @@ export interface User {
   productOnboardingStatus?: ProductOnboardingStatus;
   productOnboardingVersion?: number;
   productOnboardingChecklist?: ProductOnboardingChecklist;
+  /**
+   * Phase 3 (plan §3.5) — UTC creation date of the home tenant, used to gate
+   * "progressive profiling" onboarding nudges (e.g. show a profile-completion
+   * reminder only after `minAgeDays`). Absent on sessions created before this
+   * field existed — consumers must treat it as optional and fail open (show, don't hide).
+   */
+  tenantCreatedAtUtc?: string | null;
 }
 
 export interface AuthResponse {

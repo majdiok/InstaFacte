@@ -29,6 +29,7 @@ describe('dashboard-layout.config', () => {
         'chart',
         'kpi',
         'sector',
+        'recommendations',
         'urgent',
         'quick-actions',
         'accounting',
@@ -39,7 +40,7 @@ describe('dashboard-layout.config', () => {
     });
 
     it('appends missing known blocks at their default position', () => {
-      // 'urgent' (default index 2) is missing → must be reinserted right after 'sector'.
+      // 'recommendations' (default index 2) and 'urgent' (default index 3) are missing.
       const stored: DashboardBlockId[] = [
         'kpi',
         'sector',
@@ -52,6 +53,7 @@ describe('dashboard-layout.config', () => {
       expect(reconcileOrder(stored)).toEqual([
         'kpi',
         'sector',
+        'recommendations',
         'urgent',
         'quick-actions',
         'accounting',
@@ -75,6 +77,7 @@ describe('dashboard-layout.config', () => {
       expect(reconcileOrder(legacyStored)).toEqual([
         'kpi',
         'sector',
+        'recommendations',
         'urgent',
         'quick-actions',
         'accounting',

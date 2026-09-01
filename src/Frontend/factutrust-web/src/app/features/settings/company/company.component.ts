@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -20,11 +20,12 @@ import { takeUntil } from 'rxjs/operators';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { ErrorMessageService } from '@core/services/error-message.service';
-import { CompanyService, UpdateCompanyRequest } from '@core/services/company.service';
+import { CompanyService, UpdateCompanyRequest, Company } from '@core/services/company.service';
 import { StockService, Warehouse, UpdateWarehouseRequest } from '@core/services/stock.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rules';
 import { AuthService } from '@core/services/auth.service';
+import { computeCompanyProfileCompletion } from './company-profile-completion.helpers';
 import {
   CompanySectorPreviewResponse,
   CompanySectorService,
@@ -92,7 +93,20 @@ import {
         </p-button>
       </div>
     }
-    
+
+    @if (profileCompletionPct() < 100) {
+      <div class="profile-completion-banner" role="status" aria-live="polite">
+        <div class="pcb-icon"><i class="pi pi-chart-line" aria-hidden="true"></i></div>
+        <div class="pcb-body">
+          <div class="pcb-title">Profil complété à {{ profileCompletionPct() }} %</div>
+          <div class="pcb-bar">
+            <div class="pcb-bar__fill" [style.width.%]="profileCompletionPct()"></div>
+          </div>
+          <p class="pcb-text">Complétez votre logo, RIB et coordonnées pour des documents plus professionnels.</p>
+        </div>
+      </div>
+    }
+
     <form [formGroup]="form" (ngSubmit)="onSubmit()">
       <div class="form-grid">
         <!-- Company Identity -->
@@ -505,6 +519,52 @@ import {
 
   `,
   styles: [`
+    .profile-completion-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--spacing-3);
+      background: linear-gradient(135deg, var(--color-primary-50), #fff);
+      border: 1px solid var(--color-primary-100);
+      border-radius: var(--radius-lg);
+      padding: var(--spacing-4);
+      margin-bottom: var(--spacing-4);
+    }
+    .pcb-icon {
+      width: 36px;
+      height: 36px;
+      flex: 0 0 36px;
+      border-radius: 9px;
+      background: var(--color-primary-100);
+      color: var(--color-primary-600);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pcb-body { flex: 1; min-width: 0; }
+    .pcb-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--color-primary-700);
+    }
+    .pcb-bar {
+      height: 6px;
+      border-radius: 999px;
+      background: var(--color-primary-100);
+      margin: 0.5rem 0;
+      overflow: hidden;
+    }
+    .pcb-bar__fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--color-primary-600);
+      transition: width 400ms ease-out;
+    }
+    .pcb-text {
+      font-size: 0.78rem;
+      color: var(--color-neutral-600);
+      margin: 0;
+    }
+
     .form-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -820,6 +880,11 @@ export class CompanyComponent implements OnInit, OnDestroy {
   isRateLimited = signal(false);
   defaultWarehouseId = signal<string | null>(null);
 
+  /** Raw company data from the API — used to compute profile completion (plan §3.5). */
+  company = signal<Company | null>(null);
+  /** Profile completion percentage (plan §3.5) — 0–100, rounded. */
+  profileCompletionPct = computed(() => computeCompanyProfileCompletion(this.company()));
+
   // Secteur d'activité (plan v1 §2.3)
   sectorLoading = signal(false);
   sectorSaving = signal(false);
@@ -957,6 +1022,7 @@ export class CompanyComponent implements OnInit, OnDestroy {
       next: (response) => {
         if (response.success && response.data) {
           const company = response.data;
+          this.company.set(company);
 
           // Format phone number for display (add spaces)
           const phoneFormatted = company.phone.length === 8

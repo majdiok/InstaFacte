@@ -1,5 +1,6 @@
 import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { DragDropModule, CdkDragDrop } from '@angular/cdk/drag-drop';
 import { RouterModule, Router } from '@angular/router';
 import { TableModule } from 'primeng/table';
@@ -57,6 +58,10 @@ import {
 } from './dashboard-layout.config';
 import { DashboardLayoutService } from './services/dashboard-layout.service';
 import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-checklist.component';
+import { CompanyModulesService } from '@core/services/company-modules.service';
+import { ModuleRecommendationsService, ModuleRecommendationDto } from '@core/services/module-recommendations.service';
+import { ToastService } from '@core/services/toast.service';
+import { MODULE_ICON_BY_ID } from '@core/utils/module-icon.util';
 
 @Component({
   selector: 'app-dashboard',
@@ -158,6 +163,7 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
             @switch (block.id) {
               @case ('kpi') { <ng-container [ngTemplateOutlet]="kpiTpl"></ng-container> }
               @case ('sector') { <ng-container [ngTemplateOutlet]="sectorTpl"></ng-container> }
+              @case ('recommendations') { <ng-container [ngTemplateOutlet]="recommendationsTpl"></ng-container> }
               @case ('urgent') { <ng-container [ngTemplateOutlet]="urgentTpl"></ng-container> }
               @case ('quick-actions') { <ng-container [ngTemplateOutlet]="quickActionsTpl"></ng-container> }
               @case ('accounting') { <ng-container [ngTemplateOutlet]="accountingTpl"></ng-container> }
@@ -285,6 +291,42 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
         </div>
       </div>
     </div>
+    </ng-template>
+
+    <ng-template #recommendationsTpl>
+    <!-- Recommandé pour vous (plan §3.3) — cartes d'activation en un clic -->
+    @if (moduleRecommendations().length > 0) {
+      <div class="recommendations-block">
+        <div class="recommendations-block__header">
+          <span class="recommendations-block__title"><i class="pi pi-sparkles" aria-hidden="true"></i> Recommandé pour vous</span>
+        </div>
+        <div class="recommendations-block__cards">
+          @for (rec of moduleRecommendations(); track rec.moduleId) {
+            <div class="recommendation-card">
+              <div class="recommendation-card__head">
+                <span class="recommendation-card__icon"><i [class]="recommendationModuleIcon(rec.moduleId)" aria-hidden="true"></i></span>
+                <span class="recommendation-card__label">{{ recommendationModuleLabel(rec.moduleId) }}</span>
+              </div>
+              <p class="recommendation-card__reason">{{ rec.reasonFr }}</p>
+              <div class="recommendation-card__actions">
+                <button type="button" class="btn-activate"
+                        (click)="activateRecommendation(rec.moduleId)"
+                        [disabled]="activatingModuleId() !== null">
+                  @if (activatingModuleId() === rec.moduleId) {
+                    <i class="pi pi-spin pi-spinner" aria-hidden="true"></i> Activation…
+                  } @else {
+                    <i class="pi pi-check" aria-hidden="true"></i> Activer
+                  }
+                </button>
+                <button type="button" class="btn-dismiss" (click)="dismissRecommendation(rec.moduleId)">
+                  Masquer
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
     </ng-template>
 
     <ng-template #urgentTpl>
@@ -1200,6 +1242,114 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
       color: var(--color-text-secondary);
     }
 
+    /* Plan §3.3 — « Recommandé pour vous » */
+    .recommendations-block {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-3);
+    }
+
+    .recommendations-block__header {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-2);
+    }
+
+    .recommendations-block__title {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+
+      i { color: var(--color-primary-600); }
+    }
+
+    .recommendations-block__cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: var(--spacing-3);
+    }
+
+    .recommendation-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: var(--spacing-3) var(--spacing-4);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--color-border-subtle, var(--color-neutral-200));
+      background: var(--color-surface-card, #fff);
+    }
+
+    .recommendation-card__head {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .recommendation-card__icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-md, 8px);
+      background: var(--color-primary-50);
+      color: var(--color-primary-600);
+      flex-shrink: 0;
+    }
+
+    .recommendation-card__label {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .recommendation-card__reason {
+      margin: 0;
+      font-size: var(--font-size-xs);
+      color: var(--color-text-secondary);
+      line-height: 1.45;
+      flex: 1;
+    }
+
+    .recommendation-card__actions {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .btn-activate {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.35rem 0.8rem;
+      border-radius: var(--radius-md, 8px);
+      border: none;
+      background: var(--color-primary-600);
+      color: #fff;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      cursor: pointer;
+      transition: background var(--duration-fast, 150ms);
+
+      &:hover:not(:disabled) { background: var(--color-primary-700); }
+      &:disabled { opacity: 0.6; cursor: not-allowed; }
+    }
+
+    .btn-dismiss {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      color: var(--color-text-secondary);
+      padding: 0.35rem 0.4rem;
+
+      &:hover { text-decoration: underline; color: var(--color-text-primary); }
+    }
+
     .quick-action-label {
       font-size: var(--font-size-sm);
       font-weight: var(--font-weight-medium);
@@ -1999,6 +2149,9 @@ export class DashboardComponent implements OnInit {
   private tenantSystemStatus = inject(TenantSystemStatusService);
   private errorHandler = inject(ErrorHandlerService);
   private layoutService = inject(DashboardLayoutService);
+  private modulesService = inject(CompanyModulesService);
+  private recommendationsService = inject(ModuleRecommendationsService);
+  private toastService = inject(ToastService);
 
   readonly tenantMigrationFailed = this.tenantSystemStatus.tenantMigrationFailed;
   readonly tenantMigrationMessage = this.errorHandler.getTenantMigrationFailureMessage();
@@ -2021,6 +2174,11 @@ export class DashboardComponent implements OnInit {
   accountingKpis = signal<AccountingDashboardDto | null>(null);
   crmRemindersCount = signal(0);
   crmOpenOppsCount = signal(0);
+
+  // ===== Recommandations de modules basées sur l'usage (plan §3.3) =====
+  moduleRecommendations = signal<ModuleRecommendationDto[]>([]);
+  recommendationsLoading = signal(false);
+  activatingModuleId = signal<AppModule | null>(null);
 
   // --- Personnalisation du tableau de bord (drag & drop) ---
   editMode = signal(false);
@@ -2181,6 +2339,7 @@ export class DashboardComponent implements OnInit {
     this.loadAccountingKpis();
     this.loadCrmKpis();
     this.loadSectorKpis();
+    this.loadModuleRecommendations();
     this.layoutService.loadLayout();
   }
 
@@ -2195,6 +2354,8 @@ export class DashboardComponent implements OnInit {
         return this.hasCrmModule();
       case 'chart':
         return !this.loading() && this.canReadInvoices() && this.monthlyRevenue().length > 0;
+      case 'recommendations':
+        return !this.loading() && this.moduleRecommendations().length > 0;
       case 'kpi':
       case 'sector':
       case 'quick-actions':
@@ -2256,6 +2417,97 @@ export class DashboardComponent implements OnInit {
   formatAccountingAmount(value: number): string {
     const n = this.decimalPipe.transform(value, '1.3-3') || '0,000';
     return `${n} TND`;
+  }
+
+  // ===== Recommandations de modules (plan §3.3) =====
+
+  /** Libellé français d'un module à partir de son id (pour l'affichage de la carte). */
+  recommendationModuleLabel(moduleId: AppModule): string {
+    return APP_MODULE_OPTIONS.find((o) => o.value === moduleId)?.label ?? String(moduleId);
+  }
+
+  recommendationModuleIcon(moduleId: AppModule): string {
+    return MODULE_ICON_BY_ID[moduleId]?.icon ?? 'pi-puzzle';
+  }
+
+  loadModuleRecommendations(): void {
+    this.recommendationsLoading.set(true);
+    this.recommendationsService.getRecommendations().subscribe({
+      next: (res) => {
+        this.recommendationsLoading.set(false);
+        if (res.success && res.data) {
+          this.moduleRecommendations.set(res.data);
+        }
+      },
+      error: () => {
+        this.recommendationsLoading.set(false);
+        /* dashboard reste utilisable sans recommandations */
+      }
+    });
+  }
+
+  /** Active un module recommandé en un clic (réutilise PUT /api/company/modules, plan §3.3). */
+  activateRecommendation(moduleId: AppModule): void {
+    if (this.activatingModuleId() !== null) return;
+    const currentEnabled = this.authService.user()?.enabledModuleIds ?? [];
+    const nextEnabled = [...new Set([...currentEnabled, moduleId])];
+
+    this.activatingModuleId.set(moduleId);
+    this.modulesService.updateModules(nextEnabled as AppModule[]).subscribe({
+      next: (res) => {
+        this.activatingModuleId.set(null);
+        if (!res.success || !res.data) {
+          this.toastService.add({
+            severity: 'error',
+            summary: 'Échec de l’activation',
+            detail: res.message || 'Impossible d’activer ce module.'
+          });
+          return;
+        }
+        // Sidebar/nav must reflect the change immediately (plan 1.3/2.2).
+        this.authService.refreshUserProfile().subscribe();
+        const warnings = res.data.warnings?.filter((w) => !!w?.trim()) ?? [];
+        if (warnings.length > 0) {
+          this.toastService.add({
+            severity: 'warn',
+            summary: 'Module activé avec avertissements',
+            detail: warnings.join(' '),
+            life: 8000
+          });
+        } else {
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Module activé',
+            detail: 'Votre navigation a été actualisée.'
+          });
+        }
+        // Retire la reco localement (le backend ne la renverra plus non plus).
+        this.moduleRecommendations.update((list) => list.filter((r) => r.moduleId !== moduleId));
+      },
+      error: (err: HttpErrorResponse) => {
+        this.activatingModuleId.set(null);
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Échec de l’activation',
+          detail: this.errorHandler.extractErrorMessage(err),
+          life: 8000
+        });
+      }
+    });
+  }
+
+  /** Masque une recommandation (persistant côté backend, plan §3.3). */
+  dismissRecommendation(moduleId: AppModule): void {
+    this.recommendationsService.dismiss(moduleId).subscribe({
+      next: (res) => {
+        if (res.success) {
+          this.moduleRecommendations.update((list) => list.filter((r) => r.moduleId !== moduleId));
+        }
+      },
+      error: () => {
+        /* échec silencieux — la reco reste visible, l'utilisateur peut réessayer */
+      }
+    });
   }
 
   formatVatDeadline(isoDate: string): string {

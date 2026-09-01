@@ -14,6 +14,13 @@ public sealed record SectorCatalogDto
     public IReadOnlyList<SectorModuleDependencyDto> ModuleDependencies { get; init; } = Array.Empty<SectorModuleDependencyDto>();
 
     /// <summary>
+    /// Plan §3.1 — segment → suggested tax regimes with a French explanation. Informational/ advisory:
+    /// the registration wizard uses it to pre-select / suggest the usual regime and explain *why*.
+    /// Stays populated from the catalog on the static/rollback path (unlike ModuleDependencies).
+    /// </summary>
+    public IReadOnlyList<SectorTaxRegimeSuggestionDto> SuggestedTaxRegimes { get; init; } = Array.Empty<SectorTaxRegimeSuggestionDto>();
+
+    /// <summary>
     /// Plan §2.1 — opaque version tag (<c>"{source}:{version}"</c>, e.g. <c>"static:0"</c> or
     /// <c>"db:12"</c>), mirrors <c>SectorRuleSnapshot.CatalogVersionTag</c>. Clients cache the
     /// catalog and compare this to detect a change without re-fetching. Also echoed as the
@@ -60,4 +67,12 @@ public sealed record SectorModuleDependencyDto
 {
     public required int ModuleId { get; init; }
     public required int RequiredModuleId { get; init; }
+}
+
+/// <summary>Plan §3.1 — one segment → suggested tax regime row, surfaced on the public sector catalog.</summary>
+public sealed record SectorTaxRegimeSuggestionDto
+{
+    public required string SegmentCode { get; init; }
+    public required int Regime { get; init; }
+    public required string NoteFr { get; init; }
 }

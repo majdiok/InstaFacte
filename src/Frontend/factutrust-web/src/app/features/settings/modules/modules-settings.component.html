@@ -40,6 +40,25 @@
     </a>
   </section>
 
+  @if (usageRecommendations().length > 0) {
+    <section class="usage-recos-banner" aria-label="Recommandé pour vous">
+      <div class="urb-head">
+        <span class="urb-ico"><i class="pi pi-sparkles" aria-hidden="true"></i></span>
+        <div>
+          <div class="urb-title">Recommandé pour vous</div>
+          <p class="urb-subtitle">Basé sur votre utilisation récente — activez en un clic ci-dessous.</p>
+        </div>
+      </div>
+      <div class="urb-list">
+        @for (rec of usageRecommendations(); track rec.moduleId) {
+          <div class="urb-item">
+            <span class="urb-item-name"><b>{{ moduleLabel(rec.moduleId) }}</b> — {{ rec.reasonFr }}</span>
+          </div>
+        }
+      </div>
+    </section>
+  }
+
   <section class="mod-group" aria-label="Modules inclus dans votre espace">
     <p class="mod-group-title">
       <i class="pi pi-lock" aria-hidden="true"></i> Inclus dans votre espace <span class="cnt">{{ coreModules().length }} module(s)</span>
@@ -120,6 +139,11 @@
               }
             </div>
             <span class="mod-name">{{ module.labelFr }}</span>
+            @if (hasUsageRecommendation(module.id)) {
+              <span class="mod-badge usage" [pTooltip]="usageRecommendationReason(module.id)" tooltipPosition="top">
+                <i class="pi pi-sparkles" aria-hidden="true"></i> Recommandé pour vous
+              </span>
+            }
             @if (isLockedByDependency(module.id)) {
               <span class="mod-badge dep"><i class="pi pi-link" aria-hidden="true"></i> {{ dependencyLockLabel(module.id) }}</span>
             }

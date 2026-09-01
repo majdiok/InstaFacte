@@ -486,7 +486,7 @@ public sealed class RegisterSectorConfigurationSqlTests : IClassFixture<Channels
     }
 
     [Fact]
-    public async Task Register_unknown_module_ids_are_ignored_and_registration_still_succeeds()
+    public async Task Register_unknown_module_ids_are_rejected_with_400()
     {
         if (!ShouldRun) return;
 
@@ -495,19 +495,12 @@ public sealed class RegisterSectorConfigurationSqlTests : IClassFixture<Channels
         var dto = BuildDto(unique, enabledModules: new[] { 9999, -1 });
 
         var response = await client.PostAsJsonAsync("/api/auth/register", dto, TenantUsersTestSupport.ApiJsonOptions);
-        var body = await response.Content.ReadFromJsonAsync<FactuTrust.Application.DTOs.ApiResponse<AuthResponseDto>>(TenantUsersTestSupport.ApiJsonOptions);
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.NotNull(body?.Data);
-
-        // Both requested ids are invalid/unknown AppModule values and must be dropped entirely —
-        // the resulting set is exactly the 6 forced-on core modules, nothing else.
-        var expectedCoreOnly = new[]
-        {
-            (int)AppModule.Administration, (int)AppModule.Clients, (int)AppModule.Products,
-            (int)AppModule.Sales, (int)AppModule.Treasury, (int)AppModule.Reports
-        };
-        Assert.Equal(expectedCoreOnly.OrderBy(x => x), body!.Data!.User.EnabledModuleIds.OrderBy(x => x));
+        // Plan §1.2 "fin des rejets silencieux": unknown AppModule ids are no longer silently
+        // dropped — the endpoint rejects them with a 400 and a French message listing the ids.
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Modules invalides", content);
     }
 
     [Fact]

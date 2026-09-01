@@ -423,6 +423,10 @@ public static class DependencyInjection
         services.AddScoped<IRegistrationSectorService, RegistrationSectorService>();
         // Phase 2 — backoffice admin CRUD over the sector-rule tables (plan §WP-B5).
         services.AddScoped<ISectorRuleAdminService, FactuTrust.Infrastructure.Services.SectorRules.SectorRuleAdminService>();
+        // Plan §3.2 (v2 stub): no-op today. Swap for a real RNE-backed implementation later —
+        // callers only depend on the interface.
+        services.AddScoped<INifRegistryLookupService, NoOpNifRegistryLookupService>();
+        services.AddScoped<IModuleUsageRecommendationService, FactuTrust.Infrastructure.Services.ModuleUsageRecommendationService>();
         // Phase 2 — application additive des modèles de données sectoriels aux bases tenant (plan §WP-B6).
         services.AddScoped<ISectorDataTemplateApplier, FactuTrust.Infrastructure.Services.SectorRules.SectorDataTemplateApplier>();
         // Phase 2 — re-configuration sectorielle d'un tenant existant depuis le backoffice (plan §WP-B7).
@@ -528,6 +532,8 @@ public static class DependencyInjection
         services.Configure<FirmFiscalOpsOptions>(configuration.GetSection(FirmFiscalOpsOptions.SectionName));
         services.Configure<AccountingSettings>(configuration.GetSection(AccountingSettings.SectionName));
         services.Configure<ProductOnboardingSettings>(configuration.GetSection(ProductOnboardingSettings.SectionName));
+        services.Configure<NifRegistryLookupOptions>(configuration.GetSection(NifRegistryLookupOptions.SectionName));
+        services.Configure<ModuleRecommendationsOptions>(configuration.GetSection(ModuleRecommendationsOptions.SectionName));
         services.Configure<MigrationAiSettings>(configuration.GetSection(MigrationAiSettings.SectionName));
         services.Configure<StorefrontOptions>(configuration.GetSection(StorefrontOptions.SectionName));
         services.Configure<SalesOrderOptions>(configuration.GetSection(SalesOrderOptions.SectionName));

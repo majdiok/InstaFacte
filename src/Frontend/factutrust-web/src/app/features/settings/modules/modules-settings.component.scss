@@ -90,6 +90,64 @@
   }
 }
 
+/* Plan §3.3 — bandeau « Recommandé pour vous » (recos basées sur l'usage) */
+.usage-recos-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  background: linear-gradient(135deg, var(--color-primary-50), #fff);
+  border: 1px solid var(--color-primary-100);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-5);
+}
+
+.urb-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+}
+
+.urb-ico {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 9px;
+  background: var(--color-primary-100);
+  color: var(--color-primary-600);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.urb-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-primary-700);
+}
+
+.urb-subtitle {
+  font-size: 0.78rem;
+  color: var(--color-neutral-600);
+  margin: 2px 0 0;
+}
+
+.urb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.urb-item {
+  font-size: 0.8rem;
+  color: var(--color-neutral-700);
+  line-height: 1.5;
+
+  b {
+    color: var(--color-neutral-900);
+  }
+}
+
 .mod-group {
   margin-bottom: var(--spacing-6);
 }
@@ -227,6 +285,12 @@
     color: #4f46e5;
     background: #eef0fe;
     border-color: #dcdffd;
+  }
+
+  &.usage {
+    color: #6d28d9;
+    background: #f5f3ff;
+    border-color: #ddd6fe;
   }
 }
 

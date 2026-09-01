@@ -4,6 +4,7 @@ using FactuTrust.Application.Common;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.SectorRules;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.SectorConfiguration;
@@ -28,7 +29,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
     private static readonly IReadOnlySet<string> AllowedValueTypes = new HashSet<string>(StringComparer.Ordinal) { "string", "int", "bool", "json" };
     private static readonly IReadOnlySet<string> AllowedTemplateItemKinds = new HashSet<string>(StringComparer.Ordinal)
     {
-        "document-numbering-scheme", "chart-account", "setting"
+        "document-numbering-scheme", "chart-account", "setting", "product-category", "warehouse"
     };
 
     private readonly MasterDbContext _db;
@@ -50,6 +51,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
         var moduleRules = await _db.SectorModuleRules.AsNoTracking().OrderBy(r => r.SortOrder).ToListAsync(cancellationToken);
         var moduleDependencies = await _db.SectorModuleDependencies.AsNoTracking().ToListAsync(cancellationToken);
         var settings = await _db.SectorDefaultSettings.AsNoTracking().OrderBy(s => s.SortOrder).ToListAsync(cancellationToken);
+        var taxRegimeSuggestions = await _db.SectorTaxRegimeSuggestions.AsNoTracking().OrderBy(s => s.SortOrder).ToListAsync(cancellationToken);
         var templates = await _db.SectorDataTemplates.AsNoTracking().OrderBy(t => t.SortOrder).ToListAsync(cancellationToken);
         var templateIds = templates.Select(t => t.Id).ToList();
         var items = await _db.SectorDataTemplateItems.AsNoTracking()
@@ -66,7 +68,8 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
             ModuleRules = moduleRules.Select(ToDto).ToList(),
             ModuleDependencies = moduleDependencies.Select(ToDto).ToList(),
             Settings = settings.Select(ToDto).ToList(),
-            Templates = templates.Select(t => ToDto(t, items.Where(i => i.TemplateId == t.Id))).ToList()
+            Templates = templates.Select(t => ToDto(t, items.Where(i => i.TemplateId == t.Id))).ToList(),
+            TaxRegimeSuggestions = taxRegimeSuggestions.Select(ToDto).ToList()
         };
     }
 
@@ -532,6 +535,69 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
         return Result.Success(true);
     }
 
+    // ---------- Tax regime suggestions (plan §3.1) ----------
+
+    public async Task<IReadOnlyList<SectorTaxRegimeSuggestionAdminDto>> ListTaxRegimeSuggestionsAsync(CancellationToken cancellationToken)
+        => await _db.SectorTaxRegimeSuggestions.AsNoTracking().OrderBy(s => s.SortOrder).Select(s => ToDto(s)).ToListAsync(cancellationToken);
+
+    public async Task<Result<SectorTaxRegimeSuggestionAdminDto>> GetTaxRegimeSuggestionAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var entity = await _db.SectorTaxRegimeSuggestions.FindAsync(new object[] { id }, cancellationToken);
+        return entity is null
+            ? Result.Failure<SectorTaxRegimeSuggestionAdminDto>(NotFound("Suggestion de régime fiscal introuvable."))
+            : Result.Success(ToDto(entity));
+    }
+
+    public async Task<Result<SectorTaxRegimeSuggestionAdminDto>> CreateTaxRegimeSuggestionAsync(CreateSectorTaxRegimeSuggestionRequest request, string? actor, CancellationToken cancellationToken)
+    {
+        var segment = (request.SegmentCode ?? string.Empty).Trim().ToLowerInvariant();
+        if (segment.Length == 0 || !CompanySegments.IsKnown(segment))
+            return Result.Failure<SectorTaxRegimeSuggestionAdminDto>(Error.Validation("SegmentCode", "Segment invalide ou inconnu."));
+
+        if (!Enum.IsDefined(typeof(TaxRegime), request.Regime))
+            return Result.Failure<SectorTaxRegimeSuggestionAdminDto>(Error.Validation("Regime", "Régime fiscal invalide."));
+
+        if (string.IsNullOrWhiteSpace(request.NoteFr) || request.NoteFr.Length > 500)
+            return Result.Failure<SectorTaxRegimeSuggestionAdminDto>(Error.Validation("NoteFr", "La note doit comporter entre 1 et 500 caractères."));
+
+        if (await _db.SectorTaxRegimeSuggestions.AnyAsync(s => s.SegmentCode == segment && s.Regime == request.Regime, cancellationToken))
+            return Result.Failure<SectorTaxRegimeSuggestionAdminDto>(DuplicateCode());
+
+        var entity = SectorTaxRegimeSuggestion.Create(segment, request.Regime, request.NoteFr.Trim(), request.SortOrder);
+        entity.SetAuditInfo(actor ?? "admin");
+        entity.MarkAdminManaged();
+        _db.SectorTaxRegimeSuggestions.Add(entity);
+        await BumpVersionAndSaveAsync(actor, cancellationToken);
+        return Result.Success(ToDto(entity));
+    }
+
+    public async Task<Result<SectorTaxRegimeSuggestionAdminDto>> UpdateTaxRegimeSuggestionAsync(Guid id, UpdateSectorTaxRegimeSuggestionRequest request, string? actor, CancellationToken cancellationToken)
+    {
+        var entity = await _db.SectorTaxRegimeSuggestions.FindAsync(new object[] { id }, cancellationToken);
+        if (entity is null) return Result.Failure<SectorTaxRegimeSuggestionAdminDto>(NotFound("Suggestion de régime fiscal introuvable."));
+
+        if (string.IsNullOrWhiteSpace(request.NoteFr) || request.NoteFr.Length > 500)
+            return Result.Failure<SectorTaxRegimeSuggestionAdminDto>(Error.Validation("NoteFr", "La note doit comporter entre 1 et 500 caractères."));
+
+        entity.UpdateValue(request.NoteFr.Trim(), request.SortOrder);
+        entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
+        await BumpVersionAndSaveAsync(actor, cancellationToken);
+        return Result.Success(ToDto(entity));
+    }
+
+    public async Task<Result<bool>> DeactivateTaxRegimeSuggestionAsync(Guid id, string? actor, CancellationToken cancellationToken)
+    {
+        var entity = await _db.SectorTaxRegimeSuggestions.FindAsync(new object[] { id }, cancellationToken);
+        if (entity is null) return Result.Failure<bool>(NotFound("Suggestion de régime fiscal introuvable."));
+
+        entity.Deactivate();
+        entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
+        await BumpVersionAndSaveAsync(actor, cancellationToken);
+        return Result.Success(true);
+    }
+
     // ---------- Validation helpers ----------
 
     private static Result<string> ValidateCode(string? rawCode)
@@ -711,6 +777,16 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
         SettingKey = s.SettingKey,
         SettingValue = s.SettingValue,
         ValueType = s.ValueType,
+        SortOrder = s.SortOrder,
+        IsActive = s.IsActive
+    };
+
+    private static SectorTaxRegimeSuggestionAdminDto ToDto(SectorTaxRegimeSuggestion s) => new()
+    {
+        Id = s.Id,
+        SegmentCode = s.SegmentCode,
+        Regime = s.Regime,
+        NoteFr = s.NoteFr,
         SortOrder = s.SortOrder,
         IsActive = s.IsActive
     };

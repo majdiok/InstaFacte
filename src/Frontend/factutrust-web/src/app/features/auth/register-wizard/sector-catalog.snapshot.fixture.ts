@@ -168,5 +168,60 @@ export const SECTOR_CATALOG_SNAPSHOT_FIXTURE: SectorCatalogDto & { catalogVersio
     { id: 17, code: 'RecurringContracts', labelFr: 'Contrats récurrents', isCore: false }
   ],
   moduleDependencies: [],
+  suggestedTaxRegimes: [
+    {
+      segmentCode: 'entreprise',
+      regime: 0,
+      noteFr: "Régime réel : comptabilité complète et facturation TVA, recommandé pour les sociétés d'entreprise."
+    },
+    {
+      segmentCode: 'commerce',
+      regime: 0,
+      noteFr:
+        "Régime réel : généralement adapté au commerce dès lors que le chiffre d'affaires dépasse les seuils du forfait."
+    },
+    {
+      segmentCode: 'commerce',
+      regime: 1,
+      noteFr:
+        'Régime forfaitaire : simplifié, possible pour les petits commerces sous les seuils légaux.'
+    },
+    {
+      segmentCode: 'services',
+      regime: 0,
+      noteFr:
+        'Régime réel : recommandé pour les prestations de services dès lors que les seuils du forfait sont dépassés.'
+    },
+    {
+      segmentCode: 'services',
+      regime: 1,
+      noteFr:
+        'Régime forfaitaire : simplifié, possible pour les petites prestations de services sous les seuils légaux.'
+    },
+    {
+      segmentCode: 'btp-construction',
+      regime: 0,
+      noteFr:
+        'Régime réel : obligatoire pour le BTP — comptabilité de chantier et TVA récupérable.'
+    },
+    {
+      segmentCode: 'association',
+      regime: 2,
+      noteFr:
+        'Exonération de TVA : la plupart des associations à but non lucratif sont exonérées.'
+    },
+    {
+      segmentCode: 'etablissement-educatif',
+      regime: 2,
+      noteFr:
+        "Exonération de TVA : applicable aux établissements d'enseignement remplissant les conditions légales."
+    },
+    {
+      segmentCode: 'etablissement-educatif',
+      regime: 0,
+      noteFr:
+        "Régime réel : possible pour les activités commerciales annexes d'un établissement éducatif."
+    }
+  ],
   catalogVersion: 'static:0'
 };

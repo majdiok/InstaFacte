@@ -301,6 +301,16 @@ export const COMPANY_CHECKLIST_ITEMS: readonly OnboardingChecklistItemDef[] = [
     permission: 'recurring_contracts:create',
     modules: [AppModule.RecurringContracts],
     segments: ['services', 'etablissement-educatif']
+  },
+  // Plan v1 §3.5 — progressive profiling: reminder to enrich the company profile
+  // (logo, RIB…) appears only after a few days of usage (minAgeDays gate).
+  {
+    id: COMPANY_CHECKLIST_IDS.completeCompanyProfile,
+    label: 'Complétez votre profil entreprise',
+    description: 'Ajoutez votre logo, RIB et coordonnées bancaires pour des documents plus pro.',
+    route: '/settings/company',
+    permission: 'settings:read',
+    minAgeDays: 3
   }
 ];
 

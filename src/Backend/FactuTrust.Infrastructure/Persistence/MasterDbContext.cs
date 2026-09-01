@@ -30,6 +30,9 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     public DbSet<TenantConnectionString> TenantConnectionStrings => Set<TenantConnectionString>();
     public DbSet<UserModuleGrant> UserModuleGrants => Set<UserModuleGrant>();
     public DbSet<ModuleGrantAuditEntry> ModuleGrantAuditEntries => Set<ModuleGrantAuditEntry>();
+
+    /// <summary>Plan §3.3 — per-tenant dismissals of module usage recommendations.</summary>
+    public DbSet<ModuleRecommendationDismissal> ModuleRecommendationDismissals => Set<ModuleRecommendationDismissal>();
     public DbSet<AccountingFirmProfile> AccountingFirmProfiles => Set<AccountingFirmProfile>();
     public DbSet<FirmClientAssignment> FirmClientAssignments => Set<FirmClientAssignment>();
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
@@ -134,6 +137,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     public DbSet<Domain.Entities.SectorRules.SectorModuleRule> SectorModuleRules => Set<Domain.Entities.SectorRules.SectorModuleRule>();
     public DbSet<Domain.Entities.SectorRules.SectorModuleDependency> SectorModuleDependencies => Set<Domain.Entities.SectorRules.SectorModuleDependency>();
     public DbSet<Domain.Entities.SectorRules.SectorDefaultSetting> SectorDefaultSettings => Set<Domain.Entities.SectorRules.SectorDefaultSetting>();
+    public DbSet<Domain.Entities.SectorRules.SectorTaxRegimeSuggestion> SectorTaxRegimeSuggestions => Set<Domain.Entities.SectorRules.SectorTaxRegimeSuggestion>();
     public DbSet<Domain.Entities.SectorRules.SectorDataTemplate> SectorDataTemplates => Set<Domain.Entities.SectorRules.SectorDataTemplate>();
     public DbSet<Domain.Entities.SectorRules.SectorDataTemplateItem> SectorDataTemplateItems => Set<Domain.Entities.SectorRules.SectorDataTemplateItem>();
     public DbSet<Domain.Entities.SectorRules.SectorRuleSetStamp> SectorRuleSetStamps => Set<Domain.Entities.SectorRules.SectorRuleSetStamp>();
@@ -403,6 +407,14 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(e => e.Action).HasMaxLength(100).IsRequired();
             entity.Property(e => e.DiffJson).HasColumnType("nvarchar(max)").IsRequired();
             entity.HasIndex(e => new { e.TenantId, e.CreatedAtUtc });
+        });
+
+        // Plan §3.3 — per-tenant dismissal of module usage recommendations; never resurfaces once dismissed.
+        builder.Entity<ModuleRecommendationDismissal>(entity =>
+        {
+            entity.ToTable("ModuleRecommendationDismissals");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.TenantId, e.Module }).IsUnique();
         });
 
         // Lot B2 — Platform admin 2FA profile (1-to-1 avec ApplicationUser).
@@ -1439,6 +1451,18 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(e => e.DomainCode).HasMaxLength(50);
             entity.Property(e => e.SettingKey).HasMaxLength(100).IsRequired();
             entity.Property(e => e.ValueType).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+        });
+
+        // Plan §3.1 — segment → suggested tax regime rows (informational, admin-editable).
+        builder.Entity<Domain.Entities.SectorRules.SectorTaxRegimeSuggestion>(entity =>
+        {
+            entity.ToTable("SectorTaxRegimeSuggestions");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.SegmentCode, e.Regime }).IsUnique();
+            entity.Property(e => e.SegmentCode).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.NoteFr).HasMaxLength(500).IsRequired();
             entity.Property(e => e.CreatedBy).HasMaxLength(450);
             entity.Property(e => e.UpdatedBy).HasMaxLength(450);
         });

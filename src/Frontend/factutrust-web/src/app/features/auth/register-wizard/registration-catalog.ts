@@ -110,11 +110,24 @@ export interface RemoteModuleDependencyDto {
   requiredModuleId: number;
 }
 
+/**
+ * Backend `SuggestedTaxRegimeDto` (plan §3.1) — admin-editable segment → tax regime
+ * suggestion, surfaced with a French explanatory note. Additive/optional: absent on
+ * catalogs served before this field ships server-side (fallback catalog never has it).
+ */
+export interface RemoteSuggestedTaxRegimeDto {
+  segmentCode: string;
+  regime: number;
+  noteFr: string;
+}
+
 export interface SectorCatalogDto {
   segments: RemoteSectorSegmentDto[];
   domains: RemoteSectorDomainDto[];
   modules: RemoteSectorModuleDto[];
   moduleDependencies: RemoteModuleDependencyDto[];
+  /** Optional (plan §3.1) — absent on older/static payloads. */
+  suggestedTaxRegimes?: RemoteSuggestedTaxRegimeDto[];
 }
 
 export type CatalogLoadState = 'idle' | 'loading' | 'remote' | 'fallback';
@@ -426,6 +439,19 @@ export class RegistrationCatalogService {
 
   domainLabel(code: string | null | undefined): string {
     return this.domains.find(d => d.code === code)?.label ?? '';
+  }
+
+  /**
+   * Suggested tax regime for a segment (plan §3.1). Returns `undefined` whenever the
+   * remote catalog hasn't loaded yet, doesn't carry `suggestedTaxRegimes` (older
+   * backend, or the static fallback catalog which never has this field), or has no
+   * entry for `segment` — the wizard then behaves exactly as before (no suggestion).
+   */
+  suggestedTaxRegimeFor(segment: string | null | undefined): RemoteSuggestedTaxRegimeDto | undefined {
+    if (!segment) return undefined;
+    const remote = this.remoteCatalog();
+    if (!remote || !Array.isArray(remote.suggestedTaxRegimes)) return undefined;
+    return remote.suggestedTaxRegimes.find(r => r.segmentCode === segment);
   }
 
   moduleLabel(id: AppModule): string {
