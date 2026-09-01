@@ -51,6 +51,10 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
 
         if (normalizedDomain is not null && normalizedSegment is null)
         {
+            _logger.LogWarning(
+                "RegistrationSectorService.ResolveProfile: rejected domain without segment (domain={Domain}).",
+                normalizedDomain);
+
             return Result.Failure<SectorProfile?>(
                 Error.Validation("CompanySegment", "Type de société requis lorsque le domaine est fourni."));
         }
@@ -62,12 +66,20 @@ public sealed class RegistrationSectorService : IRegistrationSectorService
 
         if (normalizedSegment is not null && segmentSnapshot is null)
         {
+            _logger.LogWarning(
+                "RegistrationSectorService.ResolveProfile: rejected unknown segment (segment={Segment}).",
+                normalizedSegment);
+
             return Result.Failure<SectorProfile?>(
                 Error.Validation("CompanySegment", "Type de société invalide."));
         }
 
         if (normalizedDomain is not null && !snapshot.Domains.Any(d => string.Equals(d.Code, normalizedDomain, StringComparison.Ordinal)))
         {
+            _logger.LogWarning(
+                "RegistrationSectorService.ResolveProfile: rejected unknown domain (domain={Domain}).",
+                normalizedDomain);
+
             return Result.Failure<SectorProfile?>(
                 Error.Validation("BusinessDomain", "Domaine d'activité invalide."));
         }

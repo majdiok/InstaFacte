@@ -5,6 +5,7 @@ using FactuTrust.API.Controllers;
 using FactuTrust.Domain.Auth;
 using FactuTrust.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -200,7 +201,7 @@ public sealed class LiasseAuthorizationPolicyTests
 
     private static Task<bool> PermissionSatisfied(string permission, ClaimsPrincipal user)
     {
-        var handler = new PermissionAuthorizationHandler();
+        var handler = new PermissionAuthorizationHandler(NullLogger<PermissionAuthorizationHandler>.Instance);
         var ctx = new AuthorizationHandlerContext(
             new IAuthorizationRequirement[] { new PermissionRequirement(permission) }, user, resource: null);
         return handler.HandleAsync(ctx).ContinueWith(_ => ctx.HasSucceeded, TaskScheduler.Default);
