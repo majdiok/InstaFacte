@@ -1729,6 +1729,8 @@ namespace FactuTrust.Infrastructure.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+                    b.Property<bool>("IsManagedByCatalog")
+                        .HasColumnType("bit");
 
                     b.Property<string>("LabelFr")
                         .IsRequired()
@@ -1773,6 +1775,8 @@ namespace FactuTrust.Infrastructure.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+                    b.Property<bool>("IsManagedByCatalog")
+                        .HasColumnType("bit");
 
                     b.Property<string>("LabelFr")
                         .IsRequired()
@@ -1815,6 +1819,8 @@ namespace FactuTrust.Infrastructure.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+                    b.Property<bool>("IsManagedByCatalog")
+                        .HasColumnType("bit");
 
                     b.Property<Guid>("SegmentId")
                         .HasColumnType("uniqueidentifier");
@@ -1854,6 +1860,8 @@ namespace FactuTrust.Infrastructure.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+                    b.Property<bool>("IsManagedByCatalog")
                         .HasColumnType("bit");
 
                     b.Property<int>("ModuleId")
@@ -1898,6 +1906,8 @@ namespace FactuTrust.Infrastructure.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+                    b.Property<bool>("IsManagedByCatalog")
+                        .HasColumnType("bit");
 
                     b.Property<int>("ModuleId")
                         .HasColumnType("int");
@@ -1938,6 +1948,8 @@ namespace FactuTrust.Infrastructure.Migrations
                         .HasColumnType("nvarchar(50)");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+                    b.Property<bool>("IsManagedByCatalog")
                         .HasColumnType("bit");
 
                     b.Property<string>("SegmentCode")
@@ -2004,6 +2016,8 @@ namespace FactuTrust.Infrastructure.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+                    b.Property<bool>("IsManagedByCatalog")
+                        .HasColumnType("bit");
 
                     b.Property<string>("LabelFr")
                         .IsRequired()
@@ -2050,6 +2064,8 @@ namespace FactuTrust.Infrastructure.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+                    b.Property<bool>("IsManagedByCatalog")
+                        .HasColumnType("bit");
 
                     b.Property<string>("ItemKind")
                         .IsRequired()
@@ -2076,6 +2092,10 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("TemplateId");
+
+                    b.HasIndex("TemplateId", "ItemKind", "SortOrder")
+                        .IsUnique()
+                        .HasFilter("[IsActive] = 1");
 
                     b.ToTable("SectorDataTemplateItems", (string)null);
                 });

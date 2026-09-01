@@ -104,6 +104,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         var entity = SectorSegment.Create(code, request.LabelFr, request.DescriptionFr, request.IconKey, request.SortOrder, request.DefaultWarehouseName);
         entity.SetAuditInfo(actor ?? "admin");
+        entity.MarkAdminManaged();
         _db.SectorSegments.Add(entity);
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(ToDto(entity));
@@ -116,6 +117,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.UpdateDetails(request.LabelFr, request.DescriptionFr, request.IconKey, request.SortOrder, request.DefaultWarehouseName);
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(ToDto(entity));
     }
@@ -127,6 +129,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.Deactivate();
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(true);
     }
@@ -155,6 +158,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         var entity = SectorDomain.Create(code, request.LabelFr, request.SortOrder);
         entity.SetAuditInfo(actor ?? "admin");
+        entity.MarkAdminManaged();
         _db.SectorDomains.Add(entity);
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(ToDto(entity));
@@ -167,6 +171,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.UpdateDetails(request.LabelFr, request.SortOrder);
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(ToDto(entity));
     }
@@ -178,6 +183,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.Deactivate();
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(true);
     }
@@ -207,6 +213,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         var entity = SectorSegmentDomain.Create(request.SegmentId, request.DomainId, request.SortOrder);
         entity.SetAuditInfo(actor ?? "admin");
+        entity.MarkAdminManaged();
         _db.SectorSegmentDomains.Add(entity);
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(ToDto(entity));
@@ -219,6 +226,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.UpdateSortOrder(request.SortOrder);
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(ToDto(entity));
     }
@@ -230,6 +238,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.Deactivate();
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(true);
     }
@@ -275,6 +284,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
         }
 
         entity.SetAuditInfo(actor ?? "admin");
+        entity.MarkAdminManaged();
         _db.SectorModuleRules.Add(entity);
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(ToDto(entity));
@@ -287,6 +297,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.UpdateSortOrder(request.SortOrder);
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(ToDto(entity));
     }
@@ -298,6 +309,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.Deactivate();
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(true);
     }
@@ -338,6 +350,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         var entity = SectorModuleDependency.Create(request.ModuleId, request.RequiredModuleId);
         entity.SetAuditInfo(actor ?? "admin");
+        entity.MarkAdminManaged();
         _db.SectorModuleDependencies.Add(entity);
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(ToDto(entity));
@@ -350,6 +363,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.Deactivate();
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(true);
     }
@@ -379,6 +393,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         var entity = SectorDefaultSetting.Create(request.SegmentCode, request.DomainCode, request.SettingKey, request.SettingValue, request.ValueType, request.SortOrder);
         entity.SetAuditInfo(actor ?? "admin");
+        entity.MarkAdminManaged();
         _db.SectorDefaultSettings.Add(entity);
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(ToDto(entity));
@@ -394,6 +409,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.UpdateValue(request.SettingValue, request.ValueType, request.SortOrder);
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(ToDto(entity));
     }
@@ -405,6 +421,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.Deactivate();
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(true);
     }
@@ -448,6 +465,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         var entity = SectorDataTemplate.Create(code, request.SegmentCode, request.DomainCode, request.LabelFr, request.DescriptionFr, request.Version, request.SortOrder);
         entity.SetAuditInfo(actor ?? "admin");
+        entity.MarkAdminManaged();
         _db.SectorDataTemplates.Add(entity);
 
         var itemEntities = new List<SectorDataTemplateItem>();
@@ -456,6 +474,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
         {
             var itemEntity = SectorDataTemplateItem.Create(entity.Id, item.ItemKind, item.PayloadJson, item.SortOrder != 0 ? item.SortOrder : sortOrder);
             itemEntity.SetAuditInfo(actor ?? "admin");
+            itemEntity.MarkAdminManaged();
             itemEntities.Add(itemEntity);
             sortOrder++;
         }
@@ -475,11 +494,15 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.UpdateDetails(request.LabelFr, request.DescriptionFr, request.Version, request.SortOrder);
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
 
         // Items are replaced as a set: deactivate the previous generation, insert the new one.
         var previousItems = await _db.SectorDataTemplateItems.Where(i => i.TemplateId == id).ToListAsync(cancellationToken);
         foreach (var previousItem in previousItems)
+        {
             previousItem.Deactivate();
+            previousItem.MarkAdminManaged();
+        }
 
         var newItems = new List<SectorDataTemplateItem>();
         var sortOrder = 0;
@@ -487,6 +510,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
         {
             var itemEntity = SectorDataTemplateItem.Create(id, item.ItemKind, item.PayloadJson, item.SortOrder != 0 ? item.SortOrder : sortOrder);
             itemEntity.SetAuditInfo(actor ?? "admin");
+            itemEntity.MarkAdminManaged();
             newItems.Add(itemEntity);
             sortOrder++;
         }
@@ -503,6 +527,7 @@ public sealed class SectorRuleAdminService : ISectorRuleAdminService
 
         entity.Deactivate();
         entity.SetAuditInfo(actor ?? "admin", isUpdate: true);
+        entity.MarkAdminManaged();
         await BumpVersionAndSaveAsync(actor, cancellationToken);
         return Result.Success(true);
     }

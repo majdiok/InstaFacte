@@ -16,6 +16,12 @@ public sealed class SectorDataTemplateItem : Entity
     public int SortOrder { get; private set; }
     public bool IsActive { get; private set; } = true;
 
+    /// <summary>
+    /// True when this row is owned by the catalog seeder. Startup reconciliation only ever
+    /// refreshes/reactivates/deactivates catalog-owned items; an admin edit flips this to false.
+    /// </summary>
+    public bool IsManagedByCatalog { get; private set; } = true;
+
     private SectorDataTemplateItem() { }
 
     public static SectorDataTemplateItem Create(Guid templateId, string itemKind, string payloadJson, int sortOrder)
@@ -33,6 +39,12 @@ public sealed class SectorDataTemplateItem : Entity
     public void Deactivate() => IsActive = false;
 
     public void Reactivate() => IsActive = true;
+
+    /// <summary>Marks the row as admin-authored/edited so startup reconciliation never overwrites it.</summary>
+    public void MarkAdminManaged() => IsManagedByCatalog = false;
+
+    /// <summary>Reclaims the row as catalog-owned (used by a factory-reset force seed).</summary>
+    public void MarkCatalogManaged() => IsManagedByCatalog = true;
 
     /// <summary>
     /// Refreshes the payload for a catalog-known item on a force/reconcile seed run (review R3) —

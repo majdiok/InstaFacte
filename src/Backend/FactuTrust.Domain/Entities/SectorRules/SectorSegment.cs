@@ -17,6 +17,13 @@ public sealed class SectorSegment : Entity
     public string? DefaultWarehouseName { get; private set; }
     public bool IsActive { get; private set; } = true;
 
+    /// <summary>
+    /// True when this row is owned by the catalog seeder (as opposed to an admin-authored/edited
+    /// row). Startup reconciliation only ever refreshes/reactivates/deactivates catalog-owned rows;
+    /// an admin edit flips this to false via <see cref="MarkAdminManaged"/> so it survives restarts.
+    /// </summary>
+    public bool IsManagedByCatalog { get; private set; } = true;
+
     private SectorSegment() { }
 
     public static SectorSegment Create(
@@ -58,4 +65,10 @@ public sealed class SectorSegment : Entity
     public void Deactivate() => IsActive = false;
 
     public void Reactivate() => IsActive = true;
+
+    /// <summary>Marks the row as admin-authored/edited so startup reconciliation never overwrites it.</summary>
+    public void MarkAdminManaged() => IsManagedByCatalog = false;
+
+    /// <summary>Reclaims the row as catalog-owned (used by a factory-reset force seed).</summary>
+    public void MarkCatalogManaged() => IsManagedByCatalog = true;
 }

@@ -652,7 +652,7 @@ using (var scope = app.Services.CreateScope())
             // silently running with a stale rule set until an admin hits the force-seed endpoint.
             // No-ops (besides a cheap hash comparison) once the catalog hash already matches the
             // stamp recorded by the last seed/reconcile run.
-            await FactuTrust.Infrastructure.Persistence.Seeds.SectorRuleSeeder.ReconcileOnStartupAsync(context);
+            await FactuTrust.Infrastructure.Persistence.Seeds.SectorRuleSeeder.ReconcileOnStartupAsync(context, logger);
 
             logger.LogInformation("Database seeding completed successfully.");
         }

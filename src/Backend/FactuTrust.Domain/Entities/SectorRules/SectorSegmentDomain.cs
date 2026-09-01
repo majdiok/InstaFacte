@@ -16,6 +16,13 @@ public sealed class SectorSegmentDomain : Entity
     public int SortOrder { get; private set; }
     public bool IsActive { get; private set; } = true;
 
+    /// <summary>
+    /// True when this row is owned by the catalog seeder. Startup reconciliation only ever
+    /// refreshes/reactivates/deactivates catalog-owned links; an admin pruning of the link flips
+    /// this to false via <see cref="MarkAdminManaged"/> so it survives restarts.
+    /// </summary>
+    public bool IsManagedByCatalog { get; private set; } = true;
+
     private SectorSegmentDomain() { }
 
     public static SectorSegmentDomain Create(Guid segmentId, Guid domainId, int sortOrder)
@@ -34,4 +41,10 @@ public sealed class SectorSegmentDomain : Entity
     public void Deactivate() => IsActive = false;
 
     public void Reactivate() => IsActive = true;
+
+    /// <summary>Marks the row as admin-authored/edited so startup reconciliation never overwrites it.</summary>
+    public void MarkAdminManaged() => IsManagedByCatalog = false;
+
+    /// <summary>Reclaims the row as catalog-owned (used by a factory-reset force seed).</summary>
+    public void MarkCatalogManaged() => IsManagedByCatalog = true;
 }
