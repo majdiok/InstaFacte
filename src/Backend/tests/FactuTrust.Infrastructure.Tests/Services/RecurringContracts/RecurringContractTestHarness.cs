@@ -24,6 +24,8 @@ namespace FactuTrust.Infrastructure.Tests.Services.RecurringContracts;
 /// </summary>
 internal sealed class RecurringContractTestHarness
 {
+    internal static readonly Guid DefaultProductId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+
     public TestTenantDbContextFactory Factory { get; } = new();
     public TestCurrentUser CurrentUser { get; } = new();
     public StubTenantMemberDirectory Members { get; } = new();

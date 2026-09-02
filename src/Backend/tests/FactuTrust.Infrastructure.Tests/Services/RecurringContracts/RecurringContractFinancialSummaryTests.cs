@@ -16,7 +16,7 @@ public sealed class RecurringContractFinancialSummaryTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1), endDate: new DateTime(2026, 12, 31),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var summary = await sut.GetFinancialSummaryAsync(contract.Id);
@@ -49,7 +49,7 @@ public sealed class RecurringContractFinancialSummaryTests
                 // Contrat « à mi-vie » : 6 périodes déjà facturées, NextBillingDate = 01/07/2026.
                 for (var i = 0; i < 6; i++) c.AdvanceBillingSchedule();
             },
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var summary = await sut.GetFinancialSummaryAsync(contract.Id);
@@ -69,7 +69,7 @@ public sealed class RecurringContractFinancialSummaryTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1), endDate: null,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var summary = await sut.GetFinancialSummaryAsync(contract.Id);
@@ -92,7 +92,7 @@ public sealed class RecurringContractFinancialSummaryTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1), endDate: new DateTime(2026, 12, 31),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         // Run DraftCreated : un brouillon existe mais rien n'est réellement facturé.
         await harness.SeedRunAsync(contract.Id, new DateTime(2026, 1, 1), new DateTime(2026, 1, 31),
             RecurringContractBillingRunStatus.DraftCreated, fixedAmount: 100m);
@@ -115,7 +115,7 @@ public sealed class RecurringContractFinancialSummaryTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1), endDate: new DateTime(2026, 12, 31),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var invoice = await harness.SeedInvoiceAsync(client.Id, new DateTime(2026, 2, 1), 250m);
         // Jointure couverte via run.InvoiceId uniquement (la facture ne porte pas le lien contrat).
         await harness.SeedRunAsync(contract.Id, new DateTime(2026, 1, 1), new DateTime(2026, 1, 31),
@@ -141,7 +141,7 @@ public sealed class RecurringContractFinancialSummaryTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1), endDate: new DateTime(2026, 12, 31),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var invoice = await harness.SeedInvoiceAsync(client.Id, new DateTime(2026, 2, 1), 100m,
             cancel: true);
         // Jointure couverte via invoice.SourceRecurringContractBillingRunId (autre clé de liaison).
@@ -166,7 +166,7 @@ public sealed class RecurringContractFinancialSummaryTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1), endDate: new DateTime(2026, 12, 31),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var invoice = await harness.SeedInvoiceAsync(client.Id, new DateTime(2026, 2, 1), 250m);
         var run = await harness.SeedRunAsync(contract.Id, new DateTime(2026, 1, 1), new DateTime(2026, 1, 31),
             RecurringContractBillingRunStatus.Invoiced, fixedAmount: 250m, invoiceId: invoice.Id);
@@ -190,7 +190,7 @@ public sealed class RecurringContractFinancialSummaryTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1), endDate: new DateTime(2026, 12, 31),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var invoice = await harness.SeedInvoiceAsync(client.Id, new DateTime(2026, 2, 1), 250m);
         var run = await harness.SeedRunAsync(contract.Id, new DateTime(2026, 1, 1), new DateTime(2026, 1, 31),
             RecurringContractBillingRunStatus.Invoiced, fixedAmount: 250m, invoiceId: invoice.Id);

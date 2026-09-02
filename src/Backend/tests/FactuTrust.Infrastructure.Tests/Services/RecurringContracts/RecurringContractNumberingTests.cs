@@ -26,7 +26,8 @@ public sealed class RecurringContractNumberingTests
                 Description = "Abonnement",
                 Quantity = 1,
                 UnitPriceHT = 100m,
-                VatRate = 19m
+                VatRate = 19m,
+                ProductId = RecurringContractTestHarness.DefaultProductId
             }
         }
     };

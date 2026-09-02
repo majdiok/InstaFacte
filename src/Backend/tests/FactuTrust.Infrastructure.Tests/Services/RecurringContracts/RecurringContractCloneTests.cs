@@ -19,8 +19,8 @@ public sealed class RecurringContractCloneTests
             configure: c => c.Activate(),
             lines: c =>
             {
-                c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m);
-                c.AddLine(RecurringContractLineType.FixedRecurring, "Ancienne option", 2, 40m, 19m);
+                c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId);
+                c.AddLine(RecurringContractLineType.FixedRecurring, "Ancienne option", 2, 40m, 19m, RecurringContractTestHarness.DefaultProductId);
             });
 
         // Désactive la seconde ligne directement sur l'entité seedée, puis re-persiste.
@@ -57,7 +57,7 @@ public sealed class RecurringContractCloneTests
         var client = await harness.SeedClientAsync("Client clone dates");
         var source = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1), endDate: new DateTime(2026, 12, 31),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.CloneAsync(source.Id, new CloneRecurringContractDto());
@@ -79,7 +79,7 @@ public sealed class RecurringContractCloneTests
         var client = await harness.SeedClientAsync("Client clone sans fin");
         var source = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.CloneAsync(source.Id, new CloneRecurringContractDto());
@@ -98,7 +98,7 @@ public sealed class RecurringContractCloneTests
         var quoteId = Guid.NewGuid();
         var source = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1), sourceQuoteId: quoteId,
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         await harness.SeedRunAsync(source.Id, new DateTime(2026, 1, 1), new DateTime(2026, 1, 31),
             RecurringContractBillingRunStatus.DraftCreated, fixedAmount: 100m);
 
@@ -128,7 +128,7 @@ public sealed class RecurringContractCloneTests
         var harness = new RecurringContractTestHarness();
         var client = await harness.SeedClientAsync("Client clone numéro");
         var source = await harness.SeedContractAsync(client.Id,
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.CloneAsync(source.Id, new CloneRecurringContractDto());
@@ -159,7 +159,7 @@ public sealed class RecurringContractCloneTests
         var harness = new RecurringContractTestHarness();
         var client = await harness.SeedClientAsync("Client clone client invalide");
         var source = await harness.SeedContractAsync(client.Id,
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.CloneAsync(source.Id,

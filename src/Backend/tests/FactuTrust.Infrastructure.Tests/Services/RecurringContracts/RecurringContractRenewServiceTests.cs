@@ -16,7 +16,7 @@ public sealed class RecurringContractRenewServiceTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1), endDate: new DateTime(2026, 12, 31),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.RenewAsync(contract.Id,
