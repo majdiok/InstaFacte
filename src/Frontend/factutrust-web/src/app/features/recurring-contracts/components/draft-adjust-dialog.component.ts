@@ -56,17 +56,7 @@ interface EditableDraftLine {
       } @else if (loadError()) {
         <p class="status-line status-line--error">{{ loadError() }}</p>
       } @else {
-        @if (draft(); as d) {
-          <p class="info-line">
-            <i class="pi pi-info-circle"></i>
-            Période du {{ d.periodFrom | date:'dd/MM/yyyy' }} au {{ d.periodTo | date:'dd/MM/yyyy' }}.
-            Le produit et le nombre de lignes ne sont pas modifiables.
-            Sur une ligne catalogue, le libellé de la facture émise reste celui du produit.
-            Les modifications s'appliquent uniquement à cette échéance et à la facture émise ;
-            elles n'affectent pas les autres échéances ni les lignes du contrat.
-            Pour un changement de tarif permanent, utilisez <strong>Nouvel avenant</strong>.
-          </p>
-
+        @if (draft()) {
           @for (line of lines; track line.index; let i = $index) {
             <div class="line-card">
               <div class="grid">
@@ -174,15 +164,6 @@ interface EditableDraftLine {
       padding: var(--spacing-4);
       margin-bottom: var(--spacing-4);
       background: var(--color-background-subtle);
-    }
-
-    .info-line {
-      display: flex;
-      gap: var(--spacing-2);
-      align-items: flex-start;
-      margin: 0 0 var(--spacing-4);
-      font-size: var(--font-size-sm);
-      color: var(--color-text-secondary);
     }
 
     .status-line { margin: 0; color: var(--color-text-secondary); }
