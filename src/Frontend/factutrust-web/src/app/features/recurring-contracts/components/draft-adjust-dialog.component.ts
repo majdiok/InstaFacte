@@ -62,6 +62,9 @@ interface EditableDraftLine {
             Période du {{ d.periodFrom | date:'dd/MM/yyyy' }} au {{ d.periodTo | date:'dd/MM/yyyy' }}.
             Le produit et le nombre de lignes ne sont pas modifiables.
             Sur une ligne catalogue, le libellé de la facture émise reste celui du produit.
+            Les modifications s'appliquent uniquement à cette échéance et à la facture émise ;
+            elles n'affectent pas les autres échéances ni les lignes du contrat.
+            Pour un changement de tarif permanent, utilisez <strong>Nouvel avenant</strong>.
           </p>
 
           @for (line of lines; track line.index; let i = $index) {

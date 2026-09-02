@@ -105,9 +105,9 @@ public sealed class RecurringContractAdjustDraftTests
             .Include(c => c.Lines)
             .FirstAsync(c => c.Id == contract.Id);
         var catalog = Assert.Single(persistedContract.Lines.Where(l => l.IsActive));
-        Assert.Equal("Abonnement ajusté", catalog.Description);
-        Assert.Equal(2m, catalog.Quantity);
-        Assert.Equal(150m, catalog.UnitPriceHT);
+        Assert.Equal("Abonnement", catalog.Description);
+        Assert.Equal(1m, catalog.Quantity);
+        Assert.Equal(100m, catalog.UnitPriceHT);
         Assert.Equal(19m, catalog.VatRate);
     }
 
@@ -406,10 +406,139 @@ public sealed class RecurringContractAdjustDraftTests
         await using var ctx = harness.Factory.CreateContext();
         var persistedContract = await ctx.RecurringContracts.Include(c => c.Lines).FirstAsync(c => c.Id == contract.Id);
         Assert.Single(persistedContract.Lines);
-        Assert.Equal(120m, persistedContract.Lines.Single().UnitPriceHT);
+        Assert.Equal(100m, persistedContract.Lines.Single().UnitPriceHT);
         var persistedRun = await ctx.RecurringContractBillingRuns.FindAsync(run.Id);
         Assert.Equal(120m, persistedRun!.FixedAmount);
         Assert.Equal(55m, persistedRun.UsageAmount);
+    }
+
+    [Fact]
+    public async Task Adjust_OneDraftRun_DoesNotMutateOtherDraftRunOrCatalog()
+    {
+        var harness = new RecurringContractTestHarness();
+        var client = await harness.SeedClientAsync("Client isolation");
+        var periodAFrom = new DateTime(2026, 1, 1);
+        var periodATo = new DateTime(2026, 1, 31);
+        var periodBFrom = new DateTime(2026, 2, 1);
+        var periodBTo = new DateTime(2026, 2, 28);
+        var contract = await harness.SeedContractAsync(client.Id,
+            startDate: periodAFrom,
+            configure: c => c.Activate(),
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+
+        var draftA = await harness.SeedInvoiceDraftAsync([CustomLine("Abonnement A", 1m, 100m, 19)]);
+        var draftB = await harness.SeedInvoiceDraftAsync([CustomLine("Abonnement B", 1m, 100m, 19)]);
+        var runA = await harness.SeedRunAsync(
+            contract.Id, periodAFrom, periodATo,
+            RecurringContractBillingRunStatus.DraftCreated, fixedAmount: 100m, invoiceDraftId: draftA.Id);
+        var runB = await harness.SeedRunAsync(
+            contract.Id, periodBFrom, periodBTo,
+            RecurringContractBillingRunStatus.DraftCreated, fixedAmount: 100m, invoiceDraftId: draftB.Id);
+
+        await using var sut = harness.CreateService();
+        var result = await sut.AdjustDraftLinesAsync(runA.Id, Request(Patch(0, "Abonnement A ajusté", 3m, 80m, 19)));
+        Assert.True(result.IsSuccess);
+
+        await using var ctx = harness.Factory.CreateContext();
+        var persistedRunA = await ctx.RecurringContractBillingRuns.FindAsync(runA.Id);
+        var persistedRunB = await ctx.RecurringContractBillingRuns.FindAsync(runB.Id);
+        var persistedDraftA = await ctx.InvoiceDrafts.FindAsync(draftA.Id);
+        var persistedDraftB = await ctx.InvoiceDrafts.FindAsync(draftB.Id);
+        var persistedContract = await ctx.RecurringContracts
+            .Include(c => c.Lines)
+            .FirstAsync(c => c.Id == contract.Id);
+
+        Assert.Equal(240m, persistedRunA!.FixedAmount);
+        Assert.Equal(100m, persistedRunB!.FixedAmount);
+        Assert.Equal("Abonnement A ajusté", persistedDraftA!.GetLines()[0].Designation);
+        Assert.Equal(3m, persistedDraftA.GetLines()[0].Quantity);
+        Assert.Equal(80m, persistedDraftA.GetLines()[0].UnitPriceHT);
+        Assert.Equal("Abonnement B", persistedDraftB!.GetLines()[0].Designation);
+        Assert.Equal(1m, persistedDraftB.GetLines()[0].Quantity);
+        Assert.Equal(100m, persistedDraftB.GetLines()[0].UnitPriceHT);
+
+        var catalog = Assert.Single(persistedContract.Lines.Where(l => l.IsActive));
+        Assert.Equal("Abonnement", catalog.Description);
+        Assert.Equal(1m, catalog.Quantity);
+        Assert.Equal(100m, catalog.UnitPriceHT);
+    }
+
+    [Fact]
+    public async Task Adjust_DoesNotChangeUpcomingScheduleEstimates()
+    {
+        var harness = new RecurringContractTestHarness();
+        var client = await harness.SeedClientAsync("Client schedule upcoming");
+        var periodFrom = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+        var periodTo = periodFrom.AddMonths(1).AddDays(-1);
+        var contract = await harness.SeedContractAsync(client.Id,
+            startDate: periodFrom,
+            configure: c => c.Activate(),
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+        var draft = await harness.SeedInvoiceDraftAsync([CustomLine("Abonnement", 1m, 100m, 19)]);
+        var run = await harness.SeedRunAsync(
+            contract.Id, periodFrom, periodTo,
+            RecurringContractBillingRunStatus.DraftCreated, fixedAmount: 100m, invoiceDraftId: draft.Id);
+
+        await using var sut = harness.CreateService();
+        var before = await sut.GetScheduleAsync(contract.Id, count: 12);
+        Assert.NotNull(before);
+        var upcomingBefore = before!
+            .Where(i => i.BillingRunId != run.Id && i.Status == RecurringContractScheduleOccurrenceStatus.Upcoming)
+            .ToList();
+        Assert.NotEmpty(upcomingBefore);
+        Assert.All(upcomingBefore, i => Assert.Equal(100m, i.EstimatedAmountHT));
+
+        var adjusted = await sut.AdjustDraftLinesAsync(run.Id, Request(Patch(0, "Abonnement", 3m, 80m, 19)));
+        Assert.True(adjusted.IsSuccess);
+
+        var after = await sut.GetScheduleAsync(contract.Id, count: 12);
+        Assert.NotNull(after);
+        var adjustedItem = Assert.Single(after!, i => i.BillingRunId == run.Id);
+        Assert.Equal(240m, adjustedItem.EstimatedAmountHT);
+        var upcomingAfter = after!
+            .Where(i => i.BillingRunId != run.Id && i.Status == RecurringContractScheduleOccurrenceStatus.Upcoming)
+            .ToList();
+        Assert.NotEmpty(upcomingAfter);
+        Assert.All(upcomingAfter, i => Assert.Equal(100m, i.EstimatedAmountHT));
+    }
+
+    [Fact]
+    public async Task Adjust_ThenIssue_DoesNotSyncCatalogLines()
+    {
+        var harness = new RecurringContractTestHarness();
+        var (run, draft) = await SeedDraftCreatedAsync(harness, [CustomLine("Abonnement", 1m, 100m)]);
+
+        await using var adjust = harness.CreateService();
+        var adjusted = await adjust.AdjustDraftLinesAsync(run.Id, Request(Patch(0, "Abonnement ajusté", 3m, 80m)));
+        Assert.True(adjusted.IsSuccess);
+
+        var invoiceId = Guid.NewGuid();
+        var mediator = new RecordingMediator
+        {
+            OnSend = request => request is SubmitInvoiceCommand
+                ? Result.Success(new InvoiceCreatedResultDto
+                {
+                    InvoiceId = invoiceId,
+                    InvoiceNumber = "FAC-2026-0200",
+                    Status = "Validée",
+                    CreatedAt = DateTime.UtcNow
+                })
+                : null
+        };
+
+        await using var issuer = harness.CreateService(mediator);
+        var issued = await issuer.IssueBillingRunAsync(run.Id);
+        Assert.True(issued.IsSuccess);
+        Assert.Equal(draft.Id, Assert.Single(mediator.Sent.OfType<SubmitInvoiceCommand>()).DraftId);
+
+        await using var ctx = harness.Factory.CreateContext();
+        var persistedContract = await ctx.RecurringContracts
+            .Include(c => c.Lines)
+            .FirstAsync(c => c.Id == run.RecurringContractId);
+        var catalog = Assert.Single(persistedContract.Lines.Where(l => l.IsActive));
+        Assert.Equal("Abonnement", catalog.Description);
+        Assert.Equal(1m, catalog.Quantity);
+        Assert.Equal(100m, catalog.UnitPriceHT);
     }
 
     private static async Task<(RecurringContractBillingRun Run, InvoiceDraft Draft)> SeedDraftCreatedAsync(
