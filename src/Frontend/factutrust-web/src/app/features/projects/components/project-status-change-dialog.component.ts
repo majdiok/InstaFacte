@@ -24,32 +24,100 @@ export interface ProjectStatusChangePayload {
       [modal]="true"
       header="Modifier le statut de la tâche"
       [style]="{ width: '32rem' }"
+      [draggable]="false"
       (onHide)="cancel.emit()">
-      <p class="text-sm text-color-secondary">Sélectionnez un nouveau statut et ajoutez un commentaire si nécessaire.</p>
-      <div class="proj-status-flow mb-3">
-        @for (s of flowStatuses; track s.value) {
-          <span class="proj-status-flow-step" [class.proj-status-flow-step--active]="s.value === targetStatus">
-            {{ s.label }}
-          </span>
-        }
+      <p class="task-create-intro">Sélectionnez un nouveau statut et ajoutez un commentaire si nécessaire.</p>
+
+      <div class="task-create-form">
+        <div class="task-create-field">
+          <label for="status-change-target">Nouveau statut <span class="ft-required">*</span></label>
+          <p-select
+            inputId="status-change-target"
+            class="w-full"
+            [options]="statusOptions"
+            [(ngModel)]="targetStatus"
+            optionLabel="label"
+            optionValue="value"
+            appendTo="body" />
+        </div>
+
+        <div class="task-create-field">
+          <label for="status-change-comment">Commentaire</label>
+          <div class="status-change-comment">
+            <textarea
+              id="status-change-comment"
+              pTextarea
+              class="w-full"
+              [(ngModel)]="comment"
+              rows="4"
+              maxlength="500"
+              placeholder="Justification du changement…"></textarea>
+            <span class="status-change-comment__count">{{ comment.length }}/500</span>
+          </div>
+        </div>
+
+        <div class="status-change-notify">
+          <p-checkbox [(ngModel)]="notifyCollaborators" [binary]="true" inputId="notifyCollab" />
+          <label for="notifyCollab">Notifier les collaborateurs concernés</label>
+        </div>
       </div>
-      <label class="block mb-2">Changer le statut à
-        <p-select class="w-full mt-1" [options]="statusOptions" [(ngModel)]="targetStatus" optionLabel="label" optionValue="value" />
-      </label>
-      <label class="block mb-2">Commentaire
-        <textarea pTextarea class="w-full mt-1" [(ngModel)]="comment" rows="3" maxlength="500" placeholder="Justification du changement…"></textarea>
-        <span class="text-sm text-color-secondary">{{ comment.length }}/500</span>
-      </label>
-      <div class="flex align-items-center gap-2 mb-2">
-        <p-checkbox [(ngModel)]="notifyCollaborators" [binary]="true" inputId="notifyCollab" />
-        <label for="notifyCollab">Notifier les collaborateurs concernés</label>
-      </div>
+
       <ng-template pTemplate="footer">
         <app-button variant="secondary" (click)="visible = false; cancel.emit()">Annuler</app-button>
         <app-button variant="primary" (click)="confirm()">Confirmer le changement</app-button>
       </ng-template>
     </p-dialog>
-  `
+  `,
+  styles: [`
+    .task-create-intro {
+      margin: 0 0 var(--spacing-3);
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+      line-height: 1.5;
+    }
+
+    .task-create-form {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-3);
+    }
+
+    .task-create-field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-1);
+    }
+
+    .task-create-field > label {
+      font-size: var(--font-size-sm);
+      font-weight: 400;
+      color: var(--color-text-secondary);
+    }
+
+    .status-change-comment {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-1);
+    }
+
+    .status-change-comment__count {
+      align-self: flex-end;
+      font-size: var(--font-size-xs);
+      color: var(--color-text-secondary);
+    }
+
+    .status-change-notify {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-2);
+    }
+
+    .status-change-notify label {
+      font-size: var(--font-size-sm);
+      color: var(--color-text-primary);
+      cursor: pointer;
+    }
+  `]
 })
 export class ProjectStatusChangeDialogComponent implements OnChanges {
   @Input() visible = false;
@@ -62,7 +130,6 @@ export class ProjectStatusChangeDialogComponent implements OnChanges {
   comment = '';
   notifyCollaborators = true;
   readonly statusOptions = PROJECT_TASK_STATUS_OPTIONS.filter(o => o.value !== 'Cancelled');
-  readonly flowStatuses = PROJECT_TASK_STATUS_OPTIONS.filter(o => o.value !== 'Cancelled');
 
   ngOnChanges(): void {
     this.targetStatus = this.currentStatus;
