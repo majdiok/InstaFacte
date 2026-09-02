@@ -1,5 +1,6 @@
 using FactuTrust.Domain.Entities.RecurringContracts;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Infrastructure.Tests.Services.RecurringContracts;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.Domain;
@@ -17,7 +18,8 @@ public sealed class RecurringContractAmendLinesTests
     {
         var contract = RecurringContract.CreateDraft(
             Guid.NewGuid(), BillingFrequency.Monthly, 1, Start).Value;
-        contract.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m);
+        contract.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m,
+            RecurringContractTestHarness.DefaultProductId);
         // Lignes supplémentaires ajoutées AVANT activation (AddLine exige le statut Draft).
         extraLines?.Invoke(contract);
         Assert.True(contract.Activate().IsSuccess);
@@ -32,7 +34,7 @@ public sealed class RecurringContractAmendLinesTests
     {
         var line = RecurringContractLine.Create(
             contract.Id, type, description, quantity, unitPrice, 19m,
-            effectiveFrom ?? Today).Value;
+            effectiveFrom ?? Today, RecurringContractTestHarness.DefaultProductId).Value;
         return new RecurringContractAmendLineTarget(source?.Id, line);
     }
 
@@ -59,7 +61,8 @@ public sealed class RecurringContractAmendLinesTests
     public void AmendLines_RemoveLine_DeactivatesOnly()
     {
         var contract = NewActiveContract(
-            c => c.AddLine(RecurringContractLineType.FixedRecurring, "Option", 2, 50m, 19m));
+            c => c.AddLine(RecurringContractLineType.FixedRecurring, "Option", 2, 50m, 19m,
+                RecurringContractTestHarness.DefaultProductId));
         var keep = contract.Lines.First(l => l.Description == "Abonnement");
         var removed = contract.Lines.First(l => l.Description == "Option");
 
@@ -148,7 +151,8 @@ public sealed class RecurringContractAmendLinesTests
     {
         var contract = RecurringContract.CreateDraft(
             Guid.NewGuid(), BillingFrequency.Monthly, 1, Start).Value;
-        contract.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m);
+        contract.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m,
+            RecurringContractTestHarness.DefaultProductId);
         switch (status)
         {
             case RecurringContractStatus.Draft: break;

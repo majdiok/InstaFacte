@@ -45,6 +45,9 @@ public sealed class RecurringContractLine : Entity
             return Result.Failure<RecurringContractLine>(Error.Validation("UnitPriceHT", "Le prix unitaire ne peut pas être négatif"));
         if (lineType == RecurringContractLineType.UsageMetered && usageMetricId is null)
             return Result.Failure<RecurringContractLine>(Error.Validation("UsageMetricId", "La métrique d'usage est obligatoire pour une ligne à consommation"));
+        if (lineType is RecurringContractLineType.FixedRecurring or RecurringContractLineType.UsageMetered
+            && (productId is null || productId == Guid.Empty))
+            return Result.Failure<RecurringContractLine>(Error.Validation("ProductId", "Le produit est obligatoire pour cette ligne de contrat."));
 
         return Result.Success(new RecurringContractLine
         {

@@ -35,7 +35,7 @@ public sealed class RecurringContractBillingDraftPayloadTests
             billingDay: today.Day,
             paymentTermTemplateId: template.Id,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 55m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 55m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         var mediator = new RecordingMediator
         {

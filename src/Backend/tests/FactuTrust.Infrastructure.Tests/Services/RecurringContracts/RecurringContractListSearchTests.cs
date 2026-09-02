@@ -19,9 +19,9 @@ public sealed class RecurringContractListSearchTests
         var acme = await harness.SeedClientAsync("Acme Industries");
         var autre = await harness.SeedClientAsync("Autre Société");
         await harness.SeedContractAsync(acme.Id, number: "CTR-AAA-01",
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         await harness.SeedContractAsync(autre.Id, number: "CTR-BBB-02",
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 200m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 200m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.ListAsync(new RecurringContractListQuery { Search = "Acme" });
@@ -39,9 +39,9 @@ public sealed class RecurringContractListSearchTests
         var acme = await harness.SeedClientAsync("Acme Industries");
         var autre = await harness.SeedClientAsync("Autre Société");
         await harness.SeedContractAsync(acme.Id, number: "CTR-AAA-01",
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         await harness.SeedContractAsync(autre.Id, number: "CTR-BBB-02",
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 200m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 200m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.ListAsync(new RecurringContractListQuery { Search = "BBB-02" });
@@ -58,7 +58,7 @@ public sealed class RecurringContractListSearchTests
         var acme = await harness.SeedClientAsync("Acme Corp");
         // Le numéro contient AUSSI le terme → prédicat OR sur la même ligne, pas de doublon.
         await harness.SeedContractAsync(acme.Id, number: "CTR-Acme-1",
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.ListAsync(new RecurringContractListQuery { Search = "Acme" });
@@ -73,7 +73,7 @@ public sealed class RecurringContractListSearchTests
         var harness = new RecurringContractTestHarness();
         var acme = await harness.SeedClientAsync("Acme Industries");
         await harness.SeedContractAsync(acme.Id, number: "CTR-AAA-01",
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
 

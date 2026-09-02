@@ -15,7 +15,7 @@ public sealed class RecurringContractNotesTests
         // Verrouille D15 : le contrat est ACTIF (le PUT complet serait refusé sur ce statut).
         var contract = await harness.SeedContractAsync(client.Id,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.UpdateNotesAsync(contract.Id, "Note mise à jour sur contrat actif");
@@ -34,7 +34,7 @@ public sealed class RecurringContractNotesTests
         var client = await harness.SeedClientAsync("Client notes vides");
         var contract = await harness.SeedContractAsync(client.Id, notes: "Note initiale",
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.UpdateNotesAsync(contract.Id, "   ");

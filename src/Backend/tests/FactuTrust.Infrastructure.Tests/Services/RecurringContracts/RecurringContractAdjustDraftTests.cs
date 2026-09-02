@@ -57,7 +57,7 @@ public sealed class RecurringContractAdjustDraftTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: periodFrom,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var productId = Guid.NewGuid().ToString();
         var draft = await harness.SeedInvoiceDraftAsync(
         [
@@ -323,7 +323,7 @@ public sealed class RecurringContractAdjustDraftTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: periodFrom,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var draft = await harness.SeedInvoiceDraftAsync([CustomLine("Abonnement", 1m, 100m, 19)]);
         var run = await harness.SeedRunAsync(
             contract.Id, periodFrom, periodTo,
@@ -385,7 +385,7 @@ public sealed class RecurringContractAdjustDraftTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: periodFrom,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var draft = await harness.SeedInvoiceDraftAsync(
         [
             CustomLine("Abonnement", 1m, 100m, 19),
@@ -424,7 +424,7 @@ public sealed class RecurringContractAdjustDraftTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: periodAFrom,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         var draftA = await harness.SeedInvoiceDraftAsync([CustomLine("Abonnement A", 1m, 100m, 19)]);
         var draftB = await harness.SeedInvoiceDraftAsync([CustomLine("Abonnement B", 1m, 100m, 19)]);
@@ -473,7 +473,7 @@ public sealed class RecurringContractAdjustDraftTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: periodFrom,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var draft = await harness.SeedInvoiceDraftAsync([CustomLine("Abonnement", 1m, 100m, 19)]);
         var run = await harness.SeedRunAsync(
             contract.Id, periodFrom, periodTo,
@@ -551,7 +551,7 @@ public sealed class RecurringContractAdjustDraftTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: periodFrom,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var draft = await harness.SeedInvoiceDraftAsync(lines);
         var run = await harness.SeedRunAsync(
             contract.Id, periodFrom, periodTo,

@@ -29,7 +29,7 @@ public sealed class RecurringContractAmendmentsTests
         var harness = new RecurringContractTestHarness();
         var client = await harness.SeedClientAsync("Client avenants");
         var contract = await harness.SeedContractAsync(client.Id,
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         var first = await SeedAmendmentAsync(harness, contract.Id, RecurringContractAmendmentType.PriceChange);
         await Task.Delay(20); // garantit des CreatedAt distincts (granularité horloge)
@@ -53,7 +53,7 @@ public sealed class RecurringContractAmendmentsTests
         var harness = new RecurringContractTestHarness();
         var client = await harness.SeedClientAsync("Client créateur connu");
         var contract = await harness.SeedContractAsync(client.Id,
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var userId = Guid.NewGuid();
         harness.Members.Register(userId, "Amel Trabelsi");
         await SeedAmendmentAsync(harness, contract.Id, RecurringContractAmendmentType.Upgrade, createdBy: userId);
@@ -72,7 +72,7 @@ public sealed class RecurringContractAmendmentsTests
         var harness = new RecurringContractTestHarness();
         var client = await harness.SeedClientAsync("Client créateur inconnu");
         var contract = await harness.SeedContractAsync(client.Id,
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         await SeedAmendmentAsync(harness, contract.Id, RecurringContractAmendmentType.Upgrade, createdBy: Guid.NewGuid());
 
         await using var sut = harness.CreateService();
@@ -98,7 +98,7 @@ public sealed class RecurringContractAmendmentsTests
         var harness = new RecurringContractTestHarness();
         var client = await harness.SeedClientAsync("Client détail avenant");
         var contract = await harness.SeedContractAsync(client.Id,
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var amendment = await SeedAmendmentAsync(harness, contract.Id, RecurringContractAmendmentType.Downgrade);
 
         await using var sut = harness.CreateService();
@@ -118,9 +118,9 @@ public sealed class RecurringContractAmendmentsTests
         var harness = new RecurringContractTestHarness();
         var client = await harness.SeedClientAsync("Client avenant autre contrat");
         var contract = await harness.SeedContractAsync(client.Id,
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var other = await harness.SeedContractAsync(client.Id,
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var amendment = await SeedAmendmentAsync(harness, contract.Id, RecurringContractAmendmentType.Upgrade);
 
         await using var sut = harness.CreateService();
@@ -134,7 +134,7 @@ public sealed class RecurringContractAmendmentsTests
         var client = await harness.SeedClientAsync("Client suspension");
         var contract = await harness.SeedContractAsync(client.Id,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.SuspendAsync(contract.Id);
@@ -158,7 +158,7 @@ public sealed class RecurringContractAmendmentsTests
         var client = await harness.SeedClientAsync("Client reprise");
         var contract = await harness.SeedContractAsync(client.Id,
             configure: c => { c.Activate(); c.Suspend(); },
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.ResumeAsync(contract.Id);

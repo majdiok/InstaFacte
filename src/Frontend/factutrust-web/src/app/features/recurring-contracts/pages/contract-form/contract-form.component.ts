@@ -133,9 +133,10 @@ interface ContractLineForm extends ContractLinePayloadSource {
                 <input class="ft-input" placeholder="Description (optionnelle)" [(ngModel)]="line.description" [name]="'desc' + i" />
               </label>
               @if (line.lineType !== 'OneTimeSetup') {
-                <label>Produit
+                <label>
+                  <span class="field-label required">Produit</span>
                   <select class="ft-input" [(ngModel)]="line.productId" [name]="'product' + i">
-                    <option [ngValue]="null">— Aucun —</option>
+                    <option [ngValue]="null" disabled>— Sélectionner —</option>
                     @for (p of products(); track p.id) {
                       <option [ngValue]="p.id">{{ p.code }} — {{ p.name }}</option>
                     }
@@ -458,6 +459,12 @@ export class ContractFormComponent implements OnInit {
     }
     if (this.lines.length === 0) return 'Ajoutez au moins une ligne au contrat.';
     for (const line of this.lines) {
+      if (line.lineType !== 'OneTimeSetup' && !line.productId) {
+        if (this.products().length === 0) {
+          return 'Le catalogue produits est indisponible : impossible d\'enregistrer une ligne sans produit.';
+        }
+        return 'Le produit est obligatoire pour chaque ligne (sauf frais d\'installation).';
+      }
       if (line.lineType === 'UsageMetered' && !line.usageMetricId) {
         return 'La métrique est obligatoire pour une ligne à la consommation.';
       }

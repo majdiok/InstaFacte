@@ -1,5 +1,6 @@
 using FactuTrust.Domain.Entities.RecurringContracts;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Infrastructure.Tests.Services.RecurringContracts;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.Domain;
@@ -18,7 +19,8 @@ public sealed class RecurringContractRenewTests
     {
         var contract = RecurringContract.CreateDraft(
             Guid.NewGuid(), frequency, billingDay, start, end).Value;
-        contract.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m);
+        contract.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m,
+            RecurringContractTestHarness.DefaultProductId);
         Assert.True(contract.Activate().IsSuccess);
         return contract;
     }
