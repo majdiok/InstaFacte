@@ -1894,6 +1894,8 @@ namespace FactuTrust.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DomainId");
+
                     b.HasIndex("SegmentId", "DomainId")
                         .IsUnique();
 
@@ -1941,6 +1943,10 @@ namespace FactuTrust.Infrastructure.Migrations
                         .HasColumnType("nvarchar(450)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("DomainId");
+
+                    b.HasIndex("SegmentId");
 
                     b.HasIndex("RuleKind", "SegmentId", "DomainId", "ModuleId")
                         .IsUnique();
@@ -5375,6 +5381,48 @@ namespace FactuTrust.Infrastructure.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.SectorRules.SectorDataTemplateItem", b =>
+                {
+                    b.HasOne("FactuTrust.Domain.Entities.SectorRules.SectorDataTemplate", null)
+                        .WithMany()
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_SectorDataTemplateItems_SectorDataTemplates");
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.SectorRules.SectorModuleRule", b =>
+                {
+                    b.HasOne("FactuTrust.Domain.Entities.SectorRules.SectorDomain", null)
+                        .WithMany()
+                        .HasForeignKey("DomainId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("FK_SectorModuleRules_SectorDomains");
+
+                    b.HasOne("FactuTrust.Domain.Entities.SectorRules.SectorSegment", null)
+                        .WithMany()
+                        .HasForeignKey("SegmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("FK_SectorModuleRules_SectorSegments");
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.SectorRules.SectorSegmentDomain", b =>
+                {
+                    b.HasOne("FactuTrust.Domain.Entities.SectorRules.SectorDomain", null)
+                        .WithMany()
+                        .HasForeignKey("DomainId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_SectorSegmentDomains_SectorDomains");
+
+                    b.HasOne("FactuTrust.Domain.Entities.SectorRules.SectorSegment", null)
+                        .WithMany()
+                        .HasForeignKey("SegmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_SectorSegmentDomains_SectorSegments");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

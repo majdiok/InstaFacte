@@ -788,9 +788,16 @@ using (var scope = app.Services.CreateScope())
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Error during database migration. The application will continue but database operations may fail.");
-        // Don't throw - allow the app to start so we can see the error in logs
-        // In production, you might want to throw here
+        logger.LogError(ex, "FATAL: Error during database migration. The application will continue but database operations may fail.");
+        if (app.Environment.IsDevelopment())
+        {
+            // En dev : on stoppe pour qu'un développeur corrige immédiatement — sinon un schéma
+            // en retard (colonne manquante, migration bloquée par une contrainte, etc.) se
+            // manifeste plus tard en 500 opaque sur /api/auth/login. Miroir du bloc de seeding
+            // ci-dessus. En prod, on continue pour éviter un downtime mais le monitoring doit
+            // alerter sur ce log.
+            throw;
+        }
     }
 }
 

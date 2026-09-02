@@ -1385,10 +1385,16 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(e => e.EventType).HasConversion<int>();
         });
 
-        // Phase 2 — moteur de règles sectorielles en base (plan §WP-B1). Foreign keys between
-        // these tables are enforced at the SQL level by the hand-written migration only (no EF
-        // navigation properties, same convention as ChannelExternalRoute's TenantId/UserId) so the
-        // model stays simple to hand-edit alongside the migration/snapshot.
+        // Phase 2 — moteur de règles sectorielles en base (plan §WP-B1). Ces tables restent sans
+        // propriété de navigation (même convention que ChannelExternalRoute's TenantId/UserId) pour
+        // que le modèle reste simple à éditer à la main à côté de la migration/du snapshot, MAIS
+        // les clés étrangères de la migration sont déclarées côté modèle (HasOne/WithMany sans
+        // navigation). C'est indispensable : EF ordonne les INSERT via un tri topologique basé sur
+        // les FK DU MODÈLE. Sans elles, il n'a aucune arête et émet un lot par type d'entité dans
+        // l'ordre ordinal des noms de types — ce qui plaçait SectorDataTemplateItems avant
+        // SectorDataTemplates et SectorModuleRules avant SectorSegments, faisant échouer le seed
+        // initial sur une violation de FK (SQL 547). Les noms de contraintes sont épinglés via
+        // HasConstraintName pour coller à ceux déjà créés par AddSectorRuleTables_Master.
         builder.Entity<Domain.Entities.SectorRules.SectorSegment>(entity =>
         {
             entity.ToTable("SectorSegments");
@@ -1421,6 +1427,18 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.HasIndex(e => new { e.SegmentId, e.DomainId }).IsUnique();
             entity.Property(e => e.CreatedBy).HasMaxLength(450);
             entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+
+            entity.HasOne<Domain.Entities.SectorRules.SectorSegment>()
+                .WithMany()
+                .HasForeignKey(e => e.SegmentId)
+                .HasConstraintName("FK_SectorSegmentDomains_SectorSegments")
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne<Domain.Entities.SectorRules.SectorDomain>()
+                .WithMany()
+                .HasForeignKey(e => e.DomainId)
+                .HasConstraintName("FK_SectorSegmentDomains_SectorDomains")
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<Domain.Entities.SectorRules.SectorModuleRule>(entity =>
@@ -1431,6 +1449,20 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(e => e.RuleKind).HasConversion<int>();
             entity.Property(e => e.CreatedBy).HasMaxLength(450);
             entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+
+            // SegmentId/DomainId sont Guid? : EF en déduit des relations optionnelles, ce que le
+            // CHECK CK_SectorModuleRules_Kind impose déjà (exactement l'un des deux est renseigné).
+            entity.HasOne<Domain.Entities.SectorRules.SectorSegment>()
+                .WithMany()
+                .HasForeignKey(e => e.SegmentId)
+                .HasConstraintName("FK_SectorModuleRules_SectorSegments")
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne<Domain.Entities.SectorRules.SectorDomain>()
+                .WithMany()
+                .HasForeignKey(e => e.DomainId)
+                .HasConstraintName("FK_SectorModuleRules_SectorDomains")
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<Domain.Entities.SectorRules.SectorModuleDependency>(entity =>
@@ -1496,6 +1528,13 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(e => e.PayloadJson).IsRequired();
             entity.Property(e => e.CreatedBy).HasMaxLength(450);
             entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+
+            // Seule FK en CASCADE du lot (cf. AddSectorRuleTables_Master).
+            entity.HasOne<Domain.Entities.SectorRules.SectorDataTemplate>()
+                .WithMany()
+                .HasForeignKey(e => e.TemplateId)
+                .HasConstraintName("FK_SectorDataTemplateItems_SectorDataTemplates")
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<Domain.Entities.SectorRules.SectorRuleSetStamp>(entity =>

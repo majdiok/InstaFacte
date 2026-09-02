@@ -349,9 +349,13 @@ public static class SectorRuleSeeder
         }
 
         // A brand-new segment/domain has a client-generated Guid (Entity ctor), so no intermediate
-        // SaveChangesAsync is needed before wiring the links/rules below — parent-before-child Add
-        // order + the single save at the end keeps FK ordering safe (see MasterDbContext: no
-        // navigations, so EF cannot reorder inserts topologically).
+        // SaveChangesAsync is needed before wiring the links/rules below : le save unique en fin de
+        // méthode suffit parce que MasterDbContext déclare les FK sector-rules côté modèle
+        // (HasOne/WithMany sans navigation). C'est ce qui donne à EF le graphe nécessaire au tri
+        // topologique des INSERT (parents avant enfants). L'ordre des Add() ici n'y suffirait PAS :
+        // sans FK dans le modèle, EF émet un lot par type d'entité dans l'ordre ordinal des noms,
+        // qui plaçait SectorDataTemplateItems avant SectorDataTemplates et SectorModuleRules avant
+        // SectorSegments — d'où l'échec du premier seed en SQL 547. Ne pas retirer ces relations.
 
         // ---------- Segment ↔ Domain links (plan §3.1/§3.2 matrix) ----------
         var existingLinks = (await context.SectorSegmentDomains.ToListAsync(cancellationToken))
