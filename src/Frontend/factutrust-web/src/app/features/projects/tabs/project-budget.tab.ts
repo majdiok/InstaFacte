@@ -88,13 +88,17 @@ export interface ProductOption {
 
       <div class="proj-field-row mb-3">
 
-        <label>Description
+        <label>
+
+          <span>Description <span class="ft-required">*</span></span>
 
           <input pInputText [(ngModel)]="costDesc" placeholder="Libellé coût" />
 
         </label>
 
-        <label>Montant HT
+        <label>
+
+          <span>Montant HT <span class="ft-required">*</span></span>
 
           <p-inputNumber [(ngModel)]="costAmount" mode="decimal" />
 
