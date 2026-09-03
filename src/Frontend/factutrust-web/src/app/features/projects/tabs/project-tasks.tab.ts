@@ -394,22 +394,56 @@ type TaskView = 'list' | 'board' | 'calendar' | 'planning';
       </ng-template>
     </p-dialog>
 
-    <p-dialog [(visible)]="logTimeVisible" header="Saisir du temps" [modal]="true" [style]="{ width: '28rem' }">
+    <p-dialog [(visible)]="logTimeVisible" header="Saisir du temps" [modal]="true" [style]="{ width: '32rem' }" [draggable]="false">
       @if (logTimeTask) {
-        <p class="text-sm text-color-secondary mb-2">Tâche : <strong>{{ logTimeTask.title }}</strong></p>
-        <div class="flex flex-column gap-2">
-          <label>Date <p-datepicker class="w-full" [(ngModel)]="logWorkDate" dateFormat="dd/mm/yy" [showIcon]="true" /></label>
-          <label>Heures <p-inputNumber class="w-full" [(ngModel)]="logHours" [min]="0.25" [step]="0.25" mode="decimal" [minFractionDigits]="2" /></label>
-          <div class="flex align-items-center gap-2">
+        <p class="task-create-intro">Tâche : <strong>{{ logTimeTask.title }}</strong></p>
+        <div class="task-create-form">
+          <div class="task-create-field">
+            <label for="log-time-date">Date <span class="ft-required">*</span></label>
+            <p-datepicker
+              inputId="log-time-date"
+              class="w-full"
+              [(ngModel)]="logWorkDate"
+              dateFormat="dd/mm/yy"
+              placeholder="jj/mm/aa"
+              [showIcon]="true"
+              appendTo="body" />
+          </div>
+
+          <div class="task-create-field">
+            <label for="log-time-hours">Heures <span class="ft-required">*</span></label>
+            <p-inputNumber
+              inputId="log-time-hours"
+              class="w-full"
+              [(ngModel)]="logHours"
+              [min]="0.25"
+              [max]="24"
+              [step]="0.25"
+              mode="decimal"
+              [minFractionDigits]="0"
+              [maxFractionDigits]="2" />
+          </div>
+
+          <div class="task-create-check">
             <p-checkbox [(ngModel)]="logBillable" [binary]="true" inputId="logBillable" />
             <label for="logBillable">Facturable</label>
           </div>
-          <textarea pTextarea [(ngModel)]="logNotes" rows="2" placeholder="Notes"></textarea>
+
+          <div class="task-create-field">
+            <label for="log-time-notes">Notes</label>
+            <textarea
+              id="log-time-notes"
+              pTextarea
+              class="w-full"
+              [(ngModel)]="logNotes"
+              rows="3"
+              placeholder="Détails, contexte…"></textarea>
+          </div>
         </div>
       }
       <ng-template pTemplate="footer">
         <app-button variant="secondary" (click)="logTimeVisible = false">Annuler</app-button>
-        <app-button variant="primary" (click)="submitLogTime()">Enregistrer</app-button>
+        <app-button variant="primary" [disabled]="!canSubmitLogTime" (click)="submitLogTime()">Enregistrer</app-button>
       </ng-template>
     </p-dialog>
   `,
@@ -430,6 +464,25 @@ type TaskView = 'list' | 'board' | 'calendar' | 'planning';
       font-size: var(--font-size-sm);
       font-weight: 400;
       color: var(--color-text-secondary);
+    }
+
+    .task-create-intro {
+      margin: 0 0 var(--spacing-3);
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+      line-height: 1.5;
+    }
+
+    .task-create-check {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-2);
+    }
+
+    .task-create-check label {
+      font-size: var(--font-size-sm);
+      color: var(--color-text-primary);
+      cursor: pointer;
     }
   `]
 })
@@ -513,6 +566,10 @@ export class ProjectTasksTabComponent implements OnInit {
 
   get canLogTime(): boolean {
     return this.canCreateTime && !!this.project && canReceiveTime(this.project.status);
+  }
+
+  get canSubmitLogTime(): boolean {
+    return typeof this.logHours === 'number' && this.logHours > 0 && this.logHours <= 24;
   }
 
   get hasTasks(): boolean {
@@ -676,7 +733,7 @@ export class ProjectTasksTabComponent implements OnInit {
   submitLogTime(): void {
     const task = this.logTimeTask;
     const project = this.project;
-    if (!task || !project || this.logHours <= 0) return;
+    if (!task || !project || !this.canSubmitLogTime) return;
     this.logTime.emit({
       projectId: project.id,
       taskId: task.id,
