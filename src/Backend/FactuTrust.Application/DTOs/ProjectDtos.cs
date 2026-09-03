@@ -355,6 +355,19 @@ public sealed record AssignPurchaseOrderDto
     public Guid PurchaseOrderId { get; init; }
 }
 
+/// <summary>Purchase order linked to a project (budget tab list).</summary>
+public sealed record ProjectPurchaseOrderDto
+{
+    public Guid Id { get; init; }
+    public string Number { get; init; } = null!;
+    public string SupplierName { get; init; } = null!;
+    public DateTime OrderDate { get; init; }
+    public PurchaseOrderStatus Status { get; init; }
+    public string StatusDisplay { get; init; } = null!;
+    public string StatusCss { get; init; } = null!;
+    public decimal TotalHt { get; init; }
+}
+
 public sealed record ProjectWorkloadRowDto
 {
     public Guid UserId { get; init; }

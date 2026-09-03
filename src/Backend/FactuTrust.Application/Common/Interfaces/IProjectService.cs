@@ -74,5 +74,6 @@ public interface IProjectService
     Task<Result> UpdateSubcontractorAsync(Guid subcontractorId, UpsertProjectSubcontractorDto dto, CancellationToken cancellationToken = default);
 
     Task<Result<Guid>> RecordStockExitAsync(Guid projectId, RecordProjectStockExitDto dto, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ProjectPurchaseOrderDto>> ListPurchaseOrdersAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<Result> AssignPurchaseOrderAsync(Guid projectId, AssignPurchaseOrderDto dto, CancellationToken cancellationToken = default);
 }

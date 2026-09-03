@@ -1549,6 +1549,33 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         return Result.Success(cost.Value.Id);
     }
 
+    public async Task<IReadOnlyList<ProjectPurchaseOrderDto>> ListPurchaseOrdersAsync(
+        Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var items = await _db.PurchaseOrders
+            .AsNoTracking()
+            .Include(po => po.Supplier)
+            .Where(po => po.ProjectId == projectId)
+            .OrderByDescending(po => po.OrderDate)
+            .ToListAsync(cancellationToken);
+
+        return items
+            .OrderByDescending(po => po.OrderDate)
+            .ThenByDescending(po => po.Number.Value, StringComparer.OrdinalIgnoreCase)
+            .Select(po => new ProjectPurchaseOrderDto
+            {
+                Id = po.Id,
+                Number = po.Number.Value,
+                SupplierName = po.Supplier?.Name ?? "—",
+                OrderDate = po.OrderDate,
+                Status = po.Status,
+                StatusDisplay = po.Status.ToDisplayString(),
+                StatusCss = po.Status.ToCssClass(),
+                TotalHt = po.SubTotal.Amount
+            })
+            .ToList();
+    }
+
     public async Task<Result> AssignPurchaseOrderAsync(Guid projectId, AssignPurchaseOrderDto dto, CancellationToken cancellationToken = default)
     {
         if (!await _db.Projects.AnyAsync(p => p.Id == projectId, cancellationToken))

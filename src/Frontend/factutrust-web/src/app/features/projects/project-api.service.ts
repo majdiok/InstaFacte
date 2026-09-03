@@ -173,6 +173,17 @@ export interface ProjectCostLine {
   occurredOn: string;
 }
 
+export interface ProjectPurchaseOrder {
+  id: string;
+  number: string;
+  supplierName: string;
+  orderDate: string;
+  status: number;
+  statusDisplay: string;
+  statusCss: string;
+  totalHt: number;
+}
+
 export interface ProjectMilestone {
   id: string;
   name: string;
@@ -693,5 +704,9 @@ export class ProjectApiService {
 
   assignPurchaseOrder(projectId: string, purchaseOrderId: string): Observable<ApiResponse<boolean>> {
     return this.http.post<ApiResponse<boolean>>(`${this.base}/${projectId}/purchase-orders`, { purchaseOrderId });
+  }
+
+  listPurchaseOrders(projectId: string): Observable<ApiResponse<ProjectPurchaseOrder[]>> {
+    return this.http.get<ApiResponse<ProjectPurchaseOrder[]>>(`${this.base}/${projectId}/purchase-orders`);
   }
 }
