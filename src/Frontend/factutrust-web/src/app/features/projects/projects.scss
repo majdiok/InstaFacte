@@ -522,6 +522,10 @@
   font-size: 0.85rem;
   cursor: pointer;
 
+  i {
+    color: inherit;
+  }
+
   &:hover {
     background: var(--color-background-subtle, #f9fafb);
     color: var(--color-text-primary, #0f172a);
@@ -790,6 +794,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+
+  i {
+    color: inherit;
+  }
 
   &:hover {
     background: var(--color-background-subtle, #f3f4f6);
@@ -2341,4 +2349,48 @@
 .proj-list-actions-col {
   width: 2.5rem;
   text-align: center;
+}
+
+.task-create-intro {
+  margin: 0 0 var(--spacing-3, 0.75rem);
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.task-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3, 0.75rem);
+}
+
+.task-create-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1, 0.25rem);
+}
+
+.task-create-field label {
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: 400;
+  color: var(--color-text-secondary);
+}
+
+.task-create-check {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2, 0.5rem);
+}
+
+.task-create-check label {
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.task-create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2, 0.5rem);
+  align-items: center;
 }
