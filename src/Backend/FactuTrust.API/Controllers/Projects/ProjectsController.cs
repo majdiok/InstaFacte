@@ -626,6 +626,16 @@ public sealed class ProjectsController : ControllerBase
         return Ok(ApiResponse<Guid>.Ok(result.Value));
     }
 
+    [HttpGet("{id:guid}/purchase-orders")]
+    [Authorize(Policy = PermissionPolicies.ProjectsRead)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<ProjectPurchaseOrderDto>>>> ListPurchaseOrders(
+        Guid id, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        return Ok(ApiResponse<IReadOnlyList<ProjectPurchaseOrderDto>>.Ok(
+            await _service.ListPurchaseOrdersAsync(id, cancellationToken)));
+    }
+
     [HttpPost("{id:guid}/purchase-orders")]
     [Authorize(Policy = PermissionPolicies.ProjectsUpdate)]
     public async Task<IActionResult> AssignPo(Guid id, [FromBody] AssignPurchaseOrderDto dto, CancellationToken cancellationToken)

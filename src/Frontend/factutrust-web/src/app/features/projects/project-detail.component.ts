@@ -17,6 +17,7 @@ import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { ProductService } from '@core/services/product.service';
+import { PurchaseOrderService, PurchaseOrderStatus } from '@core/services/purchase-order.service';
 import { SupplierService } from '@core/services/supplier.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import {
@@ -36,6 +37,7 @@ import {
   ProjectTask,
   ProjectTimeEntry,
   ProjectWorkloadRow,
+  ProjectPurchaseOrder,
   UpsertMemberPayload,
   UpsertProjectPayload,
   UpsertTaskPayload
@@ -185,8 +187,9 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
           </p-tabpanel>
           <p-tabpanel value="budget">
             <app-project-budget-tab [project]="p" [budget]="budget()" [costs]="costs()" [products]="products()"
-              [canUpdate]="canUpdate" (cost)="addCost($event)" (stockExit)="stockExit($event)"
-              (assignPurchaseOrder)="assignPurchaseOrder($event)" />
+              [purchaseOrders]="purchaseOrders()" [linkedPurchaseOrders]="linkedPurchaseOrders()"
+              [canUpdate]="canUpdate" (cost)="addCost($event)"
+              (stockExit)="stockExit($event)" (assignPurchaseOrder)="assignPurchaseOrder($event)" />
           </p-tabpanel>
           <p-tabpanel value="team">
             <app-project-team-tab [project]="p" [members]="members()" [users]="users()" [workload]="workload()"
@@ -269,6 +272,7 @@ export class ProjectDetailComponent implements OnInit {
   private readonly errors = inject(ErrorHandlerService);
   private readonly confirm = inject(ConfirmationService);
   private readonly productsApi = inject(ProductService);
+  private readonly purchaseOrdersApi = inject(PurchaseOrderService);
   private readonly suppliersApi = inject(SupplierService);
   private readonly favorites = inject(ProjectFavoritesService);
 
@@ -288,6 +292,8 @@ export class ProjectDetailComponent implements OnInit {
   readonly workload = signal<ProjectWorkloadRow[]>([]);
   readonly readiness = signal<ProjectBillingReadiness | null>(null);
   readonly products = signal<ProductOption[]>([]);
+  readonly purchaseOrders = signal<ProductOption[]>([]);
+  readonly linkedPurchaseOrders = signal<ProjectPurchaseOrder[]>([]);
   readonly suppliers = signal<SupplierOption[]>([]);
   readonly tab = signal<TabKey>('overview');
   private id = '';
@@ -430,6 +436,40 @@ export class ProjectDetailComponent implements OnInit {
             if (r.success && r.data) this.products.set(r.data.items.map(i => ({ id: i.id, name: `${i.code} — ${i.name}` })));
           });
         }
+        this.api.listPurchaseOrders(this.id).subscribe({
+          next: linkedRes => {
+            const linked = linkedRes.success && linkedRes.data ? linkedRes.data : [];
+            this.linkedPurchaseOrders.set(linked);
+            const linkedIds = new Set(linked.map(p => p.id));
+            this.purchaseOrdersApi.getPurchaseOrders({ page: 1, pageSize: 80 }).subscribe({
+              next: r => {
+                if (r.success && r.data) {
+                  this.purchaseOrders.set(
+                    r.data.items
+                      .filter(i => i.status !== PurchaseOrderStatus.Cancelled && !linkedIds.has(i.id))
+                      .map(i => ({ id: i.id, name: `${i.number} — ${i.supplierName}` }))
+                  );
+                }
+              },
+              error: () => this.purchaseOrders.set([])
+            });
+          },
+          error: () => {
+            this.linkedPurchaseOrders.set([]);
+            this.purchaseOrdersApi.getPurchaseOrders({ page: 1, pageSize: 80 }).subscribe({
+              next: r => {
+                if (r.success && r.data) {
+                  this.purchaseOrders.set(
+                    r.data.items
+                      .filter(i => i.status !== PurchaseOrderStatus.Cancelled)
+                      .map(i => ({ id: i.id, name: `${i.number} — ${i.supplierName}` }))
+                  );
+                }
+              },
+              error: () => this.purchaseOrders.set([])
+            });
+          }
+        });
         break;
       case 'team':
         this.api.members(this.id).subscribe(r => { if (r.success && r.data) this.members.set(r.data); });

@@ -86,6 +86,21 @@ describe('ProjectApiService', () => {
     req.flush({ success: true, data: {} });
   });
 
+  it('lists purchase orders linked to a project', () => {
+    service.listPurchaseOrders('proj-1').subscribe();
+    const req = http.expectOne(`${environment.apiUrl}/projects/proj-1/purchase-orders`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ success: true, data: [] });
+  });
+
+  it('assigns a purchase order to a project', () => {
+    service.assignPurchaseOrder('proj-1', 'po-1').subscribe();
+    const req = http.expectOne(`${environment.apiUrl}/projects/proj-1/purchase-orders`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ purchaseOrderId: 'po-1' });
+    req.flush({ success: true, data: true });
+  });
+
   it('moves task to another phase with optional status', () => {
     service.moveTask('task-1', 'phase-2', 'InProgress').subscribe();
     const req = http.expectOne(`${environment.apiUrl}/projects/tasks/task-1/move`);
