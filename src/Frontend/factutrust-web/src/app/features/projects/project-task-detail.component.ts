@@ -126,7 +126,6 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
                       <p-select [options]="users()" [(ngModel)]="assigneeId" optionLabel="displayName" optionValue="id" placeholder="Assigné" [showClear]="true" />
                       <p-datepicker [(ngModel)]="dueDate" dateFormat="dd/mm/yy" placeholder="Échéance" />
                       <p-inputNumber [(ngModel)]="estimatedHours" [min]="0" placeholder="Estimé h" />
-                      <p-inputNumber [(ngModel)]="progress" [min]="0" [max]="100" suffix=" %" />
                     </div>
                   } @else {
                     <p>{{ t.description || 'Pas de description.' }}</p>
@@ -372,7 +371,6 @@ export class ProjectTaskDetailComponent implements OnInit {
   assigneeId: string | null = null;
   dueDate: Date | null = null;
   estimatedHours = 0;
-  progress = 0;
   logWorkDate: Date = new Date();
   logHours = 1;
   logBillable = true;
@@ -523,7 +521,6 @@ export class ProjectTaskDetailComponent implements OnInit {
           this.assigneeId = t.assigneeUserId ?? null;
           this.dueDate = t.dueDate ? new Date(t.dueDate) : null;
           this.estimatedHours = t.estimatedHours;
-          this.progress = t.progressPercent;
           this.api.get(t.projectId).subscribe(pr => {
             if (pr.success && pr.data) this.project.set(pr.data);
           });
@@ -565,7 +562,7 @@ export class ProjectTaskDetailComponent implements OnInit {
       dueDate: toIsoDate(this.dueDate),
       assigneeUserId: this.assigneeId,
       estimatedHours: this.estimatedHours,
-      progressPercent: this.progress
+      progressPercent: t.progressPercent
     };
     this.api.updateTask(t.id, payload).subscribe({
       next: () => {
