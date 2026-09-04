@@ -76,7 +76,15 @@ public enum ProjectBillingKind
     TimeAndMaterials = 0,
     Milestone = 1,
     Situation = 2,
-    FixedPrice = 3
+    FixedPrice = 3,
+    TaskFixed = 4,
+    TaskHourly = 5
+}
+
+public enum ProjectTaskBillingMethod
+{
+    Fixed = 1,
+    Hourly = 2
 }
 
 public static class ProjectEnumExtensions

@@ -185,6 +185,46 @@ public sealed class ProjectFixedPriceBillingTests
     {
         Assert.Equal(3, (int)ProjectBillingKind.FixedPrice);
     }
+
+    [Fact]
+    public void TaskBillingKinds_ExistInEnum()
+    {
+        Assert.Equal(4, (int)ProjectBillingKind.TaskFixed);
+        Assert.Equal(5, (int)ProjectBillingKind.TaskHourly);
+    }
+}
+
+public sealed class ProjectTaskBillingTests
+{
+    [Fact]
+    public void MarkInvoiced_SucceedsOnce_AndBlocksSecondCall()
+    {
+        var task = ProjectTask.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "Tâche", null,
+            ProjectTaskPriority.Normal, null, null, null, 0m).Value;
+        var invoiceId = Guid.NewGuid();
+
+        Assert.True(task.MarkInvoiced(invoiceId, ProjectTaskBillingMethod.Fixed).IsSuccess);
+        Assert.Equal(invoiceId, task.InvoicedInvoiceId);
+        Assert.Equal(ProjectTaskBillingMethod.Fixed, task.InvoicedBillingMethod);
+
+        var again = task.MarkInvoiced(Guid.NewGuid(), ProjectTaskBillingMethod.Hourly);
+        Assert.True(again.IsFailure);
+        Assert.Contains("déjà", again.Error.Description, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void InvoicedTask_CannotBeUpdated()
+    {
+        var task = ProjectTask.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "Tâche", null,
+            ProjectTaskPriority.Normal, null, null, null, 0m).Value;
+        Assert.True(task.MarkInvoiced(Guid.NewGuid(), ProjectTaskBillingMethod.Hourly).IsSuccess);
+
+        var update = task.Update("Autre", null, ProjectTaskPriority.Normal, null, null, null, 0m, 0);
+        Assert.True(update.IsFailure);
+        Assert.Contains("facturée", update.Error.Description, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public sealed class ProjectClosureTests

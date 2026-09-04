@@ -510,6 +510,27 @@ public sealed class ProjectsController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<ProjectWorkloadRowDto>>.Ok(await _service.GetWorkloadAsync(id, cancellationToken)));
     }
 
+    [HttpGet("{id:guid}/billing/billable-tasks")]
+    [Authorize(Policy = PermissionPolicies.ProjectBillingRead)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<BillableProjectTaskDto>>>> BillableTasks(Guid id, [FromQuery] string method = "hourly", CancellationToken cancellationToken = default)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        if (await _service.GetAsync(id, cancellationToken) is null)
+            return NotFound(ApiResponse<IReadOnlyList<BillableProjectTaskDto>>.Fail("Projet introuvable"));
+        var items = await _service.GetBillableTasksAsync(id, method, cancellationToken);
+        return Ok(ApiResponse<IReadOnlyList<BillableProjectTaskDto>>.Ok(items));
+    }
+
+    [HttpPost("{id:guid}/billing/tasks")]
+    [Authorize(Policy = PermissionPolicies.ProjectBillingCreate)]
+    public async Task<ActionResult<ApiResponse<ProjectInvoiceResultDto>>> InvoiceTasks(Guid id, [FromBody] InvoiceTasksDto dto, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.InvoiceTasksAsync(id, dto, cancellationToken);
+        if (result.IsFailure) return BadRequest(ApiResponse<ProjectInvoiceResultDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<ProjectInvoiceResultDto>.Ok(result.Value));
+    }
+
     [HttpPost("{id:guid}/billing/time")]
     [Authorize(Policy = PermissionPolicies.ProjectBillingCreate)]
     public async Task<ActionResult<ApiResponse<ProjectInvoiceResultDto>>> InvoiceTime(Guid id, [FromBody] InvoiceTimeDto? dto, CancellationToken cancellationToken)
