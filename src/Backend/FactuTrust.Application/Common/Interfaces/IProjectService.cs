@@ -59,6 +59,7 @@ public interface IProjectService
 
     Task<ProjectBillingReadinessDto?> GetBillingReadinessAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<BillableProjectTaskDto>> GetBillableTasksAsync(Guid projectId, string method, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<BillableProjectTimeEntryDto>> GetBillableTimeEntriesAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<Result<ProjectInvoiceResultDto>> InvoiceTimeAsync(Guid projectId, InvoiceTimeDto dto, CancellationToken cancellationToken = default);
     Task<Result<ProjectInvoiceResultDto>> InvoiceTasksAsync(Guid projectId, InvoiceTasksDto dto, CancellationToken cancellationToken = default);
     Task<Result<ProjectInvoiceResultDto>> InvoiceMilestoneAsync(Guid projectId, InvoiceMilestoneDto dto, CancellationToken cancellationToken = default);

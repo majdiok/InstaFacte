@@ -26,6 +26,7 @@ import {
   ProjectAssignableUser,
   ProjectAttachment,
   BillableProjectTask,
+  BillableProjectTimeEntry,
   ProjectBillingReadiness,
   ProjectBudget,
   ProjectComment,
@@ -204,12 +205,14 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
           </p-tabpanel>
           <p-tabpanel value="billing">
             <app-project-billing-tab [project]="p" [readiness]="readiness()" [billableTasks]="billableTasks()"
+              [billableTimeEntries]="billableTimeEntries()"
               [milestones]="milestones()"
               [situations]="situations()" [subs]="subs()" [suppliers]="suppliers()"
               [canBill]="canCreateBilling" [canUpdate]="canUpdate"
               [invoicesRefreshToken]="billingRefreshToken()"
               (activate)="activate()" (invoiceTime)="invoiceTime($event)" (invoiceTasks)="invoiceTasks($event)"
-              (refreshBillableTasks)="loadBillableTasks($event)" (invoiceFixedPrice)="invoiceFixedPrice($event)"
+              (refreshBillableTasks)="loadBillableTasks($event)" (refreshBillableTimeEntries)="loadBillableTimeEntries()"
+              (invoiceFixedPrice)="invoiceFixedPrice($event)"
               (addMilestone)="addMilestone($event)" (invoiceMilestone)="invoiceMilestone($event)"
               (addSituation)="addSituation($event)" (updateSituation)="updateSituation($event)"
               (validateSituation)="validateSituation($event)" (invoiceSituation)="invoiceSituation($event)"
@@ -297,6 +300,7 @@ export class ProjectDetailComponent implements OnInit {
   readonly readiness = signal<ProjectBillingReadiness | null>(null);
   readonly billingRefreshToken = signal(0);
   readonly billableTasks = signal<BillableProjectTask[]>([]);
+  readonly billableTimeEntries = signal<BillableProjectTimeEntry[]>([]);
   readonly products = signal<ProductOption[]>([]);
   readonly purchaseOrders = signal<ProductOption[]>([]);
   readonly linkedPurchaseOrders = signal<ProjectPurchaseOrder[]>([]);
@@ -494,6 +498,7 @@ export class ProjectDetailComponent implements OnInit {
         this.api.milestones(this.id).subscribe(r => { if (r.success && r.data) this.milestones.set(r.data); });
         this.api.situations(this.id).subscribe(r => { if (r.success && r.data) this.situations.set(r.data); });
         this.api.subcontractors(this.id).subscribe(r => { if (r.success && r.data) this.subs.set(r.data); });
+        this.loadBillableTimeEntries();
         if (this.suppliers().length === 0) {
           this.suppliersApi.getSuppliers({ page: 1, pageSize: 80, isActive: true }).subscribe(r => {
             if (r.success && r.data) this.suppliers.set(r.data.items.map(s => ({ id: s.id, name: s.name })));
@@ -733,13 +738,27 @@ export class ProjectDetailComponent implements OnInit {
     });
   }
 
-  invoiceTime(ev: { groupBy: string; notes?: string }): void {
-    this.api.invoiceTime(this.id, ev.groupBy, ev.notes).subscribe({
+  invoiceTime(ev: { groupBy: string; notes?: string; timeEntryIds: string[] }): void {
+    this.api.invoiceTime(this.id, ev.timeEntryIds, ev.notes).subscribe({
       next: r => {
-        if (r.success && r.data) void this.router.navigate(['/invoices', r.data.invoiceId]);
-        else this.toast.add({ severity: 'error', summary: 'Facturation impossible', detail: r.message || '' });
+        if (r.success && r.data) {
+          this.loadBillableTimeEntries();
+          this.api.billingReadiness(this.id).subscribe({
+            next: res => { if (res.success && res.data) this.readiness.set(res.data); }
+          });
+          void this.router.navigate(['/invoices', r.data.invoiceId]);
+        } else {
+          this.toast.add({ severity: 'error', summary: 'Facturation impossible', detail: r.message || '' });
+        }
       },
       error: err => this.fail(err, 'Facturation impossible')
+    });
+  }
+
+  loadBillableTimeEntries(): void {
+    this.api.billableTimeEntries(this.id).subscribe({
+      next: r => { if (r.success && r.data) this.billableTimeEntries.set(r.data); },
+      error: err => this.fail(err, 'Temps facturables')
     });
   }
 

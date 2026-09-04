@@ -36,6 +36,8 @@ import {
 
   BillableProjectTask,
 
+  BillableProjectTimeEntry,
+
   ProjectDetail,
 
   ProjectMilestone,
@@ -240,11 +242,123 @@ const TASK_BILLING_METHOD_OPTIONS = [
 
             </label>
 
-            <app-button variant="primary" [disabled]="!canInvoiceTime" (click)="emitInvoiceTime()">Facturer les temps validés</app-button>
+            <app-button variant="primary" [disabled]="!canInvoiceSelectedTime" (click)="emitInvoiceTime()">Facturer la sélection</app-button>
 
           }
 
         </div>
+
+
+
+        @if (timeGroupBy === 'member') {
+
+          @if (!billableTimeEntries.length) {
+
+            <p class="text-muted mt-2 mb-0">Aucun temps éligible à la facturation.</p>
+
+          } @else {
+
+            @if (selectedTimeSummary.hours > 0) {
+
+              <p class="time-selection-summary mt-2 mb-2">
+
+                {{ selectedTimeSummary.hours | number:'1.0-2' }} h sélectionnées ·
+
+                {{ selectedTimeSummary.amountHt | number:'1.3-3' }} {{ project?.currency || 'TND' }} HT
+
+              </p>
+
+            }
+
+            <p-table [value]="billableTimeEntries" styleClass="p-datatable-sm mt-2">
+
+              <ng-template pTemplate="header">
+
+                <tr>
+
+                  <th style="width: 3rem">
+
+                    <p-checkbox
+
+                      [binary]="true"
+
+                      [ngModel]="allEligibleTimeSelected"
+
+                      (ngModelChange)="toggleAllEligibleTime($event)"
+
+                      [disabled]="eligibleTimeEntries.length === 0"
+
+                      inputId="bill-time-all" />
+
+                  </th>
+
+                  <th>Date</th>
+
+                  <th>Membre</th>
+
+                  <th>Tâche</th>
+
+                  <th>Heures</th>
+
+                  <th>Tarif h</th>
+
+                  <th>Montant HT</th>
+
+                </tr>
+
+              </ng-template>
+
+              <ng-template pTemplate="body" let-e>
+
+                <tr [class.text-muted]="!e.isEligible">
+
+                  <td>
+
+                    <p-checkbox
+
+                      [binary]="true"
+
+                      [ngModel]="isTimeEntrySelected(e.id)"
+
+                      (ngModelChange)="toggleTimeEntrySelected(e.id, $event)"
+
+                      [disabled]="!e.isEligible"
+
+                      [inputId]="'bill-time-' + e.id" />
+
+                  </td>
+
+                  <td>{{ e.workDate | date:'dd/MM/yyyy' }}</td>
+
+                  <td>{{ e.userName }}</td>
+
+                  <td>
+
+                    {{ e.taskTitle || '—' }}
+
+                    @if (e.blockReason) {
+
+                      <div class="text-sm text-muted">{{ e.blockReason }}</div>
+
+                    }
+
+                  </td>
+
+                  <td>{{ e.hours | number:'1.0-2' }}</td>
+
+                  <td>{{ e.hourlyRate | number:'1.3-3' }}</td>
+
+                  <td>{{ e.previewAmountHt | number:'1.3-3' }}</td>
+
+                </tr>
+
+              </ng-template>
+
+            </p-table>
+
+          }
+
+        }
 
 
 
@@ -713,6 +827,16 @@ const TASK_BILLING_METHOD_OPTIONS = [
 
     .blockers { color: var(--red-500, #dc2626); padding-left: 1.25rem; }
 
+    .time-selection-summary {
+
+      font-size: var(--font-size-sm);
+
+      color: var(--color-neutral-700);
+
+      font-weight: var(--font-weight-medium);
+
+    }
+
   `],
 
 })
@@ -726,6 +850,8 @@ export class ProjectBillingTabComponent implements OnChanges {
   @Input() readiness: ProjectBillingReadiness | null = null;
 
   @Input() billableTasks: BillableProjectTask[] = [];
+
+  @Input() billableTimeEntries: BillableProjectTimeEntry[] = [];
 
   @Input() milestones: ProjectMilestone[] = [];
 
@@ -743,11 +869,13 @@ export class ProjectBillingTabComponent implements OnChanges {
 
   @Output() activate = new EventEmitter<void>();
 
-  @Output() invoiceTime = new EventEmitter<{ groupBy: string; notes?: string }>();
+  @Output() invoiceTime = new EventEmitter<{ groupBy: string; notes?: string; timeEntryIds: string[] }>();
 
   @Output() invoiceTasks = new EventEmitter<{ method: 'fixed' | 'hourly'; notes?: string; tasks: { taskId: string; amountHt?: number; hourlyRate?: number }[] }>();
 
   @Output() refreshBillableTasks = new EventEmitter<'fixed' | 'hourly'>();
+
+  @Output() refreshBillableTimeEntries = new EventEmitter<void>();
 
   @Output() invoiceFixedPrice = new EventEmitter<{ amountHt: number; notes?: string }>();
 
@@ -853,6 +981,8 @@ export class ProjectBillingTabComponent implements OnChanges {
 
   selectedTaskIds = new Set<string>();
 
+  selectedTimeEntryIds = new Set<string>();
+
   taskAmounts: Record<string, number> = {};
 
   taskHourlyRates: Record<string, number> = {};
@@ -924,6 +1054,10 @@ export class ProjectBillingTabComponent implements OnChanges {
       this.fixedPriceAmount = (changes['project'].currentValue as ProjectDetail).budgetHt;
     }
 
+    if (changes['billableTimeEntries']) {
+      this.selectedTimeEntryIds.clear();
+    }
+
     if (changes['billableTasks'] && this.taskBillingMethod === 'hourly') {
       for (const t of this.billableTasks) {
         if (t.isEligible) {
@@ -946,6 +1080,66 @@ export class ProjectBillingTabComponent implements OnChanges {
     return !!this.readiness && this.readiness.canBill && this.readiness.validatedUninvoicedHours > 0
 
       && this.readiness.membersWithoutRate.length === 0;
+
+  }
+
+
+
+  get canInvoiceSelectedTime(): boolean {
+
+    if (this.selectedTimeEntryIds.size === 0) return false;
+
+    return [...this.selectedTimeEntryIds].every(id => {
+
+      const entry = this.billableTimeEntries.find(e => e.id === id);
+
+      return !!entry?.isEligible;
+
+    });
+
+  }
+
+
+
+  get eligibleTimeEntries(): BillableProjectTimeEntry[] {
+
+    return this.billableTimeEntries.filter(e => e.isEligible);
+
+  }
+
+
+
+  get allEligibleTimeSelected(): boolean {
+
+    const eligible = this.eligibleTimeEntries;
+
+    return eligible.length > 0 && eligible.every(e => this.selectedTimeEntryIds.has(e.id));
+
+  }
+
+
+
+  get selectedTimeSummary(): { hours: number; amountHt: number } {
+
+    let hours = 0;
+
+    let amountHt = 0;
+
+    for (const id of this.selectedTimeEntryIds) {
+
+      const entry = this.billableTimeEntries.find(e => e.id === id);
+
+      if (entry?.isEligible) {
+
+        hours += entry.hours;
+
+        amountHt += entry.previewAmountHt;
+
+      }
+
+    }
+
+    return { hours, amountHt };
 
   }
 
@@ -987,7 +1181,15 @@ export class ProjectBillingTabComponent implements OnChanges {
 
   emitInvoiceTime(): void {
 
-    this.invoiceTime.emit({ groupBy: 'member', notes: this.timeNotes || undefined });
+    this.invoiceTime.emit({
+
+      groupBy: 'member',
+
+      notes: this.timeNotes || undefined,
+
+      timeEntryIds: [...this.selectedTimeEntryIds]
+
+    });
 
   }
 
@@ -997,6 +1199,8 @@ export class ProjectBillingTabComponent implements OnChanges {
 
     this.selectedTaskIds.clear();
 
+    this.selectedTimeEntryIds.clear();
+
     this.taskAmounts = {};
 
     this.taskHourlyRates = {};
@@ -1004,6 +1208,10 @@ export class ProjectBillingTabComponent implements OnChanges {
     if (this.timeGroupBy === 'task') {
 
       this.refreshBillableTasks.emit(this.taskBillingMethod);
+
+    } else if (this.timeGroupBy === 'member') {
+
+      this.refreshBillableTimeEntries.emit();
 
     }
 
@@ -1028,6 +1236,48 @@ export class ProjectBillingTabComponent implements OnChanges {
   isTaskSelected(taskId: string): boolean {
 
     return this.selectedTaskIds.has(taskId);
+
+  }
+
+
+
+  isTimeEntrySelected(entryId: string): boolean {
+
+    return this.selectedTimeEntryIds.has(entryId);
+
+  }
+
+
+
+  toggleTimeEntrySelected(entryId: string, selected: boolean): void {
+
+    if (selected) this.selectedTimeEntryIds.add(entryId);
+
+    else this.selectedTimeEntryIds.delete(entryId);
+
+  }
+
+
+
+  toggleAllEligibleTime(selected: boolean): void {
+
+    if (selected) {
+
+      for (const e of this.eligibleTimeEntries) {
+
+        this.selectedTimeEntryIds.add(e.id);
+
+      }
+
+    } else {
+
+      for (const e of this.eligibleTimeEntries) {
+
+        this.selectedTimeEntryIds.delete(e.id);
+
+      }
+
+    }
 
   }
 

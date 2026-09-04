@@ -89,6 +89,50 @@ public sealed class ProjectsControllerTaskBillingTests
         Assert.Single(body.Data!);
     }
 
+    [Fact]
+    public async Task BillableTimeEntries_WhenProjectMissing_ReturnsNotFound()
+    {
+        var projectId = Guid.NewGuid();
+        var service = new Mock<IProjectService>();
+        service.Setup(s => s.GetAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync((ProjectDto?)null);
+
+        var controller = CreateController(service.Object);
+        var result = await controller.BillableTimeEntries(projectId, CancellationToken.None);
+
+        Assert.IsType<NotFoundObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task BillableTimeEntries_WhenProjectExists_ReturnsOk()
+    {
+        var projectId = Guid.NewGuid();
+        var items = new List<BillableProjectTimeEntryDto>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
+                UserName = "Alice",
+                WorkDate = new DateTime(2026, 8, 1),
+                Hours = 5m,
+                HourlyRate = 80m,
+                PreviewAmountHt = 400m,
+                IsEligible = true
+            }
+        };
+        var service = new Mock<IProjectService>();
+        service.Setup(s => s.GetAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(new ProjectDto { Id = projectId, Name = "P" });
+        service.Setup(s => s.GetBillableTimeEntriesAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(items);
+
+        var controller = CreateController(service.Object);
+        var result = await controller.BillableTimeEntries(projectId, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var body = Assert.IsType<Controllers.ApiResponse<IReadOnlyList<BillableProjectTimeEntryDto>>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Single(body.Data!);
+    }
+
     private static ProjectsController CreateController(IProjectService service)
     {
         var options = Options.Create(new ProjectsOptions { Enabled = true });
