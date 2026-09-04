@@ -4,7 +4,8 @@
   "description": "InstaFact - Plateforme de gestion commerciale intelligente",
   "scripts": {
     "ng": "ng",
-    "start": "set CHOKIDAR_USEPOLLING=1 && ng serve --poll=2000",
+    "start": "set NG_BUILD_MAX_WORKERS=1&& set GOMAXPROCS=2&& ng serve --poll=2000",
+    "start:low-mem": "set NG_BUILD_MAX_WORKERS=1&& set GOMAXPROCS=1&& ng serve --no-hmr --poll=2000",
     "build": "ng build",
     "build:prod": "ng build --configuration production",
     "watch": "set CHOKIDAR_USEPOLLING=1 && ng build --watch --poll=2000 --configuration development",

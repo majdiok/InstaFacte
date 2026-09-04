@@ -207,6 +207,7 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
               [milestones]="milestones()"
               [situations]="situations()" [subs]="subs()" [suppliers]="suppliers()"
               [canBill]="canCreateBilling" [canUpdate]="canUpdate"
+              [invoicesRefreshToken]="billingRefreshToken()"
               (activate)="activate()" (invoiceTime)="invoiceTime($event)" (invoiceTasks)="invoiceTasks($event)"
               (refreshBillableTasks)="loadBillableTasks($event)" (invoiceFixedPrice)="invoiceFixedPrice($event)"
               (addMilestone)="addMilestone($event)" (invoiceMilestone)="invoiceMilestone($event)"
@@ -294,6 +295,7 @@ export class ProjectDetailComponent implements OnInit {
   readonly subs = signal<ProjectSubcontractor[]>([]);
   readonly workload = signal<ProjectWorkloadRow[]>([]);
   readonly readiness = signal<ProjectBillingReadiness | null>(null);
+  readonly billingRefreshToken = signal(0);
   readonly billableTasks = signal<BillableProjectTask[]>([]);
   readonly products = signal<ProductOption[]>([]);
   readonly purchaseOrders = signal<ProductOption[]>([]);
@@ -484,6 +486,7 @@ export class ProjectDetailComponent implements OnInit {
         this.api.comments(this.id).subscribe(r => { if (r.success && r.data) this.comments.set(r.data); });
         break;
       case 'billing':
+        this.billingRefreshToken.update(t => t + 1);
         this.api.billingReadiness(this.id).subscribe({
           next: r => { if (r.success && r.data) this.readiness.set(r.data); },
           error: err => this.fail(err, 'Facturation')

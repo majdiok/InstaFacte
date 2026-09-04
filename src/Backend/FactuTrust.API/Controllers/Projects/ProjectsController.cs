@@ -609,6 +609,17 @@ public sealed class ProjectsController : ControllerBase
         return Ok(ApiResponse<ProjectInvoiceResultDto>.Ok(result.Value));
     }
 
+    [HttpGet("{id:guid}/linked-invoices")]
+    [Authorize(Policy = PermissionPolicies.ProjectBillingRead)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<ProjectLinkedInvoiceDto>>>> LinkedInvoices(
+        Guid id, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var items = await _service.GetLinkedInvoicesAsync(id, cancellationToken);
+        if (items is null) return NotFound(ApiResponse<IReadOnlyList<ProjectLinkedInvoiceDto>>.Fail("Projet introuvable"));
+        return Ok(ApiResponse<IReadOnlyList<ProjectLinkedInvoiceDto>>.Ok(items));
+    }
+
     [HttpGet("{id:guid}/subcontractors")]
     [Authorize(Policy = PermissionPolicies.ProjectsRead)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<ProjectSubcontractorDto>>>> Subcontractors(Guid id, CancellationToken cancellationToken)
