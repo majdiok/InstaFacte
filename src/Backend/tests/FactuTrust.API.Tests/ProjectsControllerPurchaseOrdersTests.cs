@@ -11,6 +11,9 @@ using Xunit;
 
 namespace FactuTrust.API.Tests;
 
+// ProjectsController lives in FactuTrust.API.Controllers.Projects, so unqualified ApiResponse<T>
+// resolves to FactuTrust.API.Controllers.ApiResponse<T> (defined in ApiResponse.cs) — not
+// FactuTrust.Application.DTOs.ApiResponse<T>. Assert against the real runtime type.
 public sealed class ProjectsControllerPurchaseOrdersTests
 {
     [Fact]
@@ -27,7 +30,7 @@ public sealed class ProjectsControllerPurchaseOrdersTests
         var result = await controller.ListPurchaseOrders(projectId, CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var body = Assert.IsType<ApiResponse<IReadOnlyList<ProjectPurchaseOrderDto>>>(ok.Value);
+        var body = Assert.IsType<Controllers.ApiResponse<IReadOnlyList<ProjectPurchaseOrderDto>>>(ok.Value);
         Assert.True(body.Success);
         Assert.Empty(body.Data!);
     }
@@ -60,7 +63,7 @@ public sealed class ProjectsControllerPurchaseOrdersTests
         var result = await controller.ListPurchaseOrders(projectId, CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var body = Assert.IsType<ApiResponse<IReadOnlyList<ProjectPurchaseOrderDto>>>(ok.Value);
+        var body = Assert.IsType<Controllers.ApiResponse<IReadOnlyList<ProjectPurchaseOrderDto>>>(ok.Value);
         Assert.True(body.Success);
         Assert.Single(body.Data!);
         Assert.Equal(poId, body.Data![0].Id);
@@ -90,7 +93,7 @@ public sealed class ProjectsControllerPurchaseOrdersTests
             CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result);
-        var body = Assert.IsType<ApiResponse<bool>>(ok.Value);
+        var body = Assert.IsType<Controllers.ApiResponse<bool>>(ok.Value);
         Assert.True(body.Success);
         Assert.True(body.Data);
     }
@@ -137,7 +140,7 @@ public sealed class ProjectsControllerPurchaseOrdersTests
 
         var listResult = await controller.ListPurchaseOrders(projectId, CancellationToken.None);
         var ok = Assert.IsType<OkObjectResult>(listResult.Result);
-        var body = Assert.IsType<ApiResponse<IReadOnlyList<ProjectPurchaseOrderDto>>>(ok.Value);
+        var body = Assert.IsType<Controllers.ApiResponse<IReadOnlyList<ProjectPurchaseOrderDto>>>(ok.Value);
         Assert.Contains(body.Data!, p => p.Id == poId && p.Number == "BC-2026-0042");
     }
 

@@ -30,7 +30,14 @@ jobs:
       # Environment variables have higher precedence than the factories' in-memory
       # configuration and would invalidate those tests (or make forged JWTs return 401).
       - name: Tests
-        run: dotnet test src/Backend/FactuTrust.sln --configuration Release --no-build --verbosity minimal
+        run: dotnet test src/Backend/FactuTrust.sln --configuration Release --no-build --verbosity minimal --logger "trx;LogFileName=backend-tests.trx"
+      - name: Upload backend test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: "**/backend-tests.trx"
+          retention-days: 7
 
   frontend-web:
     name: Web Angular (specs + build prod)
@@ -104,6 +111,20 @@ jobs:
       - name: Register CI test user
         run: bash scripts/ci/e2e-register-user.sh
         working-directory: .
+      - name: Upload API e2e log on failure
+        if: failure()
+        run: |
+          if [ -f api-e2e.log ]; then
+            sed -E 's/(Password=)[^;]*/\1***REDACTED***/gi' api-e2e.log > api-e2e-sanitized.log
+          fi
+        working-directory: .
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: api-e2e-log
+          path: api-e2e-sanitized.log
+          retention-days: 7
+        continue-on-error: true
       - name: Verify API listens on loopback HTTP only
         run: |
           mapfile -t listeners < <(sed -n 's/^.*Now listening on: //p' api-e2e.log)
