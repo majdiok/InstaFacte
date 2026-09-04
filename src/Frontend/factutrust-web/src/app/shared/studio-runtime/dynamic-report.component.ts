@@ -226,14 +226,17 @@ export class DynamicReportComponent {
   }
 
   exportCsv(all: boolean): void {
-    if (all) { this.exportAll.emit('csv'); return; }
+    // Sans chargement paresseux, `result.rows` porte DÉJÀ toutes les lignes reçues : émettre
+    // l'événement n'aurait aucun destinataire (le parent n'a pas de page suivante à aller chercher)
+    // et l'entrée de menu resterait muette. On exporte donc ce qu'on a.
+    if (all && this.lazy) { this.exportAll.emit('csv'); return; }
     const cols = this.columns();
     exportRowsCsv(this.exportName, cols.map(c => ({ key: c.key, label: c.label })), this.result?.rows ?? [],
       (r, ec) => this.cell(r, cols.find(c => c.key === ec.key)!));
   }
 
   exportXlsx(all: boolean): void {
-    if (all) { this.exportAll.emit('xlsx'); return; }
+    if (all && this.lazy) { this.exportAll.emit('xlsx'); return; }
     const cols = this.columns();
     exportRowsXlsx(this.exportName, cols.map(c => ({ key: c.key, label: c.label })), this.result?.rows ?? [],
       (r, ec) => this.cell(r, cols.find(c => c.key === ec.key)!));

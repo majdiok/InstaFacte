@@ -225,13 +225,19 @@
       "code": "immobilier",
       "labelFr": "Immobilier",
       "sortOrder": 5,
-      "additionalModuleIds": []
+      "additionalModuleIds": [
+        16,
+        17
+      ]
     },
     {
       "code": "energie-environnement",
       "labelFr": "\u00C9nergie \u0026 Environnement",
       "sortOrder": 6,
-      "additionalModuleIds": []
+      "additionalModuleIds": [
+        16,
+        6
+      ]
     },
     {
       "code": "communication-marketing",
@@ -245,7 +251,10 @@
       "code": "artisanat",
       "labelFr": "Artisanat",
       "sortOrder": 8,
-      "additionalModuleIds": []
+      "additionalModuleIds": [
+        7,
+        6
+      ]
     },
     {
       "code": "autre",

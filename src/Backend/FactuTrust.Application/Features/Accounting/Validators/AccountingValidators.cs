@@ -2,6 +2,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Commands;
+using FactuTrust.Domain.Services.Accounting;
 using FluentValidation;
 using Microsoft.Extensions.Options;
 
@@ -11,11 +12,17 @@ public sealed class CreateSubAccountCommandValidator : AbstractValidator<CreateS
 {
     public CreateSubAccountCommandValidator()
     {
+        // Forme et plafond délégués à AccountNumberRules : même règle que ChartOfAccount.Create, donc
+        // impossible de refuser ici ce que le domaine accepterait, ou l'inverse.
         RuleFor(x => x.Request.AccountNumber)
             .NotEmpty().WithMessage("Le numéro de compte est obligatoire.")
-            .MaximumLength(20).WithMessage("Le numéro de compte ne peut pas dépasser 20 caractères.")
-            .Matches(@"^[1-7]\d*(?:\.\d+)*$")
-            .WithMessage("Le numéro de compte doit être un numéro SCE (chiffres, points autorisés).");
+            .Matches(AccountNumberRules.Pattern)
+            .WithMessage("Le numéro de compte doit être un numéro SCE (chiffres, points autorisés).")
+            .Must(n => AccountNumberRules.DigitCount(n) <= AccountNumberRules.MaxDigits)
+            .WithMessage(n =>
+                $"Le compte « {n.Request.AccountNumber?.Trim()} » comporte "
+                + $"{AccountNumberRules.DigitCount(n.Request.AccountNumber)} chiffres : un numéro de "
+                + $"compte ne peut pas en dépasser {AccountNumberRules.MaxDigits}.");
 
         RuleFor(x => x.Request.Label)
             .NotEmpty().WithMessage("Le libellé est obligatoire.")

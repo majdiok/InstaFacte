@@ -1,34 +1,50 @@
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services.Accounting;
 using FactuTrust.Domain.Services.Payroll;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.Domain.Payroll;
 
 /// <summary>
-/// R-15 : le compte auxiliaire SCE 425 doit être strictement numérique. L'ancien repli
-/// alphanumérique (ex. 42500AB12) est rejeté. Le compte est figé à la validation du cycle, et non
-/// plus paresseusement au paiement/OD — un changement de matricule entre validation et paiement n'a
-/// plus d'effet.
+/// Le compte auxiliaire 425 vient désormais <b>uniquement</b> de la fiche salarié : la dérivation par
+/// troncature du matricule a été retirée du chemin d'écriture (elle produisait 10 chiffres, au-delà
+/// du plafond de 8, et faisait collisionner deux matricules de même queue). Ce qu'il reste à
+/// vérifier ici : la forme héritée est toujours reconnaissable, et le gel refuse un salarié sans
+/// compte au lieu d'en inventer un.
 /// </summary>
 public sealed class PayrollEmployeeAuxiliaryAccountResolverTests
 {
     [Theory]
-    [InlineData("12", "4250000012")]        // digits zero-padded sur 7 (suffixe = 10 - 3)
-    [InlineData("AB12", "4250000012")]      // lettres ignorées, chiffres conservés (R-15)
+    [InlineData("12", "4250000012")]        // chiffres zéro-paddés sur 7 (suffixe = 10 - 3)
+    [InlineData("AB12", "4250000012")]      // lettres ignorées, chiffres conservés
     [InlineData("E123", "4250000123")]      // matricule courant « E » + chiffres
     [InlineData("1234567", "4251234567")]   // exactement la longueur du suffixe
     [InlineData("12345678", "4252345678")]  // trop long → 7 derniers chiffres
-    public void Resolve_ProducesStrictlyNumericAccount(string employeeNumber, string expected)
+    public void ResolveLegacy_DescribesTheHistoricalShape(string employeeNumber, string expected)
     {
-        Assert.Equal(expected, PayrollEmployeeAuxiliaryAccountResolver.Resolve(employeeNumber));
+        Assert.Equal(expected, PayrollEmployeeAuxiliaryAccountResolver.ResolveLegacy(employeeNumber));
+    }
+
+    /// <summary>
+    /// La raison d'être du correctif : la forme héritée est hors norme. Un CIN de 8 chiffres
+    /// (« 09655554 ») donnait le compte 4259655554 vu en production.
+    /// </summary>
+    [Fact]
+    public void ResolveLegacy_AlwaysExceedsTheDigitCeiling()
+    {
+        var account = PayrollEmployeeAuxiliaryAccountResolver.ResolveLegacy("09655554");
+
+        Assert.Equal("4259655554", account);
+        Assert.Equal(10, account.Length);
+        Assert.True(AccountNumberRules.DigitCount(account) > AccountNumberRules.MaxDigits);
+        Assert.False(AccountNumberRules.IsWellFormed(account));
     }
 
     [Fact]
-    public void Resolve_MatriculeWithoutDigits_Throws()
+    public void ResolveLegacy_MatriculeWithoutDigits_Throws()
     {
-        // R-15 : aucun chiffre → impossible de produire un compte SCE numérique.
-        Assert.Throws<ArgumentException>(() => PayrollEmployeeAuxiliaryAccountResolver.Resolve("ABC"));
+        Assert.Throws<ArgumentException>(() => PayrollEmployeeAuxiliaryAccountResolver.ResolveLegacy("ABC"));
     }
 
     [Theory]
@@ -37,34 +53,60 @@ public sealed class PayrollEmployeeAuxiliaryAccountResolverTests
     [InlineData("   ", false)]
     [InlineData("A1", true)]
     [InlineData("12", true)]
-    public void CanResolve_DetectsAtLeastOneDigit(string employeeNumber, bool expected)
+    public void CanResolveLegacy_DetectsAtLeastOneDigit(string employeeNumber, bool expected)
     {
-        Assert.Equal(expected, PayrollEmployeeAuxiliaryAccountResolver.CanResolve(employeeNumber));
+        Assert.Equal(expected, PayrollEmployeeAuxiliaryAccountResolver.CanResolveLegacy(employeeNumber));
     }
 
+    /// <summary>
+    /// Sans compte sur la fiche, le domaine refuse plutôt que de dériver : c'est la couche
+    /// Application qui alloue avant d'appeler, et un trou signale une incohérence.
+    /// </summary>
     [Fact]
-    public void FreezeEmployeeAuxiliaryAccounts_FailsWhenAMatriculeHasNoDigits()
-    {
-        var run = NewRunWithPayslips(("Marie Lettre", "ABC"), ("Jean Dupont", "E123"));
-
-        var freeze = run.FreezeEmployeeAuxiliaryAccounts();
-
-        // R-15 : la validation ne doit pas produire un compte invalide ; échec nominatif.
-        Assert.True(freeze.IsFailure);
-    }
-
-    [Fact]
-    public void FreezeEmployeeAuxiliaryAccounts_SetsNumericAccountOnEveryPayslip()
+    public void FreezeEmployeeAuxiliaryAccounts_FailsWhenAnEmployeeHasNoAllocatedAccount()
     {
         var run = NewRunWithPayslips(("Jean Dupont", "E123"), ("Karim Saïd", "45"));
+        var jean = run.Payslips.Single(p => p.EmployeeNumber == "E123");
 
-        var freeze = run.FreezeEmployeeAuxiliaryAccounts();
+        var freeze = run.FreezeEmployeeAuxiliaryAccounts(
+            new Dictionary<Guid, string?> { [jean.EmployeeId] = "4250001" });
+
+        Assert.True(freeze.IsFailure);
+        Assert.Contains("Karim Saïd", freeze.Error.Description);
+    }
+
+    [Fact]
+    public void FreezeEmployeeAuxiliaryAccounts_UsesTheAllocatedAccountOnEveryPayslip()
+    {
+        var run = NewRunWithPayslips(("Jean Dupont", "E123"), ("Karim Saïd", "45"));
+        var map = run.Payslips.ToDictionary(
+            p => p.EmployeeId,
+            p => (string?)(p.EmployeeNumber == "E123" ? "4250001" : "4250002"));
+
+        var freeze = run.FreezeEmployeeAuxiliaryAccounts(map);
 
         Assert.True(freeze.IsSuccess);
         Assert.Equal(2, freeze.Value.Count);
-        Assert.All(run.Payslips, p => Assert.False(string.IsNullOrWhiteSpace(p.EmployeeAuxiliaryAccount)));
-        Assert.Equal("4250000123", run.Payslips.Single(p => p.EmployeeNumber == "E123").EmployeeAuxiliaryAccount);
-        Assert.Equal("4250000045", run.Payslips.Single(p => p.EmployeeNumber == "45").EmployeeAuxiliaryAccount);
+        Assert.Equal("4250001", run.Payslips.Single(p => p.EmployeeNumber == "E123").EmployeeAuxiliaryAccount);
+        Assert.Equal("4250002", run.Payslips.Single(p => p.EmployeeNumber == "45").EmployeeAuxiliaryAccount);
+        Assert.All(run.Payslips, p =>
+            Assert.True(AccountNumberRules.IsWellFormed(p.EmployeeAuxiliaryAccount)));
+    }
+
+    /// <summary>
+    /// Deux fiches reprises depuis des bulletins figés par l'ancienne dérivation peuvent porter le
+    /// même compte : leurs dettes de salaire se confondraient, le gel doit refuser.
+    /// </summary>
+    [Fact]
+    public void FreezeEmployeeAuxiliaryAccounts_FailsWhenTwoEmployeesShareAnAccount()
+    {
+        var run = NewRunWithPayslips(("Jean Dupont", "E123"), ("Karim Saïd", "45"));
+        var map = run.Payslips.ToDictionary(p => p.EmployeeId, p => (string?)"4250001");
+
+        var freeze = run.FreezeEmployeeAuxiliaryAccounts(map);
+
+        Assert.True(freeze.IsFailure);
+        Assert.Contains("4250001", freeze.Error.Description);
     }
 
     private static PayrollRun NewRunWithPayslips(params (string Name, string Number)[] employees)

@@ -4,7 +4,7 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { RouterModule } from '@angular/router';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { HttpErrorResponse } from '@angular/common/http';
-import { timeout, TimeoutError, catchError, throwError } from 'rxjs';
+import { timeout, TimeoutError, catchError, throwError, debounceTime } from 'rxjs';
 import { AuthService, RegisterRequest } from '@core/services/auth.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
@@ -25,7 +25,14 @@ import {
   scrollToFirstInvalidField,
   validateCompanyRegisterFormData
 } from '../shared/auth-registration.helpers';
-import { RegistrationCatalogService } from './registration-catalog';
+import {
+  RegistrationCatalogService,
+  applyProfileOverlay,
+  EMPTY_PROFILE_ANSWERS,
+  HeadcountBand,
+  RegistrationProfileAnswers
+} from './registration-catalog';
+import { RegistrationDraftService } from './registration-draft.service';
 import { TaxRegime } from './tax-regime.types';
 import { StepCompanyTypeComponent } from './steps/step-company-type/step-company-type.component';
 import { StepInformationsComponent } from './steps/step-informations/step-informations.component';
@@ -85,6 +92,7 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   private authService = inject(AuthService);
   private warehouseContext = inject(WarehouseContextService);
   private errorHandler = inject(ErrorHandlerService);
+  private draftService = inject(RegistrationDraftService);
 
   loading = signal(false);
   loadingMessage = signal('Création de votre espace...');
@@ -104,6 +112,8 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   /** Guards the `taxRegime` valueChanges subscription while `applySuggestedTaxRegime()` itself sets the value. */
   private applyingSuggestedTaxRegime = false;
   /** True right after a segment change auto-cleared an invalid `businessDomain` (plan WP-F2). */
+  /** Brouillon détecté au chargement (lot 4) — la reprise est PROPOSÉE, jamais imposée. */
+  pendingDraftStep = signal<number | null>(null);
   domainClearedNotice = signal(false);
   /** Module ids auto-enabled as hard dependencies by the last toggle (plan WP-F3). Cleared on the next toggle/reset. */
   lastAutoEnabled = signal<AppModule[]>([]);
@@ -202,8 +212,6 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       Validators.pattern(AUTH_PASSWORD_VALIDATORS_PATTERN)
     ]],
     confirmPassword: ['', Validators.required],
-    // Optional; not sent to API (existing TODO preserved, see register.component.ts)
-    partnerCode: [''],
     // Step 2 §Votre société
     companyName: ['', [Validators.required, Validators.minLength(2)]],
     nif: ['', Validators.required],
@@ -213,7 +221,12 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
     website: [''],
     warehouseName: [''],
     // Step 3: Configuration
-    enabledModules: [[...this.catalog.recommendedModules(null, null)]],
+    enabledModules: [this.recommendedSelection(null, null)],
+    // Étape 3 §Profilage (lot 3) — toutes facultatives, `null` = sans réponse.
+    hasPhysicalStock: [null as boolean | null],
+    sellsToConsumers: [null as boolean | null],
+    headcountBand: [null as HeadcountBand | null],
+    accountingDelegatedToFirm: [null as boolean | null],
     // Step 4: Finalisation
     street: ['', Validators.required],
     streetLine2: [''],
@@ -284,6 +297,21 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       }
     });
 
+    // Brouillon (lot 4) : on se contente de SIGNALER sa présence. Rien n'est réinjecté tant que
+    // l'utilisateur n'a pas cliqué « Reprendre » — un formulaire qui se remplit tout seul au
+    // chargement est déroutant, et les CGU ne sont de toute façon jamais restaurées.
+    const draft = this.draftService.load();
+    if (draft) {
+      this.pendingDraftStep.set(draft.step);
+    }
+
+    this.form.valueChanges.pipe(debounceTime(600)).subscribe(() => {
+      if (this.loading()) {
+        return;
+      }
+      this.draftService.save(this.form.getRawValue(), this.currentStep());
+    });
+
     // Fetch the live sector catalog once; no-op if the frontend kill-switch is off or
     // a fetch already ran this session (see RegistrationCatalogService.load()).
     this.catalog.load();
@@ -297,10 +325,54 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Sélection soumise au backend : modules cœur + recommandations du profil.
+   *
+   * `catalog.recommendedModules()` exclut délibérément les modules cœur en mode distant (c'est le
+   * contrat d'AFFICHAGE : ils sont rendus à part, en cartes « Inclus », non basculables) alors que
+   * le repli statique `recommendedModulesFor()` les inclut. Composer explicitement le cœur ici rend
+   * `enabledModules` identique dans les deux modes, de sorte que basculer le drapeau
+   * `sectorCatalogHttp` ne change plus la charge envoyée — un kill-switch doit être neutre.
+   */
+  private recommendedSelection(segment: string | null, domain: string | null): AppModule[] {
+    const selection = new Set<AppModule>(this.catalog.coreModuleIds);
+    for (const id of this.catalog.recommendedModules(segment, domain)) {
+      selection.add(id);
+    }
+
+    // Surcouche de profilage (lot 3). Sans aucune réponse elle est l'identité, donc la sélection
+    // reste exactement celle du catalogue sectoriel.
+    return applyProfileOverlay(Array.from(selection), this.profileAnswers(), {
+      coreModuleIds: this.catalog.coreModuleIds,
+      isLocked: id => this.catalog.isLockedOnFreePlan(id)
+    });
+  }
+
+  /** Réponses de profilage courantes, lues depuis le formulaire (jamais undefined). */
+  profileAnswers(): RegistrationProfileAnswers {
+    if (!this.form) {
+      return EMPTY_PROFILE_ANSWERS;
+    }
+    return {
+      hasPhysicalStock: this.form.get('hasPhysicalStock')?.value ?? null,
+      sellsToConsumers: this.form.get('sellsToConsumers')?.value ?? null,
+      headcountBand: this.form.get('headcountBand')?.value ?? null,
+      accountingDelegatedToFirm: this.form.get('accountingDelegatedToFirm')?.value ?? null
+    };
+  }
+
+  /**
+   * Une réponse de profilage a changé : on recalcule la pré-sélection, sauf si l'utilisateur a
+   * déjà pris la main sur les bascules (même règle que pour un changement de segment/domaine).
+   */
+  onProfileAnswerChanged(): void {
+    this.onProfileChanged();
+  }
+
   /** Recomputes recommended modules on segment/domain change, unless the user already customized their selection. */
   private onProfileChanged(): void {
     if (!this.modulesTouched()) {
-      const recommended = this.catalog.recommendedModules(this.selectedSegment(), this.selectedDomain());
+      const recommended = this.recommendedSelection(this.selectedSegment(), this.selectedDomain());
       this.form.get('enabledModules')?.setValue(recommended);
     }
     this.applySuggestedTaxRegime();
@@ -356,7 +428,7 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   resetModulesToRecommendations(): void {
     this.modulesTouched.set(false);
     this.setAutoEnabledHint([]);
-    const recommended = this.catalog.recommendedModules(this.selectedSegment(), this.selectedDomain());
+    const recommended = this.recommendedSelection(this.selectedSegment(), this.selectedDomain());
     this.form.get('enabledModules')?.setValue(recommended);
   }
 
@@ -407,6 +479,32 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       this.currentStep.update(s => s - 1);
       scrollAuthWizardStepIntoView();
     }
+  }
+
+  /** Réinjecte le brouillon dans le formulaire et reprend à l'étape enregistrée. */
+  restoreDraft(): void {
+    const draft = this.draftService.load();
+    this.pendingDraftStep.set(null);
+    if (!draft) {
+      return;
+    }
+
+    this.form.patchValue(draft.values);
+    // Les modules restaurés sont un choix de l'utilisateur : on ne les réécrase plus.
+    if (draft.values['enabledModules']) {
+      this.modulesTouched.set(true);
+    }
+    if (draft.values['taxRegime'] !== undefined) {
+      this.taxRegimeTouched.set(true);
+    }
+    this.currentStep.set(draft.step);
+    scrollAuthWizardStepIntoView();
+  }
+
+  /** Refuse la reprise et supprime le brouillon. */
+  discardDraft(): void {
+    this.pendingDraftStep.set(null);
+    this.draftService.clear();
   }
 
   onNifBlur(): void {
@@ -463,7 +561,13 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       ...buildCompanyRegisterRequest(formValue, cleanedNif),
       companySegment: formValue.companySegment || undefined,
       businessDomain: formValue.businessDomain || undefined,
-      enabledModules: Array.isArray(formValue.enabledModules) ? formValue.enabledModules : undefined
+      enabledModules: Array.isArray(formValue.enabledModules) ? formValue.enabledModules : undefined,
+      profileAnswers: {
+        hasPhysicalStock: formValue.hasPhysicalStock ?? null,
+        sellsToConsumers: formValue.sellsToConsumers ?? null,
+        headcountBand: formValue.headcountBand ?? null,
+        accountingDelegatedToFirm: formValue.accountingDelegatedToFirm ?? null
+      }
     };
 
     this.authService.register(request).pipe(
@@ -481,6 +585,8 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       next: (response) => {
         if (response.success) {
           console.log('[RegisterWizardComponent] Registration successful');
+          // L'espace existe : le brouillon n'a plus lieu d'être (et contient des coordonnées).
+          this.draftService.clear();
           const warnings = response.data?.warnings?.filter(w => !!w?.trim()) ?? [];
           if (warnings.length > 0) {
             // Avertissement non bloquant (ex. module refusé par le plan) : on

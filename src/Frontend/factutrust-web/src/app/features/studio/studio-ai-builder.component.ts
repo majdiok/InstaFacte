@@ -8,15 +8,32 @@ import { AiStreamService } from '@features/ai-assistant/services/ai-stream.servi
 import { AssistantMode, ChatRequest, ChatStreamEvent } from '@features/ai-assistant/models/ai-chat.models';
 import { StudioNavService } from './studio-nav.service';
 import {
-  StudioAiBuildService, StudioPlanEntity, StudioPlanEvent, StudioPlanSummary, StudioReportResultEvent
+  StudioAiBuildService, StudioPlanEntity, StudioPlanEvent, StudioPlanSummary,
+  StudioReportFailureEvent, StudioReportResultEvent, StudioReportSuggestion
 } from './studio-ai-build.service';
 import { DynamicReportComponent } from '@shared/studio-runtime/dynamic-report.component';
 import { StudioPageShellComponent } from './shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
 
 interface NavAction { label: string; route: string; }
-interface ChatLine { role: 'user' | 'assistant'; text: string; }
 interface BuildStep { phase: string; label: string; status: string; entityRef?: string; }
+
+/**
+ * Élément du fil de conversation. Les tableaux et les cartes d'échec en font PARTIE : tant qu'ils
+ * vivaient dans un emplacement unique en bas de page, la question suivante les effaçait — l'état
+ * calculé disparaissait sous les yeux de l'utilisateur, qui en concluait qu'aucun rapport ne sortait
+ * jamais. Chaque résultat reste désormais attaché à la question qui l'a produit.
+ *
+ * Champs optionnels plutôt qu'union discriminée : le gabarit affine par `@if (item.report; as r)`,
+ * ce qui reste lisible et sûr pour la vérification de types des templates.
+ */
+interface TimelineItem {
+  kind: 'text' | 'report' | 'failure';
+  role?: 'user' | 'assistant';
+  text?: string;
+  report?: StudioReportResultEvent;
+  failure?: StudioReportFailureEvent;
+}
 
 /**
  * Étapes du flux : `idle` → `planning` (l'IA rédige) → `awaiting_confirmation` (aperçu affiché,
@@ -45,8 +62,67 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
               }
             </div>
           }
-          @for (line of lines(); track $index) {
-            <div class="sab-line" [class.sab-line--user]="line.role === 'user'">{{ line.text }}</div>
+          @for (item of lines(); track $index) {
+            @if (item.kind === 'text') {
+              <div class="sab-line" [class.sab-line--user]="item.role === 'user'">{{ item.text }}</div>
+            }
+            @if (item.report; as report) {
+              <div class="sab-report">
+                <div class="sab-report__head">
+                  <div>
+                    <h4>{{ report.title }}</h4>
+                    <p class="sab-report__hint">Source : {{ report.sourceLabel }} — calculé à l'instant, rien n'est enregistré.</p>
+                  </div>
+                  <button pButton type="button" class="p-button-sm p-button-outlined" icon="fa-solid fa-floppy-disk"
+                    label="Enregistrer comme état" [disabled]="busy()" (click)="saveReportAsState(report)"></button>
+                </div>
+                @for (w of report.warnings; track w) {
+                  <p class="sab-plan__warning"><i class="fa-solid fa-triangle-exclamation"></i> {{ w }}</p>
+                }
+                <app-dynamic-report [result]="report.result" [exportName]="report.title"></app-dynamic-report>
+              </div>
+            }
+            @if (item.failure; as failure) {
+              <div class="sab-failure">
+                <div class="sab-failure__head">
+                  <i class="fa-solid fa-circle-exclamation"></i>
+                  <div>
+                    <h4>L'état n'a pas pu être calculé</h4>
+                    <p class="sab-failure__reason">{{ failure.message }}</p>
+                  </div>
+                </div>
+                @if (failure.title || failure.periodLabel) {
+                  <p class="sab-failure__attempt">
+                    Tenté :
+                    @if (failure.title) { <strong>{{ failure.title }}</strong> }
+                    @if (failure.periodLabel) { <span> — période : {{ failure.periodLabel }}</span> }
+                  </p>
+                }
+                @if (failure.suggestions.length) {
+                  <p class="sab-failure__hint">Ces états fonctionnent sur vos données :</p>
+                  <div class="sab-examples">
+                    @for (s of failure.suggestions; track s.preset) {
+                      <button type="button" class="sab-chip" [disabled]="busy()"
+                        (click)="useSuggestion(s)">{{ s.label }}</button>
+                    }
+                  </div>
+                }
+                <div class="sab-failure__actions">
+                  <button pButton type="button" class="p-button-sm p-button-outlined"
+                    icon="fa-solid fa-rotate-right" label="Réessayer"
+                    [disabled]="busy() || !lastUserMessage" (click)="retry()"></button>
+                </div>
+              </div>
+            }
+          }
+
+          @if (suggestions().length) {
+            <div class="sab-examples">
+              @for (s of suggestions(); track s) {
+                <button type="button" class="sab-chip" [disabled]="busy()"
+                  (click)="usePromptSuggestion(s)">{{ s }}</button>
+              }
+            </div>
           }
 
           @if (plan(); as p) {
@@ -94,23 +170,6 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
             </div>
           }
 
-          @if (reportResult(); as report) {
-            <div class="sab-report">
-              <div class="sab-report__head">
-                <div>
-                  <h4>{{ report.title }}</h4>
-                  <p class="sab-report__hint">Source : {{ report.sourceLabel }} — calculé à l'instant, rien n'est enregistré.</p>
-                </div>
-                <button pButton type="button" class="p-button-sm p-button-outlined" icon="fa-solid fa-floppy-disk"
-                  label="Enregistrer comme état" [disabled]="busy()" (click)="saveReportAsState()"></button>
-              </div>
-              @for (w of report.warnings; track w) {
-                <p class="sab-plan__warning"><i class="fa-solid fa-triangle-exclamation"></i> {{ w }}</p>
-              }
-              <app-dynamic-report [result]="report.result" [exportName]="report.title"></app-dynamic-report>
-            </div>
-          }
-
           @if (buildSteps().length) {
             <div class="sab-progress">
               <h4>Construction</h4>
@@ -131,7 +190,7 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
         <div class="sab-compose">
           <textarea pTextarea [(ngModel)]="prompt" rows="2" class="sab-input" [disabled]="busy()"
             placeholder="Ex. : Créer un système de gestion de congés avec plusieurs tables..."
-            (keydown.enter)="$event.preventDefault(); send()"></textarea>
+            (keydown.enter)="onComposerEnter($event)"></textarea>
           <div class="sab-compose__actions">
             <button pButton type="button" icon="fa-solid fa-paper-plane" label="Envoyer"
               [disabled]="busy() || !prompt.trim()" (click)="send()"></button>
@@ -191,6 +250,15 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
     .sab-status { color: var(--text-color-secondary); }
     .sab-nav { display: flex; flex-wrap: wrap; gap: .5rem; }
     .sab-error { color: var(--red-500); }
+    .sab-failure { border: 1px solid var(--red-200, #fecaca); background: var(--red-50, #fef2f2);
+      border-radius: 10px; padding: 1rem; }
+    .sab-failure__head { display: flex; gap: .75rem; align-items: flex-start; }
+    .sab-failure__head h4 { margin: 0; font-size: 1rem; }
+    .sab-failure__head i { color: var(--red-500); margin-top: .2rem; }
+    .sab-failure__reason { margin: .15rem 0 0; font-size: .9rem; line-height: 1.45; }
+    .sab-failure__attempt { margin: .75rem 0 0; font-size: .85rem; color: var(--text-color-secondary); }
+    .sab-failure__hint { margin: .9rem 0 .4rem; font-size: .85rem; color: var(--text-color-secondary); }
+    .sab-failure__actions { display: flex; gap: .5rem; margin-top: 1rem; }
   `]
 })
 export class StudioAiBuilderComponent {
@@ -207,10 +275,15 @@ export class StudioAiBuilderComponent {
   ];
 
   prompt = '';
+  /** Dernier message envoyé : sert au bouton « Réessayer » après un échec d'état. */
+  lastUserMessage = '';
   private conversationId?: string;
   private assistantBuffer = '';
 
-  readonly lines = signal<ChatLine[]>([]);
+  /** Fil complet : texte, tableaux et cartes d'échec, dans l'ordre où ils sont arrivés. */
+  readonly lines = signal<TimelineItem[]>([]);
+  /** Formulations proposées quand la demande est comprise mais la ventilation absente. */
+  readonly suggestions = signal<string[]>([]);
   readonly buildSteps = signal<BuildStep[]>([]);
   readonly state = signal<BuilderState>('idle');
   readonly status = signal('Analyse…');
@@ -219,6 +292,8 @@ export class StudioAiBuilderComponent {
   readonly plan = signal<StudioPlanEvent | null>(null);
   /** Résultat d'un état calculé en lecture seule : affiché tel quel, rien n'est persisté. */
   readonly reportResult = signal<StudioReportResultEvent | null>(null);
+  /** Échec d'un état : la carte porte la raison et des reformulations, jamais un message brut. */
+  readonly reportFailure = signal<StudioReportFailureEvent | null>(null);
 
   /** Le compositeur est verrouillé tant qu'un plan attend une décision ou qu'un travail est en cours. */
   busy(): boolean { return this.state() !== 'idle'; }
@@ -229,7 +304,8 @@ export class StudioAiBuilderComponent {
     const message = this.prompt.trim();
     if (!message || this.busy()) return;
 
-    this.lines.update(l => [...l, { role: 'user', text: message }]);
+    this.lines.update(l => [...l, { kind: 'text', role: 'user', text: message }]);
+    this.lastUserMessage = message;
     this.prompt = '';
     this.state.set('planning');
     this.status.set('Analyse de votre demande…');
@@ -238,6 +314,8 @@ export class StudioAiBuilderComponent {
     this.buildSteps.set([]);
     this.plan.set(null);
     this.reportResult.set(null);
+    this.reportFailure.set(null);
+    this.suggestions.set([]);
     this.assistantBuffer = '';
 
     const request: ChatRequest = {
@@ -280,7 +358,7 @@ export class StudioAiBuilderComponent {
       next: () => {
         this.plan.set(null);
         this.state.set('idle');
-        this.lines.update(l => [...l, { role: 'assistant', text: 'Plan annulé. Rien n\'a été créé.' }]);
+        this.lines.update(l => [...l, { kind: 'text', role: 'assistant', text: 'Plan annulé. Rien n\'a été créé.' }]);
       },
       error: () => {
         // L'annulation serveur a échoué (plan déjà traité) : on referme quand même l'aperçu local.
@@ -301,13 +379,21 @@ export class StudioAiBuilderComponent {
         if (ev.content) this.assistantBuffer += ev.content;
         break;
       case 'content_replace':
-        if (ev.content != null) this.assistantBuffer = this.strip(ev.content);
+        // Un échec d'état est déjà porté par sa carte : le répéter en bulle d'assistant ferait
+        // passer un message d'erreur pour une réponse.
+        if (ev.content != null && !this.reportFailure()) this.assistantBuffer = this.strip(ev.content);
         break;
       case 'studio_plan':
         this.applyPlan(ev.content);
         break;
       case 'studio_report_result':
         this.applyReportResult(ev.content);
+        break;
+      case 'studio_report_error':
+        this.applyReportFailure(ev.content);
+        break;
+      case 'suggested_prompts':
+        this.applySuggestions(ev.suggestedPrompts);
         break;
       case 'studio_progress':
         this.applyProgress(ev.content);
@@ -334,7 +420,7 @@ export class StudioAiBuilderComponent {
         break;
       case 'studio_result':
         this.plan.set(null);
-        this.lines.update(l => [...l, { role: 'assistant', text: 'Création terminée.' }]);
+        this.lines.update(l => [...l, { kind: 'text', role: 'assistant', text: 'Création terminée.' }]);
         break;
       case 'error':
         this.failExecution(ev.error ?? "Échec de l'exécution du plan.");
@@ -377,9 +463,64 @@ export class StudioAiBuilderComponent {
       if (!payload?.result?.columns) return;
       payload.warnings ??= [];
       this.reportResult.set(payload);
+      this.lines.update(l => [...l, { kind: 'report', report: payload }]);
     } catch {
       // Payload illisible : on laisse le flux se terminer, le texte de l'assistant reste affiché.
     }
+  }
+
+  private applyReportFailure(json: string | undefined): void {
+    if (!json) return;
+    try {
+      const payload = JSON.parse(json) as StudioReportFailureEvent;
+      if (!payload?.message) return;
+      payload.suggestions ??= [];
+      this.reportFailure.set(payload);
+      this.lines.update(l => [...l, { kind: 'failure', failure: payload }]);
+      // La carte remplace la bulle : ce qui avait déjà été accumulé n'a plus lieu d'être affiché.
+      this.assistantBuffer = '';
+    } catch {
+      // Payload illisible : le flux se termine normalement, le texte de l'assistant reste affiché.
+    }
+  }
+
+  /** Rejoue la dernière demande à l'identique après un échec. */
+  retry(): void {
+    if (this.busy() || !this.lastUserMessage) return;
+    this.prompt = this.lastUserMessage;
+    this.send();
+  }
+
+  /** Adopte une reformulation proposée par la carte d'échec. */
+  useSuggestion(suggestion: StudioReportSuggestion): void {
+    if (this.busy()) return;
+    this.prompt = suggestion.prompt;
+    this.send();
+  }
+
+  private applySuggestions(json: string | undefined): void {
+    if (!json) return;
+    try {
+      const parsed = JSON.parse(json);
+      if (Array.isArray(parsed))
+        this.suggestions.set(parsed.filter((s): s is string => typeof s === 'string'));
+    } catch {
+      // Payload illisible : pas de puces, le texte de l'assistant suffit.
+    }
+  }
+
+  /** Adopte une formulation proposée après une demande de précision. */
+  usePromptSuggestion(text: string): void {
+    if (this.busy()) return;
+    this.prompt = text;
+    this.send();
+  }
+
+  /** Entrée envoie ; Maj+Entrée insère un retour à la ligne. */
+  onComposerEnter(event: Event): void {
+    if ((event as KeyboardEvent).shiftKey) return;
+    event.preventDefault();
+    this.send();
   }
 
   /**
@@ -387,8 +528,8 @@ export class StudioAiBuilderComponent {
    * l'assistant en lui demandant de la conserver, ce qui passe par `studio_plan_report` et donc par
    * l'aperçu et la validation — aucun raccourci d'écriture depuis le client.
    */
-  saveReportAsState(): void {
-    const report = this.reportResult();
+  saveReportAsState(target?: StudioReportResultEvent): void {
+    const report = target ?? this.reportResult();
     if (!report || this.busy()) return;
     this.prompt = `Enregistre cet état : ${report.title}`;
     this.send();
@@ -413,7 +554,7 @@ export class StudioAiBuilderComponent {
 
   private flushAssistantText(): void {
     const finalText = this.strip(this.assistantBuffer);
-    if (finalText) this.lines.update(l => [...l, { role: 'assistant', text: finalText }]);
+    if (finalText) this.lines.update(l => [...l, { kind: 'text', role: 'assistant', text: finalText }]);
     this.assistantBuffer = '';
   }
 

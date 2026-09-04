@@ -126,6 +126,14 @@ public sealed record ChatStreamEvent
     public static ChatStreamEvent StudioReportResultEvent(string reportJson) =>
         new() { Type = "studio_report_result", Content = reportJson };
 
+    /// <summary>
+    /// Échec d'un état (type <c>studio_report_error</c>) : ce qui a été tenté, pourquoi cela n'a pas
+    /// abouti, et des reformulations qui fonctionnent. Sans cet événement, l'échec n'était qu'une
+    /// phrase poussée dans la bulle de l'assistant, sans issue pour l'utilisateur.
+    /// </summary>
+    public static ChatStreamEvent StudioReportErrorEvent(string failureJson) =>
+        new() { Type = "studio_report_error", Content = failureJson };
+
     public static ChatStreamEvent PhaseEvent(
         string phase,
         string phaseStatus,

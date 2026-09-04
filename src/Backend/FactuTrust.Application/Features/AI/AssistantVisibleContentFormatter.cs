@@ -455,8 +455,103 @@ public static class AssistantVisibleContentFormatter
         return string.Join("\n", lines) + suffix;
     }
 
+    /// <summary>
+    /// Enveloppe d'un ÉTAT Studio : <c>{ title, sourceLabel, period, result: { columns, rows,
+    /// totalRows, truncated } }</c>. Sans cette branche, un état parfaitement calculé — tableau déjà
+    /// affiché à l'utilisateur — retombait sur « Je n'ai pas pu formuler une réponse complète à
+    /// partir des données récupérées », parce que <c>rows</c> est imbriqué sous <c>result</c> et
+    /// qu'aucune clé racine ne correspondait aux formes reconnues.
+    ///
+    /// Aucun chiffre n'est inventé : on ne fait qu'additionner des agrégats déjà produits par SQL,
+    /// et uniquement lorsque le résultat est COMPLET — un total partiel présenté comme complet
+    /// serait pire qu'une absence de total.
+    /// </summary>
+    private static string? HumanizeStudioReport(JsonElement obj, JsonElement result)
+    {
+        if (!result.TryGetProperty("columns", out var columns) || columns.ValueKind != JsonValueKind.Array)
+            return null;
+
+        var title = FirstString(obj, "title") ?? "État";
+        var source = FirstString(obj, "sourceLabel", "source");
+        var periodSuffix = TryFormatEnvelopePeriod(obj);
+        var header = $"**{title}**" + (source is null ? string.Empty : $" — {source}");
+        if (periodSuffix is not null)
+            header += $", {periodSuffix}";
+
+        var totalRows = (int)(FirstDecimal(result, "totalRows") ?? 0);
+        var hasRows = result.TryGetProperty("rows", out var rows)
+            && rows.ValueKind == JsonValueKind.Array
+            && rows.GetArrayLength() > 0;
+
+        if (totalRows == 0 || !hasRows)
+            return header + " : aucune donnée sur la période retenue. "
+                 + "Élargissez la période, ou choisissez une autre source.";
+
+        var truncated = result.TryGetProperty("truncated", out var t) && t.ValueKind == JsonValueKind.True;
+        var measures = columns.EnumerateArray()
+            .Where(c => string.Equals(FirstString(c, "kind"), "measure", StringComparison.OrdinalIgnoreCase))
+            .Select(c => (Key: FirstString(c, "key"), Label: FirstString(c, "label")))
+            .Where(m => m.Key is not null)
+            .ToList();
+        var dimensions = columns.EnumerateArray()
+            .Where(c => !string.Equals(FirstString(c, "kind"), "measure", StringComparison.OrdinalIgnoreCase))
+            .Select(c => FirstString(c, "key"))
+            .Where(k => k is not null)
+            .ToList();
+
+        var parts = new List<string> { $"{header} : **{totalRows}** ligne(s)." };
+
+        // Totaux — seulement sur un résultat complet. Les mesures n'ont pas d'unité connue ici
+        // (ReportColumn ne porte que clé/libellé/nature) : on formate le nombre sans y apposer
+        // « TND », qui serait faux sur une quantité.
+        if (!truncated)
+        {
+            foreach (var measure in measures)
+            {
+                decimal sum = 0;
+                var seen = false;
+                foreach (var row in rows.EnumerateArray())
+                {
+                    var value = FirstDecimal(row, measure.Key!);
+                    if (value is null)
+                        continue;
+                    sum += value.Value;
+                    seen = true;
+                }
+                if (seen)
+                    parts.Add($"{measure.Label ?? measure.Key} : **{FormatQuantity(sum)}**.");
+            }
+        }
+        else
+        {
+            parts.Add("Résultat tronqué : le total n'est pas calculé sur un extrait.");
+        }
+
+        // Ligne de tête : le résultat arrive déjà trié par l'état (mesure décroissante, ou
+        // chronologie pour une série temporelle).
+        var first = rows.EnumerateArray().First();
+        var label = string.Join(" · ", dimensions
+            .Select(k => FirstString(first, k!))
+            .Where(v => !string.IsNullOrWhiteSpace(v)));
+        var lead = measures.Count > 0 ? FirstDecimal(first, measures[0].Key!) : null;
+        if (!string.IsNullOrWhiteSpace(label))
+            parts.Add(lead is null
+                ? $"Première ligne : {label}."
+                : $"Première ligne : {label} ({FormatQuantity(lead.Value)}).");
+
+        return string.Join(" ", parts);
+    }
+
     private static string? HumanizeJsonObject(JsonElement obj)
     {
+        // Un état Studio d'abord : sa forme est connue et ses chiffres sont exacts.
+        if (obj.TryGetProperty("result", out var studioResult) && studioResult.ValueKind == JsonValueKind.Object)
+        {
+            var studio = HumanizeStudioReport(obj, studioResult);
+            if (studio is not null)
+                return studio;
+        }
+
         // Enveloppe CA agrégé : { totalRevenue, rowCount, currency, groupBy, period, rows: [...] }.
         // On affiche le total DÉTERMINISTE de l'outil (jamais recalculé) puis la ventilation.
         if (obj.TryGetProperty("rows", out var rowsEl) && rowsEl.ValueKind == JsonValueKind.Array)

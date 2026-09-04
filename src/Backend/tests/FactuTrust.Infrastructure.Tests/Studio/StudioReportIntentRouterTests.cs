@@ -1,6 +1,7 @@
 using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common.SqlReport;
+using FactuTrust.Domain.Enums;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.Studio;
@@ -217,6 +218,95 @@ public sealed class StudioReportIntentRouterTests
         var (factTable, definition) = StudioAiReportSpec.Materialize(parsed);
         Assert.Equal(preset.FactTable, factTable);
         Assert.Contains(definition.Filters, f => f.Op == "between");
+    }
+
+    // ---- Demandes annuelles et pondération ----
+
+    [Theory]
+    [InlineData("créer moi un rapport détaillé de chiffre d'affaires par année", "ventes_par_annee")]
+    [InlineData("rapport détaillé de chiffre d'affaires par annnée", "ventes_par_annee")]
+    [InlineData("rapport du chiffre d'affaires annuel", "ventes_par_annee")]
+    [InlineData("rapport des achats par an", "achats_par_annee")]
+    [InlineData("rapport des encaissements par année", "encaissements_par_annee")]
+    public void An_annual_request_routes_to_the_annual_preset(string message, string expected)
+    {
+        var detection = StudioReportIntentRouter.TryInfer(message);
+        Assert.NotNull(detection);
+        Assert.Equal(expected, detection!.PresetKey);
+    }
+
+    [Theory]
+    [InlineData("rapport de chiffre d'affaires par mois", "ventes_par_mois")]
+    [InlineData("rapport des ventes par produit", "ventes_par_produit")]
+    [InlineData("rapport des achats par fournisseur", "achats_par_fournisseur")]
+    public void Existing_routings_are_unchanged_by_the_new_weighting(string message, string expected)
+    {
+        var detection = StudioReportIntentRouter.TryInfer(message);
+        Assert.NotNull(detection);
+        Assert.Equal(expected, detection!.PresetKey);
+    }
+
+    [Fact]
+    public void A_period_expressed_as_a_year_is_not_mistaken_for_an_annual_breakdown()
+    {
+        // « de l'année en cours » demande une PÉRIODE, pas une ventilation par année : router vers
+        // un regroupement annuel rendrait un état d'UNE seule ligne.
+        var detection = StudioReportIntentRouter.TryInfer(
+            "créer moi un rapport détaillé de chiffre d'affaires de l'année en cours");
+
+        Assert.Null(detection);
+    }
+
+    [Fact]
+    public void A_plural_keyword_no_longer_counts_twice()
+    {
+        // « ventes » déclenchait « vente » ET « ventes » : le domaine valait le double de
+        // « chiffre d'affaires ». Les deux formulations doivent désormais router à l'identique.
+        var plural = StudioReportIntentRouter.TryInfer("rapport des ventes par mois");
+        var revenue = StudioReportIntentRouter.TryInfer("rapport de chiffre d'affaires par mois");
+
+        Assert.NotNull(plural);
+        Assert.NotNull(revenue);
+        Assert.Equal(plural!.PresetKey, revenue!.PresetKey);
+    }
+
+    // ---- Domaine reconnu, axe absent ----
+
+    [Fact]
+    public void A_domain_without_an_axis_suggests_that_domain_only()
+    {
+        var message = "créer moi un rapport détaillé de chiffre d'affaires de l'année en cours";
+
+        Assert.Null(StudioReportIntentRouter.TryInfer(message));
+
+        var suggestions = StudioReportIntentRouter.SuggestForDomain(message);
+        Assert.NotEmpty(suggestions);
+        Assert.All(suggestions, key =>
+        {
+            var preset = SqlReportPresetCatalog.Find(key);
+            Assert.NotNull(preset);
+            Assert.Equal(ReportDomain.Ventes, preset!.Domain);
+        });
+    }
+
+    [Fact]
+    public void An_unrelated_question_suggests_nothing_at_all()
+    {
+        // Contrairement à SuggestPresets, aucun repli générique : proposer des états de vente sur
+        // une question hors sujet serait du bruit.
+        Assert.Empty(StudioReportIntentRouter.SuggestForDomain("quelle est la météo à Tunis"));
+        Assert.Empty(StudioReportIntentRouter.SuggestForDomain(null));
+    }
+
+    [Fact]
+    public void Prompt_suggestions_are_sentences_a_user_can_send_back()
+    {
+        var prompts = StudioReportIntentRouter.ToPromptSuggestions(new[] { "ventes_par_produit", "ventes_par_annee" });
+
+        Assert.Equal(2, prompts.Count);
+        Assert.All(prompts, p => Assert.False(string.IsNullOrWhiteSpace(p)));
+        // Un état annuel porte sa propre période : ne pas lui accoler « ce mois ».
+        Assert.DoesNotContain(prompts, p => p.Contains("Ventes par année ce mois", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -22,8 +22,14 @@ public sealed class PayrollEmployeeChartProvisioningTests
         ChartOfAccount.Create("425", "Personnel - rémunérations dues", 4, "42",
             AccountNatureType.Credit, isSystem: true).Value;
 
-    private static ChartOfAccount Legacy(string number) =>
-        ChartOfAccount.Create(number, $"Personnel et comptes rattachés — 421 — {number}", 4, "425",
+    /// <summary>
+    /// Frère dont le suffixe est plus long que la séquence allouée. Les comptes hérités de la
+    /// dérivation du matricule (425 + 7 chiffres) en étaient le cas réel ; ils ne sont plus
+    /// créables — la fabrique du domaine plafonne à 8 chiffres — mais un suffixe à 5 chiffres
+    /// reproduit exactement la situation à tester.
+    /// </summary>
+    private static ChartOfAccount LongSuffixSibling(string number) =>
+        ChartOfAccount.Create(number, $"Compte hérité — {number}", 4, "425",
             AccountNatureType.Credit).Value;
 
     private static PayrollEmployeeChartProvisioningService BuildService(DbContextOptions<TenantDbContext> options) =>
@@ -64,18 +70,20 @@ public sealed class PayrollEmployeeChartProvisioningTests
     }
 
     [Fact]
-    public async Task Allocate_IgnoresLegacySevenDigitSuffixes()
+    public async Task Allocate_IgnoresSiblingsWithALongerSuffix()
     {
-        // Le service bancaire prend « le plus grand suffixe + 1 » : appliqué ici, un compte hérité
-        // 4258744456 ferait démarrer la séquence à 8 744 457. On repart de 1, et la différence de
-        // longueur (7 vs 10 caractères) exclut toute collision avec l'existant.
+        // « Le plus grand suffixe + 1 » ferait démarrer la séquence à 87 445 — hors du plafond de
+        // 8 chiffres dès le premier compte. On repart de 1 en sautant les numéros pris ; un frère
+        // au suffixe plus long vit dans un autre espace et ne peut pas entrer en collision.
         var options = NewOptions();
         await using var ctx = new TenantDbContext(options);
-        ctx.ChartOfAccounts.AddRange(Collective(), Legacy("4258744456"), Legacy("4259655554"));
+        ctx.ChartOfAccounts.AddRange(
+            Collective(), LongSuffixSibling("42587444"), LongSuffixSibling("42596555"));
         await ctx.SaveChangesAsync();
 
         var result = await BuildService(options).AllocateAsync("Nouvelle recrue");
 
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : null);
         Assert.Equal("4250001", result.Value);
     }
 

@@ -2,12 +2,15 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Common.Validation;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Products;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services;
 using FactuTrust.Domain.ValueObjects;
+using Microsoft.Extensions.Options;
 using AuditActions = FactuTrust.Domain.Entities.AuditActions;
 using FluentValidation;
 using MediatR;
@@ -56,6 +59,7 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
+    private readonly StockTraceabilityOptions _traceabilityOptions;
 
     public UpdateProductCommandHandler(
         IProductRepository productRepository,
@@ -64,7 +68,8 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
         IStockItemRepository stockItemRepository,
         IUnitOfWork unitOfWork,
         ICurrentUser currentUser,
-        IAuditService auditService)
+        IAuditService auditService,
+        IOptions<StockTraceabilityOptions> traceabilityOptions)
     {
         _productRepository = productRepository;
         _productCategoryRepository = productCategoryRepository;
@@ -73,6 +78,7 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _auditService = auditService;
+        _traceabilityOptions = traceabilityOptions.Value;
     }
 
     public async Task<Result<ProductDetailDto>> Handle(UpdateProductCommand request, CancellationToken cancellationToken)
@@ -149,11 +155,30 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
                 return Result.Failure<ProductDetailDto>(template.Error);
         }
 
-        if (dto.TrackingMode.HasValue || dto.HasExpiryTracking.HasValue || dto.PickingPolicy.HasValue
-            || dto.CostingMethod.HasValue || dto.ExpiryAlertDays.HasValue)
+        var traceabilityTouched = dto.TrackingMode.HasValue || dto.HasExpiryTracking.HasValue
+            || dto.PickingPolicy.HasValue || dto.CostingMethod.HasValue || dto.ExpiryAlertDays.HasValue;
+        var stockDisabled = dto.IsStockManaged == false;
+
+        if (traceabilityTouched || stockDisabled)
         {
-            var nextMode = dto.TrackingMode ?? product.TrackingMode;
-            if (product.TrackingMode == TrackingMode.None && nextMode != TrackingMode.None)
+            var candidate = new ProductTraceabilityState(
+                dto.TrackingMode ?? product.TrackingMode,
+                dto.HasExpiryTracking ?? product.HasExpiryTracking,
+                dto.PickingPolicy ?? product.PickingPolicy,
+                dto.CostingMethod ?? product.CostingMethod,
+                dto.ExpiryAlertDays ?? product.ExpiryAlertDays);
+
+            var traceState = ProductTraceabilityRules.ValidateAndNormalize(
+                product.Type,
+                product.IsStockManaged,
+                ProductTraceabilityFeatureMapper.ToDomainFlags(_traceabilityOptions),
+                candidate);
+            if (traceState.IsFailure)
+                return Result.Failure<ProductDetailDto>(traceState.Error);
+
+            var normalized = traceState.Value;
+
+            if (product.TrackingMode == TrackingMode.None && normalized.TrackingMode != TrackingMode.None)
             {
                 var stocks = await _stockItemRepository.GetByProductAsync(product.Id, cancellationToken);
                 if (stocks.Any(s => s.QuantityOnHand > 0))
@@ -163,8 +188,8 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
                 }
             }
 
-            var nextCosting = dto.CostingMethod ?? product.CostingMethod;
-            if (product.CostingMethod == CostingMethod.Average && nextCosting is CostingMethod.Fifo or CostingMethod.Lifo)
+            if (product.CostingMethod == CostingMethod.Average
+                && normalized.CostingMethod is CostingMethod.Fifo or CostingMethod.Lifo)
             {
                 var stocks = await _stockItemRepository.GetByProductAsync(product.Id, cancellationToken);
                 if (stocks.Any(s => s.QuantityOnHand > 0))
@@ -175,7 +200,7 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
             }
 
             if (product.CostingMethod is CostingMethod.Fifo or CostingMethod.Lifo
-                && nextCosting == CostingMethod.Average)
+                && normalized.CostingMethod == CostingMethod.Average)
             {
                 var stocks = await _stockItemRepository.GetByProductAsync(product.Id, cancellationToken);
                 if (stocks.Any(s => s.QuantityOnHand > 0))
@@ -186,11 +211,11 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
             }
 
             var trace = product.ConfigureTraceability(
-                nextMode,
-                dto.HasExpiryTracking ?? product.HasExpiryTracking,
-                dto.PickingPolicy ?? product.PickingPolicy,
-                nextCosting,
-                dto.ExpiryAlertDays ?? product.ExpiryAlertDays);
+                normalized.TrackingMode,
+                normalized.HasExpiryTracking,
+                normalized.PickingPolicy,
+                normalized.CostingMethod,
+                normalized.ExpiryAlertDays);
             if (trace.IsFailure)
                 return Result.Failure<ProductDetailDto>(trace.Error);
         }

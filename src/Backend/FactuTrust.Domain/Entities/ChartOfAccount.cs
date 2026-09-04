@@ -1,5 +1,6 @@
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services.Accounting;
 
 namespace FactuTrust.Domain.Entities;
 
@@ -41,6 +42,14 @@ public sealed class ChartOfAccount : Entity
         accountNumber = accountNumber?.Trim() ?? string.Empty;
         if (string.IsNullOrEmpty(accountNumber))
             return Result.Failure<ChartOfAccount>(Error.Validation("AccountNumber", "Le numéro de compte est obligatoire"));
+
+        // Invariant de forme (au plus 8 chiffres) porté ici et pas seulement dans les validators :
+        // les chemins d'auto-création (AccountingService.TryAutoCreateSubAccountAsync,
+        // EnsureEmployeeAuxiliaryAccountsAsync) appellent cette fabrique directement, sans passer
+        // par FluentValidation. C'est ce contournement qui a laissé entrer des comptes à 10 chiffres.
+        var shape = AccountNumberRules.Validate(accountNumber);
+        if (shape.IsFailure)
+            return Result.Failure<ChartOfAccount>(shape.Error);
 
         if (accountClass is < 1 or > 7)
             return Result.Failure<ChartOfAccount>(Error.Validation("AccountClass", "La classe doit être entre 1 et 7"));

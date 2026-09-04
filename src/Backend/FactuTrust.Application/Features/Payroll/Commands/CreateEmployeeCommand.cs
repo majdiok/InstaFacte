@@ -77,13 +77,6 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
         if (await _employees.ExistsByEmployeeNumberAsync(dto.EmployeeNumber, null, cancellationToken))
             return Result.Failure<Guid>(Error.Conflict("Un salarié existe déjà avec ce matricule."));
 
-        // Deux matricules distincts peuvent produire le même compte auxiliaire 425xxxx (seuls les 7
-        // derniers chiffres sont repris) : on le refuse ici, tant que le matricule est libre.
-        var auxiliaryCollision = await PayrollAuxiliaryAccountGuard.EnsureNoCollisionAsync(
-            _employees, dto.EmployeeNumber, excludeEmployeeId: null, cancellationToken);
-        if (auxiliaryCollision.IsFailure)
-            return Result.Failure<Guid>(auxiliaryCollision.Error);
-
         Address? address = null;
         if (!string.IsNullOrWhiteSpace(dto.Street) && !string.IsNullOrWhiteSpace(dto.City) && !string.IsNullOrWhiteSpace(dto.Governorate))
         {
@@ -161,18 +154,28 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
             employee.SyncDependentParentsCount(claimEntities.Count);
         }
 
-        // Compte auxiliaire 425 alloué séquentiellement et rattaché au collectif : le compte devient
-        // une donnée de la fiche au lieu d'être dérivé du matricule par troncature — plus de
+        // Compte auxiliaire 425 alloué séquentiellement et rattaché au collectif : le compte est une
+        // donnée de la fiche, et non plus une dérivation du matricule par troncature — plus de
         // collision possible, et le matricule cesse d'être recopié dans le plan comptable et le FEC.
-        // Si le plan comptable n'est pas encore en place, on n'échoue pas : le salarié se crée et le
-        // repli historique (dérivation) reprendra la main à la validation du cycle.
+        //
+        // L'échec n'est plus avalé. Il l'était tant que la dérivation servait de repli ; celle-ci
+        // ayant été supprimée, un salarié créé sans compte se heurterait au refus de validation de
+        // son premier cycle de paie, loin de la cause. Mieux vaut refuser la création en nommant le
+        // vrai problème : le plan comptable n'est pas initialisé.
         var auxiliary = await _chartProvisioning.AllocateAsync(employee.FullName, cancellationToken);
-        if (auxiliary.IsSuccess)
-        {
-            var assign = employee.SetAuxiliaryAccountNumber(auxiliary.Value);
-            if (assign.IsFailure)
-                return Result.Failure<Guid>(assign.Error);
-        }
+        if (auxiliary.IsFailure)
+            return Result.Failure<Guid>(auxiliary.Error);
+
+        // L'allocateur ne rend qu'un numéro libre dans le plan comptable ; ce contrôle couvre le cas
+        // où une fiche porterait déjà ce compte sans qu'il existe au plan (reprise d'un bulletin figé).
+        var auxiliaryCollision = await PayrollAuxiliaryAccountGuard.EnsureAccountNotTakenAsync(
+            _employees, auxiliary.Value, excludeEmployeeId: null, cancellationToken);
+        if (auxiliaryCollision.IsFailure)
+            return Result.Failure<Guid>(auxiliaryCollision.Error);
+
+        var assign = employee.SetAuxiliaryAccountNumber(auxiliary.Value);
+        if (assign.IsFailure)
+            return Result.Failure<Guid>(assign.Error);
 
         await _employees.AddAsync(employee, cancellationToken);
 

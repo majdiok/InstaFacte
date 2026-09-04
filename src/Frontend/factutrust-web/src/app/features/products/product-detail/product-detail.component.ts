@@ -21,6 +21,12 @@ import {
 } from '@shared/utils/product-pricing.utils';
 import { ProductClientPricesComponent } from '../product-client-prices/product-client-prices.component';
 import { ProductVariantMatrixComponent } from '@shared/components/product-variant-matrix/product-variant-matrix.component';
+import {
+  formatCostingMethodLabel,
+  formatPickingPolicyLabel,
+  formatTrackingModeLabel
+} from '@shared/utils/product-traceability-rules';
+import { TRACKING_MODE_LOT } from '@shared/utils/stock-traceability.utils';
 
 const VAT_OPTIONS: { label: string; value: number }[] = [
   { label: '19% - Taux normal', value: 19 },
@@ -128,13 +134,26 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
               }
             </p>
           </div>
-          @if (p.trackingMode || p.costingMethod) {
+          @if (p.isStockManaged && showTraceabilitySummary(p)) {
             <div class="form-group">
-              <span class="field-label">Traçabilité</span>
+              <span class="field-label">Traçabilité et valorisation</span>
               <p class="field-value">
-                {{ p.trackingMode === 1 ? 'Lot' : p.trackingMode === 2 ? 'Série' : 'Aucun suivi' }}
-                · {{ p.costingMethod === 1 ? 'FIFO' : p.costingMethod === 2 ? 'LIFO' : 'CMUP' }}
+                Suivi : {{ formatTrackingModeLabel(p.trackingMode) }}
+                · Valorisation : {{ formatCostingMethodLabel(p.costingMethod) }}
               </p>
+              @if (p.trackingMode === trackingModeLot) {
+                <p class="field-value field-value-sub">
+                  Prélèvement : {{ formatPickingPolicyLabel(p.pickingPolicy) }}
+                </p>
+              }
+              @if (p.hasExpiryTracking) {
+                <p class="field-value field-value-sub">
+                  DLUO : activé
+                  @if (p.expiryAlertDays != null) {
+                    · Alerte {{ p.expiryAlertDays }} jour(s)
+                  }
+                </p>
+              }
             </div>
           }
 
@@ -175,86 +194,109 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
         </app-form-section>
 
         <app-form-section title="Tarification" icon="pi-dollar" [number]="2">
-          <div class="form-row">
+          <div class="pricing-block">
+            <h4 class="pricing-block-title">Coûts d'achat</h4>
             <div class="form-group">
               <span class="field-label">Prix d'achat HT</span>
               <p class="field-value mono">{{ formatMoney(p.purchasePrice) }}</p>
             </div>
-            <div class="form-group">
-              <span class="field-label">Dernier prix d'achat HT</span>
-              <p class="field-value mono">{{ formatMoney(p.lastPurchasePrice) }}</p>
-            </div>
-          </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <span class="field-label">{{ (p.costingMethod === 1 || p.costingMethod === 2) ? 'Coût unitaire affiché HT' : 'CMUP HT' }}</span>
-              <p class="field-value mono">{{ formatMoney(p.weightedAverageCost) }}</p>
-            </div>
-            <div class="form-group">
-              <span class="field-label">Marge bénéficiaire</span>
-              <p class="field-value mono">
-                @if (p.profitMarginPercent != null) {
-                  {{ p.profitMarginPercent | number:'1.3-3' }} %
-                } @else {
-                  —
-                }
+            <div class="pricing-readonly-group">
+              <p class="pricing-readonly-badge">
+                <i class="pi pi-lock" aria-hidden="true"></i>
+                Calculé automatiquement
               </p>
+              <div class="form-group">
+                <span class="field-label">Dernier prix d'achat HT</span>
+                <p class="field-value mono">{{ formatMoney(p.lastPurchasePrice) }}</p>
+              </div>
+              <div class="form-group">
+                <span class="field-label">{{ (p.costingMethod === 1 || p.costingMethod === 2) ? 'Coût unitaire affiché HT' : 'CMUP HT' }}</span>
+                <p class="field-value mono">{{ formatMoney(p.weightedAverageCost) }}</p>
+              </div>
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <span class="field-label">Prix de vente HT</span>
-              <p class="field-value mono strong">{{ p.unitPrice | number:'1.3-3' }} TND</p>
+          <div class="pricing-block">
+            <h4 class="pricing-block-title">Prix de vente</h4>
+
+            <h5 class="pricing-subblock-title">Paramètres de vente</h5>
+            <div class="form-row form-row-pricing-params">
+              <div class="form-group">
+                <span class="field-label">Unité de mesure</span>
+                <p class="field-value">{{ p.unit }}</p>
+              </div>
+              <div class="form-group">
+                <span class="field-label">Taux de TVA</span>
+                <p class="field-value">{{ vatLabel(p.vatRate) }}</p>
+              </div>
+              <div class="form-group">
+                <span class="field-label">FODEC</span>
+                <p class="field-value">{{ p.isFodecApplicable ? 'Applicable (1%)' : 'Non applicable' }}</p>
+              </div>
             </div>
-            <div class="form-group">
-              <span class="field-label">Prix de vente TTC</span>
-              <p class="field-value mono strong">{{ (p.salePriceTtc ?? calculateTtc(p)) | number:'1.3-3' }} TND</p>
+
+            <h5 class="pricing-subblock-title">Montants</h5>
+            <div class="form-row form-row-pricing-flow">
+              <div class="form-group">
+                <span class="field-label">Marge bénéficiaire</span>
+                <p class="field-value mono">
+                  @if (p.profitMarginPercent != null) {
+                    {{ p.profitMarginPercent | number:'1.3-3' }} %
+                  } @else {
+                    —
+                  }
+                </p>
+              </div>
+              <div class="form-group">
+                <span class="field-label">Prix de vente HT</span>
+                <p class="field-value mono strong">{{ p.unitPrice | number:'1.3-3' }} TND</p>
+              </div>
+              <div class="form-group">
+                <span class="field-label">Prix de vente TTC</span>
+                <p class="field-value mono strong">{{ (p.salePriceTtc ?? calculateTtc(p)) | number:'1.3-3' }} TND</p>
+              </div>
+            </div>
+
+            <div class="price-preview" aria-label="Récapitulatif des prix">
+              <div class="preview-row">
+                <span>Prix HT</span>
+                <span class="value">{{ p.unitPrice | number:'1.3-3' }} TND</span>
+              </div>
+              @if (p.isFodecApplicable) {
+                <div class="preview-row">
+                  <span>FODEC (1%)</span>
+                  <span class="value">{{ calculateFodec(p) | number:'1.3-3' }} TND</span>
+                </div>
+              }
+              <div class="preview-row">
+                <span>TVA ({{ p.vatRate }}%)</span>
+                <span class="value">{{ calculateVat(p) | number:'1.3-3' }} TND</span>
+              </div>
+              <div class="preview-row total">
+                <span>Prix TTC</span>
+                <span class="value">{{ (p.salePriceTtc ?? calculateTtc(p)) | number:'1.3-3' }} TND</span>
+              </div>
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <span class="field-label">Unité de mesure</span>
-              <p class="field-value">{{ p.unit }}</p>
-            </div>
-            <div class="form-group">
-              <span class="field-label">Taux de TVA</span>
-              <p class="field-value">{{ vatLabel(p.vatRate) }}</p>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <span class="field-label">FODEC</span>
-            <p class="field-value">{{ p.isFodecApplicable ? 'Applicable (1%)' : 'Non applicable' }}</p>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <span class="field-label">Remise produit</span>
-              <p class="field-value">{{ p.isDiscountEnabled ? 'Activée' : 'Désactivée' }}</p>
-            </div>
-            <div class="form-group">
-              <span class="field-label">Remise maximale</span>
-              <p class="field-value mono">
-                @if (p.isDiscountEnabled && p.maxDiscountPercent != null) {
-                  {{ p.maxDiscountPercent | number:'1.1-1' }} %
-                } @else {
-                  —
-                }
-              </p>
-            </div>
-          </div>
-
-          <div class="price-preview" aria-label="Récapitulatif des prix">
-            <div class="preview-row">
-              <span>FODEC (1%)</span>
-              <span class="value">{{ calculateFodec(p) | number:'1.3-3' }} TND</span>
-            </div>
-            <div class="preview-row">
-              <span>TVA ({{ p.vatRate }}%)</span>
-              <span class="value">{{ calculateVat(p) | number:'1.3-3' }} TND</span>
+          <div class="pricing-block">
+            <h4 class="pricing-block-title">Remise produit</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <span class="field-label">Remise produit</span>
+                <p class="field-value">{{ p.isDiscountEnabled ? 'Activée' : 'Désactivée' }}</p>
+              </div>
+              <div class="form-group">
+                <span class="field-label">Remise maximale</span>
+                <p class="field-value mono">
+                  @if (p.isDiscountEnabled && p.maxDiscountPercent != null) {
+                    {{ p.maxDiscountPercent | number:'1.1-1' }} %
+                  } @else {
+                    —
+                  }
+                </p>
+              </div>
             </div>
           </div>
         </app-form-section>
@@ -340,6 +382,12 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
       font-weight: var(--font-weight-semibold);
     }
 
+    .field-value-sub {
+      margin-top: var(--spacing-1);
+      font-size: var(--font-size-sm);
+      color: var(--color-neutral-600);
+    }
+
     .description-block {
       white-space: pre-wrap;
       word-break: break-word;
@@ -387,6 +435,71 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
       background: var(--color-background-subtle);
       border: 1px solid var(--color-border-subtle);
       border-radius: var(--radius-lg);
+    }
+
+    .pricing-block {
+      margin-bottom: var(--spacing-5);
+      padding-bottom: var(--spacing-4);
+      border-bottom: 1px solid var(--color-neutral-200);
+
+      &:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+      }
+    }
+
+    .pricing-subblock-title {
+      margin: 0 0 var(--spacing-3);
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-medium);
+      color: var(--color-text-primary);
+    }
+
+    .pricing-readonly-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--spacing-4);
+      margin-top: var(--spacing-4);
+      padding: var(--spacing-4);
+      background: var(--color-neutral-50);
+      border-radius: var(--radius-lg);
+      border: 1px dashed var(--color-neutral-200);
+
+      @media (max-width: 640px) {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .pricing-readonly-badge {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-2);
+      margin: 0 0 var(--spacing-1);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+
+      i {
+        font-size: var(--font-size-sm);
+        color: var(--color-neutral-500);
+      }
+    }
+
+    .form-row-pricing-params,
+    .form-row-pricing-flow {
+      grid-template-columns: repeat(3, 1fr);
+
+      @media (max-width: 900px) {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      @media (max-width: 640px) {
+        grid-template-columns: 1fr;
+      }
     }
 
     .preview-row {
@@ -499,6 +612,15 @@ export class ProductDetailComponent implements OnInit {
 
   calculateTtc(p: Product): number {
     return calculateSaleTtc(p.unitPrice || 0, p.vatRate || 0, p.isFodecApplicable ?? false);
+  }
+
+  readonly trackingModeLot = TRACKING_MODE_LOT;
+  readonly formatTrackingModeLabel = formatTrackingModeLabel;
+  readonly formatPickingPolicyLabel = formatPickingPolicyLabel;
+  readonly formatCostingMethodLabel = formatCostingMethodLabel;
+
+  showTraceabilitySummary(p: Product): boolean {
+    return !!(p.trackingMode || p.costingMethod || p.hasExpiryTracking || p.pickingPolicy);
   }
 
   private loadProduct(id: string): void {

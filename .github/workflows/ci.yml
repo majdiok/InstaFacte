@@ -48,6 +48,12 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - name: Audit npm (critical)
         run: npm audit --audit-level=critical
+      # Ferme la 2e moitié du contrat de parité : sector-catalog-parity.spec.ts épingle le
+      # catalogue statique frontend contre sa COPIE du snapshot backend, mais ne peut pas
+      # atteindre le fichier backend (hors du rootDir Angular). Ce script compare la copie
+      # au fichier qui fait foi — sans lui, une dérive entre les deux arbres passe inaperçue.
+      - name: Parité catalogue sectoriel (backend ↔ fixture frontend)
+        run: node ../../../scripts/ci/check-sector-catalog-parity.mjs
       - name: Specs Jasmine (headless)
         run: npx ng test --watch=false --browsers=ChromeHeadless
       - name: Build production

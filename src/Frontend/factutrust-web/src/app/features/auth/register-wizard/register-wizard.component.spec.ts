@@ -464,9 +464,17 @@ describe('RegisterWizardComponent', () => {
       });
       fixture.detectChanges();
 
-      expect(component.form.get('enabledModules')?.value).toEqual(
-        component.catalog.recommendedModules('commerce', 'artisanat')
-      );
+      // La charge soumise = modules cœur + recommandations du profil (lot 1.2). On ne peut donc
+      // plus la comparer à `recommendedModules()` seul, qui exclut délibérément le cœur en mode
+      // distant : c'est cette asymétrie que le correctif supprime.
+      const expected = [
+        ...new Set<AppModule>([
+          ...component.catalog.coreModuleIds,
+          ...component.catalog.recommendedModules('commerce', 'artisanat')
+        ])
+      ].sort((a, b) => a - b);
+
+      expect(component.form.get('enabledModules')?.value).toEqual(expected);
       expect(component.form.get('enabledModules')?.value).toContain(AppModule.Stock);
     });
 
@@ -693,4 +701,60 @@ describe('RegisterWizardComponent', () => {
       discardPeriodicTasks();
     }));
   });
+
+  describe('parité du payload enabledModules entre mode distant et repli (lot 1.2)', () => {
+    /**
+     * `catalog.recommendedModules()` exclut les modules cœur en mode distant (contrat d'affichage)
+     * alors que le repli statique les inclut. Sans composition explicite du cœur dans le composant,
+     * basculer `sectorCatalogHttp` changeait la charge envoyée au backend — un kill-switch doit
+     * être neutre. Ce test échoue si la composition disparaît.
+     */
+    const CORE = [
+      AppModule.Clients, AppModule.Products, AppModule.Sales,
+      AppModule.Treasury, AppModule.Reports, AppModule.Administration
+    ];
+
+    function flushRemoteCatalogMirroringStatic(): void {
+      const httpMock = TestBed.inject(HttpTestingController);
+      component.catalog.load();
+      httpMock.expectOne(`${component.environment.apiUrl}/public/sector-catalog`).flush({
+        success: true,
+        data: {
+          // Miroir fidèle du catalogue statique pour commerce · artisanat.
+          segments: [{
+            code: 'commerce', labelFr: 'Commerce', descriptionFr: '', iconKey: 'x', sortOrder: 0,
+            coreModuleIds: CORE,
+            recommendedModuleIds: [AppModule.Purchases, AppModule.Stock, AppModule.Fiscal],
+            domainCodes: ['artisanat']
+          }],
+          domains: [{ code: 'artisanat', labelFr: 'Artisanat', sortOrder: 0, additionalModuleIds: [] }],
+          modules: [],
+          moduleDependencies: []
+        }
+      });
+    }
+
+    it('soumet exactement le même enabledModules en repli statique et en catalogue distant', () => {
+      component.form.patchValue({ companySegment: 'commerce', businessDomain: 'artisanat' });
+      const fallbackSelection: AppModule[] = [...(component.form.get('enabledModules')?.value ?? [])].sort((a, b) => a - b);
+
+      flushRemoteCatalogMirroringStatic();
+      component.resetModulesToRecommendations();
+      const remoteSelection: AppModule[] = [...(component.form.get('enabledModules')?.value ?? [])].sort((a, b) => a - b);
+
+      expect(remoteSelection).toEqual(fallbackSelection);
+    });
+
+    it('inclut toujours les modules cœur dans la charge soumise, catalogue distant compris', () => {
+      flushRemoteCatalogMirroringStatic();
+      component.form.patchValue({ companySegment: 'commerce', businessDomain: 'artisanat' });
+      component.resetModulesToRecommendations();
+
+      const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
+      for (const core of CORE) {
+        expect(enabled).toContain(core);
+      }
+    });
+  });
+
 });

@@ -1,10 +1,12 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Products.Commands;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -53,7 +55,14 @@ public sealed class CreateProductCommandPreferredSupplierTests
 
         return new CreateProductCommandHandler(
             _products.Object, _categories.Object, _suppliers.Object,
-            _unitOfWork.Object, _currentUser.Object, _audit.Object, _tenant.Object);
+            _unitOfWork.Object, _currentUser.Object, _audit.Object, _tenant.Object,
+            Options.Create(new StockTraceabilityOptions
+            {
+                LotTrackingEnabled = true,
+                SerialTrackingEnabled = true,
+                ExpiryTrackingEnabled = true,
+                FifoLifoValuationEnabled = true
+            }));
     }
 
     private CreateProductDto Dto(Guid? preferredSupplierId) => new()

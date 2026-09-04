@@ -101,7 +101,7 @@ public sealed class TenantMigrationGuard : ITenantMigrationGuard
                 return schemaCheck;
             }
 
-            await EnsureRuntimeCatalogsAsync(connectionString, cancellationToken);
+            await EnsureRuntimeCatalogsAsync(connectionString, _logger, cancellationToken);
 
             var cacheDuration = _environment.IsDevelopment() ? CacheDurationDevelopment : CacheDuration;
             _cache.Set(cacheKey, true, cacheDuration);
@@ -184,13 +184,14 @@ public sealed class TenantMigrationGuard : ITenantMigrationGuard
         }
     }
 
-    private static async Task EnsureRuntimeCatalogsAsync(string connectionString, CancellationToken cancellationToken)
+    private static async Task EnsureRuntimeCatalogsAsync(
+        string connectionString, ILogger logger, CancellationToken cancellationToken)
     {
         var options = new DbContextOptionsBuilder<TenantDbContext>()
             .UseSqlServer(connectionString, b => b.MigrationsAssembly(typeof(TenantDbContext).Assembly.FullName))
             .Options;
 
         await using var context = new TenantDbContext(options);
-        await TenantRuntimeCatalogBootstrapper.EnsureAsync(context, cancellationToken);
+        await TenantRuntimeCatalogBootstrapper.EnsureAsync(context, cancellationToken, logger);
     }
 }

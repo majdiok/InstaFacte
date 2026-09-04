@@ -1,7 +1,6 @@
-﻿using System.Text.RegularExpressions;
-
-using FactuTrust.Domain.Common;
+﻿using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services.Accounting;
 
 namespace FactuTrust.Domain.Entities;
 
@@ -26,20 +25,13 @@ namespace FactuTrust.Domain.Entities;
 /// </remarks>
 public sealed class PayrollAccountingSettings : Entity
 {
-    /// <summary>Longueur maximale d'un numéro de compte, alignée sur <c>ChartOfAccounts</c>.</summary>
-    public const int MaxAccountNumberLength = 20;
-
     /// <summary>
-    /// Forme d'un numéro de compte SCE, identique à <c>CreateSubAccountCommandValidator</c> :
-    /// chiffres, classes 1 à 7, points autorisés pour les sous-comptes de l'overlay métier
-    /// (421.1, 428.1…). Dupliquée ici parce que le domaine ne référence pas la couche Application ;
-    /// elle protège la persistance d'un numéro qui finirait sinon tel quel dans une ligne d'écriture
-    /// (<c>ChartOfAccount.Create</c> ne valide pas la forme du numéro).
+    /// Largeur de la colonne <c>InKindOffsetAccount</c>. C'est une contrainte de <b>stockage</b>,
+    /// pas la règle métier : celle-ci vit dans <see cref="AccountNumberRules"/> (au plus
+    /// <see cref="AccountNumberRules.MaxDigits"/> chiffres). La colonne reste plus large que la
+    /// règle pour ne pas imposer une modification de schéma à chaque durcissement.
     /// </summary>
-    public const string AccountNumberPattern = @"^[1-7]\d*(?:\.\d+)*$";
-
-    private static readonly Regex AccountNumberRegex =
-        new(AccountNumberPattern, RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    public const int MaxAccountNumberLength = 20;
 
     public PayrollAccountProfile AccountProfile { get; private set; } = PayrollAccountProfile.Legacy;
 
@@ -141,21 +133,7 @@ public sealed class PayrollAccountingSettings : Entity
         if (account is null)
             return Result.Success();
 
-        if (account.Length > MaxAccountNumberLength)
-        {
-            return Result.Failure(Error.Validation(
-                "InKindOffsetAccount",
-                $"Le compte de compensation ne peut pas dépasser {MaxAccountNumberLength} caractères."));
-        }
-
-        if (!AccountNumberRegex.IsMatch(account))
-        {
-            return Result.Failure(Error.Validation(
-                "InKindOffsetAccount",
-                "Le compte de compensation doit être un numéro SCE (chiffres, classes 1 à 7, points autorisés)."));
-        }
-
-        return Result.Success();
+        return AccountNumberRules.Validate(account, "InKindOffsetAccount");
     }
 
     private static string? Normalize(string? accountNumber) =>

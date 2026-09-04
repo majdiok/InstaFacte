@@ -20,6 +20,20 @@ import { ToastService } from '@core/services/toast.service';
 /** SCE tunisien : classe 1–7, chiffres, segments optionnels après un point (ex. 428.3). */
 export const SCE_ACCOUNT_NUMBER_PATTERN = /^[1-7]\d*(?:\.\d+)*$/;
 
+/**
+ * Plafond de chiffres d'un numéro de compte, aligné sur `AccountNumberRules.MaxDigits` côté serveur.
+ * On compte les chiffres, pas les caractères : `421.1` en vaut 4 et reste valide.
+ */
+export const SCE_ACCOUNT_MAX_DIGITS = 8;
+
+export function sceAccountDigitCount(accountNumber: string): number {
+  let count = 0;
+  for (const c of accountNumber) {
+    if (c >= '0' && c <= '9') count++;
+  }
+  return count;
+}
+
 @Component({
   selector: 'app-chart-of-accounts',
   standalone: true,
@@ -239,7 +253,10 @@ export const SCE_ACCOUNT_NUMBER_PATTERN = /^[1-7]\d*(?:\.\d+)*$/;
           <div class="coa-grid">
             <div class="coa-field">
               <label class="coa-lbl" for="coa-num">Compte numéro</label>
-              <input id="coa-num" class="coa-inp" [(ngModel)]="form.accountNumber" (ngModelChange)="onAccountNumberChange()" placeholder="Ex. 428.3 ou 41100001" />
+              <input id="coa-num" class="coa-inp" [(ngModel)]="form.accountNumber" (ngModelChange)="onAccountNumberChange()" [maxlength]="accountNumberMaxLength" placeholder="Ex. 428.3 ou 41100001" />
+              @if (accountNumberError(); as numError) {
+                <p class="coa-create-error" role="alert">{{ numError }}</p>
+              }
             </div>
             <div class="coa-field coa-field-wide">
               <label class="coa-lbl" for="coa-label">Libellé</label>
@@ -550,9 +567,19 @@ export class ChartOfAccountsComponent implements OnInit {
     this.createError.set(null);
   }
 
-  /** Prochain numéro libre sous le parent (43671 + 436711/436712 → 436713). */
+  /**
+   * Prochain numéro libre sous le parent (43671 + 436711/436712 → 436713), borné à
+   * {@link SCE_ACCOUNT_MAX_DIGITS} chiffres.
+   *
+   * La largeur du suffixe se déduit des frères existants : sans cette borne, un frère hérité à
+   * 10 chiffres ferait proposer du 10 chiffres, que le serveur refuserait.
+   */
   nextFreeChildNumber(parent: string | null): string | null {
     if (!parent) return null;
+
+    const budget = SCE_ACCOUNT_MAX_DIGITS - sceAccountDigitCount(parent);
+    if (budget < 1) return null;
+
     const existing = new Set(this.rows().map(r => r.accountNumber));
     let maxSuffix = 0;
     let width = 1;
@@ -560,14 +587,17 @@ export class ChartOfAccountsComponent implements OnInit {
     for (const acc of existing) {
       if (acc.length <= parent.length || !acc.startsWith(parent)) continue;
       const suffix = acc.slice(parent.length);
-      if (!/^\d+$/.test(suffix)) continue;
+      if (!/^\d+$/.test(suffix) || suffix.length > budget) continue;
       foundChild = true;
       width = Math.max(width, suffix.length);
       maxSuffix = Math.max(maxSuffix, Number.parseInt(suffix, 10));
     }
+
     let candidate = foundChild ? maxSuffix + 1 : 1;
     for (let i = 0; i < 10000; i++) {
-      const num = parent + String(candidate).padStart(width, '0');
+      const suffix = String(candidate).padStart(width, '0');
+      if (suffix.length > budget) return null;
+      const num = parent + suffix;
       if (!existing.has(num)) return num;
       candidate++;
     }
@@ -585,9 +615,35 @@ export class ChartOfAccountsComponent implements OnInit {
     return list.filter(a => a.accountNumber !== this.form.accountNumber);
   }
 
+  /**
+   * Longueur maximale saisissable. Les formes pointées consomment des caractères sans consommer de
+   * chiffres : on laisse la place à deux séparateurs, et `accountNumberError` tranche sur les chiffres.
+   */
+  readonly accountNumberMaxLength = SCE_ACCOUNT_MAX_DIGITS + 2;
+
+  /** Message de refus du numéro saisi, ou `null` s'il est acceptable. */
+  accountNumberError(): string | null {
+    const num = this.form.accountNumber.trim();
+    if (num.length === 0) return null;
+
+    const digits = sceAccountDigitCount(num);
+    if (digits > SCE_ACCOUNT_MAX_DIGITS) {
+      return `Le compte ${num} comporte ${digits} chiffres : un numéro de compte ne peut pas en dépasser ${SCE_ACCOUNT_MAX_DIGITS}.`;
+    }
+
+    if (num.length >= 2 && !SCE_ACCOUNT_NUMBER_PATTERN.test(num)) {
+      return 'Le numéro doit être un compte SCE : chiffres, classe 1 à 7, points autorisés (ex. 428.3).';
+    }
+
+    return null;
+  }
+
   canSubmit(): boolean {
     const num = this.form.accountNumber.trim();
-    return num.length >= 2 && SCE_ACCOUNT_NUMBER_PATTERN.test(num) && this.form.label.trim().length > 0;
+    return num.length >= 2
+      && SCE_ACCOUNT_NUMBER_PATTERN.test(num)
+      && sceAccountDigitCount(num) <= SCE_ACCOUNT_MAX_DIGITS
+      && this.form.label.trim().length > 0;
   }
 
   create(): void {

@@ -122,15 +122,23 @@ public sealed class PayrollSettlementTests
 
         var collaboratorCostSync = new Mock<IFirmCollaboratorCostSyncService>();
 
-        // Aucun salarié ne porte de compte auxiliaire alloué : le figeage retombe sur la dérivation
-        // historique du matricule, comme pour tous les dossiers antérieurs.
+        // La dérivation par troncature du matricule ayant été supprimée, le figeage exige un compte
+        // auxiliaire sur la fiche. Le salarié du cycle en porte donc un, déjà alloué.
+        var employee = Employee.Create("EMP-001", "Test", "User", new DateTime(2026, 1, 1)).Value;
+        SetProp(employee, "Id", EmpId);
+        Assert.True(employee.SetAuxiliaryAccountNumber("4250001").IsSuccess);
+
         var employees = new Mock<IEmployeeRepository>();
         employees.Setup(e => e.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Dictionary<Guid, Employee>());
+            .ReturnsAsync(new Dictionary<Guid, Employee> { [EmpId] = employee });
+
+        // Aucune allocation ne doit être nécessaire : le compte est déjà là.
+        var chartProvisioning = new Mock<IPayrollEmployeeChartProvisioningService>(MockBehavior.Strict);
 
         var handler = new ValidatePayrollRunCommandHandler(
             runs.Object, advances.Object, leaves.Object, accruals.Object, loans.Object, garnishments.Object,
-            employees.Object, parameters.Object, accounting.Object, uow.Object, currentUser.Object,
+            employees.Object, chartProvisioning.Object, parameters.Object, accounting.Object,
+            uow.Object, currentUser.Object,
             collaboratorCostSync.Object,
             Options.Create(new FirmGovernanceOptions { AutoImportOnPayrollValidate = false }),
             Options.Create(new AccountingSettings { PayrollStrictSettlementEnabled = true }),

@@ -22,11 +22,11 @@
  * Keeping this copy honest is a two-part contract:
  *  1. This Jasmine/Karma spec (`sector-catalog-parity.spec.ts`) pins the frontend static
  *     catalog against the data below.
- *  2. A separate CI step (outside `ng test`, run once per build from the repo root) is
- *     expected to byte-diff this fixture's data against the real backend snapshot file so a
- *     silent copy/paste drift between the two trees cannot slip through unnoticed. If that CI
- *     step does not exist yet, updating this fixture whenever the backend snapshot changes is
- *     a manual step — do not let the two drift apart.
+ *  2. `scripts/ci/check-sector-catalog-parity.mjs`, exécuté par le job « Web Angular » de la CI
+ *     AVANT `ng test`, compare les données ci-dessous au vrai fichier backend. Une dérive de
+ *     recopie entre les deux arbres casse donc la CI au lieu de passer inaperçue. Lancez-le
+ *     localement (`node scripts/ci/check-sector-catalog-parity.mjs`) après toute mise à jour
+ *     de ce fichier.
  *
  * Do NOT hand-edit the values below independently of the backend file. If the backend
  * snapshot changes, regenerate this file from it (and update `registration-catalog.ts` to
@@ -147,10 +147,10 @@ export const SECTOR_CATALOG_SNAPSHOT_FIXTURE: SectorCatalogDto & { catalogVersio
     { code: 'sante-paramedical', labelFr: 'Santé & Paramédical', sortOrder: 2, additionalModuleIds: [9] },
     { code: 'textile-habillement', labelFr: 'Textile & Habillement', sortOrder: 3, additionalModuleIds: [7] },
     { code: 'transport-logistique', labelFr: 'Transport & Logistique', sortOrder: 4, additionalModuleIds: [7] },
-    { code: 'immobilier', labelFr: 'Immobilier', sortOrder: 5, additionalModuleIds: [] },
-    { code: 'energie-environnement', labelFr: 'Énergie & Environnement', sortOrder: 6, additionalModuleIds: [] },
+    { code: 'immobilier', labelFr: 'Immobilier', sortOrder: 5, additionalModuleIds: [16, 17] },
+    { code: 'energie-environnement', labelFr: 'Énergie & Environnement', sortOrder: 6, additionalModuleIds: [16, 6] },
     { code: 'communication-marketing', labelFr: 'Communication & Marketing', sortOrder: 7, additionalModuleIds: [9] },
-    { code: 'artisanat', labelFr: 'Artisanat', sortOrder: 8, additionalModuleIds: [] },
+    { code: 'artisanat', labelFr: 'Artisanat', sortOrder: 8, additionalModuleIds: [7, 6] },
     { code: 'autre', labelFr: 'Autre domaine', sortOrder: 9, additionalModuleIds: [] }
   ],
   modules: [

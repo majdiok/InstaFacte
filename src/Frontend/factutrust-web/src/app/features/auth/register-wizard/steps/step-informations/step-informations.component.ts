@@ -60,8 +60,6 @@ export class StepInformationsComponent implements OnInit {
   private readonly catalog = inject(RegistrationCatalogService);
   private readonly destroyRef = inject(DestroyRef);
 
-  showPartnerCode = false;
-
   readonly strengthSegments: readonly number[] = [1, 2, 3, 4, 5];
 
   /** Category letter the user last dismissed the mismatch hint for (plan §3.2) — hint stays hidden until it changes. */
@@ -95,10 +93,6 @@ export class StepInformationsComponent implements OnInit {
         this.segmentValue.set(v ?? '');
         this.dismissedForCategory.set(null);
       });
-  }
-
-  togglePartnerCode(): void {
-    this.showPartnerCode = !this.showPartnerCode;
   }
 
   isInvalid(field: string): boolean {

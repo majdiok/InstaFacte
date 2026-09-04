@@ -1,34 +1,50 @@
 namespace FactuTrust.Domain.Services.Payroll;
 
 /// <summary>
-/// Résout le numéro de compte auxiliaire SCE 425xxxx pour un salarié.
+/// Décrit la <b>forme historique</b> d'un compte auxiliaire salarié : <c>425</c> + les 7 derniers
+/// chiffres du matricule.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Ne plus utiliser pour créer un compte.</b> Cette dérivation a été retirée de tous les chemins
+/// d'écriture (validation de cycle, génération de l'OD, règlement, création de salarié) pour deux
+/// raisons : elle produisait un numéro de <b>10 chiffres</b>, au-delà du plafond de
+/// <see cref="Accounting.AccountNumberRules.MaxDigits"/>, et la troncature aux 7 derniers chiffres
+/// faisait collisionner deux matricules — « 1 » et « 0000001 », ou deux CIN de même queue — dont les
+/// dettes de salaire se confondaient alors sur un seul compte.
+/// </para>
+/// <para>
+/// Le compte est désormais <b>alloué</b> séquentiellement
+/// (<c>PayrollEmployeeChartProvisioningService</c>, <c>425</c> + 4 chiffres) et porté par la fiche
+/// salarié. Cette classe ne sert plus qu'à <b>reconnaître</b> un compte hérité, pour le rapprocher
+/// de son matricule d'origine dans un diagnostic ou une reprise de données.
+/// </para>
+/// </remarks>
 public static class PayrollEmployeeAuxiliaryAccountResolver
 {
     public const string PersonnelPayableParentAccount = PayrollJournalEntryBuilder.PersonnelPayableAccount;
-    public const int MaxAccountNumberLength = 10;
+
+    /// <summary>Longueur de la forme héritée : <c>425</c> + 7 chiffres.</summary>
+    public const int LegacyAccountNumberLength = 10;
 
     /// <summary>
-    /// Génère un compte auxiliaire 425 + matricule numérique zero-paddé (ex. 4250001).
+    /// Recalcule le compte hérité qu'un matricule aurait produit. Réservé à la reconnaissance de
+    /// l'existant — voir les remarques de la classe.
     /// </summary>
-    public static string Resolve(string employeeNumber)
+    public static string ResolveLegacy(string employeeNumber)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(employeeNumber);
 
-        // R-15 : un compte auxiliaire SCE doit être strictement numérique. L'ancien repli
-        // alphanumérique émettait des lettres (ex. 42500AB12) — refusé. On n'accepte que les
-        // chiffres du matricule ; à défaut, on lève (les appelants de validation renvoient un
-        // Result explicite plutôt que de produire un compte invalide).
+        // Un compte SCE est strictement numérique : l'ancien repli alphanumérique émettait des
+        // lettres (ex. 42500AB12), refusées. On ne retient que les chiffres du matricule.
         var digits = new string(employeeNumber.Where(char.IsDigit).ToArray());
         if (digits.Length == 0)
             throw new ArgumentException(
-                "Le matricule salarié doit contenir au moins un chiffre pour générer le compte auxiliaire 425 ; "
-                + "les caractères alphabétiques ne sont pas acceptés en SCE.", nameof(employeeNumber));
+                "Le matricule salarié doit contenir au moins un chiffre pour retrouver la forme héritée "
+                + "du compte auxiliaire 425 ; les caractères alphabétiques ne sont pas acceptés en SCE.",
+                nameof(employeeNumber));
 
-        var suffixLength = MaxAccountNumberLength - PersonnelPayableParentAccount.Length;
-        if (suffixLength <= 0)
-            throw new InvalidOperationException("Le préfixe du compte personnel est trop long.");
-
+        var suffixLength = LegacyAccountNumberLength - PersonnelPayableParentAccount.Length;
         var suffix = digits.Length <= suffixLength
             ? digits.PadLeft(suffixLength, '0')
             : digits[^suffixLength..];
@@ -37,9 +53,9 @@ public static class PayrollEmployeeAuxiliaryAccountResolver
     }
 
     /// <summary>
-    /// R-15 : indique si le matricule contient au moins un chiffre (précondition de <see cref="Resolve"/>),
-    /// sans lever. Utilisé par la validation pour produire un message d'erreur métier nominatif.
+    /// Indique si le matricule contient au moins un chiffre, précondition de
+    /// <see cref="ResolveLegacy"/>, sans lever.
     /// </summary>
-    public static bool CanResolve(string employeeNumber)
+    public static bool CanResolveLegacy(string employeeNumber)
         => !string.IsNullOrWhiteSpace(employeeNumber) && employeeNumber.Any(char.IsDigit);
 }

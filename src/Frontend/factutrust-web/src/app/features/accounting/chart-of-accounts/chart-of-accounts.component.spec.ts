@@ -6,7 +6,12 @@ import { AuthService } from '@core/services/auth.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ToastService } from '@core/services/toast.service';
 import { AccountingService, ChartOfAccountDto } from '../services/accounting.service';
-import { ChartOfAccountsComponent, SCE_ACCOUNT_NUMBER_PATTERN } from './chart-of-accounts.component';
+import {
+  ChartOfAccountsComponent,
+  SCE_ACCOUNT_MAX_DIGITS,
+  SCE_ACCOUNT_NUMBER_PATTERN,
+  sceAccountDigitCount
+} from './chart-of-accounts.component';
 
 describe('ChartOfAccountsComponent', () => {
   function createComponent(overrides: {
@@ -73,6 +78,45 @@ describe('ChartOfAccountsComponent', () => {
     expect(component.canSubmit()).toBeTrue();
     component.form.accountNumber = '41100001';
     expect(component.canSubmit()).toBeTrue();
+  });
+
+  it('refuse un numéro de plus de 8 chiffres, points non comptés', () => {
+    const { component } = createComponent();
+    component.form.label = 'Compte salarié';
+
+    // La forme héritée des comptes auxiliaires salariés : 425 + 7 derniers chiffres du matricule.
+    component.form.accountNumber = '4259655554';
+    expect(component.canSubmit()).toBeFalse();
+    expect(component.accountNumberError()).toContain('10 chiffres');
+
+    // 8 chiffres exactement : accepté.
+    component.form.accountNumber = '41100001';
+    expect(component.canSubmit()).toBeTrue();
+    expect(component.accountNumberError()).toBeNull();
+
+    // Les points ne consomment pas le budget : 421.1 vaut 4 chiffres.
+    component.form.accountNumber = '421.1';
+    expect(component.canSubmit()).toBeTrue();
+
+    // ... mais 9 chiffres répartis autour d'un point restent refusés.
+    component.form.accountNumber = '12345678.1';
+    expect(component.canSubmit()).toBeFalse();
+  });
+
+  it('ne suggère jamais un numéro enfant de plus de 8 chiffres', () => {
+    const { component } = createComponent();
+    // Un frère hérité à 10 chiffres ne doit pas dicter la largeur du suffixe proposé.
+    component.rows.set([
+      account({ accountNumber: '425', label: 'Personnel - rémunérations dues' }),
+      account({ accountNumber: '4259655554', label: 'sami samou' })
+    ]);
+
+    const suggestion = component.nextFreeChildNumber('425');
+    expect(suggestion).not.toBeNull();
+    expect(sceAccountDigitCount(suggestion!)).toBeLessThanOrEqual(SCE_ACCOUNT_MAX_DIGITS);
+
+    // Un parent déjà à 8 chiffres n'a plus de place pour un enfant.
+    expect(component.nextFreeChildNumber('41100001')).toBeNull();
   });
 
   it('refuse les numéros SCE mal formés', () => {

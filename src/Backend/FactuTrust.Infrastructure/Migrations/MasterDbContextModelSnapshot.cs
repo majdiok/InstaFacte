@@ -4555,6 +4555,9 @@ namespace FactuTrust.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool?>("AccountingDelegatedToFirm")
+                        .HasColumnType("bit");
+
                     b.Property<string>("BusinessDomain")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -4582,6 +4585,13 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.Property<DateTime?>("DeactivatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<bool?>("HasPhysicalStock")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("HeadcountBand")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -4604,6 +4614,9 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.Property<string>("SectorCatalogVersion")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<bool?>("SellsToConsumers")
+                        .HasColumnType("bit");
 
                     b.Property<int>("TaxRegime")
                         .HasColumnType("int");

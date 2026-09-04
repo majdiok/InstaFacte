@@ -5,7 +5,7 @@ import { InputSwitchModule } from 'primeng/inputswitch';
 import { FormsModule } from '@angular/forms';
 import { TooltipModule } from 'primeng/tooltip';
 import { AppModule } from '@core/models/app-module';
-import { ModuleCatalogEntry, RegistrationCatalogService } from '../../registration-catalog';
+import { HEADCOUNT_BANDS, HeadcountBand, ModuleCatalogEntry, RegistrationCatalogService } from '../../registration-catalog';
 
 @Component({
   selector: 'app-step-configuration',
@@ -23,6 +23,8 @@ export class StepConfigurationComponent {
 
   @Output() moduleToggled = new EventEmitter<AppModule>();
   @Output() resetToRecommendations = new EventEmitter<void>();
+  /** Une réponse de profilage a changé (lot 3) — le parent recalcule la pré-sélection. */
+  @Output() profileAnswerChanged = new EventEmitter<void>();
 
   readonly catalog = inject(RegistrationCatalogService);
 
@@ -42,7 +44,7 @@ export class StepConfigurationComponent {
 
   /** Premium modules locked on the Free plan — rendered as a non-toggleable "Plan supérieur" group. */
   get premiumModules(): ModuleCatalogEntry[] {
-    const premium = new Set(this.catalog.premiumModules(this.segment, this.domain));
+    const premium = new Set(this.catalog.premiumModules());
     return this.catalog.modules.filter(m => premium.has(m.id));
   }
 
@@ -84,6 +86,46 @@ export class StepConfigurationComponent {
     const dependents = this.catalog.dependentsOf(id, this.enabledModuleIds());
     const labels = dependents.map(d => this.catalog.moduleLabel(d)).join(', ');
     return labels ? `Activé automatiquement (requis par ${labels})` : 'Activé automatiquement';
+  }
+
+  // --- Profilage (lot 3) ---------------------------------------------------
+  // Les réponses vivent dans le FormGroup du parent, lues/écrites ici comme l'est déjà
+  // `enabledModules`. Pas de `formControlName` : ce composant n'a pas de directive `formGroup`.
+
+  readonly headcountBands = HEADCOUNT_BANDS;
+
+  readonly headcountLabels: Readonly<Record<HeadcountBand, string>> = {
+    '1': 'Seul(e)',
+    '2-9': '2 à 9',
+    '10-49': '10 à 49',
+    '50+': '50 et plus'
+  };
+
+  booleanAnswer(key: string): boolean | null {
+    return this.form.get(key)?.value ?? null;
+  }
+
+  /** Un second clic sur la réponse déjà choisie la retire (retour à « sans réponse »). */
+  setBooleanAnswer(key: string, value: boolean): void {
+    const control = this.form.get(key);
+    if (!control) {
+      return;
+    }
+    control.setValue(control.value === value ? null : value);
+    this.profileAnswerChanged.emit();
+  }
+
+  headcountAnswer(): HeadcountBand | null {
+    return this.form.get('headcountBand')?.value ?? null;
+  }
+
+  setHeadcount(band: HeadcountBand): void {
+    const control = this.form.get('headcountBand');
+    if (!control) {
+      return;
+    }
+    control.setValue(control.value === band ? null : band);
+    this.profileAnswerChanged.emit();
   }
 
   toggleModule(id: AppModule): void {

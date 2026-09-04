@@ -135,25 +135,24 @@ public sealed class PayrollRun : AggregateRoot
     /// R-15 : fige le compte auxiliaire 425 de chaque bulletin à la validation (et non plus
     /// paresseusement au paiement/OD). Le compte devient déterministe et traçable : un changement
     /// de matricule entre validation et paiement n'a plus d'effet. Renvoie un échec nominatif si un
-    /// matricule ne contient aucun chiffre (compte SCE strictement numérique) ou si deux salariés
-    /// du cycle aboutissent au même compte auxiliaire. En cas de succès, retourne la liste des
-    /// bulletins dont le compte vient d'être figé (à persister).
+    /// salarié du cycle n'a pas de compte auxiliaire, ou si deux salariés aboutissent au même. En
+    /// cas de succès, retourne la liste des bulletins dont le compte vient d'être figé (à persister).
     /// </summary>
     /// <param name="auxiliaryAccountsByEmployee">
-    /// Comptes auxiliaires alloués sur les fiches salariés. Ils font foi ; un salarié absent de la
-    /// carte (fiche antérieure à l'allocation explicite) retombe sur la dérivation historique du
-    /// matricule, ce qui laisse les cycles existants strictement inchangés.
+    /// Comptes auxiliaires alloués sur les fiches salariés. C'est la <b>seule</b> source : la
+    /// dérivation par troncature du matricule a été supprimée (elle produisait 10 chiffres et
+    /// collisionnait). L'appelant garantit que la carte couvre tous les salariés du cycle, en
+    /// allouant ce qui manque au préalable.
     /// </param>
     public Result<IReadOnlyList<Payslip>> FreezeEmployeeAuxiliaryAccounts(
         IReadOnlyDictionary<Guid, string?>? auxiliaryAccountsByEmployee = null)
     {
         var frozen = new List<Payslip>();
-        // Compte auxiliaire → premier bulletin qui l'occupe. Le compte n'utilise que les 7 derniers
-        // chiffres du matricule : deux matricules distincts peuvent donc produire le même compte
-        // (« 1 » et « 0000001 », ou deux CIN aux 7 derniers chiffres identiques). Sans ce contrôle,
-        // les deux salariés partageraient une seule dette 425 — leurs soldes fusionneraient et le
-        // lettrage du règlement deviendrait arbitraire. On refuse la validation plutôt que de
-        // produire une écriture irréconciliable.
+        // Compte auxiliaire → premier bulletin qui l'occupe. L'allocation séquentielle est unique
+        // par construction, mais un compte figé sur un bulletin ancien peut encore venir de la
+        // dérivation supprimée : deux salariés partageraient alors une seule dette 425, leurs
+        // soldes fusionneraient et le lettrage du règlement deviendrait arbitraire. On refuse la
+        // validation plutôt que de produire une écriture irréconciliable.
         var byAccount = new Dictionary<string, Payslip>(StringComparer.Ordinal);
 
         foreach (var payslip in _payslips)
@@ -175,15 +174,16 @@ public sealed class PayrollRun : AggregateRoot
             }
             else
             {
-                if (!PayrollEmployeeAuxiliaryAccountResolver.CanResolve(payslip.EmployeeNumber))
-                {
-                    return Result.Failure<IReadOnlyList<Payslip>>(Error.Validation(
-                        "EmployeeNumber",
-                        $"Le matricule « {payslip.EmployeeNumber} » du salarié {payslip.EmployeeName} ne contient "
-                        + "aucun chiffre : impossible de générer le compte auxiliaire 425 (SCE strictement numérique)."));
-                }
-
-                account = PayrollEmployeeAuxiliaryAccountResolver.Resolve(payslip.EmployeeNumber);
+                // Plus aucune dérivation depuis le matricule : elle produisait 425 + 7 chiffres,
+                // soit un numéro de 10 chiffres au-delà du plafond, et deux matricules aux mêmes
+                // 7 derniers chiffres se partageaient une seule dette. La couche Application
+                // alloue un compte à toute fiche qui n'en porte pas avant d'appeler cette
+                // méthode ; un trou ici signale une incohérence, pas un cas nominal.
+                return Result.Failure<IReadOnlyList<Payslip>>(Error.Validation(
+                    "AuxiliaryAccountNumber",
+                    $"Le salarié {payslip.EmployeeName} (matricule « {payslip.EmployeeNumber} ») n'a pas de "
+                    + "compte auxiliaire 425 sur sa fiche : impossible de constater sa dette de salaire. "
+                    + "Attribuez-lui un compte depuis sa fiche, puis relancez la validation."));
             }
 
             if (byAccount.TryGetValue(account, out var other) && other.EmployeeId != payslip.EmployeeId)
@@ -193,8 +193,7 @@ public sealed class PayrollRun : AggregateRoot
                     $"Les matricules « {other.EmployeeNumber} » ({other.EmployeeName}) et "
                     + $"« {payslip.EmployeeNumber} » ({payslip.EmployeeName}) produisent le même compte "
                     + $"auxiliaire {account} : leurs dettes de salaire se confondraient. "
-                    + "Différenciez les matricules sur leurs 7 derniers chiffres, ou faites attribuer "
-                    + "un compte auxiliaire distinct à l'un des deux salariés."));
+                    + "Attribuez un compte auxiliaire distinct à l'un des deux salariés depuis sa fiche."));
             }
 
             byAccount[account] = payslip;

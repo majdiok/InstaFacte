@@ -69,6 +69,23 @@
 
       <form [formGroup]="form" (ngSubmit)="onSubmit()" [attr.aria-label]="registrationFormAriaLabel()">
 
+        @if (pendingDraftStep() !== null) {
+          <!-- Pas de @fadeInOut ici : l'animation de sortie restait bloquée en `ng-animating`,
+               laissant le bandeau à l'écran après la reprise. Un bandeau informatif ponctuel
+               n'a rien à gagner à une transition, et tout à perdre à ne pas disparaître. -->
+          <div class="draft-banner" role="status">
+            <i class="pi pi-history" aria-hidden="true"></i>
+            <div class="draft-content">
+              <h4>Reprendre votre inscription ?</h4>
+              <p>Une inscription en cours a été retrouvée dans cet onglet. Votre mot de passe n'a pas été conservé.</p>
+            </div>
+            <div class="draft-actions">
+              <button type="button" class="draft-btn draft-btn--primary" (click)="restoreDraft()">Reprendre</button>
+              <button type="button" class="draft-btn" (click)="discardDraft()">Recommencer</button>
+            </div>
+          </div>
+        }
+
         @if (error()) {
           <div class="global-error" role="alert" @fadeInOut>
             <div class="error-icon">
@@ -125,6 +142,7 @@
                 [domain]="selectedDomain()"
                 [autoEnabledIds]="lastAutoEnabled()"
                 (moduleToggled)="onModuleToggled($event)"
+                (profileAnswerChanged)="onProfileAnswerChanged()"
                 (resetToRecommendations)="resetModulesToRecommendations()">
               </app-step-configuration>
             </div>

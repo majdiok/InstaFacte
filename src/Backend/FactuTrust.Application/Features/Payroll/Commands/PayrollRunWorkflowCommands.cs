@@ -30,6 +30,7 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
     private readonly IEmployeeLoanRepository _loans;
     private readonly IEmployeeGarnishmentRepository _garnishments;
     private readonly IEmployeeRepository _employees;
+    private readonly IPayrollEmployeeChartProvisioningService _chartProvisioning;
     private readonly IPayrollParametersRepository _parameters;
     private readonly IAccountingService _accountingService;
     private readonly ITenantUnitOfWork _unitOfWork;
@@ -47,6 +48,7 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
         IEmployeeLoanRepository loans,
         IEmployeeGarnishmentRepository garnishments,
         IEmployeeRepository employees,
+        IPayrollEmployeeChartProvisioningService chartProvisioning,
         IPayrollParametersRepository parameters,
         IAccountingService accountingService,
         ITenantUnitOfWork unitOfWork,
@@ -63,6 +65,7 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
         _loans = loans;
         _garnishments = garnishments;
         _employees = employees;
+        _chartProvisioning = chartProvisioning;
         _parameters = parameters;
         _accountingService = accountingService;
         _unitOfWork = unitOfWork;
@@ -90,11 +93,29 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
             if (validateResult.IsFailure)
                 return validateResult;
 
-            // R-15 : fige le compte auxiliaire 425 de chaque bulletin à la validation (compte
-            // déterministe et traçable ; refus si un matricule ne contient aucun chiffre).
-            // Le compte alloué sur la fiche salarié prime ; à défaut (fiches antérieures à
-            // l'allocation explicite), la dérivation historique du matricule s'applique.
+            // R-15 : fige le compte auxiliaire 425 de chaque bulletin à la validation.
+            // Le compte vient désormais TOUJOURS de la fiche salarié. La dérivation par
+            // troncature du matricule a été supprimée : elle produisait un numéro à 10 chiffres
+            // (425 + 7 derniers chiffres, souvent un CIN), au-delà du plafond de 8, et recopiait
+            // une pièce d'identité dans le plan comptable et le FEC. On alloue donc ici ce qui
+            // manque, pour que la carte passée au domaine soit exhaustive par construction.
             var employeesById = await _employees.GetByIdsAsync(employeeIds, ct);
+
+            foreach (var employee in employeesById.Values
+                         .Where(e => string.IsNullOrWhiteSpace(e.AuxiliaryAccountNumber))
+                         .OrderBy(e => e.EmployeeNumber, StringComparer.Ordinal))
+            {
+                var allocated = await _chartProvisioning.AllocateAsync(employee.FullName, ct);
+                if (allocated.IsFailure)
+                    return Result.Failure(allocated.Error);
+
+                var assign = employee.SetAuxiliaryAccountNumber(allocated.Value);
+                if (assign.IsFailure)
+                    return Result.Failure(assign.Error);
+
+                await _employees.UpdateAsync(employee, ct);
+            }
+
             var auxiliaryAccounts = employeesById.ToDictionary(
                 kv => kv.Key,
                 kv => kv.Value.AuxiliaryAccountNumber);

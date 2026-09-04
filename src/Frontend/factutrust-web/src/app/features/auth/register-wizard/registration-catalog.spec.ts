@@ -13,7 +13,9 @@ import {
   SEGMENT_OPTIONS,
   defaultWarehouseNameFor,
   optionalModulesFor,
-  recommendedModulesFor
+  recommendedModulesFor,
+  applyProfileOverlay,
+  EMPTY_PROFILE_ANSWERS
 } from './registration-catalog';
 
 // Review S5: the exact domain-code list for the 'commerce' segment (SEGMENT_ALLOWED_DOMAINS
@@ -303,10 +305,12 @@ describe('registration-catalog', () => {
       'sante-paramedical': [AppModule.CRM],
       'textile-habillement': [AppModule.Stock],
       'transport-logistique': [AppModule.Stock],
-      'immobilier': [],
-      'energie-environnement': [],
+      'immobilier': [AppModule.Projects, AppModule.RecurringContracts],
+      'energie-environnement': [AppModule.Projects, AppModule.Purchases],
       'communication-marketing': [AppModule.CRM],
-      'artisanat': [],
+      'artisanat': [AppModule.Stock, AppModule.Purchases],
+      // « Autre domaine » est le seul overlay volontairement vide : filet de sécurité quand
+      // l'utilisateur ne se reconnaît dans aucun domaine, il ne doit rien présumer.
       'autre': []
     };
 
@@ -546,7 +550,7 @@ describe('registration-catalog', () => {
       });
 
       it('premiumModules returns exactly the premium ids present in the static catalog, sorted, never core (idle path)', () => {
-        const premium = service.premiumModules('commerce', 'autre');
+        const premium = service.premiumModules();
         expect(premium).toEqual([...PREMIUM_MODULE_IDS].sort((a, b) => a - b));
         for (const id of premium) {
           expect(service.isCoreModule(id)).toBe(false);
@@ -558,7 +562,7 @@ describe('registration-catalog', () => {
         const domain = 'technologie-informatique';
         const recommended = new Set(service.recommendedModules(segment, domain));
         const optional = new Set(service.optionalModules(segment, domain));
-        const premium = new Set(service.premiumModules(segment, domain));
+        const premium = new Set(service.premiumModules());
         for (const id of optional) {
           expect(recommended.has(id)).toBe(false);
           expect(premium.has(id)).toBe(false);
@@ -622,7 +626,7 @@ describe('registration-catalog', () => {
 
         it('premiumModules returns only the premium modules present in the remote catalog (remote path)', () => {
           loadRemote();
-          expect(service.premiumModules('commerce', 'artisanat')).toEqual([AppModule.AI, AppModule.Forecasting]);
+          expect(service.premiumModules()).toEqual([AppModule.AI, AppModule.Forecasting]);
         });
 
         it('a non-canonical module flagged availableOnFreePlan:false is also locked (defensive remote field)', () => {
@@ -634,7 +638,7 @@ describe('registration-catalog', () => {
 
           expect(service.isLockedOnFreePlan(AppModule.Accounting)).toBe(true);
           expect(service.optionalModules('commerce', 'artisanat')).not.toContain(AppModule.Accounting);
-          expect(service.premiumModules('commerce', 'artisanat')).toContain(AppModule.Accounting);
+          expect(service.premiumModules()).toContain(AppModule.Accounting);
         });
 
         it('a premium module with an absent availableOnFreePlan flag is still locked via PREMIUM_MODULE_IDS (older payload)', () => {
@@ -647,7 +651,7 @@ describe('registration-catalog', () => {
 
           expect(service.isLockedOnFreePlan(AppModule.AI)).toBe(true);
           expect(service.optionalModules('commerce', 'artisanat')).not.toContain(AppModule.AI);
-          expect(service.premiumModules('commerce', 'artisanat')).toContain(AppModule.AI);
+          expect(service.premiumModules()).toContain(AppModule.AI);
         });
       });
     });
@@ -707,4 +711,71 @@ describe('registration-catalog', () => {
       });
     });
   });
+
+  describe('applyProfileOverlay (profilage, lot 3)', () => {
+    const CORE = CORE_MODULE_IDS;
+    const OPTS = {
+      coreModuleIds: CORE,
+      isLocked: (id: AppModule) => PREMIUM_MODULE_IDS.includes(id)
+    };
+    const base = () => [...CORE, AppModule.Accounting, AppModule.Fiscal];
+
+    it('est l’identité quand aucune question n’a de réponse (additivité stricte)', () => {
+      const before = base().sort((a, b) => a - b);
+      expect(applyProfileOverlay(before, EMPTY_PROFILE_ANSWERS, OPTS)).toEqual(before);
+    });
+
+    it('ajoute Stock et Achats quand l’entreprise gère du stock physique', () => {
+      const result = applyProfileOverlay(base(), { ...EMPTY_PROFILE_ANSWERS, hasPhysicalStock: true }, OPTS);
+      expect(result).toContain(AppModule.Stock);
+      expect(result).toContain(AppModule.Purchases);
+    });
+
+    it('ajoute Stock quand l’activité est B2C (c’est ce qui débloque le Point de Vente)', () => {
+      const result = applyProfileOverlay(base(), { ...EMPTY_PROFILE_ANSWERS, sellsToConsumers: true }, OPTS);
+      expect(result).toContain(AppModule.Stock);
+    });
+
+    it('retire Comptabilité quand la compta est déléguée à un cabinet', () => {
+      const result = applyProfileOverlay(base(), { ...EMPTY_PROFILE_ANSWERS, accountingDelegatedToFirm: true }, OPTS);
+      expect(result).not.toContain(AppModule.Accounting);
+    });
+
+    it('fait gagner le retrait sur l’ajout en cas de réponses contradictoires', () => {
+      const result = applyProfileOverlay(
+        base(),
+        { ...EMPTY_PROFILE_ANSWERS, sellsToConsumers: true, hasPhysicalStock: false },
+        OPTS
+      );
+      expect(result).not.toContain(AppModule.Stock);
+    });
+
+    it('ne retire JAMAIS un module cœur, quelles que soient les réponses', () => {
+      const answers = {
+        hasPhysicalStock: false,
+        sellsToConsumers: false,
+        headcountBand: '1' as const,
+        accountingDelegatedToFirm: true
+      };
+      const result = applyProfileOverlay(base(), answers, OPTS);
+      for (const core of CORE) {
+        expect(result).toContain(core);
+      }
+    });
+
+    it('n’ajoute JAMAIS un module verrouillé sur le plan Free', () => {
+      const lockAll = { coreModuleIds: CORE, isLocked: () => true };
+      const result = applyProfileOverlay(base(), { ...EMPTY_PROFILE_ANSWERS, hasPhysicalStock: true }, lockAll);
+      expect(result).not.toContain(AppModule.Stock);
+      expect(result).not.toContain(AppModule.Purchases);
+    });
+
+    it('la tranche d’effectif ne modifie pas la sélection (RH & Paie est un module payant)', () => {
+      const before = base().sort((a, b) => a - b);
+      for (const band of ['1', '2-9', '10-49', '50+'] as const) {
+        expect(applyProfileOverlay(before, { ...EMPTY_PROFILE_ANSWERS, headcountBand: band }, OPTS)).toEqual(before);
+      }
+    });
+  });
+
 });

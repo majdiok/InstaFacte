@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using FactuTrust.Application.Features.AI;
 using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Application.Features.Studio.Common.SqlReport;
@@ -18,7 +19,15 @@ public sealed record SqlReportPreset(
     IReadOnlyList<string> Grouping,
     IReadOnlyList<ReportAggregation> Aggregations,
     IReadOnlyList<ReportFilter> BaseFilters,
-    IReadOnlyList<ReportSort> Sort);
+    IReadOnlyList<ReportSort> Sort,
+    /// <summary>Colonnes projetées d'un état de DÉTAIL (sans regroupement). Null = table de faits.</summary>
+    IReadOnlyList<string>? Columns = null,
+    /// <summary>
+    /// Période à appliquer quand l'utilisateur n'en exprime aucune. Null = période par défaut du
+    /// routeur (année en cours). Un état regroupé PAR ANNÉE doit en déclarer une pluriannuelle,
+    /// sans quoi il ne rendrait qu'une seule ligne.
+    /// </summary>
+    string? DefaultPeriodPreset = null);
 
 /// <summary>
 /// Catalogue des états prêts à l'emploi. Il sert deux besoins :
@@ -79,6 +88,17 @@ public static class SqlReportPresetCatalog
             new[] { Asc("Invoices_IssueDate__month") }),
 
         new SqlReportPreset(
+            "ventes_par_annee", "Ventes par année",
+            "Chiffre d'affaires et TVA collectée, année par année.",
+            ReportDomain.Ventes, "InvoiceLines", "Invoices_IssueDate",
+            new[] { "Invoices_IssueDate__year" },
+            new[] { Sum("InvoiceLines_Total"), Sum("InvoiceLines_VatAmount") },
+            new[] { RealizedInvoices },
+            new[] { Asc("Invoices_IssueDate__year") },
+            // Un regroupement annuel filtré sur l'année en cours ne rendrait qu'UNE ligne.
+            DefaultPeriodPreset: ReportingPeriodResolver.PresetLastFiveYears),
+
+        new SqlReportPreset(
             "ventes_par_produit_et_mois", "Ventes par produit et par mois",
             "Croisement produit × mois : détecte la saisonnalité et les décrochages.",
             ReportDomain.Ventes, "InvoiceLines", "Invoices_IssueDate",
@@ -103,10 +123,15 @@ public static class SqlReportPresetCatalog
             Array.Empty<string>(),
             Array.Empty<ReportAggregation>(),
             new[] { RealizedInvoices },
-            new[] { Desc("Invoices_IssueDate") })
-        {
-            // État de DÉTAIL : les colonnes projetées tiennent lieu de regroupement.
-        },
+            new[] { Desc("Invoices_IssueDate") },
+            // État de DÉTAIL : les colonnes projetées tiennent lieu de regroupement. Sans elles, la
+            // projection retombait sur les 12 premières colonnes de la table de faits — et le tri
+            // sur la date était écarté, faute de figurer dans le résultat.
+            new[]
+            {
+                "Invoices_IssueDate", "Clients_Name", "InvoiceLines_ProductName",
+                "InvoiceLines_Quantity", "InvoiceLines_UnitPrice", "InvoiceLines_Total"
+            }),
 
         new SqlReportPreset(
             "factures_par_statut", "Factures par statut",
@@ -137,13 +162,26 @@ public static class SqlReportPresetCatalog
             new[] { Asc("SupplierInvoices_InvoiceDate__month") }),
 
         new SqlReportPreset(
+            "achats_par_annee", "Achats par année",
+            "Évolution des achats fournisseurs, année par année.",
+            ReportDomain.Achats, "SupplierInvoices", "SupplierInvoices_InvoiceDate",
+            new[] { "SupplierInvoices_InvoiceDate__year" },
+            new[] { Sum("SupplierInvoices_TotalAmount") },
+            Array.Empty<ReportFilter>(),
+            new[] { Asc("SupplierInvoices_InvoiceDate__year") },
+            DefaultPeriodPreset: ReportingPeriodResolver.PresetLastFiveYears),
+
+        new SqlReportPreset(
             "achats_par_produit", "Achats par produit",
             "Quantités et montants achetés par produit.",
             ReportDomain.Achats, "SupplierInvoiceLines", null,
-            new[] { "Products_Name" },
-            new[] { Sum("SupplierInvoiceLines_Quantity") },
+            // SupplierInvoiceLines.ProductId n'a PAS de contrainte de clé étrangère : « Products_Name »
+            // ne se résolvait donc jamais. La ligne porte son propre libellé produit, comme les lignes
+            // de vente — on s'appuie dessus plutôt que sur une jointure qui n'existe pas.
+            new[] { "SupplierInvoiceLines_ProductName" },
+            new[] { Sum("SupplierInvoiceLines_Quantity"), Sum("SupplierInvoiceLines_Total") },
             Array.Empty<ReportFilter>(),
-            new[] { Desc("sum_SupplierInvoiceLines_Quantity") }),
+            new[] { Desc("sum_SupplierInvoiceLines_Total") }),
 
         // ---- Stock ----
         new SqlReportPreset(
@@ -160,9 +198,10 @@ public static class SqlReportPresetCatalog
             "Quantités disponibles par entrepôt et par produit.",
             ReportDomain.Stock, "StockItems", null,
             new[] { "Warehouses_Name", "Products_Name" },
-            new[] { Sum("StockItems_Quantity") },
+            // La quantité disponible s'appelle QuantityOnHand (QuantityReserved est la part réservée).
+            new[] { Sum("StockItems_QuantityOnHand") },
             Array.Empty<ReportFilter>(),
-            new[] { Desc("sum_StockItems_Quantity") }),
+            new[] { Desc("sum_StockItems_QuantityOnHand") }),
 
         // ---- Trésorerie ----
         new SqlReportPreset(
@@ -173,6 +212,16 @@ public static class SqlReportPresetCatalog
             new[] { Sum("Payments_Amount"), new ReportAggregation { Fn = "count" } },
             Array.Empty<ReportFilter>(),
             new[] { Asc("Payments_PaymentDate__month") }),
+
+        new SqlReportPreset(
+            "encaissements_par_annee", "Encaissements par année",
+            "Règlements clients encaissés, année par année.",
+            ReportDomain.Tresorerie, "Payments", "Payments_PaymentDate",
+            new[] { "Payments_PaymentDate__year" },
+            new[] { Sum("Payments_Amount"), new ReportAggregation { Fn = "count" } },
+            Array.Empty<ReportFilter>(),
+            new[] { Asc("Payments_PaymentDate__year") },
+            DefaultPeriodPreset: ReportingPeriodResolver.PresetLastFiveYears),
 
         new SqlReportPreset(
             "encaissements_par_mode", "Encaissements par mode de règlement",
@@ -198,7 +247,9 @@ public static class SqlReportPresetCatalog
             "Débit et crédit cumulés par compte du plan comptable.",
             ReportDomain.Comptabilite, "JournalEntryLines", null,
             new[] { "JournalEntryLines_AccountNumber" },
-            new[] { Sum("JournalEntryLines_Debit"), Sum("JournalEntryLines_Credit") },
+            // Débit et crédit sont des montants (type possédé Money) : les colonnes réelles portent
+            // le suffixe Amount.
+            new[] { Sum("JournalEntryLines_DebitAmount"), Sum("JournalEntryLines_CreditAmount") },
             Array.Empty<ReportFilter>(),
             new[] { Asc("JournalEntryLines_AccountNumber") }),
 
@@ -206,7 +257,9 @@ public static class SqlReportPresetCatalog
             "ecritures_par_journal", "Écritures par journal",
             "Volume et montants par journal comptable.",
             ReportDomain.Comptabilite, "JournalEntries", "JournalEntries_EntryDate",
-            new[] { "Journals_Code" },
+            // JournalEntries ne référence pas la table Journals : le code du journal est une colonne
+            // de l'écriture elle-même.
+            new[] { "JournalEntries_JournalCode" },
             new[] { new ReportAggregation { Fn = "count" } },
             Array.Empty<ReportFilter>(),
             new[] { Desc("count") }),
@@ -225,7 +278,8 @@ public static class SqlReportPresetCatalog
             "effectif_par_contrat", "Effectif par type de contrat",
             "Nombre de salariés par type de contrat.",
             ReportDomain.Paie, "EmploymentContracts", null,
-            new[] { "EmploymentContracts_ContractType" },
+            // La colonne du type de contrat s'appelle simplement Type.
+            new[] { "EmploymentContracts_Type" },
             new[] { new ReportAggregation { Fn = "count" } },
             Array.Empty<ReportFilter>(),
             new[] { Desc("count") })
@@ -247,6 +301,9 @@ public static class SqlReportPresetCatalog
 
         foreach (var key in preset.Grouping)
             if (!SqlReportSqlBuilder.CanResolve(snapshot, key)) return false;
+
+        foreach (var column in preset.Columns ?? Array.Empty<string>())
+            if (!SqlReportSqlBuilder.CanResolve(snapshot, column)) return false;
 
         foreach (var aggregation in preset.Aggregations)
             if (!string.Equals(aggregation.Fn, "count", StringComparison.OrdinalIgnoreCase)
@@ -307,6 +364,8 @@ public static class SqlReportPresetCatalog
         {
             Grouping = grouping,
             Aggregations = grouping.Count > 0 ? preset.Aggregations : Array.Empty<ReportAggregation>(),
+            // Hors regroupement, ce sont les colonnes déclarées qui définissent l'état.
+            Fields = grouping.Count > 0 ? Array.Empty<string>() : preset.Columns ?? Array.Empty<string>(),
             Filters = filters,
             Sort = preset.Sort
         };

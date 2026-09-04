@@ -26,7 +26,6 @@ describe('StepInformationsComponent', () => {
       email: [''],
       password: [''],
       confirmPassword: [''],
-      partnerCode: [''],
       companyName: [''],
       nif: [''],
       taxRegime: [null],
@@ -64,20 +63,6 @@ describe('StepInformationsComponent', () => {
       component.form.get('email')?.setErrors({ required: true });
       component.form.get('email')?.markAsTouched();
       expect(component.isInvalid('email')).toBeTrue();
-    });
-  });
-
-  describe('partner code toggle', () => {
-    it('should default to hidden', () => {
-      expect(component.showPartnerCode).toBeFalse();
-      expect(fixture.nativeElement.querySelector('#wiz-partnerCode')).toBeNull();
-    });
-
-    it('should reveal the partner code field on toggle', () => {
-      component.togglePartnerCode();
-      fixture.detectChanges();
-      expect(component.showPartnerCode).toBeTrue();
-      expect(fixture.nativeElement.querySelector('#wiz-partnerCode')).not.toBeNull();
     });
   });
 

@@ -239,12 +239,95 @@ const DOMAIN_MODULE_OVERLAY: Record<BusinessDomainCode, readonly AppModule[]> = 
   'sante-paramedical': [AppModule.CRM],
   'textile-habillement': [AppModule.Stock],
   'transport-logistique': [AppModule.Stock],
-  'immobilier': [],
-  'energie-environnement': [],
+  'immobilier': [AppModule.Projects, AppModule.RecurringContracts],
+  'energie-environnement': [AppModule.Projects, AppModule.Purchases],
   'communication-marketing': [AppModule.CRM],
-  'artisanat': [],
+  'artisanat': [AppModule.Stock, AppModule.Purchases],
+  // « Autre domaine » reste volontairement vide : c'est le filet de sécurité choisi quand
+  // l'utilisateur ne se reconnaît dans aucun domaine — il ne doit rien présumer de son activité.
   'autre': []
 };
+
+/** Tranches d'effectif — liste blanche fermée, miroir de `Tenant.AllowedHeadcountBands` côté backend. */
+export type HeadcountBand = '1' | '2-9' | '10-49' | '50+';
+
+export const HEADCOUNT_BANDS: readonly HeadcountBand[] = ['1', '2-9', '10-49', '50+'];
+
+/**
+ * Réponses de profilage de l'étape Configuration (lot 3). `null` = question sans réponse,
+ * jamais « non » : c'est ce qui rend la fonctionnalité strictement additive (aucune réponse ⇒
+ * recommandation identique à celle d'avant ce lot).
+ */
+export interface RegistrationProfileAnswers {
+  hasPhysicalStock: boolean | null;
+  sellsToConsumers: boolean | null;
+  headcountBand: HeadcountBand | null;
+  accountingDelegatedToFirm: boolean | null;
+}
+
+export const EMPTY_PROFILE_ANSWERS: RegistrationProfileAnswers = {
+  hasPhysicalStock: null,
+  sellsToConsumers: null,
+  headcountBand: null,
+  accountingDelegatedToFirm: null
+};
+
+/**
+ * Surcouche de profilage appliquée à la recommandation sectorielle.
+ *
+ * Ordre d'application, volontairement figé et testé : d'abord TOUS les ajouts, puis TOUS les
+ * retraits. Les retraits l'emportent donc sur les ajouts, ce qui tranche le cas contradictoire
+ * « vend aux particuliers = oui » + « stock physique = non » (négoce sans stock détenu) en faveur
+ * de la réponse la plus explicite.
+ *
+ * Trois garde-fous inconditionnels :
+ *  - un module cœur n'est jamais retiré ;
+ *  - un module verrouillé sur le plan Free n'est jamais ajouté (il serait refusé côté serveur et
+ *    produirait un avertissement inutile) ;
+ *  - la tranche d'effectif n'ajoute ni ne retire rien. Le seul module qu'elle désignerait est
+ *    « RH & Paie », verrouillé sur le plan Free : elle est donc conservée pour l'analyse et
+ *    l'affichage, sans effet sur la sélection.
+ */
+export function applyProfileOverlay(
+  base: readonly AppModule[],
+  answers: RegistrationProfileAnswers,
+  options: { coreModuleIds: readonly AppModule[]; isLocked: (id: AppModule) => boolean }
+): AppModule[] {
+  const coreSet = new Set(options.coreModuleIds);
+  const selection = new Set<AppModule>(base);
+
+  const add = (id: AppModule) => {
+    if (!options.isLocked(id) && id !== AppModule.Honoraires) {
+      selection.add(id);
+    }
+  };
+  const remove = (id: AppModule) => {
+    if (!coreSet.has(id)) {
+      selection.delete(id);
+    }
+  };
+
+  // 1) Ajouts.
+  if (answers.hasPhysicalStock === true) {
+    add(AppModule.Stock);
+    add(AppModule.Purchases);
+  }
+  // « Point de Vente » exige Ventes + Produits + Stock (cf. app-navigation.registry) : activer
+  // Stock est donc le seul levier réel qui débloque la caisse pour une activité B2C.
+  if (answers.sellsToConsumers === true) {
+    add(AppModule.Stock);
+  }
+
+  // 2) Retraits.
+  if (answers.hasPhysicalStock === false) {
+    remove(AppModule.Stock);
+  }
+  if (answers.accountingDelegatedToFirm === true) {
+    remove(AppModule.Accounting);
+  }
+
+  return Array.from(selection).sort((a, b) => a - b);
+}
 
 const SEGMENT_DEFAULT_WAREHOUSE_NAME: Record<CompanySegmentCode, string> = {
   'entreprise': 'Entrepôt Principal',
@@ -593,8 +676,11 @@ export class RegistrationCatalogService {
    * premium id the backend doesn't serve is silently absent), sorted ascending,
    * and never includes core modules (premium modules are never core). Disjoint from
    * `recommendedModules()` and `optionalModules()`, which both exclude locked modules.
+   *
+   * Ne prend pas de segment/domaine : le verrou « plan Free » est une propriété du module et du
+   * plan, jamais du profil sectoriel. La signature en portait deux, qui n'étaient jamais lus.
    */
-  premiumModules(segment: string | null | undefined, domain: string | null | undefined): AppModule[] {
+  premiumModules(): AppModule[] {
     const coreSet = new Set(this.coreModuleIds);
     return this.modules
       .map(m => m.id)

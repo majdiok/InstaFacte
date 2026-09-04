@@ -536,6 +536,27 @@ public static class DependencyInjection
         services.Configure<FirmGovernanceOptions>(configuration.GetSection(FirmGovernanceOptions.SectionName));
         services.Configure<FirmFiscalOpsOptions>(configuration.GetSection(FirmFiscalOpsOptions.SectionName));
         services.Configure<AccountingSettings>(configuration.GetSection(AccountingSettings.SectionName));
+
+        // Les comptes SCE venus d'appsettings sont signalés, jamais bloquants : faire échouer le
+        // démarrage de l'API sur une clé de configuration serait une régression plus grave que le
+        // défaut qu'on cherche à prévenir. La saisie par dossier, elle, est refusée à l'écriture.
+        services.AddOptions<AccountingSettings>().PostConfigure<Microsoft.Extensions.Logging.ILogger<AccountingSettings>>(
+            static (settings, logger) =>
+            {
+                foreach (var (key, value) in settings.ConfiguredAccountNumbers())
+                {
+                    if (FactuTrust.Domain.Services.Accounting.AccountNumberRules.IsWellFormed(value))
+                        continue;
+
+                    Microsoft.Extensions.Logging.LoggerExtensions.LogWarning(
+                        logger,
+                        "Configuration comptable : {Key} = « {Value} » n'est pas un numéro de compte "
+                        + "valide (au plus {MaxDigits} chiffres, classe 1 à 7). Les écritures qui "
+                        + "l'utilisent seront refusées à la création du compte.",
+                        key, value, FactuTrust.Domain.Services.Accounting.AccountNumberRules.MaxDigits);
+                }
+            });
+
         services.Configure<ProductOnboardingSettings>(configuration.GetSection(ProductOnboardingSettings.SectionName));
         services.Configure<NifRegistryLookupOptions>(configuration.GetSection(NifRegistryLookupOptions.SectionName));
         services.Configure<ModuleRecommendationsOptions>(configuration.GetSection(ModuleRecommendationsOptions.SectionName));
@@ -776,6 +797,7 @@ public static class DependencyInjection
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SequenceGapsAuditRule>();
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OrphanAccountsAuditRule>();
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PayrollAuxiliaryAccountShapeAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.AccountNumberLengthAuditRule>();
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OutOfPeriodAuditRule>();
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PieceDuplicatesAuditRule>();
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.ThirdPartyMislinkAuditRule>();
@@ -831,6 +853,7 @@ public static class DependencyInjection
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SequenceGapsAuditRule>();
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OrphanAccountsAuditRule>();
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PayrollAuxiliaryAccountShapeAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.AccountNumberLengthAuditRule>();
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OutOfPeriodAuditRule>();
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PieceDuplicatesAuditRule>();
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.ThirdPartyMislinkAuditRule>();

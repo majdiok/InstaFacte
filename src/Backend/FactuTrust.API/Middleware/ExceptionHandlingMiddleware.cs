@@ -2,9 +2,9 @@ using System.Diagnostics;
 using System.Security.Claims;
 using System.Text.Json;
 using FluentValidation;
+using FactuTrust.Application.Common;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Infrastructure.Services;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace FactuTrust.API.Middleware;
@@ -65,6 +65,7 @@ public sealed class ExceptionHandlingMiddleware
             ComplianceException complianceEx => HandleComplianceException(complianceEx),
             Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException concurrencyEx => HandleDbUpdateConcurrencyException(concurrencyEx),
             Microsoft.EntityFrameworkCore.DbUpdateException dbEx => HandleDbUpdateException(dbEx),
+            _ when SqlExceptionHelper.IsSchemaDrift(exception) => HandleTenantSchemaOutdatedException(exception),
             _ => HandleUnknownException(exception)
         };
 
@@ -222,13 +223,13 @@ public sealed class ExceptionHandlingMiddleware
     {
         var errorMessage = "Erreur lors de l'enregistrement des données.";
 
-        var sqlException = FindSqlException(exception);
+        var sqlException = SqlExceptionHelper.FindSqlException(exception);
         if (sqlException != null)
         {
             switch (sqlException.Number)
             {
-                case 207:
-                case 208:
+                case SqlExceptionHelper.InvalidColumnName:
+                case SqlExceptionHelper.InvalidObjectName:
                     if (IsStockSchemaMissing(sqlException.Message))
                     {
                         errorMessage = "Le schéma stock n'est pas migré pour cette entreprise. Lancez la migration.";
@@ -306,18 +307,31 @@ public sealed class ExceptionHandlingMiddleware
         });
     }
 
-    private static SqlException? FindSqlException(Exception exception)
+    /// <summary>
+    /// Table ou colonne du modèle EF absente de la base tenant, sur un chemin de LECTURE (les
+    /// écritures passent par <see cref="HandleDbUpdateException"/>, qui traduit déjà ces codes).
+    /// Sans ce cas, une migration en retard ressortait en 500 <c>INTERNAL_ERROR</c> : message
+    /// inexploitable pour l'utilisateur, et rien pour distinguer la panne d'un bug applicatif en
+    /// supervision. On réutilise le code émis par <c>TenantMiddleware</c> quand il bloque la requête
+    /// en amont pour la même raison : le client affiche alors la même bannière « mise à jour de la
+    /// base en cours », sans traitement spécifique.
+    /// </summary>
+    private (int StatusCode, ValidationErrorResponse) HandleTenantSchemaOutdatedException(Exception exception)
     {
-        var current = exception;
-        while (current != null)
+        var message = "Le schéma de base de données n'est pas à jour pour cette entreprise. "
+            + "Réessayez dans quelques instants ou contactez l'administrateur si le problème persiste.";
+
+        if (_environment.IsDevelopment() && SqlExceptionHelper.FindSqlException(exception) is { } sqlException)
+            message += $" (Détail: {sqlException.Message})";
+
+        return (StatusCodes.Status503ServiceUnavailable, new ValidationErrorResponse
         {
-            if (current is SqlException sqlException)
-                return sqlException;
-
-            current = current.InnerException;
-        }
-
-        return null;
+            Code = ValidationErrorCodes.TenantMigrationFailed,
+            Message = message,
+            GlobalErrors = new[] { message },
+            CanProceed = false,
+            ErrorCount = 1
+        });
     }
 
     private static bool IsStockSchemaMissing(string? message)

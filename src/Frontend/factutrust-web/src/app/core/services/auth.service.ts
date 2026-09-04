@@ -117,6 +117,18 @@ export interface RegisterRequest {
   companySegment?: string;
   businessDomain?: string;
   enabledModules?: number[];
+  /**
+   * Réponses de profilage de l'étape Configuration (lot 3). Facultatif : absent ⇒ comportement
+   * d'inscription identique à avant ce lot. Le serveur ne s'en sert jamais pour dériver des
+   * modules — `enabledModules` reste la seule sélection soumise à validation — il les normalise
+   * et les enregistre sur le tenant.
+   */
+  profileAnswers?: {
+    hasPhysicalStock?: boolean | null;
+    sellsToConsumers?: boolean | null;
+    headcountBand?: string | null;
+    accountingDelegatedToFirm?: boolean | null;
+  };
 }
 
 export interface RegisterAccountingFirmRequest {

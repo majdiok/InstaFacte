@@ -44,11 +44,12 @@ public sealed class SectorRuleSeederTests
         // Phase 2 (plan §4.2/§4.3): the catalog declares 4 module dependency edges and additive data
         // templates. Phase 3 §3.4 enriched the catalog with 5 more templates (product families, extra
         // warehouses, BTP chart-account, numbering prefixes) on top of the 3 original chart-account
-        // templates — 8 total.
+        // templates — 8 total. Lot 2.2 ajoute 2 modèles de familles de produits (santé & paramédical,
+        // artisanat), qui couvraient jusqu'ici zéro modèle — 10 total.
         Assert.Equal(SectorConfigurationCatalog.ModuleDependencies.Count, await db.SectorModuleDependencies.CountAsync());
         Assert.Equal(4, await db.SectorModuleDependencies.CountAsync());
         Assert.Equal(SectorConfigurationCatalog.DataTemplates.Count, await db.SectorDataTemplates.CountAsync());
-        Assert.Equal(8, await db.SectorDataTemplates.CountAsync());
+        Assert.Equal(10, await db.SectorDataTemplates.CountAsync());
         Assert.Equal(ExpectedDataTemplateItemCount(), await db.SectorDataTemplateItems.CountAsync());
         Assert.Equal(1, result.NewVersion);
         Assert.False(result.Forced);

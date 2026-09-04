@@ -2,6 +2,7 @@
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Audit;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services.Accounting;
 using Microsoft.EntityFrameworkCore;
 
 namespace FactuTrust.Infrastructure.Services.AccountingAudit.Rules;
@@ -112,6 +113,71 @@ public sealed class PayrollAuxiliaryAccountShapeAuditRule : AccountingAuditRuleB
         }
 
         return false;
+    }
+}
+
+/// <summary>
+/// Numéro de compte de plus de 8 chiffres.
+/// </summary>
+/// <remarks>
+/// <para>Règle distincte de <see cref="PayrollAuxiliaryAccountShapeAuditRule"/>, dont la requête est
+/// filtrée sur les sous-comptes de 425 : un numéro trop long peut apparaître n'importe où dans le
+/// plan (import client, reprise de sauvegarde antérieure à la renumérotation).</para>
+/// <para>Un numéro conforme est produit à la création depuis la remédiation ; ce contrôle est le
+/// filet qui signale une régression ou une base restaurée dans un état ancien. Correction :
+/// <c>docs/runbooks/sql/CompactOverlongAccountNumbers.readonly.sql</c> puis redémarrage de l'API,
+/// qui applique la renumérotation au bootstrap du dossier.</para>
+/// </remarks>
+public sealed class AccountNumberLengthAuditRule : AccountingAuditRuleBase
+{
+    public override string Code => "health-account-number-length";
+    public override string ModuleCode => "integrity";
+    public override int Category => (int)AnomalyCategory.Comptes;
+    public override int DefaultSeverity => (int)PreClosingSeverity.Warning;
+
+    public override async Task<IReadOnlyList<AnomalyCandidate>> EvaluateAsync(
+        IAuditEvaluationContext ctx, CancellationToken cancellationToken)
+    {
+        var c = ctx.Ctx();
+        var maxDigits = AccountNumberRules.MaxDigits;
+
+        // Pré-filtre SQL sur la longueur : un numéro de plus de 8 chiffres fait forcément plus de
+        // 8 caractères, donc rien n'échappe au filtre. Le décompte exact des chiffres (les points
+        // des sous-comptes 421.1 ne comptent pas) se fait ensuite en mémoire.
+        var candidates = await c.Db.ChartOfAccounts.AsNoTracking()
+            .Where(a => a.AccountNumber.Length > maxDigits)
+            .Select(a => new { a.AccountNumber, a.Label })
+            .ToListAsync(cancellationToken);
+
+        var findings = candidates
+            .Select(a => new { a.AccountNumber, a.Label, Digits = AccountNumberRules.DigitCount(a.AccountNumber) })
+            .Where(a => a.Digits > maxDigits)
+            .OrderBy(a => a.AccountNumber, StringComparer.Ordinal)
+            .ToList();
+
+        if (findings.Count == 0) return Array.Empty<AnomalyCandidate>();
+
+        return
+        [
+            SingleGroup(Code, ModuleCode, Category, DefaultSeverity,
+                "Numéros de compte trop longs",
+                $"{findings.Count} compte(s) dépassent {maxDigits} chiffres.",
+                "Un numéro hors norme se propage aux écritures, à la balance et au FEC, où il "
+                + "identifie un compte que le référentiel comptable ne reconnaît pas.",
+                accountRef: findings[0].AccountNumber,
+                amount: findings.Count,
+                periodFrom: null,
+                periodTo: null,
+                lines: findings.Select(f => new AnomalyLineCandidate(
+                    null, null, null, f.AccountNumber,
+                    $"{f.Label} — {f.Digits} chiffres", 0, 0, null, null)).ToList(),
+                recommendations:
+                [
+                    "Relancer l'API : la renumérotation s'applique au bootstrap du dossier.",
+                    "Pré-contrôle : docs/runbooks/sql/CompactOverlongAccountNumbers.readonly.sql."
+                ],
+                deepLinkRoute: "/accounting/chart")
+        ];
     }
 }
 

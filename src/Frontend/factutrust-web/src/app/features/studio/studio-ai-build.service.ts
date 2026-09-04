@@ -43,6 +43,22 @@ export interface StudioReportResultEvent {
   message: string;
 }
 
+/** Une reformulation proposée après un échec d'état. */
+export interface StudioReportSuggestion {
+  preset: string;
+  label: string;
+  prompt: string;
+}
+
+/** Payload de l'événement SSE `studio_report_error` — miroir de `StudioReportFailurePayload`. */
+export interface StudioReportFailureEvent {
+  message: string;
+  preset?: string | null;
+  title?: string | null;
+  periodLabel?: string | null;
+  suggestions: StudioReportSuggestion[];
+}
+
 /** Payload de l'événement SSE `studio_plan` (retour de l'outil studio_plan_*). */
 export interface StudioPlanEvent {
   success: boolean;

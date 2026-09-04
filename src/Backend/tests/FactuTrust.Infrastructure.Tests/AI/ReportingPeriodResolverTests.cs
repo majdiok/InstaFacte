@@ -128,4 +128,18 @@ public sealed class ReportingPeriodResolverTests
         Assert.Contains(ReportingPeriodResolver.PresetToday, ReportingPeriodResolver.ValidPresets);
         Assert.Contains(ReportingPeriodResolver.PresetYesterday, ReportingPeriodResolver.ValidPresets);
     }
+
+    [Fact]
+    public void LastFiveYears_Spans_The_Current_Year_And_The_Four_Before()
+    {
+        // Fenêtre indispensable à un état regroupé PAR ANNÉE : « année en cours » n'en rendrait
+        // qu'une seule ligne.
+        var fake = new FakeTimeProvider(new DateTimeOffset(2026, 6, 3, 10, 0, 0, TimeSpan.Zero));
+        var r = ReportingPeriodResolver.Resolve(ReportingPeriodResolver.PresetLastFiveYears, fake);
+
+        Assert.Equal(new DateOnly(2022, 1, 1), r.FromDate);
+        Assert.Equal(new DateOnly(2026, 6, 3), r.ToDate);
+        Assert.Contains("2022", r.Label, StringComparison.Ordinal);
+        Assert.Contains(ReportingPeriodResolver.PresetLastFiveYears, ReportingPeriodResolver.ValidPresets);
+    }
 }

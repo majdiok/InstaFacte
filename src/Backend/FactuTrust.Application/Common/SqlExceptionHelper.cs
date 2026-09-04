@@ -7,11 +7,17 @@ namespace FactuTrust.Application.Common;
 /// </summary>
 public static class SqlExceptionHelper
 {
+  /// <summary>SQL Server « Invalid column name » — column of the EF model missing from the database.</summary>
+  public const int InvalidColumnName = 207;
+
+  /// <summary>SQL Server « Invalid object name » — table of the EF model missing from the database.</summary>
+  public const int InvalidObjectName = 208;
+
   /// <summary>
   /// SQL Server error numbers for invalid column name (207) and invalid object name (208).
   /// </summary>
   public static bool IsSchemaDrift(Exception exception) =>
-      FindSqlException(exception) is { Number: 207 or 208 };
+      FindSqlException(exception) is { Number: InvalidColumnName or InvalidObjectName };
 
   public static SqlException? FindSqlException(Exception? exception)
   {

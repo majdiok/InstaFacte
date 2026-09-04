@@ -147,31 +147,6 @@
       </div>
     </div>
 
-    <div class="optional-section">
-      <div class="toggle-group" (click)="togglePartnerCode()" [attr.aria-expanded]="showPartnerCode">
-        <div class="toggle-info">
-          <i class="pi pi-users text-primary-600" aria-hidden="true"></i>
-          <span id="wiz-partner-label">J'ai un code partenaire</span>
-        </div>
-        <p-inputSwitch
-          inputId="wiz-partner-toggle"
-          [ngModel]="showPartnerCode"
-          (ngModelChange)="showPartnerCode = $event"
-          [ngModelOptions]="{standalone: true}"
-          [attr.aria-labelledby]="'wiz-partner-label'"
-          (click)="$event.stopPropagation()">
-        </p-inputSwitch>
-      </div>
-
-      @if (showPartnerCode) {
-        <div class="form-group slide-down mt-3" @fadeInOut>
-          <div class="input-icon-wrapper">
-            <i class="pi pi-ticket icon"></i>
-            <input pInputText id="wiz-partnerCode" formControlName="partnerCode" placeholder="Code (ex: PARTNER24)">
-          </div>
-        </div>
-      }
-    </div>
   </div>
 
   <div class="form-section">

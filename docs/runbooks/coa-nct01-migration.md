@@ -2,6 +2,15 @@
 
 Le plan actuel (hybride PCG français, ~215 comptes) est remplacé au **boot tenant** par le catalogue NCT 01 + overlay métier. Les écritures stockent un **numéro string** : toutes les colonnes `*AccountNumber*` sont réécrites, y compris sur les périodes clôturées.
 
+> **Voir aussi — renumérotation des comptes trop longs.** Un second passage,
+> `ChartAccountDigitCompactionService`, s'exécute juste après ce remap au boot tenant : il ramène
+> sous 8 chiffres les comptes qui les dépassent (auxiliaires salariés hérités du matricule, en
+> 10 chiffres). Il partage les primitives de réécriture de ce remap mais garde son **propre**
+> inventaire de colonnes, plus complet de six paires, et sa propre allow-list anti-injection.
+> Contrairement à ce remap, il est **réversible** — sa carte est injective vers des numéros libres,
+> et `ChartOfAccountCompactionLogs` en conserve l'inverse. Pré-contrôle :
+> `docs/runbooks/sql/CompactOverlongAccountNumbers.readonly.sql`.
+
 Le remap n’est **pas idempotent** sur les cycles (`421↔425`, `231↔232`). L’idempotence repose uniquement sur `ChartOfAccountRemapLogs.MapVersion = nct01-v1`.
 
 ## Pré-checks
