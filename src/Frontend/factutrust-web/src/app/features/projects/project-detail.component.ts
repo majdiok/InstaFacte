@@ -25,6 +25,7 @@ import {
   ProjectApiService,
   ProjectAssignableUser,
   ProjectAttachment,
+  BillableProjectTask,
   ProjectBillingReadiness,
   ProjectBudget,
   ProjectComment,
@@ -202,10 +203,12 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
               (comment)="addComment($event)" />
           </p-tabpanel>
           <p-tabpanel value="billing">
-            <app-project-billing-tab [project]="p" [readiness]="readiness()" [milestones]="milestones()"
+            <app-project-billing-tab [project]="p" [readiness]="readiness()" [billableTasks]="billableTasks()"
+              [milestones]="milestones()"
               [situations]="situations()" [subs]="subs()" [suppliers]="suppliers()"
               [canBill]="canCreateBilling" [canUpdate]="canUpdate"
-              (activate)="activate()" (invoiceTime)="invoiceTime($event)" (invoiceFixedPrice)="invoiceFixedPrice($event)"
+              (activate)="activate()" (invoiceTime)="invoiceTime($event)" (invoiceTasks)="invoiceTasks($event)"
+              (refreshBillableTasks)="loadBillableTasks($event)" (invoiceFixedPrice)="invoiceFixedPrice($event)"
               (addMilestone)="addMilestone($event)" (invoiceMilestone)="invoiceMilestone($event)"
               (addSituation)="addSituation($event)" (updateSituation)="updateSituation($event)"
               (validateSituation)="validateSituation($event)" (invoiceSituation)="invoiceSituation($event)"
@@ -291,6 +294,7 @@ export class ProjectDetailComponent implements OnInit {
   readonly subs = signal<ProjectSubcontractor[]>([]);
   readonly workload = signal<ProjectWorkloadRow[]>([]);
   readonly readiness = signal<ProjectBillingReadiness | null>(null);
+  readonly billableTasks = signal<BillableProjectTask[]>([]);
   readonly products = signal<ProductOption[]>([]);
   readonly purchaseOrders = signal<ProductOption[]>([]);
   readonly linkedPurchaseOrders = signal<ProjectPurchaseOrder[]>([]);
@@ -733,6 +737,27 @@ export class ProjectDetailComponent implements OnInit {
         else this.toast.add({ severity: 'error', summary: 'Facturation impossible', detail: r.message || '' });
       },
       error: err => this.fail(err, 'Facturation impossible')
+    });
+  }
+
+  loadBillableTasks(method: 'fixed' | 'hourly'): void {
+    this.api.billableTasks(this.id, method).subscribe({
+      next: r => { if (r.success && r.data) this.billableTasks.set(r.data); },
+      error: err => this.fail(err, 'Tâches facturables')
+    });
+  }
+
+  invoiceTasks(ev: { method: 'fixed' | 'hourly'; notes?: string; tasks: { taskId: string; amountHt?: number }[] }): void {
+    this.api.invoiceTasks(this.id, ev.method, ev.tasks, ev.notes).subscribe({
+      next: r => {
+        if (r.success && r.data) {
+          this.loadBillableTasks(ev.method);
+          void this.router.navigate(['/invoices', r.data.invoiceId]);
+        } else {
+          this.toast.add({ severity: 'error', summary: 'Facturation par tâche', detail: r.message || '' });
+        }
+      },
+      error: err => this.fail(err, 'Facturation par tâche')
     });
   }
 

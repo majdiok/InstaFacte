@@ -44,10 +44,13 @@ public partial class TenantDbContext
             entity.Property(t => t.Status).HasConversion<int>().IsRequired();
             entity.Property(t => t.Priority).HasConversion<int>().IsRequired();
             entity.Property(t => t.EstimatedHours).HasPrecision(18, 2);
+            entity.Property(t => t.InvoicedBillingMethod).HasConversion<int>();
             entity.HasIndex(t => t.ProjectId);
             entity.HasIndex(t => t.PhaseId);
             entity.HasIndex(t => t.ParentTaskId);
             entity.HasIndex(t => t.AssigneeUserId);
+            entity.HasIndex(t => t.InvoicedInvoiceId)
+                .HasFilter("[InvoicedInvoiceId] IS NOT NULL");
         });
 
         builder.Entity<ProjectTaskDependency>(entity =>

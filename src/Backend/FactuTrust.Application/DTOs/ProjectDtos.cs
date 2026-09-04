@@ -318,6 +318,30 @@ public sealed record InvoiceTimeDto
     public string? Notes { get; init; }
 }
 
+public sealed record InvoiceTaskLineDto
+{
+    public Guid TaskId { get; init; }
+    public decimal? AmountHt { get; init; }
+}
+
+public sealed record InvoiceTasksDto
+{
+    public string Method { get; init; } = "hourly";
+    public string? Notes { get; init; }
+    public IReadOnlyList<InvoiceTaskLineDto> Tasks { get; init; } = Array.Empty<InvoiceTaskLineDto>();
+}
+
+public sealed record BillableProjectTaskDto
+{
+    public Guid Id { get; init; }
+    public string Title { get; init; } = null!;
+    public decimal UninvoicedBillableHours { get; init; }
+    public decimal HourlyRate { get; init; }
+    public decimal PreviewAmountHt { get; init; }
+    public bool IsEligible { get; init; }
+    public string? BlockReason { get; init; }
+}
+
 public sealed record InvoiceMilestoneDto
 {
     public Guid MilestoneId { get; init; }

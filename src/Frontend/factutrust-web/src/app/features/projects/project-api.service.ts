@@ -350,6 +350,16 @@ export interface ProjectBillingReadiness {
   blockers: string[];
 }
 
+export interface BillableProjectTask {
+  id: string;
+  title: string;
+  uninvoicedBillableHours: number;
+  hourlyRate: number;
+  previewAmountHt: number;
+  isEligible: boolean;
+  blockReason?: string | null;
+}
+
 export interface UpsertProjectPayload {
   clientId: string;
   name: string;
@@ -654,8 +664,21 @@ export class ProjectApiService {
     return this.http.get<ApiResponse<ProjectBillingReadiness>>(`${this.base}/${projectId}/billing/readiness`);
   }
 
+  billableTasks(projectId: string, method: 'fixed' | 'hourly'): Observable<ApiResponse<BillableProjectTask[]>> {
+    return this.http.get<ApiResponse<BillableProjectTask[]>>(`${this.base}/${projectId}/billing/billable-tasks`, { params: { method } });
+  }
+
   invoiceTime(projectId: string, groupBy = 'member', notes?: string): Observable<ApiResponse<{ invoiceId: string; billingId: string }>> {
     return this.http.post<ApiResponse<{ invoiceId: string; billingId: string }>>(`${this.base}/${projectId}/billing/time`, { groupBy, notes });
+  }
+
+  invoiceTasks(
+    projectId: string,
+    method: 'fixed' | 'hourly',
+    tasks: { taskId: string; amountHt?: number }[],
+    notes?: string
+  ): Observable<ApiResponse<{ invoiceId: string; billingId: string }>> {
+    return this.http.post<ApiResponse<{ invoiceId: string; billingId: string }>>(`${this.base}/${projectId}/billing/tasks`, { method, notes, tasks });
   }
 
   invoiceMilestone(projectId: string, milestoneId: string, notes?: string): Observable<ApiResponse<{ invoiceId: string; billingId: string }>> {

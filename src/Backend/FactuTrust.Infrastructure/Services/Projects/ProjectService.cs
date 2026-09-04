@@ -843,6 +843,8 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
     {
         var task = await _db.ProjectTasks.FirstOrDefaultAsync(t => t.Id == taskId, cancellationToken);
         if (task is null) return Result.Failure(Error.NotFound("ProjectTask", taskId));
+        if (task.InvoicedInvoiceId.HasValue)
+            return Result.Failure(Error.Validation("Task", "Impossible de supprimer une tâche déjà facturée"));
         if (await _db.ProjectTimeEntries.AnyAsync(t => t.TaskId == taskId, cancellationToken))
             return Result.Failure(Error.Validation("Task", "Impossible de supprimer une tâche qui a des temps saisis"));
         var children = await _db.ProjectTasks.Where(t => t.ParentTaskId == taskId).ToListAsync(cancellationToken);
@@ -1289,6 +1291,9 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
 
     public async Task<Result<ProjectInvoiceResultDto>> InvoiceTimeAsync(Guid projectId, InvoiceTimeDto dto, CancellationToken cancellationToken = default)
     {
+        if (string.Equals(dto.GroupBy, "task", StringComparison.OrdinalIgnoreCase))
+            return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("GroupBy", "Utilisez la facturation par tâche (POST /billing/tasks)"));
+
         var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
         if (project is null) return Result.Failure<ProjectInvoiceResultDto>(Error.NotFound("Project", projectId));
         if (!project.Status.CanBeBilled())
@@ -1300,34 +1305,28 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         if (entries.Count == 0)
             return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Time", "Aucun temps validé non facturé"));
 
+        var invoicedTaskIds = await _db.ProjectTasks.AsNoTracking()
+            .Where(t => t.ProjectId == projectId && t.InvoicedInvoiceId != null)
+            .Select(t => t.Id)
+            .ToListAsync(cancellationToken);
+        entries = entries
+            .Where(e => e.TaskId == null || !invoicedTaskIds.Contains(e.TaskId.Value))
+            .ToList();
+        if (entries.Count == 0)
+            return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Time", "Aucun temps validé non facturé"));
+
         var members = await _db.ProjectMembers.Where(m => m.ProjectId == projectId).ToListAsync(cancellationToken);
         var memberMap = members.ToDictionary(m => m.UserId);
         var names = await LoadUserNamesAsync(entries.Select(e => e.UserId), cancellationToken);
-        var taskTitles = await LoadTaskTitlesAsync(entries.Select(e => e.TaskId), cancellationToken);
 
         var lines = new List<(string Designation, decimal Hours, decimal UnitPrice)>();
-        if (string.Equals(dto.GroupBy, "task", StringComparison.OrdinalIgnoreCase))
+        foreach (var group in entries.GroupBy(e => e.UserId))
         {
-            foreach (var group in entries.GroupBy(e => e.TaskId))
-            {
-                var hours = group.Sum(e => e.Hours);
-                var rate = AverageBillRate(group.Select(e => memberMap.GetValueOrDefault(e.UserId)));
-                if (rate <= 0)
-                    return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("DailyRate", "Définissez un TJM ou un coût horaire sur l'équipe"));
-                var title = group.Key is { } tid ? taskTitles.GetValueOrDefault(tid, "Tâche") : "Temps non rattaché";
-                lines.Add(($"Régie — {title}", hours, rate));
-            }
-        }
-        else
-        {
-            foreach (var group in entries.GroupBy(e => e.UserId))
-            {
-                var hours = group.Sum(e => e.Hours);
-                var rate = BillRate(memberMap.GetValueOrDefault(group.Key));
-                if (rate <= 0)
-                    return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("DailyRate", "Définissez un TJM ou un coût horaire sur l'équipe"));
-                lines.Add(($"Régie — {names.GetValueOrDefault(group.Key, "Intervenant")}", hours, rate));
-            }
+            var hours = group.Sum(e => e.Hours);
+            var rate = BillRate(memberMap.GetValueOrDefault(group.Key));
+            if (rate <= 0)
+                return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("DailyRate", "Définissez un TJM ou un coût horaire sur l'équipe"));
+            lines.Add(($"Régie — {names.GetValueOrDefault(group.Key, "Intervenant")}", hours, rate));
         }
 
         return await EmitProjectInvoiceAsync(
@@ -1341,6 +1340,202 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
                 {
                     var marked = entry.MarkInvoiced(invoiceId);
                     if (marked.IsFailure) return marked;
+                }
+                return Result.Success();
+            },
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<BillableProjectTaskDto>> GetBillableTasksAsync(Guid projectId, string method, CancellationToken cancellationToken = default)
+    {
+        var isFixed = string.Equals(method, "fixed", StringComparison.OrdinalIgnoreCase);
+        var isHourly = string.Equals(method, "hourly", StringComparison.OrdinalIgnoreCase);
+        if (!isFixed && !isHourly)
+            return Array.Empty<BillableProjectTaskDto>();
+
+        if (!await _db.Projects.AsNoTracking().AnyAsync(p => p.Id == projectId, cancellationToken))
+            return Array.Empty<BillableProjectTaskDto>();
+
+        var tasks = await _db.ProjectTasks.AsNoTracking()
+            .Where(t => t.ProjectId == projectId && t.Status != ProjectTaskStatus.Cancelled && t.InvoicedInvoiceId == null)
+            .OrderBy(t => t.Title)
+            .ToListAsync(cancellationToken);
+        if (tasks.Count == 0)
+            return Array.Empty<BillableProjectTaskDto>();
+
+        var taskIds = tasks.Select(t => t.Id).ToList();
+        var entries = await _db.ProjectTimeEntries.AsNoTracking()
+            .Where(e => e.ProjectId == projectId && e.TaskId != null && taskIds.Contains(e.TaskId.Value))
+            .ToListAsync(cancellationToken);
+
+        var members = await _db.ProjectMembers.AsNoTracking()
+            .Where(m => m.ProjectId == projectId)
+            .ToListAsync(cancellationToken);
+        var memberMap = members.ToDictionary(m => m.UserId);
+
+        var invoicedEntryTaskIds = entries
+            .Where(e => e.InvoicedInvoiceId != null)
+            .Select(e => e.TaskId!.Value)
+            .ToHashSet();
+
+        var result = new List<BillableProjectTaskDto>();
+        foreach (var task in tasks)
+        {
+            if (invoicedEntryTaskIds.Contains(task.Id))
+                continue;
+
+            var taskEntries = entries
+                .Where(e => e.TaskId == task.Id
+                    && e.IsBillable
+                    && e.Status == ProjectTimeEntryStatus.Validated
+                    && e.InvoicedInvoiceId == null)
+                .ToList();
+
+            var hours = taskEntries.Sum(e => e.Hours);
+            var rate = AverageBillRate(taskEntries.Select(e => memberMap.GetValueOrDefault(e.UserId)));
+
+            if (isHourly)
+            {
+                if (hours <= 0)
+                    continue;
+
+                if (rate <= 0)
+                {
+                    result.Add(new BillableProjectTaskDto
+                    {
+                        Id = task.Id,
+                        Title = task.Title,
+                        UninvoicedBillableHours = hours,
+                        HourlyRate = rate,
+                        PreviewAmountHt = decimal.Round(hours * rate, 3),
+                        IsEligible = false,
+                        BlockReason = "Définissez un TJM ou un coût horaire sur l'équipe."
+                    });
+                    continue;
+                }
+
+                result.Add(new BillableProjectTaskDto
+                {
+                    Id = task.Id,
+                    Title = task.Title,
+                    UninvoicedBillableHours = hours,
+                    HourlyRate = rate,
+                    PreviewAmountHt = decimal.Round(hours * rate, 3),
+                    IsEligible = true,
+                    BlockReason = null
+                });
+                continue;
+            }
+
+            result.Add(new BillableProjectTaskDto
+            {
+                Id = task.Id,
+                Title = task.Title,
+                UninvoicedBillableHours = hours,
+                HourlyRate = rate,
+                PreviewAmountHt = decimal.Round(hours * rate, 3),
+                IsEligible = true,
+                BlockReason = null
+            });
+        }
+
+        return result;
+    }
+
+    public async Task<Result<ProjectInvoiceResultDto>> InvoiceTasksAsync(Guid projectId, InvoiceTasksDto dto, CancellationToken cancellationToken = default)
+    {
+        var isFixed = string.Equals(dto.Method, "fixed", StringComparison.OrdinalIgnoreCase);
+        var isHourly = string.Equals(dto.Method, "hourly", StringComparison.OrdinalIgnoreCase);
+        if (!isFixed && !isHourly)
+            return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Method", "Le mode de facturation doit être « fixed » ou « hourly »"));
+
+        if (dto.Tasks is null || dto.Tasks.Count == 0)
+            return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Tasks", "Sélectionnez au moins une tâche"));
+
+        var taskIds = dto.Tasks.Select(t => t.TaskId).ToList();
+        if (taskIds.Distinct().Count() != taskIds.Count)
+            return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Tasks", "Chaque tâche ne peut être sélectionnée qu'une fois"));
+
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
+        if (project is null) return Result.Failure<ProjectInvoiceResultDto>(Error.NotFound("Project", projectId));
+        if (!project.Status.CanBeBilled())
+            return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Status", project.Status.CannotBeBilledMessage()));
+
+        var tasks = await _db.ProjectTasks
+            .Where(t => t.ProjectId == projectId && taskIds.Contains(t.Id))
+            .ToListAsync(cancellationToken);
+        if (tasks.Count != taskIds.Count)
+            return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Tasks", "Une ou plusieurs tâches sont introuvables sur ce projet"));
+
+        var billable = await GetBillableTasksAsync(projectId, dto.Method, cancellationToken);
+        var billableMap = billable.ToDictionary(t => t.Id);
+
+        var members = await _db.ProjectMembers.Where(m => m.ProjectId == projectId).ToListAsync(cancellationToken);
+        var memberMap = members.ToDictionary(m => m.UserId);
+
+        var allEntries = await _db.ProjectTimeEntries
+            .Where(e => e.ProjectId == projectId && e.TaskId != null && taskIds.Contains(e.TaskId.Value))
+            .ToListAsync(cancellationToken);
+
+        var billingMethod = isFixed ? ProjectTaskBillingMethod.Fixed : ProjectTaskBillingMethod.Hourly;
+        var billingKind = isFixed ? ProjectBillingKind.TaskFixed : ProjectBillingKind.TaskHourly;
+        var lines = new List<(string Designation, decimal Quantity, decimal UnitPrice, string Unit)>();
+        var tasksToMark = new List<(ProjectTask Task, List<ProjectTimeEntry> Entries)>();
+
+        foreach (var line in dto.Tasks)
+        {
+            var task = tasks.First(t => t.Id == line.TaskId);
+            if (task.InvoicedInvoiceId.HasValue)
+                return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Tasks", $"La tâche « {task.Title} » a déjà été facturée"));
+
+            if (!billableMap.TryGetValue(task.Id, out var eligibility))
+                return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Tasks", $"La tâche « {task.Title} » n'est pas facturable"));
+
+            if (isHourly && !eligibility.IsEligible)
+                return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Tasks", eligibility.BlockReason ?? $"La tâche « {task.Title} » n'est pas facturable à l'heure"));
+
+            var taskEntries = allEntries
+                .Where(e => e.TaskId == task.Id
+                    && e.IsBillable
+                    && e.Status == ProjectTimeEntryStatus.Validated
+                    && e.InvoicedInvoiceId == null)
+                .ToList();
+
+            if (isFixed)
+            {
+                if (line.AmountHt is not > 0)
+                    return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("AmountHt", $"Le montant forfaitaire de « {task.Title} » doit être positif"));
+                lines.Add(($"Forfait — {task.Title}", 1m, line.AmountHt.Value, "u"));
+            }
+            else
+            {
+                var hours = taskEntries.Sum(e => e.Hours);
+                var rate = AverageBillRate(taskEntries.Select(e => memberMap.GetValueOrDefault(e.UserId)));
+                if (hours <= 0 || rate <= 0)
+                    return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Tasks", $"La tâche « {task.Title} » n'a pas de temps facturable"));
+                lines.Add(($"Régie — {task.Title}", hours, rate, "h"));
+            }
+
+            tasksToMark.Add((task, taskEntries));
+        }
+
+        return await EmitProjectInvoiceAsync(
+            project,
+            billingKind,
+            lines,
+            dto.Notes,
+            invoiceId =>
+            {
+                foreach (var (task, taskEntries) in tasksToMark)
+                {
+                    var markedTask = task.MarkInvoiced(invoiceId, billingMethod);
+                    if (markedTask.IsFailure) return markedTask;
+
+                    foreach (var entry in taskEntries)
+                    {
+                        var markedEntry = entry.MarkInvoiced(invoiceId);
+                        if (markedEntry.IsFailure) return markedEntry;
+                    }
                 }
                 return Result.Success();
             },

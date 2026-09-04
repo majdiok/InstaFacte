@@ -17,6 +17,8 @@ public sealed class ProjectTask : Entity
     public Guid? AssigneeUserId { get; private set; }
     public Guid? EmployeeId { get; private set; }
     public decimal EstimatedHours { get; private set; }
+    public Guid? InvoicedInvoiceId { get; private set; }
+    public ProjectTaskBillingMethod? InvoicedBillingMethod { get; private set; }
 
     private ProjectTask() { }
 
@@ -73,6 +75,8 @@ public sealed class ProjectTask : Entity
         decimal estimatedHours,
         int progressPercent)
     {
+        if (InvoicedInvoiceId.HasValue)
+            return Result.Failure(Error.Validation("Status", "Une tâche déjà facturée ne peut pas être modifiée"));
         title = title?.Trim() ?? string.Empty;
         if (string.IsNullOrEmpty(title))
             return Result.Failure(Error.Validation("Title", "Le titre est obligatoire"));
@@ -128,5 +132,18 @@ public sealed class ProjectTask : Entity
             ProgressPercent = 100;
         else if (previous == ProjectTaskStatus.Done)
             ProgressPercent = 0;
+    }
+
+    public Result MarkInvoiced(Guid invoiceId, ProjectTaskBillingMethod method)
+    {
+        if (InvoicedInvoiceId.HasValue)
+            return Result.Failure(Error.Validation("InvoicedInvoiceId", "Cette tâche a déjà été facturée"));
+        if (InvoicedBillingMethod.HasValue && InvoicedBillingMethod != method)
+            return Result.Failure(Error.Validation("InvoicedBillingMethod", "Cette tâche a déjà été facturée avec un autre mode"));
+        if (invoiceId == Guid.Empty)
+            return Result.Failure(Error.Validation("InvoiceId", "La facture est obligatoire"));
+        InvoicedInvoiceId = invoiceId;
+        InvoicedBillingMethod = method;
+        return Result.Success();
     }
 }
