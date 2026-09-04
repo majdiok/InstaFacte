@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectBillingTabComponent } from './project-billing.tab';
-import { BillableProjectTask } from '../project-api.service';
+import { BillableProjectTask, BillableProjectTimeEntry } from '../project-api.service';
 
 describe('ProjectBillingTabComponent', () => {
   let component: ProjectBillingTabComponent;
@@ -12,6 +12,18 @@ describe('ProjectBillingTabComponent', () => {
 
     const fixture: ComponentFixture<ProjectBillingTabComponent> = TestBed.createComponent(ProjectBillingTabComponent);
     component = fixture.componentInstance;
+  });
+
+  const sampleTimeEntry = (id: string, eligible = true): BillableProjectTimeEntry => ({
+    id,
+    userId: 'u1',
+    userName: 'Alice',
+    workDate: '2026-08-01',
+    hours: 5,
+    hourlyRate: 80,
+    previewAmountHt: 400,
+    isEligible: eligible,
+    blockReason: eligible ? null : 'Pas de TJM ou coût horaire'
   });
 
   it('canInvoiceTasks requires selected tasks with amounts in fixed mode', () => {
@@ -43,13 +55,58 @@ describe('ProjectBillingTabComponent', () => {
     expect(component.canInvoiceTasks).toBe(false);
   });
 
-  it('emitInvoiceTime always uses member grouping', () => {
+  it('canInvoiceSelectedTime is false without selection', () => {
+    component.billableTimeEntries = [sampleTimeEntry('e1')];
+    expect(component.canInvoiceSelectedTime).toBeFalse();
+  });
+
+  it('canInvoiceSelectedTime is true with eligible selection', () => {
+    component.billableTimeEntries = [sampleTimeEntry('e1')];
+    component.toggleTimeEntrySelected('e1', true);
+    expect(component.canInvoiceSelectedTime).toBeTrue();
+  });
+
+  it('canInvoiceSelectedTime is false when ineligible entry is selected', () => {
+    component.billableTimeEntries = [sampleTimeEntry('e1', false)];
+    component.selectedTimeEntryIds.add('e1');
+    expect(component.canInvoiceSelectedTime).toBeFalse();
+  });
+
+  it('emitInvoiceTime transmits timeEntryIds', () => {
     const spy = jasmine.createSpy('invoiceTime');
     component.invoiceTime.subscribe(spy);
-    component.timeGroupBy = 'task';
     component.timeNotes = 'note';
+    component.toggleTimeEntrySelected('e1', true);
+    component.toggleTimeEntrySelected('e2', true);
     component.emitInvoiceTime();
-    expect(spy).toHaveBeenCalledWith({ groupBy: 'member', notes: 'note' });
+    expect(spy).toHaveBeenCalledWith({ groupBy: 'member', notes: 'note', timeEntryIds: ['e1', 'e2'] });
+  });
+
+  it('onTimeGroupByChange to member emits refreshBillableTimeEntries', () => {
+    const spy = jasmine.createSpy('refreshTime');
+    component.refreshBillableTimeEntries.subscribe(spy);
+    component.timeGroupBy = 'member';
+    component.onTimeGroupByChange();
+    expect(spy).toHaveBeenCalled();
+    expect(component.selectedTimeEntryIds.size).toBe(0);
+  });
+
+  it('selectedTimeSummary sums selected eligible entries', () => {
+    component.billableTimeEntries = [
+      sampleTimeEntry('e1'),
+      { ...sampleTimeEntry('e2'), hours: 2, previewAmountHt: 160 }
+    ];
+    component.toggleTimeEntrySelected('e1', true);
+    component.toggleTimeEntrySelected('e2', true);
+    expect(component.selectedTimeSummary.hours).toBe(7);
+    expect(component.selectedTimeSummary.amountHt).toBe(560);
+  });
+
+  it('toggleAllEligibleTime selects only eligible entries', () => {
+    component.billableTimeEntries = [sampleTimeEntry('e1'), sampleTimeEntry('e2', false)];
+    component.toggleAllEligibleTime(true);
+    expect(component.selectedTimeEntryIds.has('e1')).toBeTrue();
+    expect(component.selectedTimeEntryIds.has('e2')).toBeFalse();
   });
 
   it('emitInvoiceTasks builds payload for fixed mode', () => {

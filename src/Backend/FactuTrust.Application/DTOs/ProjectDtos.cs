@@ -316,6 +316,8 @@ public sealed record InvoiceTimeDto
 {
     public string GroupBy { get; init; } = "member";
     public string? Notes { get; init; }
+    /// <summary>Entrées à facturer. Si vide : toutes les saisies éligibles (comportement legacy).</summary>
+    public IReadOnlyList<Guid> TimeEntryIds { get; init; } = Array.Empty<Guid>();
 }
 
 public sealed record InvoiceTaskLineDto
@@ -337,6 +339,21 @@ public sealed record BillableProjectTaskDto
     public Guid Id { get; init; }
     public string Title { get; init; } = null!;
     public decimal UninvoicedBillableHours { get; init; }
+    public decimal HourlyRate { get; init; }
+    public decimal PreviewAmountHt { get; init; }
+    public bool IsEligible { get; init; }
+    public string? BlockReason { get; init; }
+}
+
+public sealed record BillableProjectTimeEntryDto
+{
+    public Guid Id { get; init; }
+    public Guid UserId { get; init; }
+    public string UserName { get; init; } = null!;
+    public DateTime WorkDate { get; init; }
+    public Guid? TaskId { get; init; }
+    public string? TaskTitle { get; init; }
+    public decimal Hours { get; init; }
     public decimal HourlyRate { get; init; }
     public decimal PreviewAmountHt { get; init; }
     public bool IsEligible { get; init; }

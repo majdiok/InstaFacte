@@ -1299,21 +1299,26 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         if (!project.Status.CanBeBilled())
             return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Status", project.Status.CannotBeBilledMessage()));
 
-        var entries = await _db.ProjectTimeEntries
-            .Where(t => t.ProjectId == projectId && t.IsBillable && t.Status == ProjectTimeEntryStatus.Validated && t.InvoicedInvoiceId == null)
-            .ToListAsync(cancellationToken);
-        if (entries.Count == 0)
+        var pool = await LoadEligibleMemberBillingEntriesAsync(projectId, cancellationToken);
+        if (pool.Count == 0)
             return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Time", "Aucun temps validé non facturé"));
 
-        var invoicedTaskIds = await _db.ProjectTasks.AsNoTracking()
-            .Where(t => t.ProjectId == projectId && t.InvoicedInvoiceId != null)
-            .Select(t => t.Id)
-            .ToListAsync(cancellationToken);
-        entries = entries
-            .Where(e => e.TaskId == null || !invoicedTaskIds.Contains(e.TaskId.Value))
-            .ToList();
-        if (entries.Count == 0)
-            return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Time", "Aucun temps validé non facturé"));
+        List<ProjectTimeEntry> entries;
+        if (dto.TimeEntryIds.Count > 0)
+        {
+            var requested = dto.TimeEntryIds.Distinct().ToList();
+            var poolIds = pool.Select(e => e.Id).ToHashSet();
+            if (requested.Any(id => !poolIds.Contains(id)))
+                return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("TimeEntryIds", "Une ou plusieurs saisies ne sont pas facturables"));
+
+            entries = pool.Where(e => requested.Contains(e.Id)).ToList();
+            if (entries.Count == 0)
+                return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("TimeEntryIds", "Sélectionnez au moins une saisie de temps"));
+        }
+        else
+        {
+            entries = pool;
+        }
 
         var members = await _db.ProjectMembers.Where(m => m.ProjectId == projectId).ToListAsync(cancellationToken);
         var memberMap = members.ToDictionary(m => m.UserId);
@@ -1344,6 +1349,47 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
                 return Result.Success();
             },
             cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<BillableProjectTimeEntryDto>> GetBillableTimeEntriesAsync(
+        Guid projectId, CancellationToken cancellationToken = default)
+    {
+        if (!await _db.Projects.AsNoTracking().AnyAsync(p => p.Id == projectId, cancellationToken))
+            return Array.Empty<BillableProjectTimeEntryDto>();
+
+        var entries = await LoadEligibleMemberBillingEntriesAsync(projectId, cancellationToken);
+        if (entries.Count == 0)
+            return Array.Empty<BillableProjectTimeEntryDto>();
+
+        var members = await _db.ProjectMembers.AsNoTracking().Where(m => m.ProjectId == projectId).ToListAsync(cancellationToken);
+        var memberMap = members.ToDictionary(m => m.UserId);
+        var names = await LoadUserNamesAsync(entries.Select(e => e.UserId), cancellationToken);
+        var taskTitles = await LoadTaskTitlesAsync(entries.Select(e => e.TaskId), cancellationToken);
+
+        return entries
+            .Select(e =>
+            {
+                var rate = BillRate(memberMap.GetValueOrDefault(e.UserId));
+                var eligible = rate > 0;
+                return new BillableProjectTimeEntryDto
+                {
+                    Id = e.Id,
+                    UserId = e.UserId,
+                    UserName = names.GetValueOrDefault(e.UserId, "—"),
+                    WorkDate = e.WorkDate,
+                    TaskId = e.TaskId,
+                    TaskTitle = e.TaskId is { } tid ? taskTitles.GetValueOrDefault(tid) : null,
+                    Hours = e.Hours,
+                    HourlyRate = rate,
+                    PreviewAmountHt = eligible ? decimal.Round(e.Hours * rate, 3) : 0m,
+                    IsEligible = eligible,
+                    BlockReason = eligible ? null : "Pas de TJM ou coût horaire"
+                };
+            })
+            .OrderByDescending(d => d.WorkDate)
+            .ThenBy(d => d.UserName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(d => d.Id)
+            .ToList();
     }
 
     public async Task<IReadOnlyList<BillableProjectTaskDto>> GetBillableTasksAsync(Guid projectId, string method, CancellationToken cancellationToken = default)
@@ -2096,6 +2142,26 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         if (member.HourlyCost is > 0) return member.HourlyCost.Value;
         if (member.DailyRate is > 0) return decimal.Round(member.DailyRate.Value / 8m, 3);
         return 0m;
+    }
+
+    private async Task<List<ProjectTimeEntry>> LoadEligibleMemberBillingEntriesAsync(
+        Guid projectId, CancellationToken cancellationToken)
+    {
+        var entries = await _db.ProjectTimeEntries
+            .Where(t => t.ProjectId == projectId
+                && t.IsBillable
+                && t.Status == ProjectTimeEntryStatus.Validated
+                && t.InvoicedInvoiceId == null)
+            .ToListAsync(cancellationToken);
+
+        var invoicedTaskIds = await _db.ProjectTasks.AsNoTracking()
+            .Where(t => t.ProjectId == projectId && t.InvoicedInvoiceId != null)
+            .Select(t => t.Id)
+            .ToListAsync(cancellationToken);
+
+        return entries
+            .Where(e => e.TaskId == null || !invoicedTaskIds.Contains(e.TaskId.Value))
+            .ToList();
     }
 
     private static decimal WeightedBillRate(
