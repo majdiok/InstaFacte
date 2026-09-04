@@ -318,6 +318,31 @@ public sealed record InvoiceTimeDto
     public string? Notes { get; init; }
 }
 
+public sealed record InvoiceTaskLineDto
+{
+    public Guid TaskId { get; init; }
+    public decimal? AmountHt { get; init; }
+    public decimal? HourlyRate { get; init; }
+}
+
+public sealed record InvoiceTasksDto
+{
+    public string Method { get; init; } = "hourly";
+    public string? Notes { get; init; }
+    public IReadOnlyList<InvoiceTaskLineDto> Tasks { get; init; } = Array.Empty<InvoiceTaskLineDto>();
+}
+
+public sealed record BillableProjectTaskDto
+{
+    public Guid Id { get; init; }
+    public string Title { get; init; } = null!;
+    public decimal UninvoicedBillableHours { get; init; }
+    public decimal HourlyRate { get; init; }
+    public decimal PreviewAmountHt { get; init; }
+    public bool IsEligible { get; init; }
+    public string? BlockReason { get; init; }
+}
+
 public sealed record InvoiceMilestoneDto
 {
     public Guid MilestoneId { get; init; }
@@ -353,6 +378,19 @@ public sealed record RecordProjectStockExitDto
 public sealed record AssignPurchaseOrderDto
 {
     public Guid PurchaseOrderId { get; init; }
+}
+
+/// <summary>Purchase order linked to a project (budget tab list).</summary>
+public sealed record ProjectPurchaseOrderDto
+{
+    public Guid Id { get; init; }
+    public string Number { get; init; } = null!;
+    public string SupplierName { get; init; } = null!;
+    public DateTime OrderDate { get; init; }
+    public PurchaseOrderStatus Status { get; init; }
+    public string StatusDisplay { get; init; } = null!;
+    public string StatusCss { get; init; } = null!;
+    public decimal TotalHt { get; init; }
 }
 
 public sealed record ProjectWorkloadRowDto

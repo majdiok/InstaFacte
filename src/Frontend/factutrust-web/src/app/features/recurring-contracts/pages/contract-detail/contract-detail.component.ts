@@ -404,7 +404,7 @@ export class ContractDetailComponent implements OnInit {
     this.refreshToken.update(t => t + 1);
   }
 
-  /** Après ajustement / émission d'un brouillon d'échéance : sync Services, KPI, Historique. */
+  /** Après ajustement / émission d'un brouillon d'échéance : sync Historique, Échéances et KPI. */
   onDraftAdjusted(): void {
     this.reloadContractOnly();
     this.refreshToken.update(t => t + 1);

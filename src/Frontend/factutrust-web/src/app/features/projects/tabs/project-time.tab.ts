@@ -22,6 +22,8 @@ import { MessageModule } from 'primeng/message';
 
 import { DialogModule } from 'primeng/dialog';
 
+import { TooltipModule } from 'primeng/tooltip';
+
 import { ButtonComponent } from '@shared/components/button/button.component';
 
 import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
@@ -105,6 +107,8 @@ const TIME_STATUS_FILTER_OPTIONS = [
     MessageModule,
 
     DialogModule,
+
+    TooltipModule,
 
     ButtonComponent,
 
@@ -234,23 +238,29 @@ const TIME_STATUS_FILTER_OPTIONS = [
 
           </td>
 
-          <td>
+          <td class="proj-time-row-actions">
 
             @if (parseProjectTimeStatus(e.status) === 'Draft' && canCreate) {
 
-              <app-button size="sm" variant="outline" (click)="openEdit(e)">Modifier</app-button>
+              <app-button size="sm" variant="ghost" icon="pi-pencil" [iconOnly]="true"
+                [iconAlwaysVisible]="true" pTooltip="Modifier" tooltipPosition="top"
+                ariaLabel="Modifier" (click)="openEdit(e)" />
 
             }
 
             @if (parseProjectTimeStatus(e.status) === 'Draft' && canSubmit) {
 
-              <app-button size="sm" (click)="submitEntry.emit(e.id)">Soumettre</app-button>
+              <app-button size="sm" variant="ghost" icon="pi-send" [iconOnly]="true"
+                [iconAlwaysVisible]="true" pTooltip="Soumettre" tooltipPosition="top"
+                ariaLabel="Soumettre" (click)="submitEntry.emit(e.id)" />
 
             }
 
             @if (parseProjectTimeStatus(e.status) === 'Submitted' && canValidate) {
 
-              <app-button size="sm" (click)="validateEntry.emit(e.id)">Valider</app-button>
+              <app-button size="sm" variant="primary" icon="pi-check" [iconOnly]="true"
+                [iconAlwaysVisible]="true" pTooltip="Valider" tooltipPosition="top"
+                ariaLabel="Valider" (click)="validateEntry.emit(e.id)" />
 
             }
 

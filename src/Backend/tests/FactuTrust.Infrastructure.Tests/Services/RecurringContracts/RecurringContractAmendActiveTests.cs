@@ -30,6 +30,7 @@ public sealed class RecurringContractAmendActiveTests
                     Quantity = quantity,
                     UnitPriceHT = unitPriceHt,
                     VatRate = 19m,
+                    ProductId = RecurringContractTestHarness.DefaultProductId,
                     SortOrder = 0
                 }
             ]
@@ -44,7 +45,7 @@ public sealed class RecurringContractAmendActiveTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var sourceLineId = contract.Lines.Single().Id;
 
         await using var sut = harness.CreateService();
@@ -86,7 +87,7 @@ public sealed class RecurringContractAmendActiveTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var result = await sut.AmendAsync(contract.Id, new AmendRecurringContractDto
@@ -108,7 +109,7 @@ public sealed class RecurringContractAmendActiveTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var sourceLineId = contract.Lines.Single().Id;
         var nextBillingBefore = contract.NextBillingDate;
 
@@ -131,7 +132,7 @@ public sealed class RecurringContractAmendActiveTests
             startDate: new DateTime(2026, 1, 1),
             lines: c =>
             {
-                c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m);
+                c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId);
                 c.AddLine(RecurringContractLineType.OneTimeSetup, "Installation", 1, 50m, 19m);
             });
 
@@ -154,6 +155,7 @@ public sealed class RecurringContractAmendActiveTests
                         Quantity = 1,
                         UnitPriceHT = 200m,
                         VatRate = 19m,
+                        ProductId = RecurringContractTestHarness.DefaultProductId,
                         SortOrder = 0
                     }
                 ]
@@ -183,7 +185,7 @@ public sealed class RecurringContractAmendActiveTests
                 c.Activate();
                 c.Suspend();
             },
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var sourceLineId = contract.Lines.Single().Id;
 
         await using var sut = harness.CreateService();

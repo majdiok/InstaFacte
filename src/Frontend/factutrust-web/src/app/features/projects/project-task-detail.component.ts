@@ -10,6 +10,8 @@ import { DatePickerModule } from 'primeng/datepicker';
 import { Textarea } from 'primeng/textarea';
 import { ProgressBarModule } from 'primeng/progressbar';
 import { TableModule } from 'primeng/table';
+import { CheckboxModule } from 'primeng/checkbox';
+import { MessageModule } from 'primeng/message';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
@@ -25,6 +27,7 @@ import {
   ProjectAssignableUser,
   ProjectAttachment,
   ProjectComment,
+  ProjectDetail,
   ProjectTask,
   ProjectTimeEntry,
   UpsertTaskPayload
@@ -32,12 +35,14 @@ import {
 import {
   PROJECT_PRIORITY_OPTIONS,
   PROJECT_TASK_STATUS_OPTIONS,
+  canReceiveTime,
   daysUntilDue,
   formatFileSize,
-  initialsFromName,
   parseProjectTaskPriority,
   parseProjectTaskStatus,
+  parseProjectTimeStatus,
   taskStatusBadge,
+  timeStatusBadge,
   toIsoDate
 } from './project-enums';
 import {
@@ -62,6 +67,8 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
     Textarea,
     ProgressBarModule,
     TableModule,
+    CheckboxModule,
+    MessageModule,
     PageHeaderComponent,
     ButtonComponent,
     BreadcrumbComponent,
@@ -74,6 +81,9 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
       <app-breadcrumb [items]="crumbs(t)"></app-breadcrumb>
       <app-page-header [title]="t.title" [subtitle]="t.phaseName">
         <app-status-badge [status]="taskStatusBadge(t.status)" [label]="t.statusDisplay" />
+        @if (canLogTime) {
+          <app-button variant="outline" (click)="goToTimeTab()">Saisir du temps</app-button>
+        }
         @if (canUpdate) {
           <app-button variant="outline" (click)="openStatusDialog()">Changer statut</app-button>
           <app-button variant="primary" (click)="save()">Enregistrer</app-button>
@@ -116,7 +126,6 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
                       <p-select [options]="users()" [(ngModel)]="assigneeId" optionLabel="displayName" optionValue="id" placeholder="Assigné" [showClear]="true" />
                       <p-datepicker [(ngModel)]="dueDate" dateFormat="dd/mm/yy" placeholder="Échéance" />
                       <p-inputNumber [(ngModel)]="estimatedHours" [min]="0" placeholder="Estimé h" />
-                      <p-inputNumber [(ngModel)]="progress" [min]="0" [max]="100" suffix=" %" />
                     </div>
                   } @else {
                     <p>{{ t.description || 'Pas de description.' }}</p>
@@ -134,6 +143,9 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
                     <div class="proj-kpi-card flex-1">
                       <span class="proj-kpi-label">Temps passé</span>
                       <strong>{{ t.loggedHours | number:'1.0-1' }} h</strong>
+                      @if (canLogTime) {
+                        <button type="button" class="proj-tasks-link-btn" (click)="goToTimeTab()">Saisir du temps</button>
+                      }
                     </div>
                   </div>
                 </div>
@@ -189,17 +201,95 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
               </p-tabpanel>
               <p-tabpanel value="time">
                 <div class="card p-3">
+                  @if (project() && !projectCanReceiveTime) {
+                    <p-message severity="warn" styleClass="w-full mb-3"
+                      text="Activez le projet pour saisir du temps. La saisie est réservée aux projets Actif." />
+                  }
+
+                  @if (canLogTime || editTimeId) {
+                    <div class="task-create-form mb-3">
+                      <p class="task-create-intro">
+                        @if (editTimeId) {
+                          Modifier la ligne de temps
+                        } @else {
+                          Nouvelle ligne de temps
+                        }
+                      </p>
+                      <div class="task-create-field">
+                        <label for="task-time-date">Date <span class="ft-required">*</span></label>
+                        <p-datepicker
+                          inputId="task-time-date"
+                          class="w-full"
+                          [(ngModel)]="logWorkDate"
+                          dateFormat="dd/mm/yy"
+                          placeholder="jj/mm/aa"
+                          [showIcon]="true"
+                          appendTo="body" />
+                      </div>
+                      <div class="task-create-field">
+                        <label for="task-time-hours">Heures <span class="ft-required">*</span></label>
+                        <p-inputNumber
+                          inputId="task-time-hours"
+                          class="w-full"
+                          [(ngModel)]="logHours"
+                          [min]="0.25"
+                          [max]="24"
+                          [step]="0.25"
+                          mode="decimal"
+                          [minFractionDigits]="0"
+                          [maxFractionDigits]="2" />
+                      </div>
+                      <div class="task-create-check">
+                        <p-checkbox [(ngModel)]="logBillable" [binary]="true" inputId="taskTimeBillable" />
+                        <label for="taskTimeBillable">Facturable</label>
+                      </div>
+                      <div class="task-create-field">
+                        <label for="task-time-notes">Notes</label>
+                        <textarea
+                          id="task-time-notes"
+                          pTextarea
+                          class="w-full"
+                          [(ngModel)]="logNotes"
+                          rows="3"
+                          placeholder="Détails, contexte…"></textarea>
+                      </div>
+                      <div class="task-create-actions">
+                        @if (editTimeId) {
+                          <app-button variant="secondary" (click)="cancelEditTime()">Annuler la modification</app-button>
+                        }
+                        <app-button variant="primary" [disabled]="!canSubmitLogTime" (click)="submitLogTime()">Enregistrer</app-button>
+                      </div>
+                    </div>
+                  }
+
                   <p-table [value]="timeEntries()" styleClass="p-datatable-sm">
-                    <ng-template pTemplate="header"><tr><th>Date</th><th>Heures</th><th>Statut</th><th>Facturable</th></tr></ng-template>
+                    <ng-template pTemplate="header">
+                      <tr>
+                        <th>Date</th>
+                        <th>Heures</th>
+                        <th>Statut</th>
+                        <th>Facturable</th>
+                        <th>Notes</th>
+                        <th></th>
+                      </tr>
+                    </ng-template>
                     <ng-template pTemplate="body" let-e>
                       <tr>
                         <td>{{ e.workDate | date:'shortDate' }}</td>
                         <td>{{ e.hours | number:'1.0-1' }} h</td>
-                        <td>{{ e.statusDisplay }}</td>
+                        <td>
+                          <app-status-badge [status]="timeStatusBadge(e.status)" [label]="e.statusDisplay" />
+                        </td>
                         <td>{{ e.isBillable ? 'Oui' : 'Non' }}</td>
+                        <td>{{ e.notes || '—' }}</td>
+                        <td>
+                          @if (isDraftTime(e) && canCreateTime) {
+                            <app-button size="sm" variant="outline" (click)="startEditTime(e)">Modifier</app-button>
+                          }
+                        </td>
                       </tr>
                     </ng-template>
-                    <ng-template pTemplate="emptymessage"><tr><td colspan="4">Aucun temps saisi sur cette tâche.</td></tr></ng-template>
+                    <ng-template pTemplate="emptymessage"><tr><td colspan="6">Aucun temps saisi sur cette tâche.</td></tr></ng-template>
                   </p-table>
                 </div>
               </p-tabpanel>
@@ -263,6 +353,7 @@ export class ProjectTaskDetailComponent implements OnInit {
   private readonly confirm = inject(ConfirmationService);
 
   readonly task = signal<ProjectTask | null>(null);
+  readonly project = signal<ProjectDetail | null>(null);
   readonly comments = signal<ProjectComment[]>([]);
   readonly users = signal<ProjectAssignableUser[]>([]);
   readonly subtasks = signal<ProjectTask[]>([]);
@@ -280,13 +371,29 @@ export class ProjectTaskDetailComponent implements OnInit {
   assigneeId: string | null = null;
   dueDate: Date | null = null;
   estimatedHours = 0;
-  progress = 0;
+  logWorkDate: Date = new Date();
+  logHours = 1;
+  logBillable = true;
+  logNotes = '';
+  editTimeId: string | null = null;
   readonly priorityOptions = PROJECT_PRIORITY_OPTIONS;
   readonly statusOptions = PROJECT_TASK_STATUS_OPTIONS;
   readonly taskStatusBadge = taskStatusBadge;
+  readonly timeStatusBadge = timeStatusBadge;
   readonly formatSize = formatFileSize;
 
   get canUpdate(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTasks.update); }
+  get canCreateTime(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTime.create); }
+  get projectCanReceiveTime(): boolean {
+    const p = this.project();
+    return !!p && canReceiveTime(p.status);
+  }
+  get canLogTime(): boolean {
+    return this.canCreateTime && this.projectCanReceiveTime;
+  }
+  get canSubmitLogTime(): boolean {
+    return typeof this.logHours === 'number' && this.logHours > 0 && this.logHours <= 24;
+  }
 
   taskFiles(): ProjectAttachment[] {
     const id = this.task()?.id;
@@ -338,6 +445,69 @@ export class ProjectTaskDetailComponent implements OnInit {
     this.save();
   }
 
+  goToTimeTab(): void {
+    this.tab.set('time');
+  }
+
+  isDraftTime(entry: ProjectTimeEntry): boolean {
+    return parseProjectTimeStatus(entry.status) === 'Draft';
+  }
+
+  resetLogForm(): void {
+    this.editTimeId = null;
+    this.logWorkDate = new Date();
+    this.logHours = 1;
+    this.logBillable = true;
+    this.logNotes = '';
+  }
+
+  startEditTime(entry: ProjectTimeEntry): void {
+    this.editTimeId = entry.id;
+    this.logWorkDate = entry.workDate ? new Date(entry.workDate) : new Date();
+    this.logHours = entry.hours;
+    this.logBillable = entry.isBillable;
+    this.logNotes = entry.notes ?? '';
+    this.tab.set('time');
+  }
+
+  cancelEditTime(): void {
+    this.resetLogForm();
+  }
+
+  submitLogTime(): void {
+    const t = this.task();
+    if (!t || !this.canSubmitLogTime) return;
+    const payload = {
+      projectId: t.projectId,
+      taskId: t.id,
+      workDate: toIsoDate(this.logWorkDate) ?? new Date().toISOString(),
+      hours: this.logHours,
+      isBillable: this.logBillable,
+      notes: this.logNotes.trim() || undefined
+    };
+    if (this.editTimeId) {
+      if (!this.canCreateTime) return;
+      this.api.updateTime(this.editTimeId, payload).subscribe({
+        next: () => {
+          this.toast.add({ severity: 'success', summary: 'Temps mis à jour' });
+          this.resetLogForm();
+          this.reload(t.id);
+        },
+        error: err => this.toast.add({ severity: 'error', summary: 'Mise à jour du temps', detail: this.errors.extractErrorMessage(err) })
+      });
+      return;
+    }
+    if (!this.canLogTime) return;
+    this.api.createTime(payload).subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Temps enregistré' });
+        this.resetLogForm();
+        this.reload(t.id);
+      },
+      error: err => this.toast.add({ severity: 'error', summary: 'Saisie des temps', detail: this.errors.extractErrorMessage(err) })
+    });
+  }
+
   private reload(taskId: string): void {
     this.api.getTask(taskId).subscribe({
       next: r => {
@@ -351,7 +521,9 @@ export class ProjectTaskDetailComponent implements OnInit {
           this.assigneeId = t.assigneeUserId ?? null;
           this.dueDate = t.dueDate ? new Date(t.dueDate) : null;
           this.estimatedHours = t.estimatedHours;
-          this.progress = t.progressPercent;
+          this.api.get(t.projectId).subscribe(pr => {
+            if (pr.success && pr.data) this.project.set(pr.data);
+          });
           this.api.comments(t.projectId, t.id).subscribe(c => {
             if (c.success && c.data) this.comments.set(c.data);
           });
@@ -390,7 +562,7 @@ export class ProjectTaskDetailComponent implements OnInit {
       dueDate: toIsoDate(this.dueDate),
       assigneeUserId: this.assigneeId,
       estimatedHours: this.estimatedHours,
-      progressPercent: this.progress
+      progressPercent: t.progressPercent
     };
     this.api.updateTask(t.id, payload).subscribe({
       next: () => {

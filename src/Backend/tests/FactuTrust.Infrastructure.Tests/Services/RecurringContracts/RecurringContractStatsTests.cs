@@ -18,16 +18,16 @@ public sealed class RecurringContractStatsTests
         // Mensuel 100 → 100 ; trimestriel 300 → 100 ; annuel 1200 → 100. MRR attendu : 300.
         await harness.SeedContractAsync(client.Id, frequency: BillingFrequency.Monthly,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Mensuel", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Mensuel", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         await harness.SeedContractAsync(client.Id, frequency: BillingFrequency.Quarterly,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Trimestriel", 1, 300m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Trimestriel", 1, 300m, 19m, RecurringContractTestHarness.DefaultProductId));
         await harness.SeedContractAsync(client.Id, frequency: BillingFrequency.Annual,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Annuel", 1, 1200m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Annuel", 1, 1200m, 19m, RecurringContractTestHarness.DefaultProductId));
         // Un brouillon ne compte ni dans ActiveCount ni dans le MRR.
         await harness.SeedContractAsync(client.Id, frequency: BillingFrequency.Monthly,
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Brouillon", 1, 999m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Brouillon", 1, 999m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var stats = await sut.GetStatsAsync();
@@ -44,13 +44,13 @@ public sealed class RecurringContractStatsTests
         var client = await harness.SeedClientAsync("Client échéances");
         var dueSoon = await harness.SeedContractAsync(client.Id,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Proche", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Proche", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var dueLater = await harness.SeedContractAsync(client.Id,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Lointaine", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Lointaine", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         // Contrat brouillon : jamais compté (pas Active).
         await harness.SeedContractAsync(client.Id,
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Brouillon", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Brouillon", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         // NextBillingDate fixée de façon déterministe via l'entrée EF (private set côté domaine).
         await using (var ctx = harness.Factory.CreateContext())
@@ -76,7 +76,7 @@ public sealed class RecurringContractStatsTests
         var client = await harness.SeedClientAsync("Client brouillons");
         var contract = await harness.SeedContractAsync(client.Id,
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         // Seul le run DraftCreated (avec brouillon associé) compte.
         await harness.SeedRunAsync(contract.Id, new DateTime(2026, 7, 1), new DateTime(2026, 7, 31),

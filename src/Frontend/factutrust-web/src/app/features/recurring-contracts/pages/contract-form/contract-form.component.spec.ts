@@ -6,6 +6,7 @@ import { ContractFormComponent } from './contract-form.component';
 
 const VALID_CLIENT_ID = '550e8400-e29b-41d4-a716-446655440000';
 const VALID_METRIC_ID = '550e8400-e29b-41d4-a716-446655440042';
+const VALID_PRODUCT_ID = '550e8400-e29b-41d4-a716-446655440041';
 
 describe('ContractFormComponent canSave (validation du bouton Enregistrer)', () => {
   beforeEach(() => {
@@ -29,7 +30,7 @@ describe('ContractFormComponent canSave (validation du bouton Enregistrer)', () 
     cmp.lines = [{
       id: null,
       lineType: 'FixedRecurring',
-      productId: null,
+      productId: VALID_PRODUCT_ID,
       description: 'Abonnement mensuel',
       quantity: 1,
       unitPriceHT: 100,
@@ -108,6 +109,30 @@ describe('ContractFormComponent canSave (validation du bouton Enregistrer)', () 
     expect(cmp.canSave).toBeTrue();
   });
 
+  it('canSave est false pour une ligne récurrente fixe sans produit', () => {
+    const cmp = createComponent();
+    fillValidForm(cmp);
+    cmp.lines[0].productId = null;
+    expect(cmp.canSave).toBeFalse();
+  });
+
+  it('canSave est true pour une ligne frais d\'installation sans produit', () => {
+    const cmp = createComponent();
+    fillValidForm(cmp);
+    cmp.lines[0].lineType = 'OneTimeSetup';
+    cmp.lines[0].productId = null;
+    expect(cmp.canSave).toBeTrue();
+  });
+
+  it('canSave est false pour une ligne à la consommation sans produit même avec métrique', () => {
+    const cmp = createComponent();
+    fillValidForm(cmp);
+    cmp.lines[0].lineType = 'UsageMetered';
+    cmp.lines[0].productId = null;
+    cmp.lines[0].usageMetricId = VALID_METRIC_ID;
+    expect(cmp.canSave).toBeFalse();
+  });
+
   it('canSave est false pour une ligne à la consommation sans métrique', () => {
     const cmp = createComponent();
     fillValidForm(cmp);
@@ -116,10 +141,11 @@ describe('ContractFormComponent canSave (validation du bouton Enregistrer)', () 
     expect(cmp.canSave).toBeFalse();
   });
 
-  it('canSave est true pour une ligne à la consommation avec métrique', () => {
+  it('canSave est true pour une ligne à la consommation avec métrique et produit', () => {
     const cmp = createComponent();
     fillValidForm(cmp);
     cmp.lines[0].lineType = 'UsageMetered';
+    cmp.lines[0].productId = VALID_PRODUCT_ID;
     cmp.lines[0].usageMetricId = VALID_METRIC_ID;
     expect(cmp.canSave).toBeTrue();
   });

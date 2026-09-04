@@ -19,7 +19,7 @@ public sealed class RecurringContractEvolutionTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         // Fenêtre de 6 mois : firstMonth … mois courant. Runs sans facture → repli sur TotalAmount.
         var firstMonth = new DateTime(Today.Year, Today.Month, 1).AddMonths(-5);
@@ -56,7 +56,7 @@ public sealed class RecurringContractEvolutionTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         // Un seul run sur le mois courant.
         var currentMonth = new DateTime(Today.Year, Today.Month, 1);
         await harness.SeedRunAsync(contract.Id, currentMonth, currentMonth.AddDays(14),
@@ -79,7 +79,7 @@ public sealed class RecurringContractEvolutionTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
         var currentMonth = new DateTime(Today.Year, Today.Month, 1);
         await harness.SeedRunAsync(contract.Id, currentMonth, currentMonth.AddDays(14),
             RecurringContractBillingRunStatus.DraftCreated, fixedAmount: 100m);
@@ -101,7 +101,7 @@ public sealed class RecurringContractEvolutionTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
 
@@ -135,7 +135,7 @@ public sealed class RecurringContractEvolutionTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         // Facture 100 HT sur le mois courant + avoir 150 HT rattaché → mois net à −50.
         var currentMonth = new DateTime(Today.Year, Today.Month, 1);

@@ -1,11 +1,14 @@
 using FactuTrust.Domain.Entities.RecurringContracts;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Infrastructure.Tests.Services.RecurringContracts;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.Domain;
 
 public sealed class RecurringContractDomainTests
 {
+    private static readonly Guid TestProductId = RecurringContractTestHarness.DefaultProductId;
+
     [Fact]
     public void Activate_WithoutLines_Fails()
     {
@@ -22,7 +25,7 @@ public sealed class RecurringContractDomainTests
         var contract = RecurringContract.CreateDraft(
             Guid.NewGuid(), BillingFrequency.Monthly, 1, new DateTime(2026, 1, 1)).Value;
         contract.AddLine(
-            RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m);
+            RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, TestProductId);
 
         var result = contract.Activate();
         Assert.True(result.IsSuccess);
@@ -37,10 +40,50 @@ public sealed class RecurringContractDomainTests
             Guid.NewGuid(), BillingFrequency.Monthly, 1, new DateTime(2026, 1, 1)).Value;
 
         var result = contract.AddLine(
-            RecurringContractLineType.FixedRecurring, "   ", 1, 50m, 19m);
+            RecurringContractLineType.FixedRecurring, "   ", 1, 50m, 19m, TestProductId);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(string.Empty, result.Value.Description);
+    }
+
+    [Fact]
+    public void AddLine_FixedRecurring_WithoutProduct_Fails()
+    {
+        var contract = RecurringContract.CreateDraft(
+            Guid.NewGuid(), BillingFrequency.Monthly, 1, new DateTime(2026, 1, 1)).Value;
+
+        var result = contract.AddLine(
+            RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("produit", result.Error.Description, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AddLine_UsageMetered_WithoutProduct_Fails()
+    {
+        var contract = RecurringContract.CreateDraft(
+            Guid.NewGuid(), BillingFrequency.Monthly, 1, new DateTime(2026, 1, 1)).Value;
+
+        var result = contract.AddLine(
+            RecurringContractLineType.UsageMetered, "Consommation", 1, 1m, 19m,
+            usageMetricId: Guid.NewGuid());
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("produit", result.Error.Description, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AddLine_OneTimeSetup_WithoutProduct_Succeeds()
+    {
+        var contract = RecurringContract.CreateDraft(
+            Guid.NewGuid(), BillingFrequency.Monthly, 1, new DateTime(2026, 1, 1)).Value;
+
+        var result = contract.AddLine(
+            RecurringContractLineType.OneTimeSetup, "Installation", 1, 500m, 19m);
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.Value.ProductId);
     }
 
     [Fact]
@@ -63,7 +106,7 @@ public sealed class RecurringContractDomainTests
         var contract = RecurringContract.CreateDraft(
             Guid.NewGuid(), BillingFrequency.Monthly, 1, start,
             endDate: new DateTime(2027, 1, 1)).Value;
-        contract.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m);
+        contract.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, TestProductId);
         Assert.True(contract.Activate().IsSuccess);
 
         // NextBillingDate est le 1er du mois de début ; même 7 jours avant, le domaine
@@ -78,7 +121,7 @@ public sealed class RecurringContractDomainTests
         var contract = RecurringContract.CreateDraft(
             Guid.NewGuid(), BillingFrequency.Monthly, 1, new DateTime(2026, 1, 20),
             endDate: new DateTime(2026, 1, 31)).Value;
-        contract.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m);
+        contract.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, TestProductId);
         Assert.True(contract.Activate().IsSuccess);
         Assert.True(contract.NextBillingDate!.Value.Date > contract.EndDate!.Value.Date);
 

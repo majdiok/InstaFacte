@@ -22,6 +22,8 @@ import { DialogModule } from 'primeng/dialog';
 
 import { ProgressBarModule } from 'primeng/progressbar';
 
+import { CheckboxModule } from 'primeng/checkbox';
+
 import { ButtonComponent } from '@shared/components/button/button.component';
 
 import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
@@ -29,6 +31,8 @@ import { StatusBadgeComponent } from '@shared/components/status-badge/status-bad
 import {
 
   ProjectBillingReadiness,
+
+  BillableProjectTask,
 
   ProjectDetail,
 
@@ -84,6 +88,16 @@ const TIME_GROUP_OPTIONS = [
 
 
 
+const TASK_BILLING_METHOD_OPTIONS = [
+
+  { label: 'Forfaitaire', value: 'fixed' },
+
+  { label: 'À l\'heure', value: 'hourly' }
+
+];
+
+
+
 @Component({
 
   selector: 'app-project-billing-tab',
@@ -113,6 +127,8 @@ const TIME_GROUP_OPTIONS = [
     DialogModule,
 
     ProgressBarModule,
+
+    CheckboxModule,
 
     ButtonComponent,
 
@@ -208,19 +224,181 @@ const TIME_GROUP_OPTIONS = [
 
           <label>Grouper par
 
-            <p-select [options]="groupOptions" [(ngModel)]="timeGroupBy" optionLabel="label" optionValue="value" />
+            <p-select [options]="groupOptions" [(ngModel)]="timeGroupBy" optionLabel="label" optionValue="value" (ngModelChange)="onTimeGroupByChange()" />
 
           </label>
 
-          <label>Notes
+          @if (timeGroupBy === 'member') {
 
-            <input pInputText [(ngModel)]="timeNotes" placeholder="Notes facture" />
+            <label>Notes
 
-          </label>
+              <input pInputText [(ngModel)]="timeNotes" placeholder="Notes facture" />
 
-          <app-button variant="primary" [disabled]="!canInvoiceTime" (click)="emitInvoiceTime()">Facturer les temps validés</app-button>
+            </label>
+
+            <app-button variant="primary" [disabled]="!canInvoiceTime" (click)="emitInvoiceTime()">Facturer les temps validés</app-button>
+
+          }
 
         </div>
+
+
+
+        @if (timeGroupBy === 'task') {
+
+          <div class="proj-field-row mt-2">
+
+            <label>Mode de facturation
+
+              <p-select [options]="taskBillingMethodOptions" [(ngModel)]="taskBillingMethod" optionLabel="label" optionValue="value" (ngModelChange)="onTaskBillingMethodChange()" />
+
+            </label>
+
+            <label>Notes
+
+              <input pInputText [(ngModel)]="timeNotes" placeholder="Notes facture" />
+
+            </label>
+
+            <app-button variant="primary" [disabled]="!canInvoiceTasks" (click)="emitInvoiceTasks()">Facturer les tâches sélectionnées</app-button>
+
+          </div>
+
+
+
+          @if (!billableTasks.length) {
+
+            <p class="text-muted mt-2 mb-0">Aucune tâche facturable pour ce mode.</p>
+
+          } @else {
+
+            <p-table [value]="billableTasks" styleClass="p-datatable-sm mt-2">
+
+              <ng-template pTemplate="header">
+
+                <tr>
+
+                  <th style="width: 3rem"></th>
+
+                  <th>Tâche</th>
+
+                  @if (taskBillingMethod === 'hourly') {
+
+                    <th>Heures</th>
+
+                    <th>Tarif h</th>
+
+                    <th>Montant HT</th>
+
+                  } @else {
+
+                    <th>Montant HT</th>
+
+                  }
+
+                </tr>
+
+              </ng-template>
+
+              <ng-template pTemplate="body" let-t>
+
+                <tr [class.text-muted]="taskBillingMethod === 'hourly' && !t.isEligible">
+
+                  <td>
+
+                    <p-checkbox
+
+                      [binary]="true"
+
+                      [ngModel]="isTaskSelected(t.id)"
+
+                      (ngModelChange)="toggleTaskSelected(t.id, $event)"
+
+                      [disabled]="taskBillingMethod === 'hourly' && !t.isEligible"
+
+                      [inputId]="'bill-task-' + t.id" />
+
+                  </td>
+
+                  <td>
+
+                    {{ t.title }}
+
+                    @if (t.blockReason) {
+
+                      <div class="text-sm text-muted">{{ t.blockReason }}</div>
+
+                    }
+
+                  </td>
+
+                  @if (taskBillingMethod === 'hourly') {
+
+                    <td>{{ t.uninvoicedBillableHours | number:'1.0-1' }} h</td>
+
+                    <td>
+
+                      @if (t.isEligible) {
+
+                        <p-inputNumber
+
+                          [(ngModel)]="taskHourlyRates[t.id]"
+
+                          mode="decimal"
+
+                          [minFractionDigits]="3"
+
+                          [min]="0"
+
+                          placeholder="Tarif h" />
+
+                      } @else {
+
+                        {{ t.hourlyRate | number:'1.3-3' }}
+
+                      }
+
+                    </td>
+
+                    <td>{{ taskHourlyTotal(t.id) | number:'1.3-3' }}</td>
+
+                  } @else {
+
+                    <td>
+
+                      @if (isTaskSelected(t.id)) {
+
+                        <p-inputNumber
+
+                          [(ngModel)]="taskAmounts[t.id]"
+
+                          mode="decimal"
+
+                          [minFractionDigits]="3"
+
+                          [min]="0"
+
+                          placeholder="Montant HT" />
+
+                      } @else {
+
+                        —
+
+                      }
+
+                    </td>
+
+                  }
+
+                </tr>
+
+              </ng-template>
+
+            </p-table>
+
+          }
+
+        }
 
       </div>
 
@@ -534,6 +712,8 @@ export class ProjectBillingTabComponent implements OnChanges {
 
   @Input() readiness: ProjectBillingReadiness | null = null;
 
+  @Input() billableTasks: BillableProjectTask[] = [];
+
   @Input() milestones: ProjectMilestone[] = [];
 
   @Input() situations: ProjectSituation[] = [];
@@ -549,6 +729,10 @@ export class ProjectBillingTabComponent implements OnChanges {
   @Output() activate = new EventEmitter<void>();
 
   @Output() invoiceTime = new EventEmitter<{ groupBy: string; notes?: string }>();
+
+  @Output() invoiceTasks = new EventEmitter<{ method: 'fixed' | 'hourly'; notes?: string; tasks: { taskId: string; amountHt?: number; hourlyRate?: number }[] }>();
+
+  @Output() refreshBillableTasks = new EventEmitter<'fixed' | 'hourly'>();
 
   @Output() invoiceFixedPrice = new EventEmitter<{ amountHt: number; notes?: string }>();
 
@@ -650,6 +834,14 @@ export class ProjectBillingTabComponent implements OnChanges {
 
   timeGroupBy = 'member';
 
+  taskBillingMethod: 'fixed' | 'hourly' = 'hourly';
+
+  selectedTaskIds = new Set<string>();
+
+  taskAmounts: Record<string, number> = {};
+
+  taskHourlyRates: Record<string, number> = {};
+
   timeNotes = '';
 
   fixedPriceAmount = 0;
@@ -692,6 +884,8 @@ export class ProjectBillingTabComponent implements OnChanges {
 
   readonly groupOptions = TIME_GROUP_OPTIONS;
 
+  readonly taskBillingMethodOptions = TASK_BILLING_METHOD_OPTIONS;
+
   readonly vatOptions = TUNISIAN_VAT_OPTIONS;
 
   readonly canBeBilled = canBeBilled;
@@ -714,6 +908,14 @@ export class ProjectBillingTabComponent implements OnChanges {
     if (changes['project']?.currentValue && this.fixedPriceAmount === 0) {
       this.fixedPriceAmount = (changes['project'].currentValue as ProjectDetail).budgetHt;
     }
+
+    if (changes['billableTasks'] && this.taskBillingMethod === 'hourly') {
+      for (const t of this.billableTasks) {
+        if (t.isEligible) {
+          this.taskHourlyRates[t.id] = t.hourlyRate;
+        }
+      }
+    }
   }
 
 
@@ -734,6 +936,28 @@ export class ProjectBillingTabComponent implements OnChanges {
 
 
 
+  get canInvoiceTasks(): boolean {
+
+    if (!this.selectedTaskIds.size) return false;
+
+    if (this.taskBillingMethod === 'fixed') {
+
+      return [...this.selectedTaskIds].every(id => (this.taskAmounts[id] ?? 0) > 0);
+
+    }
+
+    return [...this.selectedTaskIds].every(id => {
+
+      const task = this.billableTasks.find(t => t.id === id);
+
+      return !!task?.isEligible && (this.taskHourlyRates[id] ?? 0) > 0;
+
+    });
+
+  }
+
+
+
   get latestSituationPercent(): number | null {
 
     if (!this.situations.length) return null;
@@ -748,7 +972,106 @@ export class ProjectBillingTabComponent implements OnChanges {
 
   emitInvoiceTime(): void {
 
-    this.invoiceTime.emit({ groupBy: this.timeGroupBy, notes: this.timeNotes || undefined });
+    this.invoiceTime.emit({ groupBy: 'member', notes: this.timeNotes || undefined });
+
+  }
+
+
+
+  onTimeGroupByChange(): void {
+
+    this.selectedTaskIds.clear();
+
+    this.taskAmounts = {};
+
+    this.taskHourlyRates = {};
+
+    if (this.timeGroupBy === 'task') {
+
+      this.refreshBillableTasks.emit(this.taskBillingMethod);
+
+    }
+
+  }
+
+
+
+  onTaskBillingMethodChange(): void {
+
+    this.selectedTaskIds.clear();
+
+    this.taskAmounts = {};
+
+    this.taskHourlyRates = {};
+
+    this.refreshBillableTasks.emit(this.taskBillingMethod);
+
+  }
+
+
+
+  isTaskSelected(taskId: string): boolean {
+
+    return this.selectedTaskIds.has(taskId);
+
+  }
+
+
+
+  toggleTaskSelected(taskId: string, selected: boolean): void {
+
+    if (selected) {
+
+      this.selectedTaskIds.add(taskId);
+
+      if (this.taskBillingMethod === 'fixed' && this.taskAmounts[taskId] === undefined) {
+
+        this.taskAmounts[taskId] = 0;
+
+      }
+
+    } else {
+
+      this.selectedTaskIds.delete(taskId);
+
+      delete this.taskAmounts[taskId];
+
+    }
+
+  }
+
+
+
+  taskHourlyTotal(taskId: string): number {
+    const task = this.billableTasks.find(t => t.id === taskId);
+    const hours = task?.uninvoicedBillableHours ?? 0;
+    const rate = this.taskHourlyRates[taskId] ?? 0;
+    return Math.round(hours * rate * 1000) / 1000;
+  }
+
+
+
+  emitInvoiceTasks(): void {
+
+    const tasks = [...this.selectedTaskIds].map(taskId => ({
+
+      taskId,
+
+      amountHt: this.taskBillingMethod === 'fixed' ? this.taskAmounts[taskId] : undefined,
+
+      hourlyRate: this.taskBillingMethod === 'hourly' ? this.taskHourlyRates[taskId] : undefined
+
+    }));
+
+    this.invoiceTasks.emit({
+
+      method: this.taskBillingMethod,
+
+      notes: this.timeNotes || undefined,
+
+      tasks
+
+    });
 
   }
 

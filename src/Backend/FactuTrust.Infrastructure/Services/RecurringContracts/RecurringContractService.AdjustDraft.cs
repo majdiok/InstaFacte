@@ -12,8 +12,8 @@ namespace FactuTrust.Infrastructure.Services.RecurringContracts;
 /// <summary>
 /// Ajustement contrôlé du brouillon d'une échéance (modal « Ajustement du brouillon »).
 /// Whitelist : désignation, quantité, prix unitaire HT, TVA. Produit et nombre de lignes figés.
-/// Synchronise le snapshot du billing run et aligne les lignes catalogue du contrat.
-/// Aucune émission, aucun journal comptable.
+/// Met à jour uniquement le brouillon et le snapshot du billing run concerné — aucune mutation
+/// du catalogue contractuel (<see cref="RecurringContractLine"/>). Aucune émission, aucun journal comptable.
 /// </summary>
 public sealed partial class RecurringContractService
 {
@@ -110,10 +110,6 @@ public sealed partial class RecurringContractService
         if (revise.IsFailure)
             return Result.Failure<AdjustableRecurringDraftDto>(revise.Error);
 
-        var syncLines = await SyncContractCatalogLinesAsync(run, merged, cancellationToken);
-        if (syncLines.IsFailure)
-            return Result.Failure<AdjustableRecurringDraftDto>(syncLines.Error);
-
         await _db.SaveChangesAsync(cancellationToken);
 
         var mapped = await LoadAdjustableAsync(run.Id, trackDraft: false, cancellationToken);
@@ -169,62 +165,6 @@ public sealed partial class RecurringContractService
     }
 
     private enum DraftLineKind { Fixed, Usage, Proration }
-
-    /// <summary>
-    /// Aligne les lignes catalogue actives du contrat (même filtre/ordre que BuildDraftLines)
-    /// sur les premières lignes du brouillon. Les lignes synthétiques Usage/Prorata ne sont pas
-    /// répercutées sur <see cref="RecurringContractLine"/>.
-    /// </summary>
-    private async Task<Result> SyncContractCatalogLinesAsync(
-        RecurringContractBillingRun run,
-        IReadOnlyList<DraftInvoiceLine> merged,
-        CancellationToken cancellationToken)
-    {
-        var contract = await _db.RecurringContracts
-            .Include(c => c.Lines)
-            .FirstOrDefaultAsync(c => c.Id == run.RecurringContractId, cancellationToken);
-        if (contract is null)
-            return Result.Failure(Error.NotFound("RecurringContract", run.RecurringContractId));
-
-        var catalogLines = GetCatalogLinesForDraft(contract, run.PeriodTo).ToList();
-        if (merged.Count < catalogLines.Count)
-            return Result.Failure(Error.Validation(
-                "Lines",
-                "Incohérence structurelle : le brouillon a moins de lignes que le catalogue du contrat."));
-
-        for (var i = 0; i < catalogLines.Count; i++)
-        {
-            var contractLine = catalogLines[i];
-            var draftLine = merged[i];
-            var updated = contractLine.Update(
-                draftLine.Designation ?? contractLine.Description,
-                draftLine.Quantity,
-                draftLine.UnitPriceHT,
-                draftLine.VatRate,
-                contractLine.IncludedQuantity,
-                contractLine.OverageUnitPriceHT,
-                contractLine.SortOrder);
-            if (updated.IsFailure)
-                return updated;
-        }
-
-        return Result.Success();
-    }
-
-    /// <summary>Même filtre que <c>RecurringContractBillingService.BuildDraftLines</c> (hors usage/prorata).</summary>
-    internal static IEnumerable<RecurringContractLine> GetCatalogLinesForDraft(
-        RecurringContract contract,
-        DateTime periodTo)
-    {
-        foreach (var contractLine in contract.GetActiveLinesOn(periodTo))
-        {
-            if (contractLine.LineType == RecurringContractLineType.OneTimeSetup && contract.SetupFeeBilled)
-                continue;
-            if (contractLine.LineType == RecurringContractLineType.UsageMetered)
-                continue;
-            yield return contractLine;
-        }
-    }
 
     private async Task<Result<(RecurringContractBillingRun Run, InvoiceDraft Draft, RecurringContract Contract)>> LoadAdjustableAsync(
         Guid billingRunId,

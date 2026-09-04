@@ -173,6 +173,17 @@ export interface ProjectCostLine {
   occurredOn: string;
 }
 
+export interface ProjectPurchaseOrder {
+  id: string;
+  number: string;
+  supplierName: string;
+  orderDate: string;
+  status: number;
+  statusDisplay: string;
+  statusCss: string;
+  totalHt: number;
+}
+
 export interface ProjectMilestone {
   id: string;
   name: string;
@@ -337,6 +348,16 @@ export interface ProjectBillingReadiness {
   validatedUninvoicedHours: number;
   membersWithoutRate: string[];
   blockers: string[];
+}
+
+export interface BillableProjectTask {
+  id: string;
+  title: string;
+  uninvoicedBillableHours: number;
+  hourlyRate: number;
+  previewAmountHt: number;
+  isEligible: boolean;
+  blockReason?: string | null;
 }
 
 export interface UpsertProjectPayload {
@@ -643,8 +664,21 @@ export class ProjectApiService {
     return this.http.get<ApiResponse<ProjectBillingReadiness>>(`${this.base}/${projectId}/billing/readiness`);
   }
 
+  billableTasks(projectId: string, method: 'fixed' | 'hourly'): Observable<ApiResponse<BillableProjectTask[]>> {
+    return this.http.get<ApiResponse<BillableProjectTask[]>>(`${this.base}/${projectId}/billing/billable-tasks`, { params: { method } });
+  }
+
   invoiceTime(projectId: string, groupBy = 'member', notes?: string): Observable<ApiResponse<{ invoiceId: string; billingId: string }>> {
     return this.http.post<ApiResponse<{ invoiceId: string; billingId: string }>>(`${this.base}/${projectId}/billing/time`, { groupBy, notes });
+  }
+
+  invoiceTasks(
+    projectId: string,
+    method: 'fixed' | 'hourly',
+    tasks: { taskId: string; amountHt?: number; hourlyRate?: number }[],
+    notes?: string
+  ): Observable<ApiResponse<{ invoiceId: string; billingId: string }>> {
+    return this.http.post<ApiResponse<{ invoiceId: string; billingId: string }>>(`${this.base}/${projectId}/billing/tasks`, { method, notes, tasks });
   }
 
   invoiceMilestone(projectId: string, milestoneId: string, notes?: string): Observable<ApiResponse<{ invoiceId: string; billingId: string }>> {
@@ -693,5 +727,9 @@ export class ProjectApiService {
 
   assignPurchaseOrder(projectId: string, purchaseOrderId: string): Observable<ApiResponse<boolean>> {
     return this.http.post<ApiResponse<boolean>>(`${this.base}/${projectId}/purchase-orders`, { purchaseOrderId });
+  }
+
+  listPurchaseOrders(projectId: string): Observable<ApiResponse<ProjectPurchaseOrder[]>> {
+    return this.http.get<ApiResponse<ProjectPurchaseOrder[]>>(`${this.base}/${projectId}/purchase-orders`);
   }
 }

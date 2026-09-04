@@ -522,6 +522,10 @@
   font-size: 0.85rem;
   cursor: pointer;
 
+  i {
+    color: inherit;
+  }
+
   &:hover {
     background: var(--color-background-subtle, #f9fafb);
     color: var(--color-text-primary, #0f172a);
@@ -779,6 +783,14 @@
   justify-content: flex-end;
 }
 
+.proj-time-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
 .proj-tasks-icon-btn {
   border: none;
   background: transparent;
@@ -790,6 +802,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+
+  i {
+    color: inherit;
+  }
 
   &:hover {
     background: var(--color-background-subtle, #f3f4f6);
@@ -1873,12 +1889,12 @@
 .proj-team-add-grid {
   display: grid;
   grid-template-columns:
-    minmax(11rem, 2.2fr)
-    minmax(7rem, 1fr)
-    minmax(5.5rem, 0.75fr)
-    minmax(5.5rem, 0.75fr)
-    minmax(6.5rem, 0.85fr)
-    auto;
+    minmax(0, 2.2fr)
+    minmax(0, 1fr)
+    minmax(0, 0.75fr)
+    minmax(0, 0.75fr)
+    minmax(0, 0.85fr)
+    minmax(max-content, auto);
   gap: 0.75rem;
   align-items: end;
 }
@@ -1888,18 +1904,27 @@
   flex-direction: column;
   gap: 0.25rem;
   min-width: 0;
+
+  .p-select,
+  .p-inputnumber,
+  .p-inputnumber-input {
+    width: 100%;
+    max-width: 100%;
+  }
 }
 
 .proj-team-field__label {
   font-size: 0.85rem;
   font-weight: 500;
   color: var(--text-color-secondary, #64748b);
+  overflow-wrap: anywhere;
 }
 
 .proj-team-add-actions {
   display: flex;
   align-items: flex-end;
   padding-bottom: 0.1rem;
+  flex-shrink: 0;
 }
 
 .proj-team-table {
@@ -1924,7 +1949,7 @@
   padding-top: 0.25rem;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1100px) {
   .proj-team-add-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -2341,4 +2366,48 @@
 .proj-list-actions-col {
   width: 2.5rem;
   text-align: center;
+}
+
+.task-create-intro {
+  margin: 0 0 var(--spacing-3, 0.75rem);
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.task-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3, 0.75rem);
+}
+
+.task-create-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1, 0.25rem);
+}
+
+.task-create-field label {
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: 400;
+  color: var(--color-text-secondary);
+}
+
+.task-create-check {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2, 0.5rem);
+}
+
+.task-create-check label {
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.task-create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2, 0.5rem);
+  align-items: center;
 }

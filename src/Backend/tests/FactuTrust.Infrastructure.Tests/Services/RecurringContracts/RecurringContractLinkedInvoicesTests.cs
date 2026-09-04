@@ -14,7 +14,7 @@ public sealed class RecurringContractLinkedInvoicesTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         var invoice1 = await harness.SeedInvoiceAsync(client.Id, new DateTime(2026, 1, 15), 100m,
             dueDate: new DateTime(2026, 2, 14));
@@ -63,7 +63,7 @@ public sealed class RecurringContractLinkedInvoicesTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         var invoice = await harness.SeedInvoiceAsync(client.Id, new DateTime(2026, 2, 1), 250m);
         var run = await harness.SeedRunAsync(contract.Id, new DateTime(2026, 2, 1), new DateTime(2026, 2, 28),
@@ -96,7 +96,7 @@ public sealed class RecurringContractLinkedInvoicesTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         var invoice = await harness.SeedInvoiceAsync(client.Id, new DateTime(2026, 2, 1), 250m);
         var run = await harness.SeedRunAsync(contract.Id, new DateTime(2026, 2, 1), new DateTime(2026, 2, 28),
@@ -134,7 +134,7 @@ public sealed class RecurringContractLinkedInvoicesTests
         var contract = await harness.SeedContractAsync(client.Id,
             startDate: new DateTime(2026, 1, 1),
             configure: c => c.Activate(),
-            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m));
+            lines: c => c.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m, RecurringContractTestHarness.DefaultProductId));
 
         await using var sut = harness.CreateService();
         var items = await sut.GetLinkedInvoicesAsync(contract.Id);

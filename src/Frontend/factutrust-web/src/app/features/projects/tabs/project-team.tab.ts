@@ -86,7 +86,7 @@ import { ProjectDetail } from '../project-api.service';
 
             <div class="proj-team-field proj-team-field--user">
 
-              <span class="proj-team-field__label">Utilisateur</span>
+              <span class="proj-team-field__label">Utilisateur <span class="ft-required">*</span></span>
 
               <p-select
 
@@ -106,7 +106,7 @@ import { ProjectDetail } from '../project-api.service';
 
             <div class="proj-team-field">
 
-              <span class="proj-team-field__label">Rôle</span>
+              <span class="proj-team-field__label">Rôle <span class="ft-required">*</span></span>
 
               <p-select
 
@@ -164,7 +164,7 @@ import { ProjectDetail } from '../project-api.service';
 
             <div class="proj-team-field">
 
-              <span class="proj-team-field__label">Capacité h/sem</span>
+              <span class="proj-team-field__label">Capacité h/sem <span class="ft-required">*</span></span>
 
               <p-inputNumber
 

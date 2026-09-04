@@ -108,7 +108,13 @@ Prérequis affichés dans l'onglet **Facturation** (liste complète des blocages
 1. Projet **Actif** ou **Terminé**.
 2. Pour la régie : temps **validés** non facturés + **TJM** ou coût horaire sur l'équipe.
 
-**Facturer les temps validés** crée une facture brouillon (agrégation par **intervenant** ou par **tâche**, notes optionnelles).
+**Par membre** : **Facturer les temps validés** crée une facture brouillon agrégée par **intervenant** (notes optionnelles).
+
+**Par tâche** : choisissez **Forfaitaire** ou **À l'heure**, sélectionnez une ou plusieurs tâches, puis **Facturer les tâches sélectionnées** :
+- **Forfaitaire** : saisissez le montant HT par tâche à la facturation ;
+- **À l'heure** : montant = heures validées non facturées × tarif horaire (TJM / coût h de l'équipe).
+
+Une tâche déjà facturée en forfait ou à l'heure (via Par tâche) n'est plus proposée. Les heures déjà facturées (y compris par membre) ne sont jamais reproposées ; seules les heures restantes validées et non facturées comptent pour **Par tâche → À l'heure**.
 
 **Jalons** : saisissez nom, % d'avancement, montant HT et échéance ; facturez un jalon à la fois.
 
