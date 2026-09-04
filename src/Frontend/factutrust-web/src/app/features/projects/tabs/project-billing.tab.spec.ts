@@ -24,7 +24,7 @@ describe('ProjectBillingTabComponent', () => {
     expect(component.canInvoiceTasks).toBe(true);
   });
 
-  it('canInvoiceTasks requires eligible tasks in hourly mode', () => {
+  it('canInvoiceTasks requires eligible tasks with hourly rate in hourly mode', () => {
     component.taskBillingMethod = 'hourly';
     component.billableTasks = [
       { id: 't1', title: 'A', uninvoicedBillableHours: 5, hourlyRate: 80, previewAmountHt: 400, isEligible: true },
@@ -32,8 +32,13 @@ describe('ProjectBillingTabComponent', () => {
     ] as BillableProjectTask[];
 
     component.toggleTaskSelected('t1', true);
+    component.taskHourlyRates['t1'] = 80;
     expect(component.canInvoiceTasks).toBe(true);
 
+    component.taskHourlyRates['t1'] = 0;
+    expect(component.canInvoiceTasks).toBe(false);
+
+    component.taskHourlyRates['t1'] = 80;
     component.toggleTaskSelected('t2', true);
     expect(component.canInvoiceTasks).toBe(false);
   });
@@ -58,7 +63,29 @@ describe('ProjectBillingTabComponent', () => {
     expect(spy).toHaveBeenCalledWith({
       method: 'fixed',
       notes: 'forfait',
-      tasks: [{ taskId: 't1', amountHt: 250 }]
+      tasks: [{ taskId: 't1', amountHt: 250, hourlyRate: undefined }]
+    });
+  });
+
+  it('taskHourlyTotal recalculates when rate changes', () => {
+    component.billableTasks = [
+      { id: 't1', title: 'A', uninvoicedBillableHours: 3, hourlyRate: 90, previewAmountHt: 270, isEligible: true }
+    ] as BillableProjectTask[];
+    component.taskHourlyRates['t1'] = 100;
+    expect(component.taskHourlyTotal('t1')).toBe(300);
+  });
+
+  it('emitInvoiceTasks builds payload for hourly mode', () => {
+    const spy = jasmine.createSpy('invoiceTasks');
+    component.invoiceTasks.subscribe(spy);
+    component.taskBillingMethod = 'hourly';
+    component.toggleTaskSelected('t1', true);
+    component.taskHourlyRates['t1'] = 100;
+    component.emitInvoiceTasks();
+    expect(spy).toHaveBeenCalledWith({
+      method: 'hourly',
+      notes: undefined,
+      tasks: [{ taskId: 't1', amountHt: undefined, hourlyRate: 100 }]
     });
   });
 });

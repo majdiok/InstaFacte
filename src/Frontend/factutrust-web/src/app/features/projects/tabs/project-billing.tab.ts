@@ -336,9 +336,31 @@ const TASK_BILLING_METHOD_OPTIONS = [
 
                     <td>{{ t.uninvoicedBillableHours | number:'1.0-1' }} h</td>
 
-                    <td>{{ t.hourlyRate | number:'1.3-3' }}</td>
+                    <td>
 
-                    <td>{{ t.previewAmountHt | number:'1.3-3' }}</td>
+                      @if (t.isEligible) {
+
+                        <p-inputNumber
+
+                          [(ngModel)]="taskHourlyRates[t.id]"
+
+                          mode="decimal"
+
+                          [minFractionDigits]="3"
+
+                          [min]="0"
+
+                          placeholder="Tarif h" />
+
+                      } @else {
+
+                        {{ t.hourlyRate | number:'1.3-3' }}
+
+                      }
+
+                    </td>
+
+                    <td>{{ taskHourlyTotal(t.id) | number:'1.3-3' }}</td>
 
                   } @else {
 
@@ -708,7 +730,7 @@ export class ProjectBillingTabComponent implements OnChanges {
 
   @Output() invoiceTime = new EventEmitter<{ groupBy: string; notes?: string }>();
 
-  @Output() invoiceTasks = new EventEmitter<{ method: 'fixed' | 'hourly'; notes?: string; tasks: { taskId: string; amountHt?: number }[] }>();
+  @Output() invoiceTasks = new EventEmitter<{ method: 'fixed' | 'hourly'; notes?: string; tasks: { taskId: string; amountHt?: number; hourlyRate?: number }[] }>();
 
   @Output() refreshBillableTasks = new EventEmitter<'fixed' | 'hourly'>();
 
@@ -818,6 +840,8 @@ export class ProjectBillingTabComponent implements OnChanges {
 
   taskAmounts: Record<string, number> = {};
 
+  taskHourlyRates: Record<string, number> = {};
+
   timeNotes = '';
 
   fixedPriceAmount = 0;
@@ -884,6 +908,14 @@ export class ProjectBillingTabComponent implements OnChanges {
     if (changes['project']?.currentValue && this.fixedPriceAmount === 0) {
       this.fixedPriceAmount = (changes['project'].currentValue as ProjectDetail).budgetHt;
     }
+
+    if (changes['billableTasks'] && this.taskBillingMethod === 'hourly') {
+      for (const t of this.billableTasks) {
+        if (t.isEligible) {
+          this.taskHourlyRates[t.id] = t.hourlyRate;
+        }
+      }
+    }
   }
 
 
@@ -918,7 +950,7 @@ export class ProjectBillingTabComponent implements OnChanges {
 
       const task = this.billableTasks.find(t => t.id === id);
 
-      return !!task?.isEligible;
+      return !!task?.isEligible && (this.taskHourlyRates[id] ?? 0) > 0;
 
     });
 
@@ -952,6 +984,8 @@ export class ProjectBillingTabComponent implements OnChanges {
 
     this.taskAmounts = {};
 
+    this.taskHourlyRates = {};
+
     if (this.timeGroupBy === 'task') {
 
       this.refreshBillableTasks.emit(this.taskBillingMethod);
@@ -967,6 +1001,8 @@ export class ProjectBillingTabComponent implements OnChanges {
     this.selectedTaskIds.clear();
 
     this.taskAmounts = {};
+
+    this.taskHourlyRates = {};
 
     this.refreshBillableTasks.emit(this.taskBillingMethod);
 
@@ -1006,13 +1042,24 @@ export class ProjectBillingTabComponent implements OnChanges {
 
 
 
+  taskHourlyTotal(taskId: string): number {
+    const task = this.billableTasks.find(t => t.id === taskId);
+    const hours = task?.uninvoicedBillableHours ?? 0;
+    const rate = this.taskHourlyRates[taskId] ?? 0;
+    return Math.round(hours * rate * 1000) / 1000;
+  }
+
+
+
   emitInvoiceTasks(): void {
 
     const tasks = [...this.selectedTaskIds].map(taskId => ({
 
       taskId,
 
-      amountHt: this.taskBillingMethod === 'fixed' ? this.taskAmounts[taskId] : undefined
+      amountHt: this.taskBillingMethod === 'fixed' ? this.taskAmounts[taskId] : undefined,
+
+      hourlyRate: this.taskBillingMethod === 'hourly' ? this.taskHourlyRates[taskId] : undefined
 
     }));
 

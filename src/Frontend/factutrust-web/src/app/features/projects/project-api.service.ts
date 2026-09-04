@@ -675,7 +675,7 @@ export class ProjectApiService {
   invoiceTasks(
     projectId: string,
     method: 'fixed' | 'hourly',
-    tasks: { taskId: string; amountHt?: number }[],
+    tasks: { taskId: string; amountHt?: number; hourlyRate?: number }[],
     notes?: string
   ): Observable<ApiResponse<{ invoiceId: string; billingId: string }>> {
     return this.http.post<ApiResponse<{ invoiceId: string; billingId: string }>>(`${this.base}/${projectId}/billing/tasks`, { method, notes, tasks });

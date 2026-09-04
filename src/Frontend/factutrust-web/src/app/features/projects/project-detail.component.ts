@@ -747,7 +747,7 @@ export class ProjectDetailComponent implements OnInit {
     });
   }
 
-  invoiceTasks(ev: { method: 'fixed' | 'hourly'; notes?: string; tasks: { taskId: string; amountHt?: number }[] }): void {
+  invoiceTasks(ev: { method: 'fixed' | 'hourly'; notes?: string; tasks: { taskId: string; amountHt?: number; hourlyRate?: number }[] }): void {
     this.api.invoiceTasks(this.id, ev.method, ev.tasks, ev.notes).subscribe({
       next: r => {
         if (r.success && r.data) {

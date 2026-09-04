@@ -114,7 +114,7 @@ Prérequis affichés dans l'onglet **Facturation** (liste complète des blocages
 - **Forfaitaire** : saisissez le montant HT par tâche à la facturation ;
 - **À l'heure** : montant = heures validées non facturées × tarif horaire (TJM / coût h de l'équipe).
 
-Une tâche déjà facturée (forfait ou à l'heure) ou dont les temps ont déjà été facturés par membre n'est plus proposée.
+Une tâche déjà facturée en forfait ou à l'heure (via Par tâche) n'est plus proposée. Les heures déjà facturées (y compris par membre) ne sont jamais reproposées ; seules les heures restantes validées et non facturées comptent pour **Par tâche → À l'heure**.
 
 **Jalons** : saisissez nom, % d'avancement, montant HT et échéance ; facturez un jalon à la fois.
 
