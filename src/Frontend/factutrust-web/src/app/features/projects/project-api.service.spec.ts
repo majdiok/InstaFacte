@@ -108,4 +108,11 @@ describe('ProjectApiService', () => {
     expect(req.request.body).toEqual({ phaseId: 'phase-2', status: 'InProgress' });
     req.flush({ success: true, data: true });
   });
+
+  it('loads linked invoices for a project', () => {
+    service.linkedInvoices('proj-1').subscribe();
+    const req = http.expectOne(`${environment.apiUrl}/projects/proj-1/linked-invoices`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ success: true, data: [] });
+  });
 });

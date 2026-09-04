@@ -63,6 +63,7 @@ public interface IProjectService
     Task<Result<ProjectInvoiceResultDto>> InvoiceTasksAsync(Guid projectId, InvoiceTasksDto dto, CancellationToken cancellationToken = default);
     Task<Result<ProjectInvoiceResultDto>> InvoiceMilestoneAsync(Guid projectId, InvoiceMilestoneDto dto, CancellationToken cancellationToken = default);
     Task<Result<ProjectInvoiceResultDto>> InvoiceFixedPriceAsync(Guid projectId, InvoiceFixedPriceDto dto, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ProjectLinkedInvoiceDto>?> GetLinkedInvoicesAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ProjectWorkloadRowDto>> GetWorkloadAsync(Guid projectId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ProjectSituationDto>> ListSituationsAsync(Guid projectId, CancellationToken cancellationToken = default);

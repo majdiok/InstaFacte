@@ -1777,6 +1777,74 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         return Result.Success();
     }
 
+    /// <summary>
+    /// Factures liées au projet : émises via facturation projet (SourceProjectId) ∪ avoirs
+    /// rattachés via LinkedInvoiceId. Tri IssueDate desc, CreatedAt desc.
+    /// </summary>
+    public async Task<IReadOnlyList<ProjectLinkedInvoiceDto>?> GetLinkedInvoicesAsync(
+        Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var exists = await _db.Projects.AsNoTracking()
+            .AnyAsync(p => p.Id == projectId, cancellationToken);
+        if (!exists) return null;
+
+        var invoices = await _db.Invoices.AsNoTracking()
+            .Include(i => i.Client)
+            .Where(i => i.SourceProjectId == projectId)
+            .ToListAsync(cancellationToken);
+        var invoiceIds = invoices.Select(i => i.Id).ToList();
+
+        var creditNotes = invoiceIds.Count == 0
+            ? new List<Invoice>()
+            : await _db.Invoices.AsNoTracking()
+                .Include(i => i.Client)
+                .Where(i => i.Type == InvoiceType.CreditNote
+                    && i.LinkedInvoiceId != null
+                    && invoiceIds.Contains(i.LinkedInvoiceId.Value)
+                    && i.SourceProjectId == null)
+                .ToListAsync(cancellationToken);
+
+        var billingIds = invoices
+            .Where(i => i.SourceProjectBillingId.HasValue)
+            .Select(i => i.SourceProjectBillingId!.Value)
+            .Distinct()
+            .ToList();
+        var billingKindById = billingIds.Count == 0
+            ? new Dictionary<Guid, ProjectBillingKind>()
+            : await _db.ProjectBillings.AsNoTracking()
+                .Where(b => billingIds.Contains(b.Id))
+                .ToDictionaryAsync(b => b.Id, b => b.Kind, cancellationToken);
+
+        return invoices.Concat(creditNotes)
+            .Select(i =>
+            {
+                ProjectBillingKind? kind = i.SourceProjectBillingId.HasValue
+                    && billingKindById.TryGetValue(i.SourceProjectBillingId.Value, out var k)
+                        ? k
+                        : null;
+
+                return new ProjectLinkedInvoiceDto
+                {
+                    InvoiceId = i.Id,
+                    Number = i.Number.Value,
+                    IssueDate = i.IssueDate,
+                    ClientName = i.Client.Name,
+                    AmountHT = i.SubTotal.Amount,
+                    AmountVat = i.TotalVat.Amount,
+                    AmountTTC = i.TotalAmount.Amount,
+                    Currency = i.TotalAmount.Currency,
+                    Status = i.Status,
+                    StatusDisplay = i.Status.ToDisplayString(),
+                    IsCreditNote = i.IsCreditNote,
+                    CreatedAt = i.CreatedAt,
+                    BillingKind = kind
+                };
+            })
+            .OrderByDescending(d => d.IssueDate)
+            .ThenByDescending(d => d.CreatedAt)
+            .ToList();
+    }
+
     private async Task<Result<ProjectInvoiceResultDto>> EmitProjectInvoiceAsync(
         Project project,
         ProjectBillingKind kind,

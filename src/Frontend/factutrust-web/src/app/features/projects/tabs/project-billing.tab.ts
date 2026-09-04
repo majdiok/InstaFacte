@@ -28,6 +28,8 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 
 import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
 
+import { ProjectInvoicesSectionComponent } from '../components/project-invoices-section.component';
+
 import {
 
   ProjectBillingReadiness,
@@ -132,7 +134,9 @@ const TASK_BILLING_METHOD_OPTIONS = [
 
     ButtonComponent,
 
-    StatusBadgeComponent
+    StatusBadgeComponent,
+
+    ProjectInvoicesSectionComponent
 
   ],
 
@@ -694,6 +698,15 @@ const TASK_BILLING_METHOD_OPTIONS = [
 
     </p-dialog>
 
+
+
+    @if (project) {
+      <app-project-invoices-section
+        [projectId]="project.id"
+        [currency]="project.currency"
+        [refreshToken]="invoicesRefreshToken" />
+    }
+
   `,
 
   styles: [`
@@ -725,6 +738,8 @@ export class ProjectBillingTabComponent implements OnChanges {
   @Input() canBill = false;
 
   @Input() canUpdate = false;
+
+  @Input() invoicesRefreshToken = 0;
 
   @Output() activate = new EventEmitter<void>();
 
