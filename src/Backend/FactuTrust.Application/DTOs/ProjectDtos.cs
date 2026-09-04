@@ -316,6 +316,8 @@ public sealed record InvoiceTimeDto
 {
     public string GroupBy { get; init; } = "member";
     public string? Notes { get; init; }
+    /// <summary>Entrées à facturer. Si vide : toutes les saisies éligibles (comportement legacy).</summary>
+    public IReadOnlyList<Guid> TimeEntryIds { get; init; } = Array.Empty<Guid>();
 }
 
 public sealed record InvoiceTaskLineDto
@@ -337,6 +339,21 @@ public sealed record BillableProjectTaskDto
     public Guid Id { get; init; }
     public string Title { get; init; } = null!;
     public decimal UninvoicedBillableHours { get; init; }
+    public decimal HourlyRate { get; init; }
+    public decimal PreviewAmountHt { get; init; }
+    public bool IsEligible { get; init; }
+    public string? BlockReason { get; init; }
+}
+
+public sealed record BillableProjectTimeEntryDto
+{
+    public Guid Id { get; init; }
+    public Guid UserId { get; init; }
+    public string UserName { get; init; } = null!;
+    public DateTime WorkDate { get; init; }
+    public Guid? TaskId { get; init; }
+    public string? TaskTitle { get; init; }
+    public decimal Hours { get; init; }
     public decimal HourlyRate { get; init; }
     public decimal PreviewAmountHt { get; init; }
     public bool IsEligible { get; init; }
@@ -365,6 +382,29 @@ public sealed record ProjectInvoiceResultDto
 {
     public Guid InvoiceId { get; init; }
     public Guid BillingId { get; init; }
+}
+
+/// <summary>Facture commerciale émise depuis un projet (GET /projects/{id}/linked-invoices).</summary>
+public sealed record ProjectLinkedInvoiceDto
+{
+    public Guid InvoiceId { get; init; }
+    public string Number { get; init; } = null!;
+    /// <summary>Date d'émission (IssueDate).</summary>
+    public DateTime IssueDate { get; init; }
+    public string ClientName { get; init; } = null!;
+    /// <summary>SubTotal HT (négatif pour un avoir).</summary>
+    public decimal AmountHT { get; init; }
+    /// <summary>Total TVA (négatif pour un avoir).</summary>
+    public decimal AmountVat { get; init; }
+    /// <summary>TotalAmount TTC (négatif pour un avoir).</summary>
+    public decimal AmountTTC { get; init; }
+    public string Currency { get; init; } = null!;
+    public InvoiceStatus Status { get; init; }
+    public string StatusDisplay { get; init; } = null!;
+    public bool IsCreditNote { get; init; }
+    public DateTime CreatedAt { get; init; }
+    /// <summary>Type de facturation projet (régie, jalon, etc.) ; null pour un avoir sans lien direct.</summary>
+    public ProjectBillingKind? BillingKind { get; init; }
 }
 
 public sealed record RecordProjectStockExitDto

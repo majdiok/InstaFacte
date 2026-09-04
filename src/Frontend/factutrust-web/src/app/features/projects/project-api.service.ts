@@ -360,6 +360,36 @@ export interface BillableProjectTask {
   blockReason?: string | null;
 }
 
+export interface BillableProjectTimeEntry {
+  id: string;
+  userId: string;
+  userName: string;
+  workDate: string;
+  taskId?: string | null;
+  taskTitle?: string | null;
+  hours: number;
+  hourlyRate: number;
+  previewAmountHt: number;
+  isEligible: boolean;
+  blockReason?: string | null;
+}
+
+export interface ProjectLinkedInvoice {
+  invoiceId: string;
+  number: string;
+  issueDate: string;
+  clientName: string;
+  amountHT: number;
+  amountVat: number;
+  amountTTC: number;
+  currency: string;
+  status: string;
+  statusDisplay: string;
+  isCreditNote: boolean;
+  createdAt: string;
+  billingKind?: string | null;
+}
+
 export interface UpsertProjectPayload {
   clientId: string;
   name: string;
@@ -668,8 +698,15 @@ export class ProjectApiService {
     return this.http.get<ApiResponse<BillableProjectTask[]>>(`${this.base}/${projectId}/billing/billable-tasks`, { params: { method } });
   }
 
-  invoiceTime(projectId: string, groupBy = 'member', notes?: string): Observable<ApiResponse<{ invoiceId: string; billingId: string }>> {
-    return this.http.post<ApiResponse<{ invoiceId: string; billingId: string }>>(`${this.base}/${projectId}/billing/time`, { groupBy, notes });
+  billableTimeEntries(projectId: string): Observable<ApiResponse<BillableProjectTimeEntry[]>> {
+    return this.http.get<ApiResponse<BillableProjectTimeEntry[]>>(`${this.base}/${projectId}/billing/billable-time-entries`);
+  }
+
+  invoiceTime(projectId: string, timeEntryIds: string[], notes?: string): Observable<ApiResponse<{ invoiceId: string; billingId: string }>> {
+    return this.http.post<ApiResponse<{ invoiceId: string; billingId: string }>>(
+      `${this.base}/${projectId}/billing/time`,
+      { groupBy: 'member', notes, timeEntryIds }
+    );
   }
 
   invoiceTasks(
@@ -707,6 +744,10 @@ export class ProjectApiService {
 
   invoiceSituation(projectId: string, situationId: string): Observable<ApiResponse<{ invoiceId: string; billingId: string }>> {
     return this.http.post<ApiResponse<{ invoiceId: string; billingId: string }>>(`${this.base}/${projectId}/billing/situation`, { situationId });
+  }
+
+  linkedInvoices(projectId: string): Observable<ApiResponse<ProjectLinkedInvoice[]>> {
+    return this.http.get<ApiResponse<ProjectLinkedInvoice[]>>(`${this.base}/${projectId}/linked-invoices`);
   }
 
   subcontractors(projectId: string): Observable<ApiResponse<ProjectSubcontractor[]>> {

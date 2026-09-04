@@ -108,4 +108,26 @@ describe('ProjectApiService', () => {
     expect(req.request.body).toEqual({ phaseId: 'phase-2', status: 'InProgress' });
     req.flush({ success: true, data: true });
   });
+
+  it('loads linked invoices for a project', () => {
+    service.linkedInvoices('proj-1').subscribe();
+    const req = http.expectOne(`${environment.apiUrl}/projects/proj-1/linked-invoices`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ success: true, data: [] });
+  });
+
+  it('loads billable time entries for a project', () => {
+    service.billableTimeEntries('proj-1').subscribe();
+    const req = http.expectOne(`${environment.apiUrl}/projects/proj-1/billing/billable-time-entries`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ success: true, data: [] });
+  });
+
+  it('invoices selected time entries', () => {
+    service.invoiceTime('proj-1', ['e1', 'e2'], 'notes').subscribe();
+    const req = http.expectOne(`${environment.apiUrl}/projects/proj-1/billing/time`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ groupBy: 'member', notes: 'notes', timeEntryIds: ['e1', 'e2'] });
+    req.flush({ success: true, data: { invoiceId: 'inv-1', billingId: 'b-1' } });
+  });
 });
