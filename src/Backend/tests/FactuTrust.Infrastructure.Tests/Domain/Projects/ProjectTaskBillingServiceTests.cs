@@ -254,7 +254,23 @@ public sealed class ProjectTaskBillingServiceTests
     }
 
     [Fact]
-    public async Task GetBillableTasks_ExcludesTaskWithMemberInvoicedHours()
+    public async Task GetBillableTasks_Hourly_WithPartialMemberInvoicedHours_ShowsRemainingOnly()
+    {
+        var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
+        var fx = await SeedPartialMemberBillingAsync(factory);
+        await using var sut = CreateService(factory, fx.Client);
+
+        var tasks = await sut.GetBillableTasksAsync(fx.ProjectId, "hourly");
+
+        var row = Assert.Single(tasks, t => t.Id == fx.TaskHourlyId);
+        Assert.True(row.IsEligible);
+        Assert.Equal(3m, row.UninvoicedBillableHours);
+        Assert.Equal(80m, row.HourlyRate);
+        Assert.Equal(240m, row.PreviewAmountHt);
+    }
+
+    [Fact]
+    public async Task GetBillableTasks_Hourly_WhenAllHoursInvoiced_ExcludesTask()
     {
         var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
         var fx = await SeedAsync(factory);
@@ -267,7 +283,177 @@ public sealed class ProjectTaskBillingServiceTests
         }
 
         await using var sut = CreateService(factory, fx.Client);
-        var tasks = await sut.GetBillableTasksAsync(fx.ProjectId, "fixed");
+        var tasks = await sut.GetBillableTasksAsync(fx.ProjectId, "hourly");
         Assert.DoesNotContain(tasks, t => t.Id == fx.TaskHourlyId);
+    }
+
+    [Fact]
+    public async Task GetBillableTasks_Fixed_StillAvailableWhenSomeHoursInvoicedByMember()
+    {
+        var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
+        var fx = await SeedPartialMemberBillingAsync(factory);
+        await using var sut = CreateService(factory, fx.Client);
+
+        var tasks = await sut.GetBillableTasksAsync(fx.ProjectId, "fixed");
+        Assert.Contains(tasks, t => t.Id == fx.TaskHourlyId && t.IsEligible);
+    }
+
+    [Fact]
+    public async Task InvoiceTasks_Hourly_AfterPartialMemberBilling_InvoicesRemainingHoursOnly()
+    {
+        var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
+        var fx = await SeedPartialMemberBillingAsync(factory);
+        await using var sut = CreateService(factory, fx.Client);
+
+        var result = await sut.InvoiceTasksAsync(fx.ProjectId, new InvoiceTasksDto
+        {
+            Method = "hourly",
+            Tasks = new[] { new InvoiceTaskLineDto { TaskId = fx.TaskHourlyId } }
+        });
+
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : "");
+        await using var verify = factory.CreateContext();
+        var entries = await verify.ProjectTimeEntries.Where(e => e.TaskId == fx.TaskHourlyId).ToListAsync();
+        Assert.All(entries, e => Assert.NotNull(e.InvoicedInvoiceId));
+
+        var invoice = await verify.Invoices.Include(i => i.Lines).FirstAsync(i => i.Id == result.Value.InvoiceId);
+        var line = Assert.Single(invoice.Lines);
+        Assert.Equal(3m, line.Quantity);
+    }
+
+    [Fact]
+    public async Task GetBillableTasks_Hourly_WeightedRate_Alice2h70_Bob1h130_Returns90()
+    {
+        var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
+        var fx = await SeedWeightedMultiMemberAsync(factory);
+        await using var sut = CreateService(factory, fx.Client);
+
+        var tasks = await sut.GetBillableTasksAsync(fx.ProjectId, "hourly");
+
+        var row = Assert.Single(tasks, t => t.Id == fx.TaskHourlyId);
+        Assert.True(row.IsEligible);
+        Assert.Equal(3m, row.UninvoicedBillableHours);
+        Assert.Equal(90m, row.HourlyRate);
+        Assert.Equal(270m, row.PreviewAmountHt);
+    }
+
+    [Fact]
+    public async Task InvoiceTasks_Hourly_UsesCustomHourlyRateFromDto()
+    {
+        var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
+        var fx = await SeedWeightedMultiMemberAsync(factory);
+        await using var sut = CreateService(factory, fx.Client);
+
+        var result = await sut.InvoiceTasksAsync(fx.ProjectId, new InvoiceTasksDto
+        {
+            Method = "hourly",
+            Tasks = new[] { new InvoiceTaskLineDto { TaskId = fx.TaskHourlyId, HourlyRate = 100m } }
+        });
+
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : "");
+        await using var verify = factory.CreateContext();
+        var invoice = await verify.Invoices.Include(i => i.Lines).FirstAsync(i => i.Id == result.Value.InvoiceId);
+        var line = Assert.Single(invoice.Lines);
+        Assert.Equal(3m, line.Quantity);
+        Assert.Equal(100m, line.UnitPrice.Amount);
+    }
+
+    [Fact]
+    public async Task InvoiceTasks_Hourly_FallsBackToWeightedWhenNoRateInDto()
+    {
+        var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
+        var fx = await SeedWeightedMultiMemberAsync(factory);
+        await using var sut = CreateService(factory, fx.Client);
+
+        var result = await sut.InvoiceTasksAsync(fx.ProjectId, new InvoiceTasksDto
+        {
+            Method = "hourly",
+            Tasks = new[] { new InvoiceTaskLineDto { TaskId = fx.TaskHourlyId } }
+        });
+
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : "");
+        await using var verify = factory.CreateContext();
+        var invoice = await verify.Invoices.Include(i => i.Lines).FirstAsync(i => i.Id == result.Value.InvoiceId);
+        var line = Assert.Single(invoice.Lines);
+        Assert.Equal(3m, line.Quantity);
+        Assert.Equal(90m, line.UnitPrice.Amount);
+    }
+
+    private static async Task<BillingFixture> SeedWeightedMultiMemberAsync(InMemoryTenantDbContextFactory factory)
+    {
+        var address = Address.Create("1 rue Test", "Tunis", "Tunis").Value;
+        var email = Email.Create("client@example.com").Value;
+        var client = Client.Create("Client test", ClientType.Individual, address, email).Value;
+
+        var project = Project.Create(client.Id, "Mission", ProjectKind.Esn, ProjectBillingMode.TimeAndMaterials, null, null, null, 5000m).Value;
+        Assert.True(project.Activate().IsSuccess);
+
+        var phase = ProjectPhase.Create(project.Id, "À faire", 0).Value;
+        var taskHourly = ProjectTask.Create(project.Id, phase.Id, "Tâche horaire", null, ProjectTaskPriority.Normal, null, null, null, 3m).Value;
+        var taskFixed = ProjectTask.Create(project.Id, phase.Id, "Tâche forfait", null, ProjectTaskPriority.Normal, null, null, null, 0m).Value;
+
+        var aliceId = Guid.NewGuid();
+        var bobId = Guid.NewGuid();
+        var alice = ProjectMember.Create(project.Id, aliceId, ProjectMemberRole.Member, null, 70m, 40m).Value;
+        var bob = ProjectMember.Create(project.Id, bobId, ProjectMemberRole.Member, null, 130m, 40m).Value;
+
+        var aliceEntry = ProjectTimeEntry.Create(project.Id, aliceId, new DateTime(2026, 8, 1), 2m, true, null, taskHourly.Id).Value;
+        Assert.True(aliceEntry.Submit().IsSuccess);
+        Assert.True(aliceEntry.Validate().IsSuccess);
+
+        var bobEntry = ProjectTimeEntry.Create(project.Id, bobId, new DateTime(2026, 8, 2), 1m, true, null, taskHourly.Id).Value;
+        Assert.True(bobEntry.Submit().IsSuccess);
+        Assert.True(bobEntry.Validate().IsSuccess);
+
+        await using (var ctx = factory.CreateContext())
+        {
+            ctx.Clients.Add(client);
+            ctx.Projects.Add(project);
+            ctx.ProjectPhases.Add(phase);
+            ctx.ProjectTasks.AddRange(taskHourly, taskFixed);
+            ctx.ProjectMembers.AddRange(alice, bob);
+            ctx.ProjectTimeEntries.AddRange(aliceEntry, bobEntry);
+            await ctx.SaveChangesAsync();
+        }
+
+        return new BillingFixture(project.Id, taskHourly.Id, taskFixed.Id, client);
+    }
+
+    private static async Task<BillingFixture> SeedPartialMemberBillingAsync(InMemoryTenantDbContextFactory factory)
+    {
+        var address = Address.Create("1 rue Test", "Tunis", "Tunis").Value;
+        var email = Email.Create("client@example.com").Value;
+        var client = Client.Create("Client test", ClientType.Individual, address, email).Value;
+
+        var project = Project.Create(client.Id, "Mission", ProjectKind.Esn, ProjectBillingMode.TimeAndMaterials, null, null, null, 5000m).Value;
+        Assert.True(project.Activate().IsSuccess);
+
+        var phase = ProjectPhase.Create(project.Id, "À faire", 0).Value;
+        var taskHourly = ProjectTask.Create(project.Id, phase.Id, "Tâche horaire", null, ProjectTaskPriority.Normal, null, null, null, 6m).Value;
+        var taskFixed = ProjectTask.Create(project.Id, phase.Id, "Tâche forfait", null, ProjectTaskPriority.Normal, null, null, null, 0m).Value;
+        var userId = Guid.NewGuid();
+        var member = ProjectMember.Create(project.Id, userId, ProjectMemberRole.Member, null, 80m, 40m).Value;
+
+        var invoicedEntry = ProjectTimeEntry.Create(project.Id, userId, new DateTime(2026, 8, 1), 3m, true, null, taskHourly.Id).Value;
+        Assert.True(invoicedEntry.Submit().IsSuccess);
+        Assert.True(invoicedEntry.Validate().IsSuccess);
+        Assert.True(invoicedEntry.MarkInvoiced(Guid.NewGuid()).IsSuccess);
+
+        var openEntry = ProjectTimeEntry.Create(project.Id, userId, new DateTime(2026, 8, 2), 3m, true, null, taskHourly.Id).Value;
+        Assert.True(openEntry.Submit().IsSuccess);
+        Assert.True(openEntry.Validate().IsSuccess);
+
+        await using (var ctx = factory.CreateContext())
+        {
+            ctx.Clients.Add(client);
+            ctx.Projects.Add(project);
+            ctx.ProjectPhases.Add(phase);
+            ctx.ProjectTasks.AddRange(taskHourly, taskFixed);
+            ctx.ProjectMembers.Add(member);
+            ctx.ProjectTimeEntries.AddRange(invoicedEntry, openEntry);
+            await ctx.SaveChangesAsync();
+        }
+
+        return new BillingFixture(project.Id, taskHourly.Id, taskFixed.Id, client);
     }
 }

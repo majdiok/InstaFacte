@@ -322,6 +322,7 @@ public sealed record InvoiceTaskLineDto
 {
     public Guid TaskId { get; init; }
     public decimal? AmountHt { get; init; }
+    public decimal? HourlyRate { get; init; }
 }
 
 public sealed record InvoiceTasksDto

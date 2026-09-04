@@ -1373,17 +1373,9 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             .ToListAsync(cancellationToken);
         var memberMap = members.ToDictionary(m => m.UserId);
 
-        var invoicedEntryTaskIds = entries
-            .Where(e => e.InvoicedInvoiceId != null)
-            .Select(e => e.TaskId!.Value)
-            .ToHashSet();
-
         var result = new List<BillableProjectTaskDto>();
         foreach (var task in tasks)
         {
-            if (invoicedEntryTaskIds.Contains(task.Id))
-                continue;
-
             var taskEntries = entries
                 .Where(e => e.TaskId == task.Id
                     && e.IsBillable
@@ -1392,7 +1384,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
                 .ToList();
 
             var hours = taskEntries.Sum(e => e.Hours);
-            var rate = AverageBillRate(taskEntries.Select(e => memberMap.GetValueOrDefault(e.UserId)));
+            var rate = WeightedBillRate(taskEntries, memberMap);
 
             if (isHourly)
             {
@@ -1510,7 +1502,8 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             else
             {
                 var hours = taskEntries.Sum(e => e.Hours);
-                var rate = AverageBillRate(taskEntries.Select(e => memberMap.GetValueOrDefault(e.UserId)));
+                var defaultRate = WeightedBillRate(taskEntries, memberMap);
+                var rate = line.HourlyRate is > 0 ? line.HourlyRate.Value : defaultRate;
                 if (hours <= 0 || rate <= 0)
                     return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Tasks", $"La tâche « {task.Title} » n'a pas de temps facturable"));
                 lines.Add(($"Régie — {task.Title}", hours, rate, "h"));
@@ -2037,10 +2030,21 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         return 0m;
     }
 
-    private static decimal AverageBillRate(IEnumerable<ProjectMember?> members)
+    private static decimal WeightedBillRate(
+        IReadOnlyList<ProjectTimeEntry> entries,
+        IReadOnlyDictionary<Guid, ProjectMember> memberMap)
     {
-        var rates = members.Select(BillRate).Where(r => r > 0).ToList();
-        return rates.Count == 0 ? 0m : decimal.Round(rates.Average(), 3);
+        decimal weightedSum = 0m;
+        decimal totalHours = 0m;
+        foreach (var entry in entries)
+        {
+            var rate = BillRate(memberMap.GetValueOrDefault(entry.UserId));
+            if (rate <= 0) return 0m;
+            weightedSum += entry.Hours * rate;
+            totalHours += entry.Hours;
+        }
+
+        return totalHours <= 0 ? 0m : decimal.Round(weightedSum / totalHours, 3);
     }
 }
 
