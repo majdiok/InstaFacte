@@ -337,6 +337,52 @@ describe('TenantUsersListComponent', () => {
       expect(saveBtn!.disabled).toBeTrue();
     });
 
+    /**
+     * Périmètre de la SOCIÉTÉ (`availableForTenant`) — filtre distinct et cumulatif du plafond du
+     * RÔLE (`grantable`). Un module que la société n'a pas activé ne doit pas être proposé, sans quoi
+     * l'administrateur accorde un droit que le serveur refusera à l'enregistrement.
+     */
+    function catalogWithUnavailableTreasury(role: UserRole): ApiResponse<ModuleCatalogDto> {
+      const base = catalogFor(role);
+      return {
+        ...base,
+        data: {
+          ...base.data!,
+          modules: base.data!.modules.map(m =>
+            m.module === AppModule.Treasury ? { ...m, availableForTenant: false } : m
+          )
+        }
+      };
+    }
+
+    it('module indisponible pour la société est masqué à la CRÉATION', () => {
+      tenantUsers.getModuleCatalog.and.callFake((r: UserRole) => of(catalogWithUnavailableTreasury(r)));
+      component.openCreate();
+
+      expect(component.createModuleDraft().find(m => m.module === AppModule.Treasury)).toBeUndefined();
+      // Le reste du catalogue est intact : le filtre est ciblé, pas global.
+      expect(component.createModuleDraft().find(m => m.module === AppModule.Sales)).toBeDefined();
+    });
+
+    it('module indisponible pour la société est masqué à l’ÉDITION quand l’utilisateur ne le détient pas', () => {
+      tenantUsers.getModuleCatalog.and.callFake((r: UserRole) => of(catalogWithUnavailableTreasury(r)));
+      component.openEdit(findUser('u-no-grants'));
+
+      expect(component.moduleDraft().find(m => m.module === AppModule.Treasury)).toBeUndefined();
+    });
+
+    it('module indisponible mais DÉJÀ détenu reste visible à l’édition (pas de retrait silencieux)', () => {
+      tenantUsers.getModuleCatalog.and.callFake((r: UserRole) => of(catalogWithUnavailableTreasury(r)));
+      // u-explicit détient Trésorerie (moduleFeatures: enabled=true) — un droit hérité d'avant la
+      // désactivation du module. L'ouvrir ne doit pas le supprimer : un retrait reste une action
+      // explicite de l'administrateur, jamais un effet de bord de l'ouverture de la modale.
+      component.openEdit(findUser('u-explicit'));
+
+      const treasury = component.moduleDraft().find(m => m.module === AppModule.Treasury);
+      expect(treasury).toBeDefined();
+      expect(treasury!.enabled).toBeTrue();
+    });
+
     it('changement de rôle → catalogue rechargé et draft re-filtré (modules non grantables pour le nouveau rôle masqués)', () => {
       component.openEdit(findUser('u-two')); // rôle SalesRep
       expect(component.moduleDraft().find(m => m.module === AppModule.Treasury)).toBeDefined();

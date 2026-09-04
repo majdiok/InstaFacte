@@ -12,9 +12,12 @@ namespace FactuTrust.API.Tests;
 /// Integration coverage for the module-catalog endpoint and the 403 authorization boundary of
 /// <c>TenantUsersController</c> — plan §6 Phase 2.1, §7.1.E. Requires a real SQL Server (company
 /// registration provisions a real tenant DB); the admin session is registered ONCE per test class
-/// (<see cref="IAsyncLifetime"/>) and reused across facts to keep the real-DB cost bounded — the
-/// module-catalog endpoint itself never touches the DB (pure Domain calculation), so read-only
-/// facts against the same session are independent of each other.
+/// (<see cref="IAsyncLifetime"/>) and reused across facts to keep the real-DB cost bounded.
+///
+/// The module-catalog endpoint DOES read the DB now: besides the role ceiling it also reports the
+/// tenant's own module scope (<c>availableForTenant</c> = granted to the acting admin ∩ allowed by
+/// the plan), so a module the company does not have is no longer offered when adding a user. It
+/// stays strictly read-only, so facts sharing this session remain independent of each other.
 /// </summary>
 [Collection("SqlServerIntegration")]
 public sealed class TenantUsersModuleCatalogTests : IClassFixture<ChannelsDisabledWebApplicationFactory>, IAsyncLifetime

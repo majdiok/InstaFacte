@@ -122,11 +122,21 @@ public sealed class Plan : Entity
         }
     }
 
-    /// <summary>Remplace l'ensemble des modules inclus dans le plan.</summary>
+    /// <summary>
+    /// Remplace l'ensemble des modules inclus dans le plan.
+    ///
+    /// La séquence est matérialisée AVANT le vidage : <see cref="Modules"/> expose
+    /// <c>_modules.AsReadOnly()</c>, c'est-à-dire une vue vivante sur la collection interne. Un
+    /// appelant qui construit son argument à partir de <see cref="Modules"/> (le cas naturel pour un
+    /// « fusionner puis remplacer ») voyait sinon sa moitié gauche s'évaporer, énumérée après le
+    /// <c>Clear()</c> — c'est exactement ce qui a rendu le backfill des plans inopérant pendant
+    /// plusieurs versions. On refuse de laisser ce piège ouvert pour le prochain appelant.
+    /// </summary>
     public void ReplaceModules(IEnumerable<(int Module, bool IsIncluded)> modules)
     {
+        var snapshot = modules.ToList();
         _modules.Clear();
-        foreach (var (module, included) in modules)
+        foreach (var (module, included) in snapshot)
         {
             _modules.Add(PlanModule.Create(Id, module, included));
         }

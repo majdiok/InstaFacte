@@ -206,4 +206,51 @@ public sealed class SectorModuleSetCalculatorTests
         foreach (var moduleId in requested)
             Assert.Contains((AppModule)moduleId, result.EnabledModules);
     }
+
+    /// <summary>
+    /// Régression du bandeau « Certains modules choisis ne sont pas inclus dans votre offre actuelle…
+    /// Clients, Produits et services, Ventes (factures), Trésorerie (paiements), Rapports ».
+    ///
+    /// Un plan dont les lignes cœur ont été décochées (back-office, ou données héritées) ne doit plus
+    /// pouvoir provisionner un espace sans clients, sans produits ni facturation. Le calculateur
+    /// n'exempte toujours QUE <c>Administration</c> — c'est <see cref="DbPlanResolver"/> qui immunise
+    /// le cœur, donc la garde reste unique et ce test le prouve de bout en bout.
+    /// </summary>
+    [Fact]
+    public async Task Un_plan_qui_decoche_le_coeur_ne_prive_plus_le_tenant_des_modules_coeur()
+    {
+        await using var db = new MasterDbContext(new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+
+        var plan = Plan.Create(
+            code: nameof(SubscriptionPlan.Free),
+            name: "Gratuit",
+            description: null,
+            billingPeriod: BillingPeriod.Free,
+            basePriceTND: 0m);
+        plan.ReplaceModules(
+            SectorConfigurationCatalog.CoreModules
+                .Select(m => ((int)m, false))
+                .Append(((int)AppModule.Stock, true))
+                .ToList());
+        db.Plans.Add(plan);
+        await db.SaveChangesAsync();
+
+        var result = await SectorModuleSetCalculator.ComputeAsync(
+            coreModules: SectorConfigurationCatalog.CoreModules,
+            seedModuleIds: new[] { (int)AppModule.Stock },
+            plan: SubscriptionPlan.Free,
+            dependencyEdges: CatalogDependencyEdges(),
+            planResolver: NewDbPlanResolver(db),
+            userId: Guid.NewGuid(),
+            logger: NullLogger.Instance,
+            cancellationToken: CancellationToken.None);
+
+        foreach (var core in SectorConfigurationCatalog.CoreModules)
+            Assert.Contains(core, result.EnabledModules);
+
+        // Le bandeau se construit depuis DeniedByPlan : aucun module cœur ne doit y figurer, sans quoi
+        // le client relirait le message commercialement faux que ce lot corrige.
+        Assert.DoesNotContain(result.DeniedByPlan, SectorConfigurationCatalog.CoreModules.Contains);
+    }
 }

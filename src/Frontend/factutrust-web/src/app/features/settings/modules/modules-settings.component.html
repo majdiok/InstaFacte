@@ -87,7 +87,7 @@
             <div class="mod-top">
               <span class="mod-ico" [ngClass]="moduleTone(module.id)"><i [class]="'pi ' + moduleIcon(module.id)" aria-hidden="true"></i></span>
               @if (isLockedByPlan(module)) {
-                <span class="mod-locked-badge"><i class="pi pi-lock" aria-hidden="true"></i> Plan supérieur requis</span>
+                <span class="mod-locked-badge"><i class="pi pi-lock" aria-hidden="true"></i> {{ planLockLabel(module) }}</span>
               } @else {
                 <span [pTooltip]="isLockedByDependency(module.id) ? dependencyLockLabel(module.id) : undefined" tooltipPosition="top">
                   <p-inputSwitch
@@ -125,7 +125,7 @@
             <div class="mod-top">
               <span class="mod-ico" [ngClass]="moduleTone(module.id)"><i [class]="'pi ' + moduleIcon(module.id)" aria-hidden="true"></i></span>
               @if (isLockedByPlan(module)) {
-                <span class="mod-locked-badge"><i class="pi pi-lock" aria-hidden="true"></i> Plan supérieur requis</span>
+                <span class="mod-locked-badge"><i class="pi pi-lock" aria-hidden="true"></i> {{ planLockLabel(module) }}</span>
               } @else {
                 <span [pTooltip]="isLockedByDependency(module.id) ? dependencyLockLabel(module.id) : undefined" tooltipPosition="top">
                   <p-inputSwitch

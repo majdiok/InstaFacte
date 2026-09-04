@@ -3,6 +3,7 @@ using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Billing;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.SectorConfiguration;
 using FactuTrust.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -285,7 +286,30 @@ public sealed class PlanAdminService : IPlanAdminService
             plan.ReplaceFeatures(features.Select(f => (f.FeatureKey, f.Enabled)));
         }
         if (modules is { Count: > 0 })
-            plan.ReplaceModules(modules.Select(m => (m.Module, m.IsIncluded)));
+        {
+            // Les modules cœur sont inclus dans tout plan par définition (assistant d'inscription
+            // « Inclus dans votre espace », badge « Cœur », ValidateCoreModules qui refuse de les
+            // désactiver). Décocher l'un d'eux dans le back-office produisait un plan qui, jusqu'à
+            // ce correctif, privait les nouveaux espaces de clients, produits, ventes et trésorerie.
+            // On corrige la valeur et on journalise — même idiome que les clés inconnues ci-dessus,
+            // aucune édition légitime n'est bloquée.
+            var coreModules = SectorConfigurationCatalog.CoreModules.Select(m => (int)m).ToHashSet();
+            var forcedCore = modules
+                .Where(m => coreModules.Contains(m.Module) && !m.IsIncluded)
+                .Select(m => m.Module)
+                .ToList();
+
+            if (forcedCore.Count > 0)
+            {
+                _logger.LogWarning(
+                    "Plan {Code} : {Count} module(s) cœur reçus décochés — forcés à inclus (un plan ne peut pas exclure un module cœur). Modules : {Modules}.",
+                    plan.Code,
+                    forcedCore.Count,
+                    string.Join(", ", forcedCore.Select(id => ((AppModule)id).ToDisplayString())));
+            }
+
+            plan.ReplaceModules(modules.Select(m => (m.Module, m.IsIncluded || coreModules.Contains(m.Module))));
+        }
     }
 
     private static PlanDto Map(Plan p, int subsCount) => new()

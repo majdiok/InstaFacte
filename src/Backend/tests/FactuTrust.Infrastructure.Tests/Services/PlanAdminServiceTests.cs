@@ -2,6 +2,7 @@ using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Billing;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.SectorConfiguration;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -81,5 +82,50 @@ public sealed class PlanAdminServiceTests
         // Assert : rétro-compat préservée — les 3 subs sans PlanId comptent pour le plan Free.
         var free = Assert.Single(list, p => p.Code == nameof(SubscriptionPlan.Free));
         Assert.Equal(3, free.SubscriptionsCount);
+    }
+
+    /// <summary>
+    /// Le back-office ne doit pas pouvoir écrire une configuration qui prive les nouveaux espaces de
+    /// leurs modules cœur. La charge utile est corrigée (et journalisée) plutôt que rejetée : c'est
+    /// l'idiome déjà retenu pour les clés de limite/feature inconnues, et aucune édition légitime
+    /// n'est bloquée. Les modules non cœur restent librement décochables.
+    /// </summary>
+    [Fact]
+    public async Task CreateAsync_ForcesCoreModulesIncluded_EvenWhenPayloadUnchecksThem()
+    {
+        await using var db = NewDb();
+        var service = new PlanAdminService(db, NullLogger<PlanAdminService>.Instance);
+
+        var modules = SectorConfigurationCatalog.CoreModules
+            .Select(m => new PlanModuleDto { Module = (int)m, ModuleDisplay = m.ToDisplayString(), IsIncluded = false })
+            .Append(new PlanModuleDto
+            {
+                Module = (int)AppModule.Stock,
+                ModuleDisplay = AppModule.Stock.ToDisplayString(),
+                IsIncluded = false
+            })
+            .ToList();
+
+        var result = await service.CreateAsync(new CreatePlanRequest
+        {
+            Code = "CORE_UNCHECK",
+            Name = "Plan de test",
+            BillingPeriod = BillingPeriod.Monthly,
+            BasePriceTND = 10m,
+            Modules = modules
+        });
+
+        Assert.True(result.IsSuccess);
+
+        var saved = await db.Plans.Include(p => p.Modules).SingleAsync(p => p.Code == "CORE_UNCHECK");
+        foreach (var core in SectorConfigurationCatalog.CoreModules)
+        {
+            Assert.True(
+                saved.Modules.Single(m => m.Module == (int)core).IsIncluded,
+                $"Le module cœur {core} doit être forcé à inclus malgré la charge utile.");
+        }
+
+        // Un module non cœur décoché reste décoché : la correction est ciblée, pas globale.
+        Assert.False(saved.Modules.Single(m => m.Module == (int)AppModule.Stock).IsIncluded);
     }
 }

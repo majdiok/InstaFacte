@@ -230,6 +230,18 @@ public class AuthController : ControllerBase
                 tenant.SetSectorCatalogVersion(catalogSnapshot.CatalogVersionTag);
             }
 
+            // Lot 3 — réponses de profilage : simplement normalisées et enregistrées. Elles ne sont
+            // jamais rejouées pour dériver des modules (le client a déjà envoyé sa sélection dans
+            // EnabledModules, qui reste seule soumise au plafond du plan et aux dépendances), donc
+            // elles ne peuvent en aucun cas élargir les droits de l'espace créé. La tranche
+            // d'effectif est filtrée par liste blanche dans SetRegistrationProfile : aucune chaîne
+            // libre venue du client n'atteint la base.
+            tenant.SetRegistrationProfile(
+                dto.ProfileAnswers?.HasPhysicalStock,
+                dto.ProfileAnswers?.SellsToConsumers,
+                dto.ProfileAnswers?.HeadcountBand,
+                dto.ProfileAnswers?.AccountingDelegatedToFirm);
+
             var masterSw = Stopwatch.StartNew();
             _masterContext.Tenants.Add(tenant);
 
@@ -262,7 +274,26 @@ public class AuthController : ControllerBase
                 return BadRequest(ApiResponse<AuthResponseDto>.Fail(errors));
             }
 
-            await _userManager.AddToRoleAsync(user, UserRole.Administrator.ToString());
+            // Le résultat est vérifié comme celui de CreateAsync ci-dessus : sans le rôle
+            // Administrator, EffectivePermissionService.ResolveRoleAsync retombe sur son défaut
+            // (UserRole.Accountant) et le fondateur se retrouverait silencieusement comptable de
+            // son propre espace. Un échec ici (rôle absent de AspNetRoles, concurrence) doit donc
+            // annuler l'inscription plutôt que produire un espace dégradé.
+            var addToRoleResult = await _userManager.AddToRoleAsync(user, UserRole.Administrator.ToString());
+            if (!addToRoleResult.Succeeded)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                _logger.LogError(
+                    "Registration failed: could not assign the {Role} role to {Email}. CorrelationId={CorrelationId} Errors={Errors}",
+                    UserRole.Administrator,
+                    LogSanitizer.MaskEmail(dto.Email),
+                    correlationId,
+                    string.Join(" | ", addToRoleResult.Errors.Select(e => e.Code)));
+
+                return BadRequest(ApiResponse<AuthResponseDto>.Fail(
+                    IdentityErrorTranslator.TranslateToFrench(addToRoleResult.Errors)));
+            }
+
             LogCompanyRegistrationStep("IdentityCreate", identitySw.ElapsedMilliseconds, tenant.Id, correlationId);
 
             // Sector-aware registration wizard (plan §3 C4, §6.1 B5) — restriction-only; null/empty
@@ -405,13 +436,36 @@ public class AuthController : ControllerBase
 
         if (outcome.DeniedByPlan.Count > 0)
         {
-            var deniedNames = string.Join(", ", outcome.DeniedByPlan.Select(m => m.ToDisplayString()));
-            warnings.Add($"Certains modules choisis ne sont pas inclus dans votre offre actuelle et n'ont pas été activés : {deniedNames}.");
-            _logger.LogWarning(
-                "Register: modules denied by plan for tenant {TenantId}: {Modules}. CorrelationId={CorrelationId}",
-                tenantId,
-                deniedNames,
-                correlationId);
+            // Deux causes très différentes se cachaient derrière un message unique. Un module
+            // réellement réservé aux offres payantes relève de l'argumentaire commercial ; tout
+            // autre refus est une anomalie de configuration du plan côté serveur, et dire au client
+            // « ce n'est pas inclus dans votre offre » est alors faux (Stock, CRM ou Fiscal SONT
+            // inclus dans l'offre Free). On sépare donc les deux, et seul le premier cas parle d'offre.
+            var premiumDenied = outcome.DeniedByPlan.Where(m => m.IsPaidPlanOnly()).ToList();
+            var misconfiguredDenied = outcome.DeniedByPlan.Where(m => !m.IsPaidPlanOnly()).ToList();
+
+            if (premiumDenied.Count > 0)
+            {
+                var premiumNames = string.Join(", ", premiumDenied.Select(m => m.ToDisplayString()));
+                warnings.Add($"Certains modules choisis nécessitent une offre supérieure et n'ont pas été activés : {premiumNames}.");
+                _logger.LogInformation(
+                    "Register: premium modules denied by plan for tenant {TenantId}: {Modules}. CorrelationId={CorrelationId}",
+                    tenantId,
+                    premiumNames,
+                    correlationId);
+            }
+
+            if (misconfiguredDenied.Count > 0)
+            {
+                var misconfiguredNames = string.Join(", ", misconfiguredDenied.Select(m => m.ToDisplayString()));
+                warnings.Add($"Certains modules choisis n'ont pas pu être activés et le seront prochainement : {misconfiguredNames}. Nos équipes en sont informées.");
+                _logger.LogError(
+                    "Register: plan {Plan} denies non-premium module(s) for tenant {TenantId}: {Modules}. This is a PLAN MISCONFIGURATION, not a subscription limit — check the PlanModules rows. CorrelationId={CorrelationId}",
+                    SubscriptionPlan.Free,
+                    tenantId,
+                    misconfiguredNames,
+                    correlationId);
+            }
         }
 
         if (outcome.DroppedInvalidIds.Count > 0)
