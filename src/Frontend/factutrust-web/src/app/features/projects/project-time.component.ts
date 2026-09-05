@@ -232,12 +232,6 @@ const TIME_STATUS_FILTER_OPTIONS = [
 
             <app-status-badge [status]="timeStatusBadge(e.status)" [label]="e.statusDisplay" />
 
-            @if (e.invoicedInvoiceId) {
-
-              · <a [routerLink]="['/invoices', e.invoicedInvoiceId]">Facture</a>
-
-            }
-
           </td>
 
           <td class="proj-time-row-actions">
@@ -266,6 +260,21 @@ const TIME_STATUS_FILTER_OPTIONS = [
 
             }
 
+            @if (e.invoicedInvoiceId) {
+
+              <app-button
+                size="sm"
+                variant="ghost"
+                icon="pi-receipt"
+                [iconOnly]="true"
+                [iconAlwaysVisible]="true"
+                [routerLink]="['/invoices', e.invoicedInvoiceId]"
+                pTooltip="Voir la facture"
+                tooltipPosition="top"
+                ariaLabel="Voir la facture" />
+
+            }
+
           </td>
 
         </tr>
@@ -288,7 +297,7 @@ const TIME_STATUS_FILTER_OPTIONS = [
 
     <p-dialog [(visible)]="editVisible" header="Modifier le temps" [modal]="true" [style]="{ width: '28rem' }">
 
-      <div class="proj-field-row flex-column">
+      <div class="proj-field-stack">
 
         <label>Date <p-datepicker [(ngModel)]="editWorkDate" dateFormat="dd/mm/yy" /></label>
 
@@ -296,7 +305,7 @@ const TIME_STATUS_FILTER_OPTIONS = [
 
         <label>Heures <p-inputNumber [(ngModel)]="editHours" [min]="0.25" [max]="24" [step]="0.25" /></label>
 
-        <label class="flex-row align-items-center gap-2" style="flex-direction:row">
+        <label class="proj-field-stack__check">
 
           <p-checkbox [(ngModel)]="editBillable" [binary]="true" inputId="editBillableGlobal" />
 

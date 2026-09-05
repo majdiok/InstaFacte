@@ -84,6 +84,21 @@ export function isNavChildActive(url: string, item: NavItem): boolean {
   return findLongestMatchingChildInParent(stripPathForMatch(url), item) !== null;
 }
 
+/**
+ * True when `child` is the single active sibling under `parent` for the current URL
+ * (longest-match among siblings / one level of grandchildren).
+ */
+export function isNavSubItemActive(url: string, parent: NavItem, child: NavSubItem): boolean {
+  const path = stripPathForMatch(url);
+  if (child.children?.length) {
+    return findMatchingDirectChild(path, parent)?.label === child.label;
+  }
+  if (!child.route) {
+    return false;
+  }
+  return findLongestMatchingChildInParent(path, parent)?.route === child.route;
+}
+
 export function isNavRouteActive(url: string, route: string | undefined): boolean {
   return pathMatchesRoute(stripPathForMatch(url), route);
 }

@@ -22,8 +22,8 @@ import { canUseAiAssistant } from '@features/ai-assistant/utils/ai-access.util';
 import {
   isNavChildActive,
   isNavRouteActive,
+  isNavSubItemActive,
   findLongestMatchingChildInParent,
-  findMatchingDirectChild,
   stripPathForMatch,
   pathMatchesRoute
 } from '@core/utils/nav-path-match';
@@ -108,15 +108,7 @@ export class SecondaryNavComponent {
   }
 
   isChildActive(section: NavItem, child: NavSubItem): boolean {
-    const path = stripPathForMatch(this.routerUrl());
-    if (child.children?.length) {
-      return findMatchingDirectChild(path, section)?.label === child.label;
-    }
-    if (!child.route) {
-      return false;
-    }
-    const best = findLongestMatchingChildInParent(path, section);
-    return best?.route === child.route;
+    return isNavSubItemActive(this.routerUrl(), section, child);
   }
 
   isNestedChildActive(grand: NavSubItem): boolean {

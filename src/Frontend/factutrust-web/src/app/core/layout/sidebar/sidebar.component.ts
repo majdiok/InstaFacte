@@ -19,7 +19,7 @@ import {
 import { FirmContextService } from '@core/services/firm-context.service';
 import { BRAND } from '@core/constants/brand';
 import { AppNavService } from '@core/services/app-nav.service';
-import { isNavChildActive } from '@core/utils/nav-path-match';
+import { isNavChildActive, isNavSubItemActive } from '@core/utils/nav-path-match';
 import { getNavIconKey } from '@core/utils/nav-icon-key.util';
 import { AiAssistantShellService } from '@features/ai-assistant/services/ai-assistant-shell.service';
 import { canUseAiAssistant } from '@features/ai-assistant/utils/ai-access.util';
@@ -168,6 +168,11 @@ export class SidebarComponent implements OnInit {
   /** True if this parent owns the current URL (longest child match within parent). */
   isChildActive(item: NavItem): boolean {
     return isNavChildActive(this.router.url, item);
+  }
+
+  /** True when this submenu child is the single longest-matching sibling for the current URL. */
+  isSubmenuChildActive(parent: NavItem, child: NavSubItem): boolean {
+    return isNavSubItemActive(this.router.url, parent, child);
   }
 
   /**
