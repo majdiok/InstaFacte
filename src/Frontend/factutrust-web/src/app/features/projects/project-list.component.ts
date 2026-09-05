@@ -393,6 +393,24 @@ const KIND_CARD_HINTS: Record<ProjectKindCode, string> = {
           <label>Facturation
             <p-select class="w-full" [options]="billingOptionsForKind()" [(ngModel)]="draft.billingMode" optionLabel="label" optionValue="value" />
           </label>
+          <app-form-section title="Options" icon="pi-sliders-h" variant="compact">
+            <div class="proj-create-options">
+              <div class="proj-create-options__item">
+                <p-checkbox [(ngModel)]="draft.isBillable" [binary]="true" inputId="createIsBillable" />
+                <label for="createIsBillable">
+                  <strong>Facturable</strong>
+                  <span class="text-sm text-color-secondary">Le temps saisi pourra être facturé au client.</span>
+                </label>
+              </div>
+              <div class="proj-create-options__item">
+                <p-checkbox [(ngModel)]="draft.timesheetsEnabled" [binary]="true" inputId="createTimesheets" />
+                <label for="createTimesheets">
+                  <strong>Feuilles de temps</strong>
+                  <span class="text-sm text-color-secondary">Active la saisie et le suivi du temps sur ce projet.</span>
+                </label>
+              </div>
+            </div>
+          </app-form-section>
           <label>Description
             <textarea pTextarea class="w-full" rows="2" [(ngModel)]="draft.description"></textarea>
           </label>
@@ -493,7 +511,7 @@ export class ProjectListComponent implements OnInit {
   createVisible = false;
   startDate: Date | null = null;
   endDate: Date | null = null;
-  draft: UpsertProjectPayload = { clientId: '', name: '', kind: 'Generic', billingMode: 'None', budgetHt: 0 };
+  draft: UpsertProjectPayload = { clientId: '', name: '', kind: 'Generic', billingMode: 'None', budgetHt: 0, isBillable: true, timesheetsEnabled: true };
 
   readonly statusOptions = PROJECT_STATUS_OPTIONS;
   readonly kindOptions = PROJECT_KIND_OPTIONS;
@@ -691,6 +709,14 @@ export class ProjectListComponent implements OnInit {
 
   onKindChange(): void {
     this.draft.billingMode = defaultBillingForKind(this.draft.kind);
+    const kind = this.draft.kind;
+    if (kind === 'Esn') {
+      this.draft.isBillable = true;
+      this.draft.timesheetsEnabled = true;
+    } else {
+      this.draft.isBillable = false;
+      this.draft.timesheetsEnabled = false;
+    }
   }
 
   onFilterChange(): void {
@@ -786,7 +812,9 @@ export class ProjectListComponent implements OnInit {
       description: '',
       ownerUserId: null,
       siteAddress: '',
-      contractNumber: ''
+      contractNumber: '',
+      isBillable: false,
+      timesheetsEnabled: false
     };
     this.startDate = null;
     this.endDate = null;

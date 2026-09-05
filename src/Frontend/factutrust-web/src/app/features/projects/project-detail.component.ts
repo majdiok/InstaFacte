@@ -310,7 +310,7 @@ export class ProjectDetailComponent implements OnInit {
   editVisible = false;
   editStart: Date | null = null;
   editEnd: Date | null = null;
-  editDraft: UpsertProjectPayload = { clientId: '', name: '', kind: 'Generic', billingMode: 'None', budgetHt: 0 };
+  editDraft: UpsertProjectPayload = { clientId: '', name: '', kind: 'Generic', billingMode: 'None', budgetHt: 0, isBillable: true, timesheetsEnabled: true };
   timeFrom?: string;
   timeTo?: string;
   timeStatus?: string;
@@ -560,7 +560,9 @@ export class ProjectDetailComponent implements OnInit {
       budgetHt: p.budgetHt,
       ownerUserId: p.ownerUserId,
       siteAddress: p.siteAddress,
-      contractNumber: p.contractNumber
+      contractNumber: p.contractNumber,
+      isBillable: p.isBillable,
+      timesheetsEnabled: p.timesheetsEnabled
     };
     this.editStart = p.startDate ? new Date(p.startDate) : null;
     this.editEnd = p.endDate ? new Date(p.endDate) : null;

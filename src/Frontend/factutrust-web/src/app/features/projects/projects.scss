@@ -152,6 +152,34 @@
   }
 }
 
+.proj-create-options {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+
+  @media (max-width: 640px) {
+    grid-template-columns: 1fr;
+  }
+
+  &__item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--surface-border, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
+    background: var(--surface-ground, #f9fafb);
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      cursor: pointer;
+      margin: 0;
+    }
+  }
+}
+
 .proj-kanban {
   display: flex;
   gap: 1rem;

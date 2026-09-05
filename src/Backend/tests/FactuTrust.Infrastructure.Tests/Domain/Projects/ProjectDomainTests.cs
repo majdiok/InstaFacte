@@ -278,3 +278,40 @@ public sealed class ProjectClosureTests
         Assert.Equal("Clôturé", btp[^1].Name);
     }
 }
+
+public sealed class ProjectBillableTimesheetsFlagsTests
+{
+    [Fact]
+    public void Create_PersistsBillableAndTimesheetsFlags()
+    {
+        var created = Project.Create(
+            Guid.NewGuid(), "Mission", ProjectKind.Esn, ProjectBillingMode.TimeAndMaterials,
+            null, null, null, 0m, isBillable: false, timesheetsEnabled: true);
+        Assert.True(created.IsSuccess);
+        Assert.False(created.Value.IsBillable);
+        Assert.True(created.Value.TimesheetsEnabled);
+    }
+
+    [Fact]
+    public void Create_DefaultsFlagsToTrue()
+    {
+        var created = Project.Create(
+            Guid.NewGuid(), "Mission", ProjectKind.Generic, ProjectBillingMode.None,
+            null, null, null, 0m);
+        Assert.True(created.IsSuccess);
+        Assert.True(created.Value.IsBillable);
+        Assert.True(created.Value.TimesheetsEnabled);
+    }
+
+    [Fact]
+    public void Update_DoesNotChangeFlags()
+    {
+        var created = Project.Create(
+            Guid.NewGuid(), "Mission", ProjectKind.Generic, ProjectBillingMode.None,
+            null, null, null, 0m, isBillable: false, timesheetsEnabled: false);
+        var project = created.Value;
+        Assert.True(project.Update("Renommé", null, ProjectBillingMode.TimeAndMaterials, null, null, null, 100m, null, null).IsSuccess);
+        Assert.False(project.IsBillable);
+        Assert.False(project.TimesheetsEnabled);
+    }
+}

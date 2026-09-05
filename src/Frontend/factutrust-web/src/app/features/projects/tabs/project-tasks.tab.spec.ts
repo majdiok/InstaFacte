@@ -38,6 +38,8 @@ describe('ProjectTasksTabComponent', () => {
       statusDisplay: String(status),
       budgetHt: 0,
       currency: 'EUR',
+      isBillable: true,
+      timesheetsEnabled: true,
       phases: [{ id: 'ph1', name: 'À faire', sortOrder: 0 }]
     };
   }
