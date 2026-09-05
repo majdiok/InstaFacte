@@ -123,6 +123,108 @@ describe('Studio — états sur les tables réelles', () => {
       expect(component.reportResult()).toBeNull();
     });
 
+    const failureEvent = (payload: unknown): ChatStreamEvent =>
+      ({ type: 'studio_report_error', content: JSON.stringify(payload) }) as ChatStreamEvent;
+
+    it('affiche une carte d’échec au lieu d’un message brut', () => {
+      component['handleEvent'](failureEvent({
+        message: 'Aucun des regroupements demandés n’existe sur « SupplierInvoiceLines » : Products_Name.',
+        preset: 'achats_par_produit',
+        title: 'Achats par produit',
+        periodLabel: 'Année en cours',
+        suggestions: [{ preset: 'achats_par_fournisseur', label: 'Achats par fournisseur', prompt: 'Montre-moi l’état « Achats par fournisseur »' }]
+      }));
+
+      const failure = component.reportFailure();
+      expect(failure).not.toBeNull();
+      expect(failure!.title).toBe('Achats par produit');
+      expect(failure!.suggestions.length).toBe(1);
+    });
+
+    it('n’affiche pas l’erreur une seconde fois dans une bulle d’assistant', () => {
+      component['handleEvent'](failureEvent({ message: 'Calcul impossible.', suggestions: [] }));
+      component['handleEvent']({ type: 'content_replace', content: 'Calcul impossible.' } as ChatStreamEvent);
+      component['handleEvent']({ type: 'done' } as ChatStreamEvent);
+
+      expect(component.reportFailure()).not.toBeNull();
+      expect(component.lines().some(l => l.role === 'assistant')).toBeFalse();
+    });
+
+    it('conserve les tableaux des demandes précédentes dans le fil', () => {
+      const report = (title: string) => resultEvent({
+        success: true, title, source: 'InvoiceLines', sourceLabel: 'Lignes de facture de vente',
+        result: {
+          columns: [{ key: 'k', label: 'K', kind: 'dimension' }],
+          rows: [{ k: 'x' }], totalRows: 1
+        },
+        warnings: [], message: '1 ligne(s) de résultat.'
+      });
+
+      component.prompt = 'ventes par mois';
+      component.send();
+      component['handleEvent'](report('Ventes par mois'));
+
+      component['state'].set('idle');
+      component.prompt = 'ventes par produit';
+      component.send();
+      component['handleEvent'](report('Ventes par produit'));
+
+      // Le fil garde les DEUX tableaux : une question suivante ne doit plus effacer le précédent.
+      const reports = component.lines().filter(i => i.kind === 'report');
+      expect(reports.length).toBe(2);
+      expect(reports[0].report!.title).toBe('Ventes par mois');
+      expect(reports[1].report!.title).toBe('Ventes par produit');
+    });
+
+    it('affiche des puces de reformulation quand la ventilation manque', () => {
+      component['handleEvent']({
+        type: 'suggested_prompts',
+        suggestedPrompts: JSON.stringify(['Ventes par produit ce mois', 'Ventes par année'])
+      } as ChatStreamEvent);
+
+      expect(component.suggestions().length).toBe(2);
+      const send = spyOn(component, 'send');
+      component.usePromptSuggestion('Ventes par année');
+      expect(send).toHaveBeenCalled();
+      expect(component.prompt).toBe('Ventes par année');
+    });
+
+    it('remet la carte d’échec à zéro à chaque nouvelle demande', () => {
+      component['handleEvent'](failureEvent({ message: 'Calcul impossible.', suggestions: [] }));
+      component.prompt = 'Ventes par client';
+      component.send();
+      expect(component.reportFailure()).toBeNull();
+    });
+
+    it('Réessayer rejoue la dernière demande à l’identique', () => {
+      component.prompt = 'Achats par article';
+      component.send();
+      expect(component.lastUserMessage).toBe('Achats par article');
+
+      // Le flux est retombé au repos (échec ou fin) : c'est là que Réessayer est proposé.
+      component['state'].set('idle');
+      const send = spyOn(component, 'send');
+      component.retry();
+      expect(send).toHaveBeenCalled();
+      expect(component.prompt).toBe('Achats par article');
+    });
+
+    it('une suggestion envoie la formulation proposée', () => {
+      const send = spyOn(component, 'send');
+      component.useSuggestion({ preset: 'ventes_par_client', label: 'Ventes par client', prompt: 'Montre-moi les ventes par client' });
+      expect(send).toHaveBeenCalled();
+      expect(component.prompt).toBe('Montre-moi les ventes par client');
+    });
+
+    it('Maj+Entrée n’envoie pas le message', () => {
+      const send = spyOn(component, 'send');
+      component.onComposerEnter({ shiftKey: true, preventDefault: () => undefined } as unknown as KeyboardEvent);
+      expect(send).not.toHaveBeenCalled();
+
+      component.onComposerEnter({ shiftKey: false, preventDefault: () => undefined } as unknown as KeyboardEvent);
+      expect(send).toHaveBeenCalled();
+    });
+
     it('l’enregistrement repasse par l’assistant, jamais par une écriture directe', () => {
       component['reportResult'].set({
         success: true, title: 'Ventes par produit', source: 'InvoiceLines',

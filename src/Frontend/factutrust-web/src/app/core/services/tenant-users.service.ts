@@ -81,6 +81,16 @@ export interface ModuleCatalogModuleDto {
   displayName: string;
   grantable: boolean;
   defaultEnabled: boolean;
+  /**
+   * Miroir de `ModuleCatalogModuleDto.AvailableForTenant` : le module est activé pour la société ET
+   * autorisé par son offre. `grantable` (plafond du RÔLE) et ce champ (périmètre de la SOCIÉTÉ) sont
+   * deux filtres indépendants et cumulatifs.
+   *
+   * Optionnel sur le fil : un backend antérieur ne l'envoie pas, et `!== false` le lit alors comme
+   * « disponible », donc l'ancien rendu est conservé à l'identique (repli sûr par construction, la
+   * garde qui compte étant de toute façon côté écriture).
+   */
+  availableForTenant?: boolean;
   features: ModuleCatalogFeatureDto[];
 }
 
@@ -135,6 +145,16 @@ export class TenantUsersService {
    * `success=false` n'est pas mis en cache afin de permettre une retry (fail-closed côté composant).
    */
   private readonly catalogCache = new Map<UserRole, ModuleCatalogDto>();
+
+  /**
+   * Vide le cache par rôle. Le catalogue dépend désormais du périmètre de modules de la SOCIÉTÉ
+   * (`availableForTenant`), qui change via `PUT /api/company/modules` : sans cette invalidation, la
+   * modale « Ajouter un utilisateur » continuerait d'offrir l'ancien périmètre tant que l'onglet
+   * reste ouvert — le serveur refuserait alors l'enregistrement, ce qui se lirait comme un bug.
+   */
+  clearCatalogCache(): void {
+    this.catalogCache.clear();
+  }
 
   list(): Observable<ApiResponse<TenantUserListItem[]>> {
     return this.http.get<ApiResponse<TenantUserListItem[]>>(this.base).pipe(

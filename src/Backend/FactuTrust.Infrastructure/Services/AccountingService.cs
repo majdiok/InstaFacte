@@ -2215,17 +2215,35 @@ public sealed class AccountingService : IAccountingService
             ? PayrollJournalEntryBuilder.ResolveSalaryDebits(payrollRun)
             : null;
 
+        // Le compte auxiliaire est figé sur le bulletin à la validation du cycle. S'il manque — cycle
+        // antérieur au figeage, ou dossier dont la renumérotation des comptes trop longs est restée
+        // bloquée — on retombe sur la **ligne 425 agrégée** plutôt que de dériver un numéro du
+        // matricule : la dérivation produisait 10 chiffres et pouvait confondre deux salariés.
+        // L'agrégat reste une imputation juste, et le règlement suit la maille de la dette.
         var auxiliaryCredits = payrollProfile.EmployeeAuxiliaryEnabled && payrollRun.Payslips.Count > 0
             ? payrollRun.Payslips
                 .Where(p => p.NetSalary > 0)
                 .Select(p => new PayrollJournalEntryBuilder.EmployeeAuxiliaryCredit(
                     p.EmployeeId,
                     p.EmployeeName,
-                    p.EmployeeAuxiliaryAccount
-                        ?? PayrollEmployeeAuxiliaryAccountResolver.Resolve(p.EmployeeNumber),
+                    p.EmployeeAuxiliaryAccount ?? string.Empty,
                     p.NetSalary))
                 .ToList()
             : null;
+
+        if (auxiliaryCredits is { Count: > 0 }
+            && auxiliaryCredits.Any(c => string.IsNullOrWhiteSpace(c.AuxiliaryAccount)))
+        {
+            _logger.LogWarning(
+                "Cycle de paie {Year}-{Month:D2} : {Count} bulletin(s) sans compte auxiliaire figé — "
+                + "l'écriture crédite le compte collectif {Account} au lieu d'un compte par salarié.",
+                payrollRun.Year,
+                payrollRun.Month,
+                auxiliaryCredits.Count(c => string.IsNullOrWhiteSpace(c.AuxiliaryAccount)),
+                PayrollJournalEntryBuilder.PersonnelPayableAccount);
+
+            auxiliaryCredits = null;
+        }
 
         var linesResult = hasTypedDeductions
             ? PayrollJournalEntryBuilder.BuildLinesFromRun(payrollRun, label, accountMap, auxiliaryCredits, profile, salaryDebits)

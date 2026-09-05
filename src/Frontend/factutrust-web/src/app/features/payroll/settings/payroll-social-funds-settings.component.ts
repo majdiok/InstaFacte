@@ -16,6 +16,7 @@ import {
   UpsertSocialFundSchemeRequest
 } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
+import { SCE_ACCOUNT_MAX_DIGITS, sceAccountDigitCount } from '@features/accounting/chart-of-accounts/chart-of-accounts.component';
 import { ConfirmationService } from '@core/services/confirmation.service';
 
 function toIsoDate(value: Date | null | undefined): string | undefined {
@@ -136,11 +137,11 @@ const BASE_OPTIONS = [
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Compte SCE salarié</label>
-          <input pInputText [(ngModel)]="formEmployeeAccount" class="w-full" />
+          <input pInputText [(ngModel)]="formEmployeeAccount" class="w-full" [maxlength]="accountMaxLength" />
         </div>
         <div class="payroll-form-group">
           <label>Compte SCE employeur</label>
-          <input pInputText [(ngModel)]="formEmployerAccount" class="w-full" />
+          <input pInputText [(ngModel)]="formEmployerAccount" class="w-full" [maxlength]="accountMaxLength" />
         </div>
       </div>
       <p class="payroll-info-text mt-1">
@@ -248,8 +249,32 @@ export class PayrollSocialFundsSettingsComponent implements OnInit {
     this.dialogVisible = true;
   }
 
+  /** Même plafond que le plan comptable : ces deux comptes y sont créés et référencés. */
+  readonly accountMaxLength = SCE_ACCOUNT_MAX_DIGITS + 2;
+
+  accountError(): string | null {
+    for (const [label, value] of [
+      ['salarié', this.formEmployeeAccount],
+      ['employeur', this.formEmployerAccount]
+    ] as const) {
+      const num = value.trim();
+      if (num.length === 0) continue;
+      const digits = sceAccountDigitCount(num);
+      if (digits > SCE_ACCOUNT_MAX_DIGITS) {
+        return `Le compte SCE ${label} « ${num} » comporte ${digits} chiffres : le maximum est ${SCE_ACCOUNT_MAX_DIGITS}.`;
+      }
+    }
+    return null;
+  }
+
   save(): void {
     if (!this.formCode.trim() || !this.formName.trim()) return;
+
+    const accountError = this.accountError();
+    if (accountError) {
+      this.toast.add({ severity: 'error', summary: 'Caisses complémentaires', detail: accountError });
+      return;
+    }
 
     const body: UpsertSocialFundSchemeRequest = {
       code: this.formCode.trim(),

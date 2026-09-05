@@ -5,6 +5,7 @@ using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services.Accounting;
 using FactuTrust.Infrastructure.MultiTenancy;
 
 using Microsoft.EntityFrameworkCore;
@@ -21,10 +22,8 @@ public sealed class PayrollEmployeeChartProvisioningService : IPayrollEmployeeCh
     private const string CollectiveAccount = Employee.PersonnelPayableCollectiveAccount;
 
     /// <summary>
-    /// Longueur du suffixe séquentiel. Quatre chiffres suffisent (9 999 salariés) et surtout
-    /// distinguent les comptes alloués (<c>4250001</c>, 7 caractères) des comptes hérités de la
-    /// dérivation par matricule (<c>4258744456</c>, 10 caractères) : deux longueurs différentes ne
-    /// peuvent pas se télescoper.
+    /// Longueur du suffixe séquentiel : <c>425</c> + 4 chiffres = 7 caractères, sous le plafond de
+    /// <see cref="AccountNumberRules.MaxDigits"/> chiffres, et 9 999 salariés par dossier.
     /// </summary>
     private const int SuffixLength = 4;
 
@@ -94,8 +93,9 @@ public sealed class PayrollEmployeeChartProvisioningService : IPayrollEmployeeCh
 
     /// <summary>
     /// Premier suffixe séquentiel libre. On repart systématiquement de 1 en sautant les numéros
-    /// pris, plutôt que de prendre « le plus grand + 1 » : les comptes hérités portent un suffixe à
-    /// 7 chiffres (8 744 456) qui ferait démarrer la séquence dans les millions.
+    /// pris, plutôt que de prendre « le plus grand + 1 » : la renumérotation des comptes hérités
+    /// (<c>ChartAccountDigitCompactionService</c>) attribue ses cibles dans le même espace, et un
+    /// « max + 1 » sauterait inutilement les numéros qu'elle a libérés.
     /// </summary>
     private static string? AllocateNextNumber(IReadOnlySet<string> taken)
     {

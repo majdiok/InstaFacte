@@ -91,8 +91,20 @@ public sealed record ModuleCatalogModuleDto
 {
     public AppModule Module { get; init; }
     public string DisplayName { get; init; } = null!;
+
+    /// <summary>Plafond du RÔLE : ce rôle peut-il, en principe, se voir accorder ce module ? Sémantique inchangée.</summary>
     public bool Grantable { get; init; }
+
     public bool DefaultEnabled { get; init; }
+
+    /// <summary>
+    /// Plafond de la SOCIÉTÉ : ce module fait-il partie de l'espace (modules accordés ∩ plan) ?
+    /// Distinct de <see cref="Grantable"/> à dessein — un module peut être accordable au rôle
+    /// « Administrateur » tout en étant absent de l'espace, et il ne doit alors pas être proposé.
+    /// Ajout additif, avec <c>true</c> par défaut pour qu'un client antérieur garde son rendu.
+    /// </summary>
+    public bool AvailableForTenant { get; init; } = true;
+
     public IReadOnlyList<ModuleCatalogFeatureDto> Features { get; init; } = Array.Empty<ModuleCatalogFeatureDto>();
 }
 

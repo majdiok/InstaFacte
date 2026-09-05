@@ -1,5 +1,6 @@
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services.Accounting;
 
 namespace FactuTrust.Domain.Entities;
 
@@ -94,9 +95,13 @@ public sealed class BudgetPost : Entity
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var prefix in raw)
         {
-            if (prefix.Length > 8 || !prefix.All(char.IsAsciiDigit))
+            // Même plafond que le numéro de compte lui-même : un préfixe plus long ne pourrait
+            // désigner aucun compte du plan. La constante est partagée pour que les deux règles ne
+            // divergent pas — c'est ici qu'elle existait en premier, avant le plan comptable.
+            if (prefix.Length > AccountNumberRules.MaxDigits || !prefix.All(char.IsAsciiDigit))
                 return Result.Failure<IReadOnlyList<string>>(Error.Validation(
-                    "AccountPrefixes", $"Préfixe invalide « {prefix} » : 1 à 8 chiffres attendus."));
+                    "AccountPrefixes",
+                    $"Préfixe invalide « {prefix} » : 1 à {AccountNumberRules.MaxDigits} chiffres attendus."));
             if (!seen.Add(prefix))
                 return Result.Failure<IReadOnlyList<string>>(Error.Validation(
                     "AccountPrefixes", $"Préfixe en doublon : « {prefix} »."));

@@ -261,27 +261,3 @@ public sealed record InventoryPendingCountRequest
     public Guid? ProductLotId { get; init; }
     public string? LotNumber { get; init; }
 }
-
-/// <summary>
-/// Response wrapper standard avec message pédagogique.
-/// </summary>
-public sealed record ApiResponse<T>
-{
-    public bool Success { get; init; }
-    public T? Data { get; init; }
-    public string? Message { get; init; }
-    public string? Error { get; init; }
-
-    public static ApiResponse<T> Ok(T data, string? message = null) => new()
-    {
-        Success = true,
-        Data = data,
-        Message = message
-    };
-
-    public static ApiResponse<T> Fail(string error, string? code= null) => new()
-    {
-        Success = false,
-        Error = error
-    };
-}

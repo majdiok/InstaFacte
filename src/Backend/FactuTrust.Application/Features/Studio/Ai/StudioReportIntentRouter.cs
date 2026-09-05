@@ -91,12 +91,21 @@ public static class StudioReportIntentRouter
     private static readonly string[] PaieDomain =
         { "paie", "salaire", "salaires", "salarie", "salaries", "masse salariale", "effectif" };
 
+    /// <summary>
+    /// Axe ANNUEL. Volontairement sans « annee » nu : « le chiffre d'affaires de l'année en cours »
+    /// exprime une PÉRIODE, pas une ventilation — le confondre produirait un état d'une seule ligne.
+    /// Seules les tournures qui demandent réellement une répartition par année sont retenues.
+    /// </summary>
+    private static readonly string[] AnnualAxis =
+        { "par annee", "par an", "par annees", "annuel", "annuelle", "par exercice", "chaque annee" };
+
     private static readonly PresetMatcher[] Matchers =
     {
         // --- Ventes ---
         new("ventes_par_produit", VentesDomain, new[] { "produit", "article", "reference", "item" }),
         new("ventes_par_client", VentesDomain, new[] { "client", "acheteur", "compte client" }),
         new("ventes_par_mois", VentesDomain, new[] { "mois", "mensuel", "mensuelle", "periode", "evolution" }),
+        new("ventes_par_annee", VentesDomain, AnnualAxis),
         new("ventes_par_produit_et_mois", VentesDomain, new[] { "produit et mois", "saisonnalite", "produit par mois" }),
         new("remises_accordees", VentesDomain, new[] { "remise", "rabais", "escompte", "discount" }),
         new("detail_lignes_ventes", VentesDomain, new[] { "ligne", "lignes", "detail des ventes", "detaillee ligne" }),
@@ -105,6 +114,7 @@ public static class StudioReportIntentRouter
         // --- Achats ---
         new("achats_par_fournisseur", AchatsDomain, new[] { "fournisseur", "fournisseurs" }),
         new("achats_par_mois", AchatsDomain, new[] { "mois", "mensuel", "mensuelle", "evolution" }),
+        new("achats_par_annee", AchatsDomain, AnnualAxis),
         new("achats_par_produit", AchatsDomain, new[] { "produit", "article", "reference" }),
 
         // --- Stock ---
@@ -113,6 +123,7 @@ public static class StudioReportIntentRouter
 
         // --- Trésorerie ---
         new("encaissements_par_mois", TresorerieDomain, new[] { "mois", "mensuel", "mensuelle", "evolution" }),
+        new("encaissements_par_annee", TresorerieDomain, AnnualAxis),
         new("encaissements_par_mode", TresorerieDomain, new[] { "mode", "moyen", "especes", "cheque", "virement" }),
         new("encaissements_par_client", TresorerieDomain, new[] { "client", "clients" }),
 
@@ -172,6 +183,40 @@ public static class StudioReportIntentRouter
                 .ToList();
     }
 
+    /// <summary>
+    /// Préréglages dont le DOMAINE a réellement été reconnu, sans aucun repli générique. Sert au cas
+    /// « domaine sûr, axe absent » : on propose alors les ventilations disponibles plutôt que de
+    /// deviner un axe — ou, pire, de répondre qu'on n'a pas compris. Liste vide = rien de pertinent
+    /// à proposer, il ne faut alors rien proposer du tout.
+    /// </summary>
+    public static IReadOnlyList<string> SuggestForDomain(string? message, int max = 3)
+    {
+        if (string.IsNullOrWhiteSpace(message) || max < 1)
+            return Array.Empty<string>();
+
+        return RankPresets(Pad(message))
+            .Where(r => r.Score > 0)
+            .Take(max)
+            .Select(r => r.PresetKey)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Traduit des clés de préréglages en formulations que l'utilisateur peut renvoyer telles quelles.
+    /// Partagé par le filet anti-silence et par la demande de précision, pour que les deux proposent
+    /// exactement les mêmes phrases.
+    /// </summary>
+    public static IReadOnlyList<string> ToPromptSuggestions(IEnumerable<string>? presetKeys) =>
+        presetKeys is null
+            ? Array.Empty<string>()
+            : presetKeys
+                .Select(SqlReportPresetCatalog.Find)
+                .Where(p => p is not null)
+                .Select(p => p!.PeriodFieldKey is not null && p.DefaultPeriodPreset is null
+                    ? $"{p.DisplayName} ce mois"
+                    : p.DisplayName)
+                .ToList();
+
     /// <summary>Vrai si le message ressemble à une demande d'analyse (sans exiger un préréglage identifiable).</summary>
     public static bool LooksLikeReportRequest(string? message)
     {
@@ -202,12 +247,25 @@ public static class StudioReportIntentRouter
 
     private static int ScoreOf(PresetMatcher matcher, string normalized)
     {
-        var domainHits = matcher.Domain.Count(k => normalized.Contains(k, StringComparison.Ordinal));
+        var domainHits = CountDistinctHits(matcher.Domain, normalized);
         if (domainHits == 0)
             return 0; // sans domaine reconnu, aucun état n'est proposable
 
-        var axisHits = matcher.Axis.Count(k => normalized.Contains(k, StringComparison.Ordinal));
+        var axisHits = CountDistinctHits(matcher.Axis, normalized);
         return domainHits * DomainWeight + axisHits * AxisWeight;
+    }
+
+    /// <summary>
+    /// Compte les NOTIONS reconnues, pas les mots-clés. « ventes » déclenche à la fois « vente » et
+    /// « ventes » : les compter tous les deux donnait à ce mot le double du poids de
+    /// « chiffre d'affaires », qui n'a qu'une entrée — la formulation la plus naturelle était donc
+    /// la moins bien reconnue. Un mot-clé englobé par un autre mot-clé qui matche aussi ne compte pas.
+    /// </summary>
+    private static int CountDistinctHits(IReadOnlyList<string> keywords, string normalized)
+    {
+        var matched = keywords.Where(k => normalized.Contains(k, StringComparison.Ordinal)).ToList();
+        return matched.Count(k =>
+            !matched.Any(other => other.Length > k.Length && other.Contains(k, StringComparison.Ordinal)));
     }
 
     private static bool HasAnalysisIntent(string normalized) =>
@@ -265,6 +323,25 @@ public static class StudioReportIntentRouter
             if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
                 sb.Append(c);
         }
-        return sb.ToString().Normalize(NormalizationForm.FormC).ToLowerInvariant();
+        return CollapseRepeats(sb.ToString().Normalize(NormalizationForm.FormC).ToLowerInvariant());
+    }
+
+    /// <summary>
+    /// Réduit toute lettre répétée 3 fois ou plus à deux occurrences : « annnée » redevient
+    /// « année ». Aucun mot français ne porte trois fois la même lettre de suite, donc la
+    /// transformation ne peut pas confondre deux mots distincts — et les mots-clés du routeur, qui
+    /// n'ont jamais plus de deux répétitions, sont inchangés.
+    /// </summary>
+    private static string CollapseRepeats(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        var run = 0;
+        for (var i = 0; i < text.Length; i++)
+        {
+            run = i > 0 && text[i] == text[i - 1] ? run + 1 : 0;
+            if (run < 2)
+                sb.Append(text[i]);
+        }
+        return sb.ToString();
     }
 }

@@ -1,5 +1,6 @@
 ﻿using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services.Accounting;
 using FactuTrust.Domain.ValueObjects;
 
 namespace FactuTrust.Domain.Entities.Payroll;
@@ -45,14 +46,14 @@ public sealed class Employee : AggregateRoot
     public string? Rib { get; private set; }
 
     /// <summary>
-    /// Compte auxiliaire 425 du salarié, quand il a été alloué explicitement.
+    /// Compte auxiliaire 425 du salarié.
     /// </summary>
     /// <remarks>
-    /// <c>null</c> pour les salariés antérieurs à ce champ : leur compte reste dérivé du matricule
-    /// par <c>PayrollEmployeeAuxiliaryAccountResolver</c>, exactement comme avant — aucun compte
-    /// existant ne se déplace. Renseigné, il fait foi : c'est ce qui permet de sortir de la
-    /// dérivation par troncature (collisions possibles, et matricule recopié dans le plan comptable
-    /// et le FEC) sans toucher à l'existant.
+    /// <b>Source unique</b> depuis la suppression de la dérivation par troncature du matricule, qui
+    /// produisait un numéro de 10 chiffres (au-delà du plafond de 8) et recopiait une pièce
+    /// d'identité dans le plan comptable et le FEC. Une fiche sans compte s'en voit allouer un à la
+    /// validation de son prochain cycle de paie ; les fiches historiques ont été reprises depuis le
+    /// compte figé sur leurs bulletins.
     /// </remarks>
     public string? AuxiliaryAccountNumber { get; private set; }
 
@@ -155,8 +156,9 @@ public sealed class Employee : AggregateRoot
             return Result.Success();
         }
 
-        if (normalized.Length > 32)
-            return Result.Failure(Error.Validation("AuxiliaryAccountNumber", "Numéro de compte trop long."));
+        var shape = AccountNumberRules.Validate(normalized, "AuxiliaryAccountNumber");
+        if (shape.IsFailure)
+            return shape;
 
         if (!normalized.All(char.IsAsciiDigit))
         {

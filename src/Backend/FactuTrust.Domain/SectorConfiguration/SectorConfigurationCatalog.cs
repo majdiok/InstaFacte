@@ -109,7 +109,13 @@ public sealed record TaxRegimeSuggestionDefinition
 /// </summary>
 public static class SectorConfigurationCatalog
 {
-    /// <summary>Always-enabled modules, non-deselectable, never subject to plan restriction bypass.</summary>
+    /// <summary>
+    /// Always-enabled modules, non-deselectable. Ils définissent le produit lui-même : un espace
+    /// sans clients, produits, ventes ni trésorerie n'est pas un ERP. À ce titre ils ne sont pas
+    /// soumis au plafond du plan — la règle est portée par <c>DbPlanResolver.IsModuleAllowedAsync</c>,
+    /// c'est-à-dire dans l'unique garde que tous les appelants traversent, jamais par un contournement
+    /// en aval.
+    /// </summary>
     public static readonly IReadOnlyList<AppModule> CoreModules = new[]
     {
         AppModule.Administration,
@@ -282,14 +288,18 @@ public static class SectorConfigurationCatalog
             Code = BusinessDomains.Immobilier,
             LabelFr = "Immobilier",
             SortOrder = 5,
-            OverlayModules = Array.Empty<AppModule>()
+            // Programmes et lots se pilotent comme des affaires (Projets) ; loyers et charges
+            // se facturent en récurrent. Sans cet overlay le domaine n'apportait rien à la
+            // recommandation : « BTP + Immobilier » donnait exactement « BTP + Artisanat ».
+            OverlayModules = new[] { AppModule.Projects, AppModule.RecurringContracts }
         },
         new DomainDefinition
         {
             Code = BusinessDomains.EnergieEnvironnement,
             LabelFr = "Énergie & Environnement",
             SortOrder = 6,
-            OverlayModules = Array.Empty<AppModule>()
+            // Affaires longues suivies au projet, forte part de sous-traitance et d'achats.
+            OverlayModules = new[] { AppModule.Projects, AppModule.Purchases }
         },
         new DomainDefinition
         {
@@ -303,7 +313,8 @@ public static class SectorConfigurationCatalog
             Code = BusinessDomains.Artisanat,
             LabelFr = "Artisanat",
             SortOrder = 8,
-            OverlayModules = Array.Empty<AppModule>()
+            // Matières premières et fournitures : achats et stock sont la base du métier.
+            OverlayModules = new[] { AppModule.Stock, AppModule.Purchases }
         },
         new DomainDefinition
         {
@@ -491,6 +502,56 @@ public static class SectorConfigurationCatalog
                     ItemKind = "chart-account",
                     PayloadJson = "{\"accountNumber\":\"341\",\"label\":\"Travaux en cours - BTP\",\"accountClass\":3,\"parentAccountNumber\":\"34\",\"natureType\":\"Debit\",\"isSystem\":false}",
                     SortOrder = 0
+                }
+            }
+        },
+        new DataTemplateDefinition
+        {
+            Code = "product-categories-sante-paramedical",
+            SegmentCode = null,
+            DomainCode = BusinessDomains.SanteParamedical,
+            LabelFr = "Familles de produits — Santé & paramédical",
+            DescriptionFr = "Ajoute deux familles de produits courantes (Consommables médicaux, Matériel médical) pour le domaine santé.",
+            Version = 1,
+            SortOrder = 8,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "product-category",
+                    PayloadJson = "{\"code\":\"CONSOMMABLES\",\"name\":\"Consommables médicaux\",\"displayOrder\":1}",
+                    SortOrder = 0
+                },
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "product-category",
+                    PayloadJson = "{\"code\":\"MATERIEL-MED\",\"name\":\"Matériel médical\",\"displayOrder\":2}",
+                    SortOrder = 1
+                }
+            }
+        },
+        new DataTemplateDefinition
+        {
+            Code = "product-categories-artisanat",
+            SegmentCode = null,
+            DomainCode = BusinessDomains.Artisanat,
+            LabelFr = "Familles de produits — Artisanat",
+            DescriptionFr = "Ajoute deux familles de produits courantes (Matières premières, Créations) pour le domaine artisanat.",
+            Version = 1,
+            SortOrder = 9,
+            Items = new[]
+            {
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "product-category",
+                    PayloadJson = "{\"code\":\"MATIERES\",\"name\":\"Matières premières\",\"displayOrder\":1}",
+                    SortOrder = 0
+                },
+                new DataTemplateItemDefinition
+                {
+                    ItemKind = "product-category",
+                    PayloadJson = "{\"code\":\"CREATIONS\",\"name\":\"Créations artisanales\",\"displayOrder\":2}",
+                    SortOrder = 1
                 }
             }
         },

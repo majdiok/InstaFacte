@@ -15,6 +15,62 @@
       }
     </div>
 
+    <div class="profiling-block">
+      <p class="profiling-intro">
+        <i class="pi pi-sparkles" aria-hidden="true"></i>
+        Quelques précisions pour affiner la sélection. Tout est facultatif, et rien n'est figé.
+      </p>
+
+      <div class="profiling-grid">
+        <div class="profiling-q">
+          <span class="profiling-label" id="q-stock">Gérez-vous du stock physique ?</span>
+          <div class="profiling-choices" role="group" aria-labelledby="q-stock">
+            <button type="button" class="choice" [class.on]="booleanAnswer('hasPhysicalStock') === true"
+                    [attr.aria-pressed]="booleanAnswer('hasPhysicalStock') === true"
+                    (click)="setBooleanAnswer('hasPhysicalStock', true)">Oui</button>
+            <button type="button" class="choice" [class.on]="booleanAnswer('hasPhysicalStock') === false"
+                    [attr.aria-pressed]="booleanAnswer('hasPhysicalStock') === false"
+                    (click)="setBooleanAnswer('hasPhysicalStock', false)">Non</button>
+          </div>
+        </div>
+
+        <div class="profiling-q">
+          <span class="profiling-label" id="q-b2c">Vendez-vous à des particuliers ?</span>
+          <div class="profiling-choices" role="group" aria-labelledby="q-b2c">
+            <button type="button" class="choice" [class.on]="booleanAnswer('sellsToConsumers') === true"
+                    [attr.aria-pressed]="booleanAnswer('sellsToConsumers') === true"
+                    (click)="setBooleanAnswer('sellsToConsumers', true)">Oui</button>
+            <button type="button" class="choice" [class.on]="booleanAnswer('sellsToConsumers') === false"
+                    [attr.aria-pressed]="booleanAnswer('sellsToConsumers') === false"
+                    (click)="setBooleanAnswer('sellsToConsumers', false)">Non</button>
+          </div>
+        </div>
+
+        <div class="profiling-q">
+          <span class="profiling-label" id="q-compta">Votre comptabilité est-elle tenue par un cabinet ?</span>
+          <div class="profiling-choices" role="group" aria-labelledby="q-compta">
+            <button type="button" class="choice" [class.on]="booleanAnswer('accountingDelegatedToFirm') === true"
+                    [attr.aria-pressed]="booleanAnswer('accountingDelegatedToFirm') === true"
+                    (click)="setBooleanAnswer('accountingDelegatedToFirm', true)">Oui</button>
+            <button type="button" class="choice" [class.on]="booleanAnswer('accountingDelegatedToFirm') === false"
+                    [attr.aria-pressed]="booleanAnswer('accountingDelegatedToFirm') === false"
+                    (click)="setBooleanAnswer('accountingDelegatedToFirm', false)">Non</button>
+          </div>
+        </div>
+
+        <div class="profiling-q">
+          <span class="profiling-label" id="q-effectif">Combien êtes-vous ?</span>
+          <div class="profiling-choices" role="group" aria-labelledby="q-effectif">
+            @for (band of headcountBands; track band) {
+              <button type="button" class="choice" [class.on]="headcountAnswer() === band"
+                      [attr.aria-pressed]="headcountAnswer() === band"
+                      (click)="setHeadcount(band)">{{ headcountLabels[band] }}</button>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="mod-group">
       <p class="mod-group-title"><i class="pi pi-lock" aria-hidden="true"></i> Inclus dans votre espace</p>
       <div class="mod-grid">

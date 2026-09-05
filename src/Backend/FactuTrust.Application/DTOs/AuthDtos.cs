@@ -48,6 +48,40 @@ public sealed record RegisterDto
 
     /// <summary>AppModule ids (int) choisis à l'étape Configuration. Null = tous les modules (historique).</summary>
     public IReadOnlyList<int>? EnabledModules { get; init; }
+
+    /// <summary>
+    /// Lot 3 — réponses de profilage de l'étape Configuration. Entièrement facultatif : null
+    /// (charge héritée) laisse l'inscription strictement identique à avant ce lot.
+    ///
+    /// Ces réponses ne sont JAMAIS rejouées côté serveur pour dériver des modules : le client
+    /// envoie déjà sa sélection dans <see cref="EnabledModules"/>, qui reste seule soumise à la
+    /// chaîne de validation (plafond du plan, dépendances, rejet de Honoraires). Elles sont
+    /// uniquement normalisées puis persistées sur le tenant.
+    /// </summary>
+    public RegistrationProfileAnswersDto? ProfileAnswers { get; init; }
+}
+
+/// <summary>
+/// Réponses de profilage de l'inscription (lot 3). Tous les champs sont nullables : <c>null</c>
+/// signifie « question non posée ou sans réponse », jamais « non ».
+/// </summary>
+public sealed record RegistrationProfileAnswersDto
+{
+    /// <summary>L'entreprise gère-t-elle du stock physique ?</summary>
+    public bool? HasPhysicalStock { get; init; }
+
+    /// <summary>Vend-elle à des particuliers (B2C) ?</summary>
+    public bool? SellsToConsumers { get; init; }
+
+    /// <summary>
+    /// Tranche d'effectif. Validée côté domaine contre <c>Tenant.AllowedHeadcountBands</c>
+    /// ("1", "2-9", "10-49", "50+") : toute autre valeur est traitée comme absente et n'est
+    /// jamais persistée.
+    /// </summary>
+    public string? HeadcountBand { get; init; }
+
+    /// <summary>La comptabilité est-elle tenue par un cabinet externe ?</summary>
+    public bool? AccountingDelegatedToFirm { get; init; }
 }
 
 /// <summary>

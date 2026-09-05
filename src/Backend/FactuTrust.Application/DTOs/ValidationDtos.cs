@@ -255,7 +255,15 @@ public static class ValidationErrorCodes
     public const string ConcurrencyConflict = "CONCURRENCY_CONFLICT";
     public const string DiscountExceedsTotal = "DISCOUNT_EXCEEDS_TOTAL";
     public const string CreditNoteExceedsInvoice = "CREDIT_NOTE_EXCEEDS_INVOICE";
-    
+
+    /// <summary>
+    /// Tenant database schema behind the EF model (pending/failed migration). Emitted both by the
+    /// tenant migration guard, before the request runs, and by the exception middleware when a
+    /// query hits a missing table or column. The web client keys its "database upgrade" banner on
+    /// this code (<c>ErrorHandlerService.isTenantMigrationFailure</c>), regardless of status code.
+    /// </summary>
+    public const string TenantMigrationFailed = "TENANT_MIGRATION_FAILED";
+
     // Security
     public const string Tampering = "TAMPERING_DETECTED";
     public const string IdempotencyViolation = "IDEMPOTENCY_VIOLATION";

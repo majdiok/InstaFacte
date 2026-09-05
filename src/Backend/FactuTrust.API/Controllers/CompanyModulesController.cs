@@ -103,7 +103,8 @@ public sealed class CompanyModulesController : ControllerBase
                 AllowedByPlan = allowedByPlan,
                 Requires = requiresMap.TryGetValue((int)module, out var requires) ? requires : Array.Empty<int>(),
                 RequiredBy = requiredByMap.TryGetValue((int)module, out var requiredBy) ? requiredBy : Array.Empty<int>(),
-                RecommendedForSector = recommendedSet.Contains(module)
+                RecommendedForSector = recommendedSet.Contains(module),
+                IsPaidPlanOnly = module.IsPaidPlanOnly()
             });
         }
 
@@ -252,17 +253,12 @@ public sealed class CompanyModulesController : ControllerBase
     /// mirrors <c>EffectivePermissionService.ResolveEnabledModules</c>); otherwise the modules with
     /// <c>IsEnabled=true</c>.
     /// </summary>
-    private async Task<HashSet<AppModule>> ComputeEnabledModuleSetAsync(Guid userId, CancellationToken cancellationToken)
-    {
-        var grants = await _db.UserModuleGrants.AsNoTracking()
-            .Where(g => g.UserId == userId)
-            .ToListAsync(cancellationToken);
-
-        if (grants.Count == 0)
-            return new HashSet<AppModule>(AppModuleExtensions.AllValues);
-
-        return grants.Where(g => g.IsEnabled).Select(g => g.Module).ToHashSet();
-    }
+    /// <summary>
+    /// Délègue à <see cref="TenantModuleAvailability.ReadGrantedModulesAsync"/> : une seule
+    /// définition de « les modules de cette société », partagée avec <c>TenantUsersController</c>.
+    /// </summary>
+    private Task<HashSet<AppModule>> ComputeEnabledModuleSetAsync(Guid userId, CancellationToken cancellationToken)
+        => TenantModuleAvailability.ReadGrantedModulesAsync(_db, userId, cancellationToken);
 
     private static (Dictionary<int, IReadOnlyList<int>> Requires, Dictionary<int, IReadOnlyList<int>> RequiredBy) BuildDependencyMaps(
         IReadOnlyList<ModuleDependencySnapshot> edges)

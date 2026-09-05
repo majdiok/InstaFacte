@@ -16,6 +16,8 @@ jobs:
   backend:
     name: Backend .NET (build + tests)
     runs-on: windows-latest # LocalDB requis par les tests d'intégration API
+    env:
+      FACTUTRUST_TEST_MASTER_CONNECTION: Server=(localdb)\MSSQLLocalDB;Database=FactuTrust_Master_CI;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -30,7 +32,14 @@ jobs:
       # Environment variables have higher precedence than the factories' in-memory
       # configuration and would invalidate those tests (or make forged JWTs return 401).
       - name: Tests
-        run: dotnet test src/Backend/FactuTrust.sln --configuration Release --no-build --verbosity minimal
+        run: dotnet test src/Backend/FactuTrust.sln --configuration Release --no-build --verbosity minimal --logger "trx;LogFileName=backend-tests.trx"
+      - name: Upload backend test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: "**/backend-tests.trx"
+          retention-days: 7
 
   frontend-web:
     name: Web Angular (specs + build prod)
@@ -48,6 +57,12 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - name: Audit npm (critical)
         run: npm audit --audit-level=critical
+      # Ferme la 2e moitié du contrat de parité : sector-catalog-parity.spec.ts épingle le
+      # catalogue statique frontend contre sa COPIE du snapshot backend, mais ne peut pas
+      # atteindre le fichier backend (hors du rootDir Angular). Ce script compare la copie
+      # au fichier qui fait foi — sans lui, une dérive entre les deux arbres passe inaperçue.
+      - name: Parité catalogue sectoriel (backend ↔ fixture frontend)
+        run: node ../../../scripts/ci/check-sector-catalog-parity.mjs
       - name: Specs Jasmine (headless)
         run: npx ng test --watch=false --browsers=ChromeHeadless
       - name: Build production
@@ -98,6 +113,20 @@ jobs:
       - name: Register CI test user
         run: bash scripts/ci/e2e-register-user.sh
         working-directory: .
+      - name: Upload API e2e log on failure
+        if: failure()
+        run: |
+          if [ -f api-e2e.log ]; then
+            sed -E 's/(Password=)[^;]*/\1***REDACTED***/gi' api-e2e.log > api-e2e-sanitized.log
+          fi
+        working-directory: .
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: api-e2e-log
+          path: api-e2e-sanitized.log
+          retention-days: 7
+        continue-on-error: true
       - name: Verify API listens on loopback HTTP only
         run: |
           mapfile -t listeners < <(sed -n 's/^.*Now listening on: //p' api-e2e.log)

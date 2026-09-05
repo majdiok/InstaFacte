@@ -9,6 +9,9 @@ public static class ReportingPeriodResolver
     public const string PresetCurrentQuarter = "current_quarter";
     public const string PresetLast30Days = "last_30_days";
     public const string PresetYearToDate = "year_to_date";
+    /// <summary>Fenêtre pluriannuelle : indispensable à un état regroupé PAR ANNÉE, qu'« année en
+    /// cours » réduirait à une seule ligne.</summary>
+    public const string PresetLastFiveYears = "last_5_years";
     public const string PresetCurrentMonth = "current_month";
     public const string PresetLastMonth = "last_month";
     public const string PresetLast7Days = "last_7_days";
@@ -21,6 +24,7 @@ public static class ReportingPeriodResolver
         PresetCurrentQuarter,
         PresetLast30Days,
         PresetYearToDate,
+        PresetLastFiveYears,
         PresetCurrentMonth,
         PresetLastMonth,
         PresetLast7Days,
@@ -50,6 +54,7 @@ public static class ReportingPeriodResolver
             PresetCurrentQuarter => ResolveCurrentQuarter(today),
             PresetLast30Days => ResolveLast30Days(today),
             PresetYearToDate => ResolveYearToDate(today),
+            PresetLastFiveYears => ResolveLastFiveYears(today),
             PresetCurrentMonth => ResolveCurrentMonth(today),
             PresetLastMonth => ResolveLastMonth(today),
             PresetLast7Days => ResolveLast7Days(today),
@@ -98,6 +103,13 @@ public static class ReportingPeriodResolver
     {
         var from = new DateOnly(today.Year, 1, 1);
         return new ReportingPeriodResolution(from, today, $"Depuis le 1er janvier {today.Year}");
+    }
+
+    /// <summary>Année en cours plus les quatre précédentes, en années civiles pleines.</summary>
+    private static ReportingPeriodResolution ResolveLastFiveYears(DateOnly today)
+    {
+        var from = new DateOnly(today.Year - 4, 1, 1);
+        return new ReportingPeriodResolution(from, today, $"5 dernières années ({from.Year} — {today.Year})");
     }
 
     private static ReportingPeriodResolution ResolveCurrentMonth(DateOnly today)

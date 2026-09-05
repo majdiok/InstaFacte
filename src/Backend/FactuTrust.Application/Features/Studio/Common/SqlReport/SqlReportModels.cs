@@ -36,8 +36,13 @@ public interface ISqlReportEngine
     Task<Result<IReadOnlyList<ReportFieldMeta>>> DescribeAsync(
         Guid tenantId, string factTable, CancellationToken cancellationToken = default);
 
-    /// <summary>Exécute l'état. Agrégation faite par SQL : les totaux sont exacts, jamais tronqués.</summary>
+    /// <summary>
+    /// Exécute l'état. Agrégation faite par SQL : les totaux sont exacts, jamais tronqués.
+    /// <paramref name="presetKey"/> — quand la définition vient d'un état prêt à l'emploi, sa clé :
+    /// le moteur vérifie alors que le préréglage se résout ENTIÈREMENT sur le schéma et les droits
+    /// de l'utilisateur, et refuse plutôt que de l'exécuter à moitié.
+    /// </summary>
     Task<Result<ReportResultDto>> RunAsync(
         Guid tenantId, string factTable, ReportDefinition definition, int? maxRows = null,
-        CancellationToken cancellationToken = default);
+        string? presetKey = null, CancellationToken cancellationToken = default);
 }

@@ -294,3 +294,77 @@
     white-space: nowrap;
   }
 }
+
+/* Profilage (lot 3) — questions facultatives affinant la pré-sélection des modules. */
+.profiling-block {
+  margin-bottom: 1.25rem;
+  padding: 0.9rem 1rem 1rem;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: 12px;
+  background: var(--color-neutral-50);
+}
+
+.profiling-intro {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.85rem;
+  font-size: 0.82rem;
+  color: var(--color-neutral-600);
+
+  i {
+    color: var(--color-primary-500);
+  }
+}
+
+.profiling-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.85rem 1.25rem;
+}
+
+.profiling-q {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.profiling-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-neutral-700);
+}
+
+.profiling-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.profiling-choices .choice {
+  padding: 0.32rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-neutral-600);
+  background: #fff;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: 50px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    border-color: var(--color-primary-300);
+    color: var(--color-primary-600);
+  }
+
+  &.on {
+    color: #fff;
+    background: var(--color-primary-500);
+    border-color: var(--color-primary-500);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary-400);
+    outline-offset: 2px;
+  }
+}

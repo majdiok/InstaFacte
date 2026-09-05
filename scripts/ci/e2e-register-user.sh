@@ -2,6 +2,8 @@
 # Inscription idempotente d'un utilisateur tenant pour les smoke tests Playwright en CI.
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+LOG_FILE="${ROOT}/api-e2e.log"
 API_BASE="${E2E_API_BASE:-https://localhost:7001}"
 EMAIL="${FACTUTRUST_TEST_EMAIL:-ci-e2e-smoke@factutrust.local}"
 PASSWORD="${FACTUTRUST_TEST_PASSWORD:-Ci_E2e_Smoke_Pw1!Xy}"
@@ -80,6 +82,10 @@ EOF
     ;;
   *)
     echo "Unexpected registration status ${http_code}." >&2
+    if [ -f "$LOG_FILE" ]; then
+      echo "--- Last 80 lines of api-e2e.log ---" >&2
+      tail -n 80 "$LOG_FILE" >&2 || true
+    fi
     exit 1
     ;;
 esac

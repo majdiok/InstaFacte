@@ -54,7 +54,7 @@ public sealed class PayrollAuxiliaryAccountShapeTests
 
     [Theory]
     [InlineData("4250001")]
-    [InlineData("4258744456")]
+    [InlineData("42500019")]
     public void Employee_AcceptsSubAccountsOfTheCollective(string account)
     {
         var employee = BuildEmployee();
@@ -66,10 +66,12 @@ public sealed class PayrollAuxiliaryAccountShapeTests
     }
 
     [Theory]
-    [InlineData("425")]        // le collectif lui-même n'est pas un auxiliaire
-    [InlineData("4210001")]    // hors de la branche « rémunérations dues »
-    [InlineData("425.1")]      // un compte de salarié doit rester strictement numérique
+    [InlineData("425")]         // le collectif lui-même n'est pas un auxiliaire
+    [InlineData("4210001")]     // hors de la branche « rémunérations dues »
+    [InlineData("425.1")]       // un compte de salarié doit rester strictement numérique
     [InlineData("EMP-01")]
+    [InlineData("4258744456")]  // forme héritée : 10 chiffres, au-delà du plafond
+    [InlineData("4259655554")]  // le compte vu en production
     public void Employee_RejectsAccountsOutsideTheCollective(string account)
     {
         var result = BuildEmployee().SetAuxiliaryAccountNumber(account);
@@ -102,46 +104,49 @@ public sealed class PayrollAuxiliaryAccountShapeTests
         Assert.Equal("4250001", run.Payslips.First().EmployeeAuxiliaryAccount);
     }
 
+    /// <summary>
+    /// Le point du correctif : sans compte sur la fiche, le domaine ne dérive plus rien du matricule.
+    /// Il refuse, en nommant le salarié — c'est la couche Application qui alloue avant d'appeler.
+    /// </summary>
     [Fact]
-    public void Freeze_WithoutAssignment_KeepsTheHistoricalDerivation()
+    public void Freeze_WithoutAssignment_RefusesInsteadOfDeriving()
     {
-        // Test de non-régression central : un dossier dont aucune fiche ne porte de compte alloué
-        // doit produire exactement les mêmes comptes qu'avant l'introduction du champ.
         var run = BuildRun(("EMP-8744456", "Karim Soumi"));
 
         var withEmptyMap = run.FreezeEmployeeAuxiliaryAccounts(new Dictionary<Guid, string?>());
 
-        Assert.True(withEmptyMap.IsSuccess);
-        Assert.Equal(
-            PayrollEmployeeAuxiliaryAccountResolver.Resolve("EMP-8744456"),
-            run.Payslips.First().EmployeeAuxiliaryAccount);
+        Assert.True(withEmptyMap.IsFailure);
+        Assert.Contains("Karim Soumi", withEmptyMap.Error.Description);
+        Assert.Null(run.Payslips.First().EmployeeAuxiliaryAccount);
     }
 
     [Fact]
-    public void Freeze_WithNullMap_KeepsTheHistoricalDerivation()
+    public void Freeze_WithNullMap_RefusesInsteadOfDeriving()
     {
         var run = BuildRun(("EMP-9655554", "Sana Chahlaoui"));
 
-        Assert.True(run.FreezeEmployeeAuxiliaryAccounts().IsSuccess);
-        Assert.Equal("4259655554", run.Payslips.First().EmployeeAuxiliaryAccount);
+        var result = run.FreezeEmployeeAuxiliaryAccounts();
+
+        Assert.True(result.IsFailure);
+        // L'ancien comportement figeait ici 4259655554, le compte hors norme vu en production.
+        Assert.Null(run.Payslips.First().EmployeeAuxiliaryAccount);
     }
 
     [Fact]
-    public void Freeze_AssignedAccounts_ResolveACollisionThatDerivationWouldCause()
+    public void Freeze_AllocatedAccounts_AvoidTheCollisionDerivationWouldCause()
     {
-        // « 1 » et « 0000001 » dérivent tous deux vers 4250000001 : allouer un compte explicite à
-        // l'un des deux débloque la validation, ce que le message d'erreur recommande.
+        // « 1 » et « 0000001 » dérivaient tous deux vers 4250000001 ; l'allocation séquentielle
+        // donne deux comptes distincts, tous deux conformes.
         var run = BuildRun(("1", "Alice"), ("0000001", "Bob"));
-        var bob = run.Payslips.Last().EmployeeId;
+        var ids = run.Payslips.Select(p => p.EmployeeId).ToList();
 
-        var blocked = run.FreezeEmployeeAuxiliaryAccounts();
-        Assert.True(blocked.IsFailure);
-        Assert.Contains("compte auxiliaire distinct", blocked.Error.Description);
+        var result = run.FreezeEmployeeAuxiliaryAccounts(new Dictionary<Guid, string?>
+        {
+            [ids[0]] = "4250001",
+            [ids[1]] = "4250002"
+        });
 
-        var unblocked = run.FreezeEmployeeAuxiliaryAccounts(
-            new Dictionary<Guid, string?> { [bob] = "4250002" });
-
-        Assert.True(unblocked.IsSuccess, unblocked.IsFailure ? unblocked.Error.Description : null);
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : null);
         Assert.Equal(
             2,
             run.Payslips.Select(p => p.EmployeeAuxiliaryAccount).Distinct(StringComparer.Ordinal).Count());

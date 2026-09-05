@@ -106,7 +106,7 @@ public sealed partial class AiToolExecutor
             return AiToolResult.Error(parseError ?? "Spécification d'état invalide.");
 
         var (factTable, definition) = StudioAiReportSpec.Materialize(spec);
-        var run = await _sqlReports!.RunAsync(tenantId, factTable, definition, ReportChatRows, ct);
+        var run = await _sqlReports!.RunAsync(tenantId, factTable, definition, ReportChatRows, spec.PresetKey, ct);
         if (!run.IsSuccess)
             return AiToolResult.Error(run.Error.Description);
 
@@ -117,6 +117,15 @@ public sealed partial class AiToolExecutor
             source = factTable,
             sourceLabel = SqlReportAccessPolicy.Describe(factTable)?.DisplayName ?? factTable,
             preset = spec.PresetKey,
+            // Période retenue, au format attendu par l'humanisation déterministe ({from, to}) : sans
+            // elle, un résumé ne peut pas dire SUR QUOI portent les chiffres.
+            period = spec.From is null && spec.To is null
+                ? null
+                : new
+                {
+                    from = spec.From?.ToString("yyyy-MM-dd"),
+                    to = spec.To?.ToString("yyyy-MM-dd")
+                },
             result = run.Value,
             warnings = spec.Warnings,
             message = run.Value.TotalRows == 0
@@ -145,7 +154,7 @@ public sealed partial class AiToolExecutor
         var (factTable, definition) = StudioAiReportSpec.Materialize(spec);
 
         // L'échantillon vaut aussi validation : si l'état ne s'exécute pas, on ne propose pas de plan.
-        var sample = await _sqlReports!.RunAsync(tenantId, factTable, definition, ReportPlanSampleRows, ct);
+        var sample = await _sqlReports!.RunAsync(tenantId, factTable, definition, ReportPlanSampleRows, spec.PresetKey, ct);
         if (!sample.IsSuccess)
             return AiToolResult.Error(sample.Error.Description);
 

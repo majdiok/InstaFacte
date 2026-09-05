@@ -2,11 +2,15 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Common.Validation;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Products;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services;
 using FactuTrust.Domain.ValueObjects;
+using Microsoft.Extensions.Options;
 using AuditActions = FactuTrust.Domain.Entities.AuditActions;
 using FluentValidation;
 using MediatR;
@@ -55,6 +59,7 @@ public sealed class CreateProductCommandHandler : IRequestHandler<CreateProductC
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
     private readonly ITenantContext _tenantContext;
+    private readonly StockTraceabilityOptions _traceabilityOptions;
 
     public CreateProductCommandHandler(
         IProductRepository productRepository,
@@ -63,7 +68,8 @@ public sealed class CreateProductCommandHandler : IRequestHandler<CreateProductC
         IUnitOfWork unitOfWork,
         ICurrentUser currentUser,
         IAuditService auditService,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IOptions<StockTraceabilityOptions> traceabilityOptions)
     {
         _productRepository = productRepository;
         _productCategoryRepository = productCategoryRepository;
@@ -72,6 +78,7 @@ public sealed class CreateProductCommandHandler : IRequestHandler<CreateProductC
         _currentUser = currentUser;
         _auditService = auditService;
         _tenantContext = tenantContext;
+        _traceabilityOptions = traceabilityOptions.Value;
     }
 
     public async Task<Result<Guid>> Handle(CreateProductCommand request, CancellationToken cancellationToken)
@@ -151,12 +158,26 @@ public sealed class CreateProductCommandHandler : IRequestHandler<CreateProductC
                 return Result.Failure<Guid>(template.Error);
         }
 
+        var traceState = ProductTraceabilityRules.ValidateAndNormalize(
+            product.Type,
+            product.IsStockManaged,
+            ProductTraceabilityFeatureMapper.ToDomainFlags(_traceabilityOptions),
+            new ProductTraceabilityState(
+                dto.TrackingMode,
+                dto.HasExpiryTracking,
+                dto.PickingPolicy,
+                dto.CostingMethod,
+                dto.ExpiryAlertDays));
+        if (traceState.IsFailure)
+            return Result.Failure<Guid>(traceState.Error);
+
+        var normalized = traceState.Value;
         var trace = product.ConfigureTraceability(
-            dto.TrackingMode,
-            dto.HasExpiryTracking,
-            dto.PickingPolicy,
-            dto.CostingMethod,
-            dto.ExpiryAlertDays);
+            normalized.TrackingMode,
+            normalized.HasExpiryTracking,
+            normalized.PickingPolicy,
+            normalized.CostingMethod,
+            normalized.ExpiryAlertDays);
         if (trace.IsFailure)
             return Result.Failure<Guid>(trace.Error);
 

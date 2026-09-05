@@ -62,6 +62,30 @@ public sealed class Tenant : AggregateRoot
     /// </summary>
     public string? SectorCatalogVersion { get; private set; }
 
+    /// <summary>
+    /// Réponses de profilage saisies à l'inscription (lot 3) — toutes facultatives : <c>null</c>
+    /// signifie « question non posée ou sans réponse », jamais « non ».
+    ///
+    /// Elles ne gouvernent AUCUN droit : la résolution serveur des modules
+    /// (<c>SectorModuleSetCalculator</c> : plafond du plan, fermeture des dépendances, rejet de
+    /// <c>Honoraires</c>) est inchangée et reste seule décisionnaire. Elles sont conservées pour
+    /// (a) rejouer la recommandation lors d'un changement de secteur en libre-service, et
+    /// (b) alimenter plus tard la boucle de calibrage « recommandé vs retenu vs utilisé ».
+    /// </summary>
+    public bool? HasPhysicalStock { get; private set; }
+
+    /// <summary>Vend à des particuliers (B2C) — voir <see cref="HasPhysicalStock"/>.</summary>
+    public bool? SellsToConsumers { get; private set; }
+
+    /// <summary>Tranche d'effectif normalisée : "1", "2-9", "10-49" ou "50+". Voir <see cref="HasPhysicalStock"/>.</summary>
+    public string? HeadcountBand { get; private set; }
+
+    /// <summary>Comptabilité tenue par un cabinet externe — voir <see cref="HasPhysicalStock"/>.</summary>
+    public bool? AccountingDelegatedToFirm { get; private set; }
+
+    /// <summary>Tranches d'effectif acceptées — liste blanche fermée (aucun texte libre n'est persisté).</summary>
+    public static readonly IReadOnlyList<string> AllowedHeadcountBands = new[] { "1", "2-9", "10-49", "50+" };
+
     private Tenant() { }
 
     public static Result<Tenant> Create(
@@ -224,6 +248,31 @@ public sealed class Tenant : AggregateRoot
     }
 
     /// <summary>Plan §2.1 — records the catalog version tag active when the sector classification was last resolved. Null clears it.</summary>
+    /// <summary>
+    /// Enregistre les réponses de profilage de l'inscription (lot 3). Purement additif : un appel
+    /// avec tout à <c>null</c> laisse le tenant dans l'état d'un espace créé sans profilage, donc
+    /// strictement identique au comportement d'avant ce lot.
+    ///
+    /// <paramref name="headcountBand"/> est validé contre <see cref="AllowedHeadcountBands"/> :
+    /// une valeur inconnue est traitée comme absente (null) plutôt que persistée. Aucun texte libre
+    /// venu du client n'atteint donc la base par ce chemin.
+    /// </summary>
+    public void SetRegistrationProfile(
+        bool? hasPhysicalStock,
+        bool? sellsToConsumers,
+        string? headcountBand,
+        bool? accountingDelegatedToFirm)
+    {
+        HasPhysicalStock = hasPhysicalStock;
+        SellsToConsumers = sellsToConsumers;
+        AccountingDelegatedToFirm = accountingDelegatedToFirm;
+
+        var trimmed = headcountBand?.Trim();
+        HeadcountBand = !string.IsNullOrEmpty(trimmed) && AllowedHeadcountBands.Contains(trimmed, StringComparer.Ordinal)
+            ? trimmed
+            : null;
+    }
+
     public void SetSectorCatalogVersion(string? catalogVersionTag)
     {
         if (string.IsNullOrWhiteSpace(catalogVersionTag))

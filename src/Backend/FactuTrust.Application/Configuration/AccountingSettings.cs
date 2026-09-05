@@ -371,4 +371,18 @@ public sealed class AccountingSettings
     /// création : la déclaration mensuelle restitue toujours la TVA caisse déjà comptabilisée (436711).
     /// </summary>
     public bool CashDeskVatEnabled { get; set; }
+
+    /// <summary>
+    /// Numéros de compte SCE portés par la configuration, pour un contrôle de forme au démarrage.
+    /// </summary>
+    /// <remarks>
+    /// Volontairement limité aux clés qui désignent un compte du plan comptable : ce sont elles qui
+    /// finissent en <c>ChartOfAccount.Create</c>, lequel refuse désormais un numéro hors norme.
+    /// </remarks>
+    public IEnumerable<(string Key, string? Value)> ConfiguredAccountNumbers()
+    {
+        yield return (nameof(PayrollEmployeeLoansAccount), PayrollEmployeeLoansAccount);
+        yield return (nameof(PayrollGarnishmentsAccount), PayrollGarnishmentsAccount);
+        yield return (nameof(PayrollMutuelleEmployeeAccount), PayrollMutuelleEmployeeAccount);
+    }
 }

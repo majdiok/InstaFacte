@@ -7,10 +7,14 @@ namespace FactuTrust.Infrastructure.Tests.Application.Payroll;
 
 public sealed class PayrollPaymentDomainTests
 {
+    /// <summary>
+    /// La forme héritée reste calculable pour reconnaître un compte 425xxxxxxx existant ; elle n'est
+    /// plus utilisée pour en créer un.
+    /// </summary>
     [Fact]
-    public void AuxiliaryAccountResolver_PadsEmployeeNumber()
+    public void LegacyAuxiliaryAccountShape_PadsEmployeeNumber()
     {
-        var account = PayrollEmployeeAuxiliaryAccountResolver.Resolve("1");
+        var account = PayrollEmployeeAuxiliaryAccountResolver.ResolveLegacy("1");
         Assert.Equal("4250000001", account);
     }
 

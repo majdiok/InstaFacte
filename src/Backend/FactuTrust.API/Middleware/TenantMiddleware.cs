@@ -161,7 +161,7 @@ public sealed class TenantMiddleware
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
             context.Response.ContentType = "application/json; charset=utf-8";
             await context.Response.WriteAsync(JsonSerializer.Serialize(
-                ApiResponse<object>.Fail(migrationResult.Error.Description, "TENANT_MIGRATION_FAILED"),
+                ApiResponse<object>.Fail(migrationResult.Error.Description, ValidationErrorCodes.TenantMigrationFailed),
                 new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
             return;
         }

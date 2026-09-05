@@ -6,6 +6,7 @@ using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Common.SqlReport;
 using FactuTrust.Domain.Common;
 using FactuTrust.Infrastructure.MultiTenancy;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -63,7 +64,7 @@ public sealed class SqlReportEngine : ISqlReportEngine
 
     public async Task<Result<ReportResultDto>> RunAsync(
         Guid tenantId, string factTable, ReportDefinition definition, int? maxRows = null,
-        CancellationToken cancellationToken = default)
+        string? presetKey = null, CancellationToken cancellationToken = default)
     {
         if (!_settings.EnableStudioSqlReportEngine)
             return Result.Failure<ReportResultDto>(
@@ -72,6 +73,19 @@ public sealed class SqlReportEngine : ISqlReportEngine
         var snapshotResult = await BuildSnapshotAsync(tenantId, factTable, cancellationToken);
         if (!snapshotResult.IsSuccess)
             return Result.Failure<ReportResultDto>(snapshotResult.Error);
+
+        // Un préréglage est TOUT ou RIEN. Si une seule des données qu'il utilise manque — schéma
+        // différent, ou permission absente sur une table traversée — l'exécuter partiellement
+        // rendrait des chiffres FAUX présentés comme justes. Le catalogue le dit : un état faux
+        // coûte plus cher qu'un état absent.
+        if (presetKey is not null
+            && SqlReportPresetCatalog.Find(presetKey) is { } preset
+            && !SqlReportPresetCatalog.ResolvesAgainst(preset, snapshotResult.Value))
+        {
+            return Result.Failure<ReportResultDto>(Error.Validation("definition",
+                $"L'état « {preset.DisplayName} » n'est pas disponible sur cette base : une donnée " +
+                "qu'il utilise est absente, ou vous n'avez pas accès à l'une des tables concernées."));
+        }
 
         var limit = Math.Clamp(maxRows ?? _settings.StudioReportMaxRows, 1, HardMaxRows);
         if (!SqlReportSqlBuilder.TryBuild(snapshotResult.Value, definition, limit, out var query, out var buildError))
@@ -82,26 +96,45 @@ public sealed class SqlReportEngine : ISqlReportEngine
         await EnsureOpenAsync(connection, cancellationToken);
 
         var rows = new List<IReadOnlyDictionary<string, object?>>();
-        await using (var command = connection.CreateCommand())
+        int total;
+        try
         {
-            command.CommandText = query!.Sql;
-            command.CommandTimeout = Math.Clamp(_settings.StudioReportCommandTimeoutSeconds, 5, 300);
-            AddParameters(command, query.Parameters);
-
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
+            await using (var command = connection.CreateCommand())
             {
-                var row = new Dictionary<string, object?>(StringComparer.Ordinal);
-                for (var i = 0; i < reader.FieldCount; i++)
+                command.CommandText = query!.Sql;
+                command.CommandTimeout = Math.Clamp(_settings.StudioReportCommandTimeoutSeconds, 5, 300);
+                AddParameters(command, query.Parameters);
+
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
                 {
-                    var value = await reader.IsDBNullAsync(i, cancellationToken) ? null : reader.GetValue(i);
-                    row[reader.GetName(i)] = NormalizeValue(value);
+                    var row = new Dictionary<string, object?>(StringComparer.Ordinal);
+                    for (var i = 0; i < reader.FieldCount; i++)
+                    {
+                        var value = await reader.IsDBNullAsync(i, cancellationToken) ? null : reader.GetValue(i);
+                        row[reader.GetName(i)] = NormalizeValue(value);
+                    }
+                    rows.Add(row);
                 }
-                rows.Add(row);
             }
+
+            total = await CountAsync(connection, query!, cancellationToken);
+        }
+        catch (DbException ex)
+        {
+            // Le message du moteur nomme des tables, des colonnes et parfois la requête entière : il
+            // a sa place dans les journaux, jamais dans le navigateur ni dans l'historique de
+            // conversation. L'utilisateur reçoit une phrase actionnable, l'exploitant garde le détail.
+            _logger.LogError(ex,
+                "Studio SQL report failed tenant={TenantId} table={Table} sql={Sql}",
+                tenantId, factTable, query!.Sql);
+
+            var isTimeout = ex is SqlException { Number: -2 };
+            return Result.Failure<ReportResultDto>(Error.Validation("definition", isTimeout
+                ? "Le calcul de l'état a dépassé le délai imparti. Restreignez la période ou le nombre de colonnes."
+                : "L'état n'a pas pu être calculé sur cette source."));
         }
 
-        var total = await CountAsync(connection, query!, cancellationToken);
         var truncated = total > rows.Count;
 
         _logger.LogInformation(
@@ -164,38 +197,66 @@ public sealed class SqlReportEngine : ISqlReportEngine
     {
         var added = new List<string>();
 
-        foreach (var column in fromColumns)
+        foreach (var link in CandidateLinks(from, fromColumns))
         {
             if (budget <= 0)
                 break;
-            if (column.ForeignKey is not { } fk)
-                continue;
 
             // Une table liée doit elle aussi être classée ET autorisée pour cet utilisateur.
-            if (!SqlReportAccessPolicy.TryAuthorize(fk.ReferencedTable, _currentUser.HasPermission, out var access, out _))
+            if (!SqlReportAccessPolicy.TryAuthorize(link.ToTable, _currentUser.HasPermission, out var access, out _))
                 continue;
 
             var target = access!.Table;
             if (string.Equals(target, from, StringComparison.OrdinalIgnoreCase))
                 continue; // auto-référence : inutile pour un état
 
-            var edge = new SqlReportJoinEdge(from, column.Name, target, fk.ReferencedColumn);
+            if (!columnsByTable.TryGetValue(target, out var targetColumns))
+            {
+                var loaded = await LoadColumnsAsync(tenantId, target, ct);
+                if (loaded is null)
+                    continue; // table absente de la base : ne pas créer d'arête vers le vide
+
+                columnsByTable[target] = loaded;
+                targetColumns = loaded;
+                added.Add(target);
+                budget--;
+            }
+
+            // La colonne référencée doit exister RÉELLEMENT : c'est ce qui rend une relation
+            // déclarée aussi sûre qu'une clé étrangère, et ce qui protège des dérives de schéma.
+            if (!targetColumns.Any(c => string.Equals(c.Name, link.ToColumn, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            var edge = new SqlReportJoinEdge(from, link.FromColumn, target, link.ToColumn);
             if (!edges.Any(e => e.FromTable == edge.FromTable && e.FromColumn == edge.FromColumn && e.ToTable == edge.ToTable))
                 edges.Add(edge);
-
-            if (columnsByTable.ContainsKey(target))
-                continue;
-
-            var targetColumns = await LoadColumnsAsync(tenantId, target, ct);
-            if (targetColumns is null)
-                continue;
-
-            columnsByTable[target] = targetColumns;
-            added.Add(target);
-            budget--;
         }
 
         return added;
+    }
+
+    /// <summary>
+    /// Liens exploitables au départ d'une table : d'abord les clés étrangères RÉELLES du schéma,
+    /// puis les relations métier DÉCLARÉES (<see cref="SqlReportLogicalRelations"/>) dont la colonne
+    /// source existe bien et ne porte pas déjà de contrainte. Les secondes ne remplacent jamais les
+    /// premières — elles ne comblent que ce que la base ne matérialise pas.
+    /// </summary>
+    private static IEnumerable<(string FromColumn, string ToTable, string ToColumn)> CandidateLinks(
+        string from, IReadOnlyList<SqlColumnInfo> fromColumns)
+    {
+        foreach (var column in fromColumns)
+        {
+            if (column.ForeignKey is { } fk)
+                yield return (column.Name, fk.ReferencedTable, fk.ReferencedColumn);
+        }
+
+        foreach (var relation in SqlReportLogicalRelations.From(from))
+        {
+            var column = fromColumns.FirstOrDefault(
+                c => string.Equals(c.Name, relation.FromColumn, StringComparison.OrdinalIgnoreCase));
+            if (column is not null && column.ForeignKey is null)
+                yield return (column.Name, relation.ToTable, relation.ToColumn);
+        }
     }
 
     private async Task<IReadOnlyList<SqlColumnInfo>?> LoadColumnsAsync(Guid tenantId, string table, CancellationToken ct)

@@ -8,8 +8,9 @@ namespace FactuTrust.Application.Common.Interfaces.Services;
 /// <remarks>
 /// Pendant salarié de <see cref="IBankAccountChartProvisioningService"/> : même principe
 /// d'allocation séquentielle sous un compte collectif, même typage auxiliaire, et un libellé qui
-/// identifie le tiers. Il remplace la dérivation par troncature du matricule
-/// (<c>PayrollEmployeeAuxiliaryAccountResolver</c>), qui reste le repli des salariés antérieurs.
+/// identifie le tiers. Il a <b>remplacé</b> la dérivation par troncature du matricule, supprimée du
+/// chemin d'écriture : elle produisait un numéro de 10 chiffres et pouvait faire collisionner deux
+/// salariés sur une même dette de salaire.
 /// </remarks>
 public interface IPayrollEmployeeChartProvisioningService
 {

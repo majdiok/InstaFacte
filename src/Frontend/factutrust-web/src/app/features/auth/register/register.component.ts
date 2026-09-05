@@ -140,7 +140,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
 
   readonly governorates = GOVERNORATE_OPTIONS;
 
-  showPartnerCode = signal(false);
 
   form: FormGroup = this.fb.group({
     // Step 1: Account
@@ -153,8 +152,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
       Validators.pattern(AUTH_PASSWORD_VALIDATORS_PATTERN)
     ]],
     confirmPassword: ['', Validators.required],
-    // Optional; not sent to API until backend supports it (TODO: add partnerCode to RegisterRequest when API is ready)
-    partnerCode: [''],
     acceptTerms: [false, Validators.requiredTrue],
     // Step 2: Company
     companyName: ['', [Validators.required, Validators.minLength(2)]],

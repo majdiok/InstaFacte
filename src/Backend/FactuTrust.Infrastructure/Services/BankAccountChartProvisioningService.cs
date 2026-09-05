@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services.Accounting;
 using FactuTrust.Infrastructure.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,6 +13,10 @@ public sealed class BankAccountChartProvisioningService : IBankAccountChartProvi
 {
     private const string DefaultParentTnd = "5321";
     private const string DefaultParentFx = "5324";
+
+    /// <summary>Longueur du suffixe séquentiel : 5321 + 4 chiffres = 8, le plafond exact.</summary>
+    private const int SuffixLength = 4;
+    private const string SuffixFormat = "0000";
 
     private readonly ITenantDbContextFactory _contextFactory;
 
@@ -47,6 +52,11 @@ public sealed class BankAccountChartProvisioningService : IBankAccountChartProvi
                 $"Le compte parent {parent} est absent du plan comptable."));
 
         var nextNumber = await AllocateNextAuxiliaryNumberAsync(ctx, parent, cancellationToken);
+        if (nextNumber is null)
+            return Result.Failure<string?>(Error.Validation("ChartOfAccount",
+                $"Plus aucun compte auxiliaire libre sous {parent} : la numérotation est saturée "
+                + $"dans la limite de {AccountNumberRules.MaxDigits} chiffres."));
+
         var label = BuildLabel(bankAccount);
         var create = ChartOfAccount.Create(
             nextNumber,
@@ -101,23 +111,38 @@ public sealed class BankAccountChartProvisioningService : IBankAccountChartProvi
         return "…" + rib[^4..];
     }
 
-    private static async Task<string> AllocateNextAuxiliaryNumberAsync(
+    /// <summary>
+    /// Premier suffixe à quatre chiffres libre sous <paramref name="parent"/>, ou <c>null</c> quand
+    /// la numérotation est saturée.
+    /// </summary>
+    /// <remarks>
+    /// On repart du premier suffixe libre au lieu de « le plus grand + 1 » : « 0000 » est un format
+    /// de largeur <b>minimale</b>, pas une troncature, si bien que l'ancienne version débordait à
+    /// 9 caractères passé 9 999 comptes — au-delà du plafond de
+    /// <see cref="AccountNumberRules.MaxDigits"/> chiffres.
+    /// </remarks>
+    private static async Task<string?> AllocateNextAuxiliaryNumberAsync(
         Persistence.TenantDbContext ctx, string parent, CancellationToken cancellationToken)
     {
-        var existing = await ctx.ChartOfAccounts.AsNoTracking()
-            .Where(a => a.AccountNumber.StartsWith(parent))
-            .Select(a => a.AccountNumber)
-            .ToListAsync(cancellationToken);
+        var taken = (await ctx.ChartOfAccounts.AsNoTracking()
+                .Where(a => a.AccountNumber.StartsWith(parent))
+                .Select(a => a.AccountNumber)
+                .ToListAsync(cancellationToken))
+            .ToHashSet(StringComparer.Ordinal);
 
-        var maxSuffix = 0;
-        foreach (var acc in existing)
+        var suffixLength = AccountNumberRules.MaxDigits - AccountNumberRules.DigitCount(parent);
+        if (suffixLength < SuffixLength)
+            return null;
+
+        var max = (int)Math.Pow(10, SuffixLength) - 1;
+        for (var i = 1; i <= max; i++)
         {
-            if (acc.Length <= parent.Length) continue;
-            if (int.TryParse(acc[parent.Length..], out var suffix))
-                maxSuffix = Math.Max(maxSuffix, suffix);
+            var candidate = parent
+                + i.ToString(SuffixFormat, System.Globalization.CultureInfo.InvariantCulture);
+            if (!taken.Contains(candidate))
+                return candidate;
         }
 
-        var next = maxSuffix + 1;
-        return parent + next.ToString("0000", System.Globalization.CultureInfo.InvariantCulture);
+        return null;
     }
 }

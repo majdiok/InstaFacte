@@ -1,6 +1,7 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Domain.Billing;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.SectorConfiguration;
 using FactuTrust.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -74,8 +75,30 @@ public sealed class DbPlanResolver : IPlanResolver
         return fallback;
     }
 
+    /// <summary>
+    /// Modules cœur (Clients, Produits, Ventes, Trésorerie, Rapports, Paramètres) — jamais soumis
+    /// au plafond du plan. Le produit les traite déjà comme non négociables partout ailleurs :
+    /// l'assistant d'inscription les présente en « Inclus dans votre espace » sans interrupteur,
+    /// <c>CompanyModuleReconfigurationValidator.ValidateCoreModules</c> refuse de les désactiver, et
+    /// <c>/settings/modules</c> les affiche avec le badge « Cœur ».
+    ///
+    /// La règle est portée ICI, dans l'unique garde que tous les appelants traversent déjà
+    /// (<c>SectorModuleSetCalculator</c>, <c>CompanyModulesController</c>, <c>TenantUsersController</c>),
+    /// et non dans le calculateur : celui-ci documente à juste titre qu'il ne doit jamais forcer un
+    /// module en contournant le plafond, puisque la résolution aval
+    /// (<c>EffectivePermissionsCalculator</c>) ne rejoue jamais <c>IPlanResolver</c>. On ne contourne
+    /// donc pas le gardien — on corrige sa réponse, et tous les consommateurs héritent de la même règle.
+    /// </summary>
+    private static readonly IReadOnlySet<int> CoreModuleIds =
+        SectorConfigurationCatalog.CoreModules.Select(m => (int)m).ToHashSet();
+
     public async Task<bool> IsModuleAllowedAsync(SubscriptionPlan plan, int module, CancellationToken cancellationToken = default)
     {
+        // Une ligne de plan mal configurée ne doit jamais pouvoir produire un espace sans clients,
+        // sans produits ni facturation (voir CoreModuleIds).
+        if (CoreModuleIds.Contains(module))
+            return true;
+
         var dbPlan = await GetPlanByCodeAsync(plan.ToString(), cancellationToken);
         if (dbPlan is not null)
         {

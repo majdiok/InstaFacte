@@ -560,6 +560,10 @@ public sealed class SendChatMessageHandler
         // StudioBuilder : message d'erreur réel d'un outil studio_generate_* en échec, à surfacer
         // déterministiquement (le petit modèle le paraphrase sinon en excuse vague).
         string? studioBuilderToolError = null;
+        // Charge utile de la carte d'échec d'un ÉTAT (distincte de l'erreur de construction Studio).
+        string? studioReportFailureJson = null;
+        // Demande de précision : domaine reconnu, ventilation absente. Court-circuite le modèle.
+        string? studioClarification = null;
         var conversationalFastPath = false;
         var toolsExecutedThisRequest = 0;
         var totalContentCharsStreamed = 0;
@@ -791,6 +795,12 @@ public sealed class SendChatMessageHandler
                 to = period.ToDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
             });
 
+            // Jusqu'ici, aucun log ne nommait le préréglage retenu : diagnostiquer une session
+            // obligeait à déduire l'état à partir du nombre de colonnes SQL. On le nomme.
+            _logger.LogInformation(
+                "AI chat {CorrelationId} studio_report_shortcut preset={Preset} period={Period} save={Save}",
+                correlationId ?? "-", studioReportDetection.PresetKey, period.Label, studioReportDetection.Save);
+
             var reportCallId = Guid.NewGuid().ToString("N")[..12];
             yield return ChatStreamEvent.ToolCallStart(reportTool, reportCallId);
             var reportSw = Stopwatch.StartNew();
@@ -806,7 +816,8 @@ public sealed class SendChatMessageHandler
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Studio report shortcut failed (preset={Preset})", studioReportDetection.PresetKey);
-                reportResult = AiToolResult.Error($"Erreur lors de l'exécution: {ex.Message}");
+                // Le détail technique reste au journal : il nomme des tables et parfois la requête.
+                reportResult = AiToolResult.Error("Le calcul de l'état n'a pas abouti.");
             }
 
             var reportContent = reportResult.Success
@@ -832,13 +843,54 @@ public sealed class SendChatMessageHandler
                 studioBuilderToolError = string.IsNullOrWhiteSpace(reportResult.ErrorMessage)
                     ? "Le calcul de l'état a échoué."
                     : reportResult.ErrorMessage;
+                // Ici, le préréglage et la période tentés sont connus : la carte d'échec peut les
+                // nommer et proposer des reformulations plutôt qu'un simple message rouge.
+                studioReportFailureJson = JsonSerializer.Serialize(
+                    StudioReportFailure.Build(
+                        command.Message, studioBuilderToolError, studioReportDetection.PresetKey, period.Label),
+                    SourcesJsonOptions);
             }
 
             // La période retenue est ANNONCÉE : l'utilisateur doit pouvoir corriger un défaut implicite.
             systemPrompt += $"\n\nPÉRIODE RETENUE : {period.Label}. Annonce-la explicitement dans ta réponse.";
         }
 
-        if (modelRef.Kind == LlmProviderKind.Cursor)
+        // Domaine reconnu mais ventilation absente (« le chiffre d'affaires de l'année en cours ») :
+        // le score reste sous le seuil, donc aucun état n'est exécuté — et jusqu'ici l'utilisateur
+        // recevait « Je n'ai pas pu formuler une réponse complète », ce qui est faux : la demande est
+        // comprise, il manque un axe. On demande, en proposant les ventilations réellement
+        // disponibles. Fidèle à la doctrine du routeur : en cas de doute, on ne devine pas.
+        if (studioReportDetection is null
+            && !conversationalFastPath
+            && assistantMode == AssistantMode.StudioBuilder
+            && StudioReportIntentRouter.LooksLikeReportRequest(command.Message))
+        {
+            var breakdowns = StudioReportIntentRouter.ToPromptSuggestions(
+                StudioReportIntentRouter.SuggestForDomain(command.Message));
+
+            if (breakdowns.Count > 0)
+            {
+                studioClarification =
+                    "J'ai bien compris la demande, mais il me manque la ventilation souhaitée. "
+                    + "Choisissez une répartition : " + string.Join(", ", breakdowns) + ".";
+
+                _logger.LogInformation(
+                    "AI chat {CorrelationId} studio_report_intent_ambiguous suggestions={Count}",
+                    correlationId ?? "-", breakdowns.Count);
+
+                contentCharsPersisted = studioClarification.Length;
+                conversation.AddMessage(MessageRole.Assistant, studioClarification);
+                meaningfulResponseDelivered = true;
+                // Le modèle n'a rien à ajouter : on coupe la boucle LLM et, par voie de conséquence,
+                // la synthèse forcée et le repli déterministe.
+                continueLoop = false;
+
+                yield return ChatStreamEvent.ContentReplace(studioClarification);
+                yield return ChatStreamEvent.SuggestedPromptsEvent(JsonSerializer.Serialize(breakdowns));
+            }
+        }
+
+        if (modelRef.Kind == LlmProviderKind.Cursor && studioClarification is null)
         {
             if (!conversationalFastPath)
             {
@@ -1572,6 +1624,11 @@ public sealed class SendChatMessageHandler
                         studioBuilderToolError = string.IsNullOrWhiteSpace(toolResult.ErrorMessage)
                             ? "Le calcul de l'état a échoué."
                             : toolResult.ErrorMessage;
+                        // Le préréglage tenté n'est pas connu ici (c'est le modèle qui a rédigé la
+                        // spécification) : les suggestions sont déduites du message de l'utilisateur.
+                        studioReportFailureJson = JsonSerializer.Serialize(
+                            StudioReportFailure.Build(command.Message, studioBuilderToolError),
+                            SourcesJsonOptions);
                     }
                     else if ((toolCall.Function.Name == "studio_plan_app" || toolCall.Function.Name == "studio_plan_system")
                         && !toolResult.Success && assistantMode == AssistantMode.StudioBuilder)
@@ -1630,6 +1687,11 @@ public sealed class SendChatMessageHandler
         // final (le ContentReplace recouvre la paraphrase éventuelle du modèle) et couper la synthèse.
         if (studioBuilderToolError is not null)
         {
+            // Un échec d'ÉTAT part dans sa propre carte : l'interface montre ce qui a été tenté et
+            // par quoi le remplacer, au lieu d'une ligne d'erreur déguisée en réponse d'assistant.
+            if (studioReportFailureJson is not null)
+                yield return ChatStreamEvent.StudioReportErrorEvent(studioReportFailureJson);
+
             yield return ChatStreamEvent.ContentReplace(studioBuilderToolError);
             if (!meaningfulResponseDelivered)
             {
@@ -2088,13 +2150,8 @@ public sealed class SendChatMessageHandler
                 toolCallRound);
 
             // Repartir avec des formulations qui fonctionnent plutôt qu'un conseil générique.
-            var suggestions = StudioReportIntentRouter.SuggestPresets(command.Message)
-                .Select(key => SqlReportPresetCatalog.Find(key))
-                .Where(p => p is not null)
-                .Select(p => p!.PeriodFieldKey is not null
-                    ? $"{p.DisplayName} ce mois"
-                    : p.DisplayName)
-                .ToList();
+            var suggestions = StudioReportIntentRouter.ToPromptSuggestions(
+                StudioReportIntentRouter.SuggestPresets(command.Message));
             if (suggestions.Count > 0)
                 yield return ChatStreamEvent.SuggestedPromptsEvent(JsonSerializer.Serialize(suggestions));
         }

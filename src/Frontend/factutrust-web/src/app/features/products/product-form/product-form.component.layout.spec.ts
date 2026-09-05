@@ -181,6 +181,27 @@ describe('ProductFormComponent — layout', () => {
     }
   });
 
+  it('renders reorganized Tarification sub-blocks and enriched price preview', () => {
+    renderAsProductWithSideSections();
+
+    const titles = Array.from(
+      fixture.nativeElement.querySelectorAll('.section-pricing .pricing-subblock-title') as NodeListOf<HTMLElement>
+    ).map(el => el.textContent?.trim());
+
+    expect(titles).toEqual(['Paramètres de vente', 'Montants']);
+
+    const readonlyGroup = fixture.nativeElement.querySelector('.pricing-readonly-group') as HTMLElement;
+    expect(readonlyGroup).toBeTruthy();
+    expect(readonlyGroup.querySelector('#lastPurchasePrice')).toBeTruthy();
+    expect(readonlyGroup.querySelector('#weightedAverageCost')).toBeTruthy();
+
+    const vatEl = fixture.nativeElement.querySelector('#vatRate') as HTMLElement;
+    const ttcEl = fixture.nativeElement.querySelector('#salePriceTtc') as HTMLElement;
+    expect(vatEl.compareDocumentPosition(ttcEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    expect(fixture.nativeElement.querySelector('.price-preview .preview-row.total')).toBeTruthy();
+  });
+
   it('hasSideSections follows the same gates as variants/trace methods', () => {
     component.stockFeatures.set(ALL_SIDE_FEATURES);
     component.form.patchValue({ category: 'Service' });

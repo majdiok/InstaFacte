@@ -227,16 +227,11 @@ public sealed class RecordPayrollRunPaymentCommandHandler
         if (!string.IsNullOrWhiteSpace(payslip.EmployeeAuxiliaryAccount))
             return Result.Success(payslip.EmployeeAuxiliaryAccount!);
 
-        if (!PayrollEmployeeAuxiliaryAccountResolver.CanResolve(payslip.EmployeeNumber))
-        {
-            return Result.Failure<string>(Error.Validation(
-                "EmployeeNumber",
-                $"Le matricule « {payslip.EmployeeNumber} » du salarié {payslip.EmployeeName} ne contient "
-                + "aucun chiffre : impossible de déterminer son compte auxiliaire 425. Corrigez le "
-                + "matricule, puis rouvrez et revalidez le cycle."));
-        }
-
-        return Result.Success(PayrollEmployeeAuxiliaryAccountResolver.Resolve(payslip.EmployeeNumber));
+        // Le paiement suit la maille de la dette, jamais l'inverse. Sans compte figé sur le bulletin,
+        // l'OD du cycle a crédité le compte collectif : le règlement doit le débiter lui, sans quoi
+        // le lettrage n'apparierait rien. L'ancien repli redérivait un numéro depuis le matricule et
+        // visait un compte auxiliaire que l'écriture n'avait jamais crédité.
+        return Result.Success(Employee.PersonnelPayableCollectiveAccount);
     }
 }
 

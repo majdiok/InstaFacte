@@ -497,6 +497,84 @@ SELECT OBJECT_ID('dbo.ClientPortalContacts');
 
 ---
 
+## Erreur « Invalid column name 'EmployeeAuxiliaryEnabled' » à la validation d'un cycle de paie
+
+Si **Valider** sur un cycle de paie (`POST /api/payroll/runs/{id}/validate`) renvoie HTTP **500**, ou si
+l'écran **Paramètres paie** et le **journal de paie** échouent, avec :
+
+- **Message :** `Invalid column name 'EmployeeAuxiliaryEnabled'.`
+- **Cause :** la table `PayrollAccountingSettings` existe **sans** sa colonne `EmployeeAuxiliaryEnabled`,
+  alors que `20260901160000_AddPayrollAccountingSettings_Tenant` est **déjà inscrite** dans
+  `__EFMigrationsHistory`. Cette migration a été appliquée sur une partie du parc dans un état antérieur
+  à l'ajout de la colonne, puis complétée sur place ; EF ne rejoue jamais une migration inscrite.
+
+Toute lecture du réglage échoue donc, et avec elle tout ce qui passe par
+`IPayrollAccountingProfileResolver` : validation d'un cycle, décaissement de prêt salarié, reclassement
+SCE, écran Paramètres paie, drapeaux paie, journal de paie.
+
+**Aucune donnée n'est en jeu.** La validation s'exécute dans une transaction (`TenantUnitOfWork`) : le
+cycle reste `Calculé`, sans état partiel. La table est un singleton par tenant, vide tant que le dossier
+n'a pas été paramétré ; l'ajout de la colonne avec son défaut `1` ne déplace aucune imputation.
+
+### Solution
+
+Appliquer les migrations tenant via l'une des options de la section [Erreur HTTP 503](#erreur-http-503--tenant_migration_failed).
+Le rattrapage est `20260902170000_FixPayrollAccountingSettingsEmployeeAuxiliary_Tenant` : `ALTER` gardé
+par `OBJECT_ID` + `COL_LENGTH`, donc strictement sans effet sur une base saine. Son `Down()` est
+volontairement vide — la colonne appartient à la migration d'origine, qui la supprime avec la table.
+
+**Script idempotent (production / DBA) :** [`docs/runbooks/sql/FixPayrollAccountingSettingsEmployeeAuxiliary_Tenant.idempotent.sql`](runbooks/sql/FixPayrollAccountingSettingsEmployeeAuxiliary_Tenant.idempotent.sql)
+
+**Vérification SQL (une base) :**
+
+```sql
+SELECT MigrationId FROM __EFMigrationsHistory
+WHERE MigrationId LIKE '%FixPayrollAccountingSettingsEmployeeAuxiliary%';
+
+SELECT COL_LENGTH('dbo.PayrollAccountingSettings', 'EmployeeAuxiliaryEnabled') AS ColumnExists;
+```
+
+**Balayage du parc (lecture seule)** — repère les bases où la migration est appliquée mais la colonne
+absente ; ne doit renvoyer aucune ligne après correction :
+
+```sql
+DECLARE @db sysname, @sql nvarchar(max);
+CREATE TABLE #drift (DbName sysname);
+DECLARE c CURSOR FAST_FORWARD FOR
+    SELECT name FROM sys.databases WHERE name LIKE 'FactuTrust_Tenant_%' AND state = 0;
+OPEN c; FETCH NEXT FROM c INTO @db;
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    SET @sql = N'USE ' + QUOTENAME(@db) + N';
+        IF COL_LENGTH(''dbo.PayrollAccountingSettings'', ''EmployeeAuxiliaryEnabled'') IS NULL
+           AND EXISTS (SELECT 1 FROM __EFMigrationsHistory
+                       WHERE MigrationId = N''20260901160000_AddPayrollAccountingSettings_Tenant'')
+            INSERT INTO #drift VALUES (''' + @db + N''');';
+    BEGIN TRY EXEC sp_executesql @sql; END TRY BEGIN CATCH END CATCH
+    FETCH NEXT FROM c INTO @db;
+END
+CLOSE c; DEALLOCATE c;
+SELECT * FROM #drift ORDER BY DbName;
+DROP TABLE #drift;
+```
+
+> ⚠️ **Ne jamais modifier une migration déjà livrée.** C'est l'origine exacte de cette panne : le
+> correctif n'atteint que les bases où la migration n'avait pas encore tourné, et la divergence devient
+> permanente sur les autres. Toute correction passe par une **nouvelle** migration additive et gardée.
+>
+> Le provisionnement par défaut aggrave la propagation : `TenantProvisioning:Strategy` vaut
+> `TemplateClone`, et `TenantTemplateFreshness.CanRestoreWithoutRebuild` juge la base modèle réutilisable
+> dès qu'aucune migration n'est en attente — jamais sur l'état réel de son schéma. Un modèle dérivé
+> serait donc cloné tel quel vers **chaque nouveau dossier**. Publier une nouvelle migration est ce qui
+> le rend obsolète et force sa reconstruction ; un script SQL appliqué aux seules bases existantes ne
+> l'aurait pas fait.
+>
+> Depuis cette livraison, une erreur SQL 207/208 sur un chemin de **lecture** ne ressort plus en 500
+> `INTERNAL_ERROR` : `ExceptionHandlingMiddleware` renvoie 503 avec le code `TENANT_MIGRATION_FAILED`,
+> déjà interprété par le client (bannière « mise à jour de la base de données »).
+
+---
+
 ## En résumé
 
 - En **développement**, corriger l'erreur de migration puis redémarrer l'API.

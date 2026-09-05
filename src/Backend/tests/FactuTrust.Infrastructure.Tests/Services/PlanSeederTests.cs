@@ -1,6 +1,7 @@
 using FactuTrust.Domain.Billing;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.SectorConfiguration;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Persistence.Seeds;
 using Microsoft.EntityFrameworkCore;
@@ -270,5 +271,140 @@ public sealed class PlanSeederTests
             .SingleAsync(p => p.Code == nameof(SubscriptionPlan.Free));
         foreach (var id in premium)
             Assert.False(free2.Modules.Single(m => m.Module == id).IsIncluded);
+    }
+
+    /// <summary>
+    /// Hygiène de données : le semeur réactive les modules cœur décochés sur TOUS les plans, pas
+    /// seulement Free (<c>AlignFreePlanWizardModulesAsync</c> ne couvrait que Free). Sans cela, le
+    /// back-office continuerait d'afficher « Clients : décoché » alors que l'application accorde
+    /// désormais le module — un écart entre ce que l'opérateur voit et ce que le produit fait.
+    /// </summary>
+    [Fact]
+    public async Task SeedAsync_ReactivatesUncheckedCoreModules_OnEveryPlan()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var coreIds = SectorConfigurationCatalog.CoreModules.Select(m => (int)m).ToList();
+
+        await using (var seedDb = NewDb(dbName))
+        {
+            await PlanSeeder.SeedAsync(seedDb);
+        }
+
+        // Dégradation volontaire du plan ANNUEL (donc hors périmètre du correctif Free d'origine).
+        await using (var breakDb = NewDb(dbName))
+        {
+            var annual = await breakDb.Plans.Include(p => p.Modules)
+                .SingleAsync(p => p.Code == nameof(SubscriptionPlan.Annual));
+            foreach (var pm in annual.Modules.Where(m => coreIds.Contains(m.Module)))
+                breakDb.Entry(pm).Property(nameof(PlanModule.IsIncluded)).CurrentValue = false;
+            await breakDb.SaveChangesAsync();
+        }
+
+        await using (var repairDb = NewDb(dbName))
+        {
+            await PlanSeeder.SeedAsync(repairDb);
+        }
+
+        await using var assertDb = NewDb(dbName);
+        foreach (var code in new[] { nameof(SubscriptionPlan.Free), nameof(SubscriptionPlan.Monthly), nameof(SubscriptionPlan.Annual) })
+        {
+            var plan = await assertDb.Plans.Include(p => p.Modules).SingleAsync(p => p.Code == code);
+            foreach (var coreId in coreIds)
+            {
+                Assert.True(
+                    plan.Modules.Single(m => m.Module == coreId).IsIncluded,
+                    $"Le module cœur {(AppModule)coreId} doit être inclus dans le plan {code}.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Régression du backfill inopérant : <c>Plan.Modules</c> est une vue vivante sur <c>_modules</c>,
+    /// que <c>ReplaceModules</c> vide avant d'énumérer son argument. Une séquence paresseuse
+    /// construite depuis <c>plan.Modules</c> perdait donc sa moitié gauche, le backfill tentait de
+    /// supprimer toutes les lignes existantes, l'échec était avalé par le catch de concurrence et
+    /// AUCUN module manquant n'était jamais ajouté. Conséquence visible : Projets et Honoraires
+    /// absents du plan Free, donc refusés et affichés « Plan supérieur requis » à tort.
+    /// </summary>
+    [Fact]
+    public async Task SeedAsync_AddsMissingModules_WithoutDroppingTheExistingOnes()
+    {
+        var dbName = Guid.NewGuid().ToString();
+
+        await using (var arrangeDb = NewDb(dbName))
+        {
+            var plan = Plan.Create(
+                code: nameof(SubscriptionPlan.Free),
+                name: "Gratuit",
+                description: null,
+                billingPeriod: BillingPeriod.Free,
+                basePriceTND: 0m);
+
+            // Plan « historique » : seuls les 3 premiers modules existent, dont un volontairement
+            // décoché pour vérifier que le backfill n'écrase pas non plus les valeurs en place.
+            plan.ReplaceModules(new[]
+            {
+                ((int)AppModule.Clients, true),
+                ((int)AppModule.Products, true),
+                ((int)AppModule.Stock, false)
+            });
+            arrangeDb.Plans.Add(plan);
+            await arrangeDb.SaveChangesAsync();
+        }
+
+        await using (var seedDb = NewDb(dbName))
+        {
+            await PlanSeeder.SeedAsync(seedDb);
+        }
+
+        await using var assertDb = NewDb(dbName);
+        var free = await assertDb.Plans.Include(p => p.Modules)
+            .SingleAsync(p => p.Code == nameof(SubscriptionPlan.Free));
+
+        // Tous les membres de l'enum sont désormais présents : plus aucun module « absent »,
+        // donc plus aucun refus implicite par `entry?.IsIncluded ?? false`.
+        foreach (var module in Enum.GetValues<AppModule>())
+        {
+            Assert.Contains(free.Modules, m => m.Module == (int)module);
+        }
+
+        // Les modules non premium ajoutés par le backfill sont inclus (Projets = le cas signalé).
+        Assert.True(free.Modules.Single(m => m.Module == (int)AppModule.Projects).IsIncluded);
+
+        // Les modules premium restent exclus du plan Free (décision D1 préservée).
+        foreach (var premium in AppModuleExtensions.PaidPlanModuleIds)
+            Assert.False(free.Modules.Single(m => m.Module == (int)premium).IsIncluded);
+    }
+
+    /// <summary>
+    /// Un plan « plat » (zéro ligne de module) doit rester intact : il est déjà permissif côté
+    /// <see cref="DbPlanResolver"/>, et lui ajouter des lignes le basculerait en mode « la BD fait
+    /// foi », ce qui refuserait alors tous les modules non listés — l'inverse de l'effet recherché.
+    /// </summary>
+    [Fact]
+    public async Task SeedAsync_LeavesFlatPlansUntouched()
+    {
+        var dbName = Guid.NewGuid().ToString();
+
+        await using (var arrangeDb = NewDb(dbName))
+        {
+            var custom = Plan.Create(
+                code: "LegacyFlat",
+                name: "Plan hérité",
+                description: null,
+                billingPeriod: BillingPeriod.Monthly,
+                basePriceTND: 10m);
+            arrangeDb.Plans.Add(custom);
+            await arrangeDb.SaveChangesAsync();
+        }
+
+        await using (var seedDb = NewDb(dbName))
+        {
+            await PlanSeeder.SeedAsync(seedDb);
+        }
+
+        await using var assertDb = NewDb(dbName);
+        var flat = await assertDb.Plans.Include(p => p.Modules).SingleAsync(p => p.Code == "LegacyFlat");
+        Assert.Empty(flat.Modules);
     }
 }

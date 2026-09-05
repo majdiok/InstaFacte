@@ -16,6 +16,7 @@ import { AppModule } from '@core/models/app-module';
 import { CompanyModuleDto, CompanyModulesService } from '@core/services/company-modules.service';
 import { ModuleRecommendationsService, ModuleRecommendationDto } from '@core/services/module-recommendations.service';
 import { MODULE_ICON_BY_ID } from '@core/utils/module-icon.util';
+import { TenantUsersService } from '@core/services/tenant-users.service';
 
 /**
  * Paramètres > Modules (plan v1 §2.2). Lets a tenant admin activate/deactivate
@@ -44,6 +45,7 @@ export class ModulesSettingsComponent implements OnInit, OnDestroy {
   private readonly toastService = inject(ToastService);
   private readonly errorHandler = inject(ErrorHandlerService);
   private readonly recommendationsService = inject(ModuleRecommendationsService);
+  private readonly tenantUsersService = inject(TenantUsersService);
   private readonly destroy$ = new Subject<void>();
 
   breadcrumbItems: BreadcrumbItem[] = [
@@ -188,6 +190,20 @@ export class ModulesSettingsComponent implements OnInit, OnDestroy {
     return !module.allowedByPlan;
   }
 
+  /**
+   * Un module verrouillé l'est pour deux raisons très différentes, qui ne se disent pas de la même
+   * façon. Réservé aux offres payantes ⇒ « Plan supérieur requis », c'est un argumentaire de vente
+   * légitime. Verrouillé sans être premium ⇒ anomalie de configuration du plan : proposer une
+   * montée en gamme serait mensonger puisque le module fait déjà partie de l'offre.
+   */
+  isPremiumLock(module: CompanyModuleDto): boolean {
+    return this.isLockedByPlan(module) && module.isPaidPlanOnly === true;
+  }
+
+  planLockLabel(module: CompanyModuleDto): string {
+    return this.isPremiumLock(module) ? 'Plan supérieur requis' : 'Temporairement indisponible';
+  }
+
   toggleModule(module: CompanyModuleDto): void {
     if (module.isCore || this.isLockedByPlan(module)) {
       return;
@@ -265,6 +281,10 @@ export class ModulesSettingsComponent implements OnInit, OnDestroy {
 
         // Sidebar/nav must reflect the change immediately — no logout/login (plan 1.3/2.2).
         this.authService.refreshUserProfile().pipe(takeUntil(this.destroy$)).subscribe();
+
+        // Le catalogue « Ajouter un utilisateur » est filtré par le périmètre de la société : son
+        // cache par rôle devient obsolète dès cet enregistrement.
+        this.tenantUsersService.clearCatalogCache();
 
         const warnings = res.data.warnings?.filter(w => !!w?.trim()) ?? [];
         if (warnings.length > 0) {

@@ -2139,8 +2139,10 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
     private static decimal BillRate(ProjectMember? member)
     {
         if (member is null) return 0m;
-        if (member.HourlyCost is > 0) return member.HourlyCost.Value;
-        if (member.DailyRate is > 0) return decimal.Round(member.DailyRate.Value / 8m, 3);
+        if (member.DailyRate is > 0)
+            return decimal.Round(member.DailyRate.Value / 8m, 3);
+        if (member.HourlyCost is > 0)
+            return member.HourlyCost.Value;
         return 0m;
     }
 

@@ -38,6 +38,9 @@ public sealed class CursorSdkBridgeHostContractTests
         var dir = Path.Combine(Path.GetTempPath(), "ft-cursor-bridge-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         Directory.CreateDirectory(Path.Combine(dir, "node_modules"));
+        await File.WriteAllTextAsync(
+            Path.Combine(dir, "package.json"),
+            """{"type":"module","private":true}""");
         await File.WriteAllTextAsync(Path.Combine(dir, "bridge.js"), FakeBridgeSource);
 
         var env = new Mock<IHostEnvironment>();
@@ -61,7 +64,9 @@ public sealed class CursorSdkBridgeHostContractTests
         try
         {
             await host.TryAutoStartAsync();
-            Assert.True(await host.IsAvailableAsync());
+            Assert.True(
+                await host.IsAvailableAsync(),
+                "Le pont factice n'a pas démarré (vérifiez package.json type:module, ligne READY, stderr Node).");
 
             var models = await host.ListModelsAsync("cursor_test");
             Assert.Contains(models, m => m.Id == "composer-2.5");

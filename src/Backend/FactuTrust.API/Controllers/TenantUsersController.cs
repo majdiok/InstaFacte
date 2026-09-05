@@ -8,6 +8,7 @@ using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Services;
+using FactuTrust.Infrastructure.Services.SectorRules;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -26,6 +27,7 @@ public sealed class TenantUsersController : ControllerBase
     private readonly ICurrentUser _currentUser;
     private readonly IEffectivePermissionService _permissionService;
     private readonly ISubscriptionResolver _subscriptionResolver;
+    private readonly IPlanResolver _planResolver;
     private readonly IAuditService _auditService;
     private readonly ISecurityStampTokenValidator _securityStampTokenValidator;
     private readonly ILogger<TenantUsersController> _logger;
@@ -37,6 +39,7 @@ public sealed class TenantUsersController : ControllerBase
         ICurrentUser currentUser,
         IEffectivePermissionService permissionService,
         ISubscriptionResolver subscriptionResolver,
+        IPlanResolver planResolver,
         IAuditService auditService,
         ISecurityStampTokenValidator securityStampTokenValidator,
         ILogger<TenantUsersController> logger)
@@ -47,6 +50,7 @@ public sealed class TenantUsersController : ControllerBase
         _currentUser = currentUser;
         _permissionService = permissionService;
         _subscriptionResolver = subscriptionResolver;
+        _planResolver = planResolver;
         _auditService = auditService;
         _securityStampTokenValidator = securityStampTokenValidator;
         _logger = logger;
@@ -138,16 +142,35 @@ public sealed class TenantUsersController : ControllerBase
     [HttpGet("module-catalog")]
     [ProducesResponseType(typeof(ApiResponse<ModuleCatalogDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public IActionResult GetModuleCatalog([FromQuery] UserRole role)
+    public async Task<IActionResult> GetModuleCatalog([FromQuery] UserRole role, CancellationToken cancellationToken)
     {
         if (!Enum.IsDefined(role))
             return BadRequest(ApiResponse<ModuleCatalogDto>.Fail("Rôle invalide"));
 
-        return Ok(ApiResponse<ModuleCatalogDto>.Ok(BuildModuleCatalog(role)));
+        var available = await ResolveAvailableModulesAsync(cancellationToken);
+        return Ok(ApiResponse<ModuleCatalogDto>.Ok(BuildModuleCatalog(role, available)));
+    }
+
+    /// <summary>
+    /// Modules réellement disponibles pour la société (accordés ∩ plan), via la définition partagée
+    /// avec <c>CompanyModulesController</c>. Un contexte tenant/acteur irrésolu retombe sur « tous
+    /// les modules » : ce chemin n'est atteignable qu'authentifié en administrateur, et la garde qui
+    /// compte est celle de l'écriture (<see cref="ValidateModuleAccessItems"/>), pas cet affichage.
+    /// </summary>
+    private async Task<HashSet<AppModule>> ResolveAvailableModulesAsync(CancellationToken cancellationToken)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var actorId = _currentUser.UserId;
+        if (!tenantId.HasValue || !actorId.HasValue)
+            return new HashSet<AppModule>(AppModuleExtensions.AllValues);
+
+        var plan = await _subscriptionResolver.GetPlanForTenantAsync(tenantId.Value, cancellationToken);
+        return await TenantModuleAvailability.ComputeAvailableModulesAsync(
+            _masterContext, _planResolver, plan, actorId.Value, cancellationToken);
     }
 
     /// <summary>Builds the module/feature catalog for <paramref name="role"/> — see <see cref="GetModuleCatalog"/>.</summary>
-    private static ModuleCatalogDto BuildModuleCatalog(UserRole role)
+    private static ModuleCatalogDto BuildModuleCatalog(UserRole role, IReadOnlySet<AppModule> availableModules)
     {
         var basePermissions = new HashSet<string>(role.GetPermissions(), StringComparer.Ordinal);
         var modules = new List<ModuleCatalogModuleDto>();
@@ -193,6 +216,7 @@ public sealed class TenantUsersController : ControllerBase
                 // Grantable is already false (empty ceiling), but baseInModule can still be non-empty for
                 // FirmManager/FirmAccountant whose delegated keys overlap module keys — force DefaultEnabled=false.
                 DefaultEnabled = !isExcludedRole && baseInModule.Count > 0,
+                AvailableForTenant = availableModules.Contains(module),
                 Features = features
             });
         }
@@ -224,6 +248,12 @@ public sealed class TenantUsersController : ControllerBase
         if (!tenantId.HasValue)
             return Unauthorized(ApiResponse<object>.Fail("Contexte entreprise introuvable"));
 
+        // Fail-closed volontaire : sans acteur identifié, impossible de déterminer le périmètre de
+        // modules de la société — on refuse plutôt que d'accorder par défaut.
+        var actorId = _currentUser.UserId;
+        if (!actorId.HasValue)
+            return Unauthorized(ApiResponse<object>.Fail("Non authentifié."));
+
         var tenantKind = await _masterContext.Tenants.AsNoTracking()
             .Where(t => t.Id == tenantId.Value)
             .Select(t => t.Kind)
@@ -238,6 +268,11 @@ public sealed class TenantUsersController : ControllerBase
             return BadRequest(ApiResponse<object>.Fail(
                 $"Limite d'utilisateurs du plan atteinte (max {maxUsers}). Réduisez le nombre d'utilisateurs ou mettez à niveau l'abonnement."));
         }
+
+        // Résolu une seule fois pour tout le lot : le plafond de la société ne change pas d'un
+        // utilisateur à l'autre, et cela évite N requêtes identiques sur un import en masse.
+        var availableModules = await TenantModuleAvailability.ComputeAvailableModulesAsync(
+            _masterContext, _planResolver, plan, actorId.Value, cancellationToken);
 
         var createdUsers = new List<ApplicationUser>();
         try
@@ -257,7 +292,7 @@ public sealed class TenantUsersController : ControllerBase
                     return BadRequest(ApiResponse<object>.Fail(TenantRoleCompatibility.GetRejectionMessage(req.Role, tenantKind)));
                 }
 
-                var errModules = ValidateModuleAccessItems(req.Role, req.ModuleAccess);
+                var errModules = ValidateModuleAccessItems(req.Role, req.ModuleAccess, availableModules);
                 if (errModules is not null)
                 {
                     await RollbackCreatedUsersAsync(createdUsers);
@@ -397,7 +432,20 @@ public sealed class TenantUsersController : ControllerBase
 
         if (request.ModuleAccess is not null)
         {
-            var errModules = ValidateModuleAccessItems(effectiveRole, request.ModuleAccess);
+            // Même plafond société qu'à la création. On tolère les modules DÉJÀ accordés à cet
+            // utilisateur même s'ils ne sont plus disponibles : la société a pu désactiver un module
+            // après coup, et rouvrir puis enregistrer la fiche ne doit pas révoquer un droit
+            // existant par effet de bord. Seule une NOUVELLE activation est refusée.
+            var availableModules = await ResolveAvailableModulesAsync(cancellationToken);
+            var alreadyGranted = await _masterContext.UserModuleGrants.AsNoTracking()
+                .Where(g => g.UserId == user.Id && g.IsEnabled)
+                .Select(g => g.Module)
+                .ToListAsync(cancellationToken);
+
+            var tolerated = new HashSet<AppModule>(availableModules);
+            tolerated.UnionWith(alreadyGranted);
+
+            var errModules = ValidateModuleAccessItems(effectiveRole, request.ModuleAccess, tolerated);
             if (errModules is not null)
                 return BadRequest(ApiResponse<object>.Fail(errModules));
         }
@@ -585,7 +633,10 @@ public sealed class TenantUsersController : ControllerBase
     /// only accepted when at least one of its permissions is within that ceiling. Explicit rejection,
     /// never a silent trim.
     /// </summary>
-    private static string? ValidateModuleAccessItems(UserRole role, IReadOnlyList<UserModuleAccessItemDto>? list)
+    private static string? ValidateModuleAccessItems(
+        UserRole role,
+        IReadOnlyList<UserModuleAccessItemDto>? list,
+        IReadOnlySet<AppModule> availableModules)
     {
         if (list is null || list.Count == 0)
             return null;
@@ -604,6 +655,13 @@ public sealed class TenantUsersController : ControllerBase
                     return "Les sous-modules ne s'appliquent pas lorsque le module parent est désactivé.";
                 continue;
             }
+
+            // Plafond de la SOCIÉTÉ, appliqué avant celui du rôle : on ne peut pas accorder à un
+            // utilisateur un module que l'espace ne possède pas. Sans cette garde, filtrer la boîte
+            // « Ajouter un utilisateur » ne ferait que masquer le trou — une requête forgée
+            // (ou un onglet resté ouvert sur un ancien catalogue) passerait toujours.
+            if (!availableModules.Contains(x.Module))
+                return $"Le module « {x.Module.ToDisplayString()} » n'est pas activé pour votre société.";
 
             var ceiling = RoleModuleGrantCeilingExtensions.GetGrantCeiling(role, x.Module);
             if (ceiling.Count == 0)

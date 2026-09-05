@@ -242,6 +242,11 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(t => t.BusinessDomain).HasMaxLength(50);
             entity.Property(t => t.SectorCatalogVersion).HasMaxLength(50);
 
+            // Réponses de profilage de l'inscription (lot 3) — toutes nullables : une colonne à NULL
+            // signifie « pas de réponse », jamais « non ». Aucun index : ces colonnes ne filtrent
+            // aucune requête chaude, elles servent au rejeu de la recommandation et à l'analyse.
+            entity.Property(t => t.HeadcountBand).HasMaxLength(10);
+
             // Provisioning mini-saga (plan §1.5) — additive, defaults Ready so every pre-existing
             // row (and every non-restructured creation flow) reads as already-provisioned.
             entity.Property(t => t.ProvisioningStatus)

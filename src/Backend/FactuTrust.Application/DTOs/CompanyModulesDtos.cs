@@ -34,6 +34,14 @@ public sealed record CompanyModuleItemDto
 
     /// <summary>True when this module is part of the tenant's resolved sector profile's recommended set.</summary>
     public required bool RecommendedForSector { get; init; }
+
+    /// <summary>
+    /// True when the module is genuinely reserved for paid plans (<c>AppModuleExtensions.PaidPlanModuleIds</c>).
+    /// Lets the UI show "Plan supérieur requis" ONLY for a real upsell: a module denied while this is
+    /// false is a plan misconfiguration, and telling the customer to upgrade would be untrue.
+    /// Optional on the wire so an older client simply keeps its previous rendering.
+    /// </summary>
+    public bool IsPaidPlanOnly { get; init; }
 }
 
 /// <summary>Request body for <c>PUT /api/company/modules</c> (plan §2.2).</summary>

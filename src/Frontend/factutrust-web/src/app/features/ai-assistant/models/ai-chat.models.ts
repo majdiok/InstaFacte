@@ -18,7 +18,9 @@ export interface ChatStreamEvent {
     /** Résultat final d'un plan Studio exécuté (émis par l'endpoint de confirmation). */
     | 'studio_result'
     /** Résultat d'un état calculé en lecture seule, à afficher dans la conversation (rien n'est enregistré). */
-    | 'studio_report_result';
+    | 'studio_report_result'
+    /** Échec d'un état : ce qui a été tenté, pourquoi, et des reformulations qui fonctionnent. */
+    | 'studio_report_error';
   content?: string;
   toolName?: string;
   toolCallId?: string;

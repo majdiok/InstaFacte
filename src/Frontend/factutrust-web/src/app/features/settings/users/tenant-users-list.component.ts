@@ -799,7 +799,11 @@ export class TenantUsersListComponent implements OnInit {
   private rebuildCreateDraft(catalog: ModuleCatalogModuleDto[]): void {
     this.createModuleDraft.set(
       catalog
-        .filter(cm => cm.grantable)
+        // Deux filtres cumulatifs et indépendants : `grantable` = plafond du RÔLE,
+        // `availableForTenant` = périmètre de la SOCIÉTÉ (module activé et couvert par l'offre).
+        // Offrir un module que la société ne possède pas n'a aucun sens à la création, et le
+        // serveur le refuserait de toute façon (ValidateModuleAccessItems).
+        .filter(cm => cm.grantable && cm.availableForTenant !== false)
         .map(cm => ({
           module: cm.module,
           enabled: cm.defaultEnabled,
@@ -982,6 +986,13 @@ export class TenantUsersListComponent implements OnInit {
     const draft: ModuleDraft[] = [];
     for (const cm of catalog) {
       if (!cm.grantable) continue; // masqué (plafond vide / rôle exclu)
+
+      // Périmètre de la société : on masque un module indisponible SAUF si l'utilisateur le détient
+      // déjà. Un droit hérité d'avant la désactivation du module reste visible et modifiable —
+      // sinon la simple ouverture de la modale le supprimerait au premier enregistrement, alors
+      // qu'un retrait doit rester une action explicite. Le serveur tolère symétriquement les droits
+      // préexistants sur le PATCH (ensemble « tolerated » de TenantUsersController).
+      if (cm.availableForTenant === false && !this.editInitialGrants.get(cm.module)?.enabled) continue;
       let enabled: boolean;
       let featureKeys: string[] | null;
       if (markAllDirty) {

@@ -321,6 +321,80 @@ public sealed class SqlReportSqlBuilderTests
         Assert.Contains("ORDER BY", query.Sql, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void The_same_sort_field_twice_appears_only_once_in_the_order_by()
+    {
+        var query = Build(new ReportDefinition
+        {
+            Fields = new[] { "InvoiceLines_Quantity" },
+            Sort = new[]
+            {
+                new ReportSort { Field = "InvoiceLines_Quantity", Dir = "asc" },
+                new ReportSort { Field = "InvoiceLines_Quantity", Dir = "desc" }
+            }
+        });
+
+        // SQL Server refuse une colonne citée deux fois dans ORDER BY (Msg 169).
+        var orderBy = query.Sql[query.Sql.LastIndexOf(" ORDER BY ", StringComparison.Ordinal)..];
+        var occurrences = orderBy.Split("[InvoiceLines_Quantity]").Length - 1;
+        Assert.Equal(1, occurrences);
+    }
+
+    // ---- Invariants de syntaxe ----
+
+    [Fact]
+    public void Grouping_on_keys_absent_from_the_schema_is_refused_never_flattened()
+    {
+        // Le défaut d'origine : le regroupement demandé disparaissait, un COUNT(*) de repli prenait
+        // sa place, et l'assemblage produisait « GROUP BY  ORDER BY … » — rejeté par SQL Server avec
+        // « Incorrect syntax near the keyword 'ORDER' » + « Invalid usage of the option NEXT ».
+        Assert.False(SqlReportSqlBuilder.TryBuild(
+            Snapshot(),
+            new ReportDefinition
+            {
+                Grouping = new[] { "Products_Colour" },
+                Aggregations = new[] { new ReportAggregation { Field = "InvoiceLines_Quantity", Fn = "sum" } }
+            },
+            200, out var query, out var error));
+
+        Assert.Null(query);
+        Assert.NotNull(error);
+        Assert.Contains("Products_Colour", error!, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Products_Name")]
+    [InlineData("Invoices_IssueDate__month")]
+    public void A_grouped_query_never_emits_an_empty_group_by(string groupingKey)
+    {
+        var query = Build(new ReportDefinition
+        {
+            Grouping = new[] { groupingKey },
+            Aggregations = new[] { new ReportAggregation { Field = "InvoiceLines_Quantity", Fn = "sum" } }
+        });
+
+        Assert.DoesNotContain("GROUP BY  ", query.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("GROUP BY ORDER", query.Sql, StringComparison.Ordinal);
+        SqlReportPresetSchemaConformanceTests.AssertOrderByPrecedesPaging(query.Sql);
+    }
+
+    [Fact]
+    public void Order_by_always_precedes_the_paging_clause()
+    {
+        // OFFSET/FETCH est invalide sans ORDER BY : l'invariant vaut pour le détail comme pour
+        // l'agrégat, avec ou sans tri demandé.
+        SqlReportPresetSchemaConformanceTests.AssertOrderByPrecedesPaging(
+            Build(new ReportDefinition { Fields = new[] { "InvoiceLines_Quantity" } }).Sql);
+
+        SqlReportPresetSchemaConformanceTests.AssertOrderByPrecedesPaging(
+            Build(new ReportDefinition
+            {
+                Grouping = new[] { "Clients_Name" },
+                Aggregations = new[] { new ReportAggregation { Field = "InvoiceLines_TotalHt_Amount", Fn = "sum" } },
+                Sort = new[] { new ReportSort { Field = "Clients_Name", Dir = "asc" } }
+            }).Sql);
+    }
+
     // ---- Champs exposés ----
 
     [Fact]

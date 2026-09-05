@@ -1,5 +1,6 @@
 using FactuTrust.Domain.Billing;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.SectorConfiguration;
 using Microsoft.EntityFrameworkCore;
 
 namespace FactuTrust.Infrastructure.Persistence.Seeds;
@@ -59,6 +60,54 @@ public static class PlanSeeder
         // (2) force OFF les modules premium (AI/Forecasting/Studio/Payroll). S'exécute APRÈS
         // BackfillPlanModulesAsync (qui peut ajouter les modules manquants comme inclus).
         await AlignFreePlanWizardModulesAsync(db, cancellationToken);
+
+        // Hygiène de données : les modules cœur sont réputés inclus dans TOUS les plans.
+        // `DbPlanResolver.IsModuleAllowedAsync` les autorise désormais sans lire la ligne, donc cette
+        // passe ne change plus le comportement applicatif — elle évite que le back-office affiche
+        // « Clients : décoché » sur un plan alors que l'application accorde le module malgré tout.
+        await AlignCoreModulesOnAllPlansAsync(db, cancellationToken);
+    }
+
+    /// <summary>
+    /// Force <c>IsIncluded=true</c> sur les modules cœur de chaque plan doté d'une configuration de
+    /// modules. Les plans « plats » (zéro ligne) restent intacts : ils sont déjà permissifs côté
+    /// <c>DbPlanResolver</c>, et leur ajouter des lignes basculerait tout le plan en mode « la BD
+    /// fait foi », ce qui refuserait alors tous les modules non listés.
+    /// </summary>
+    private static async Task AlignCoreModulesOnAllPlansAsync(MasterDbContext db, CancellationToken cancellationToken)
+    {
+        var coreModules = SectorConfigurationCatalog.CoreModules.Select(m => (int)m).ToHashSet();
+        var plans = await db.Plans
+            .Include(p => p.Modules)
+            .ToListAsync(cancellationToken);
+
+        var changed = false;
+        foreach (var plan in plans)
+        {
+            if (plan.Modules.Count == 0) continue; // plan plat : déjà permissif, ne pas le basculer
+
+            foreach (var planModule in plan.Modules)
+            {
+                if (!coreModules.Contains(planModule.Module) || planModule.IsIncluded)
+                    continue;
+
+                // Mise à jour EN PLACE (même idiome qu'AlignFreePlanWizardModulesAsync) — surtout pas
+                // ReplaceModules, qui ferait clear+re-add et risquerait un DbUpdateConcurrencyException.
+                db.Entry(planModule).Property(nameof(PlanModule.IsIncluded)).CurrentValue = true;
+                changed = true;
+            }
+        }
+
+        if (!changed) return;
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Best-effort, comme BackfillPlanModulesAsync : un conflit ne doit pas avorter le démarrage.
+            db.ChangeTracker.Clear();
+        }
     }
 
     private static async Task BackfillSubscriptionPlanIdAsync(MasterDbContext db, CancellationToken cancellationToken)
@@ -299,9 +348,19 @@ public static class PlanSeeder
             var missing = allModules.Where(m => !presentModules.Contains(m)).ToList();
             if (missing.Count == 0) continue;
 
+            // `ToList()` OBLIGATOIRE : `Plan.Modules` est une vue vivante sur le champ `_modules`
+            // (`_modules.AsReadOnly()`) et `ReplaceModules` commence par le vider. Sans
+            // matérialisation, la moitié gauche de ce Concat était énumérée APRÈS le Clear() et ne
+            // renvoyait donc plus rien : le backfill demandait à EF de supprimer toutes les lignes
+            // existantes pour n'en réinsérer que les manquantes. L'opération échouait, le
+            // `catch (DbUpdateConcurrencyException)` ci-dessous l'avalait, et aucun module n'était
+            // jamais ajouté — d'où des modules absents du plan, donc refusés par
+            // `DbPlanResolver` (`entry?.IsIncluded ?? false`) et affichés « Plan supérieur requis »
+            // alors qu'ils sont inclus dans l'offre.
             var merged = plan.Modules
                 .Select(m => (m.Module, m.IsIncluded))
-                .Concat(missing.Select(m => (m, true)));
+                .Concat(missing.Select(m => (m, true)))
+                .ToList();
             plan.ReplaceModules(merged);
             changed = true;
         }

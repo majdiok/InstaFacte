@@ -321,8 +321,13 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
         }
         catch (Exception ex)
         {
+            // Le message d'une exception technique (SQL Server en tête) expose le schéma et parfois
+            // la requête, et finit affiché tel quel dans la conversation. Le détail reste au
+            // journal ; l'utilisateur reçoit une phrase qui ne prétend pas être une explication.
+            // Les erreurs MÉTIER, elles, ne passent pas par ici : les gestionnaires renvoient leurs
+            // propres AiToolResult.Error, qui atteignent l'utilisateur mot pour mot.
             _logger.LogError(ex, "Tool execution error for {ToolName}", toolName);
-            return AiToolResult.Error($"Erreur d'exécution : {ex.Message}");
+            return AiToolResult.Error("L'outil n'a pas pu aboutir. Reformulez votre demande, ou signalez l'incident si elle se reproduit.");
         }
     }
 

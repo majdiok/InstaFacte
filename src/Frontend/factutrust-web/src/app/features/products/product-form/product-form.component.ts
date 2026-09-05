@@ -36,6 +36,21 @@ import {
 } from '@shared/utils/product-pricing.utils';
 import { ProductClientPricesComponent } from '../product-client-prices/product-client-prices.component';
 import { ProductVariantMatrixComponent } from '@shared/components/product-variant-matrix/product-variant-matrix.component';
+import {
+  getCostingMethodHint,
+  getCostingMethodOptions,
+  getPickingPolicyHint,
+  getPickingPolicyOptions,
+  getTrackingModeHint,
+  getTrackingModeOptions,
+  isTraceabilityEditable,
+  isTraceabilitySectionVisible,
+  normalizeTraceabilityForm,
+  showCostingMethodDropdown,
+  showExpiryFields,
+  showPickingField,
+  TraceabilityFormState
+} from '@shared/utils/product-traceability-rules';
 
 interface CategoryOption {
   label: string;
@@ -346,39 +361,50 @@ interface VatOption {
 
         @if (showTraceabilitySection()) {
           <app-form-section class="section-trace" title="Traçabilité et valorisation" icon="pi-qrcode" [number]="traceSectionNumber()">
-            <div class="form-row">
-              <div class="form-group">
-                <label for="trackingMode">Suivi</label>
-                <p-select id="trackingMode" [options]="trackingModeOptions" formControlName="trackingMode"
-                          optionLabel="label" optionValue="value" styleClass="w-full"></p-select>
-              </div>
-              <div class="form-group">
-                <label for="pickingPolicy">Picking</label>
-                <p-select id="pickingPolicy" [options]="pickingPolicyOptions" formControlName="pickingPolicy"
-                          optionLabel="label" optionValue="value" styleClass="w-full"></p-select>
-              </div>
-            </div>
-            @if (form.get('trackingMode')?.value === 1 || form.get('trackingMode')?.value === 2) {
-              <div class="form-group">
-                <label for="hasExpiryTracking">Suivi de péremption (DLUO)</label>
-                <div class="status-switch">
-                  <p-inputSwitch id="hasExpiryTracking" formControlName="hasExpiryTracking"></p-inputSwitch>
-                  <span [class.active]="form.get('hasExpiryTracking')?.value">
-                    {{ form.get('hasExpiryTracking')?.value ? 'Activé' : 'Désactivé' }}
-                  </span>
+            @if (!traceabilityEditable()) {
+              <p class="form-hint">Activez la gestion de stock pour configurer la traçabilité et la valorisation.</p>
+            } @else {
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="trackingMode">Suivi</label>
+                  <p-select id="trackingMode" [options]="trackingModeSelectOptions()" formControlName="trackingMode"
+                            optionLabel="label" optionValue="value" optionDisabled="disabled" styleClass="w-full"></p-select>
+                  <small class="form-hint">{{ trackingModeHint() }}</small>
                 </div>
+                @if (showPickingFieldForForm()) {
+                  <div class="form-group">
+                    <label for="pickingPolicy">Politique de prélèvement</label>
+                    <p-select id="pickingPolicy" [options]="pickingPolicySelectOptions()" formControlName="pickingPolicy"
+                              optionLabel="label" optionValue="value" optionDisabled="disabled" styleClass="w-full"></p-select>
+                    <small class="form-hint">{{ pickingPolicyHint() }}</small>
+                  </div>
+                }
               </div>
+              @if (showExpiryFieldsForForm()) {
+                <div class="form-group">
+                  <label for="hasExpiryTracking">Suivi de péremption (DLUO)</label>
+                  <div class="status-switch">
+                    <p-inputSwitch id="hasExpiryTracking" formControlName="hasExpiryTracking"></p-inputSwitch>
+                    <span [class.active]="form.get('hasExpiryTracking')?.value">
+                      {{ form.get('hasExpiryTracking')?.value ? 'Activé' : 'Désactivé' }}
+                    </span>
+                  </div>
+                  <small class="form-hint">Obligatoire pour activer FEFO.</small>
+                </div>
+                <div class="form-group">
+                  <label for="expiryAlertDays">Alerte DLUO (jours)</label>
+                  <p-inputNumber id="expiryAlertDays" formControlName="expiryAlertDays" [min]="0" [max]="3650" styleClass="w-full"></p-inputNumber>
+                </div>
+              }
               <div class="form-group">
-                <label for="expiryAlertDays">Alerte DLUO (jours)</label>
-                <p-inputNumber id="expiryAlertDays" formControlName="expiryAlertDays" [min]="0" [max]="3650" styleClass="w-full"></p-inputNumber>
-              </div>
-            }
-            @if (stockFeatures()?.fifoLifoValuationEnabled) {
-              <div class="form-group">
-                <label for="costingMethod">Méthode de coût</label>
-                <p-select id="costingMethod" [options]="costingMethodSelectOptions()" formControlName="costingMethod"
-                          optionLabel="label" optionValue="value" optionDisabled="disabled" styleClass="w-full"></p-select>
-                <small class="form-hint">LIFO : souvent non retenu pour les comptes statutaires. Défaut recommandé : CMUP.</small>
+                <label for="costingMethod">Méthode de valorisation</label>
+                @if (showCostingDropdown()) {
+                  <p-select id="costingMethod" [options]="costingMethodSelectOptions()" formControlName="costingMethod"
+                            optionLabel="label" optionValue="value" optionDisabled="disabled" styleClass="w-full"></p-select>
+                } @else {
+                  <p class="costing-readonly">CMUP</p>
+                }
+                <small class="form-hint">{{ costingMethodHint() }}</small>
                 @if (isEditMode() && (form.get('costingMethod')?.value === 1 || form.get('costingMethod')?.value === 2)) {
                   <app-button type="button" variant="outline" size="sm" class="mt-2"
                               (clicked)="createOpeningLayer()" [disabled]="saving()">
@@ -396,25 +422,29 @@ interface VatOption {
         <app-form-section class="section-pricing" title="Tarification" icon="pi-dollar" [number]="pricingSectionNumber()">
           <div class="pricing-block">
             <h4 class="pricing-block-title">Coûts d'achat</h4>
-            <div class="form-row form-row-3">
-              <div class="form-group">
-                <label for="purchasePrice">Prix d'achat HT</label>
-                <p-inputNumber
-                  id="purchasePrice"
-                  formControlName="purchasePrice"
-                  mode="decimal"
-                  [minFractionDigits]="3"
-                  [maxFractionDigits]="3"
-                  suffix=" TND"
-                  placeholder="Optionnel"
-                  styleClass="w-full"
-                  (onInput)="onPricingChange('purchasePrice')">
-                </p-inputNumber>
-                <small class="form-hint">
-                  Prix par défaut pour les bons de commande et factures fournisseurs.
-                </small>
-              </div>
+            <div class="form-group">
+              <label for="purchasePrice">Prix d'achat HT</label>
+              <p-inputNumber
+                id="purchasePrice"
+                formControlName="purchasePrice"
+                mode="decimal"
+                [minFractionDigits]="3"
+                [maxFractionDigits]="3"
+                suffix=" TND"
+                placeholder="Optionnel"
+                styleClass="w-full"
+                (onInput)="onPricingChange('purchasePrice')">
+              </p-inputNumber>
+              <small class="form-hint">
+                Prix par défaut pour les bons de commande et factures fournisseurs.
+              </small>
+            </div>
 
+            <div class="pricing-readonly-group">
+              <p class="pricing-readonly-badge">
+                <i class="pi pi-lock" aria-hidden="true"></i>
+                Calculé automatiquement
+              </p>
               <div class="form-group">
                 <label for="lastPurchasePrice">Dernier prix d'achat HT</label>
                 <p-inputNumber
@@ -451,49 +481,9 @@ interface VatOption {
 
           <div class="pricing-block">
             <h4 class="pricing-block-title">Prix de vente</h4>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="profitMarginPercent">Marge bénéficiaire</label>
-                <p-inputNumber
-                  id="profitMarginPercent"
-                  formControlName="profitMarginPercent"
-                  mode="decimal"
-                  [minFractionDigits]="3"
-                  [maxFractionDigits]="3"
-                  suffix=" %"
-                  placeholder="—"
-                  styleClass="w-full"
-                  (onInput)="onPricingChange('margin')">
-                </p-inputNumber>
-                @if (!canEditMargin()) {
-                  <small class="form-hint">Renseignez un prix d'achat HT pour activer la marge.</small>
-                }
-              </div>
 
-              <div class="form-group">
-                <label for="unitPrice">Prix de vente HT <span class="required">*</span></label>
-                <p-inputNumber
-                  id="unitPrice"
-                  formControlName="unitPrice"
-                  mode="decimal"
-                  [minFractionDigits]="3"
-                  [maxFractionDigits]="3"
-                  suffix=" TND"
-                  placeholder="0.000"
-                  styleClass="w-full"
-                  [class.ng-invalid]="isInvalid('unitPrice')"
-                  (onInput)="onPricingChange('unitPriceHt')">
-                </p-inputNumber>
-                @if (isInvalid('unitPrice')) {
-                  <div class="form-error">
-                    <i class="pi pi-exclamation-circle"></i>
-                    <span>{{ errorMessageService.getErrorMessage(form.get('unitPrice')) }}</span>
-                  </div>
-                }
-              </div>
-            </div>
-
-            <div class="form-row">
+            <h5 class="pricing-subblock-title">Paramètres de vente</h5>
+            <div class="form-row form-row-pricing-params">
               <div class="form-group">
                 <label for="unit">Unité de mesure <span class="required">*</span></label>
                 <p-select
@@ -517,9 +507,7 @@ interface VatOption {
                   (onChange)="onPricingChange('vatRate')">
                 </p-select>
               </div>
-            </div>
 
-            <div class="form-row">
               <div class="form-group fodec-group">
                 <label for="isFodecApplicable">FODEC</label>
                 <div class="fodec-checkbox">
@@ -532,6 +520,57 @@ interface VatOption {
                   <label for="isFodecApplicable">FODEC applicable (1%)</label>
                 </div>
               </div>
+            </div>
+
+            <h5 class="pricing-subblock-title">Montants</h5>
+            <div class="form-row form-row-pricing-flow">
+              <div class="form-group">
+                <label for="profitMarginPercent">Marge bénéficiaire</label>
+                <p-inputNumber
+                  id="profitMarginPercent"
+                  formControlName="profitMarginPercent"
+                  mode="decimal"
+                  [minFractionDigits]="3"
+                  [maxFractionDigits]="3"
+                  suffix=" %"
+                  placeholder="—"
+                  styleClass="w-full"
+                  (onInput)="onPricingChange('margin')">
+                </p-inputNumber>
+                @if (!canEditMargin()) {
+                  <small class="form-hint">Renseignez un prix d'achat HT pour activer la marge.</small>
+                }
+              </div>
+
+              <span class="pricing-flow-connector" aria-hidden="true">
+                <i class="pi pi-arrow-right"></i>
+              </span>
+
+              <div class="form-group">
+                <label for="unitPrice">Prix de vente HT <span class="required">*</span></label>
+                <p-inputNumber
+                  id="unitPrice"
+                  formControlName="unitPrice"
+                  mode="decimal"
+                  [minFractionDigits]="3"
+                  [maxFractionDigits]="3"
+                  suffix=" TND"
+                  placeholder="0.000"
+                  styleClass="w-full"
+                  [class.ng-invalid]="isInvalid('unitPrice')"
+                  (onInput)="onPricingChange('unitPriceHt')">
+                </p-inputNumber>
+                @if (isInvalid('unitPrice')) {
+                  <div class="form-error">
+                    <i class="pi pi-exclamation-circle"></i>
+                    <span>{{ errorMessageService.getErrorMessage(form.get('unitPrice')) }}</span>
+                  </div>
+                }
+              </div>
+
+              <span class="pricing-flow-connector" aria-hidden="true">
+                <i class="pi pi-arrow-right"></i>
+              </span>
 
               <div class="form-group">
                 <label for="salePriceTtc">Prix de vente TTC <span class="required">*</span></label>
@@ -549,14 +588,24 @@ interface VatOption {
               </div>
             </div>
 
-            <div class="price-preview">
+            <div class="price-preview" aria-label="Récapitulatif des prix">
               <div class="preview-row">
-                <span>FODEC (1%)</span>
-                <span class="value">{{ previewFodec() | number:'1.3-3' }} TND</span>
+                <span>Prix HT</span>
+                <span class="value">{{ (form.get('unitPrice')?.value ?? 0) | number:'1.3-3' }} TND</span>
               </div>
+              @if (form.get('isFodecApplicable')?.value) {
+                <div class="preview-row">
+                  <span>FODEC (1%)</span>
+                  <span class="value">{{ previewFodec() | number:'1.3-3' }} TND</span>
+                </div>
+              }
               <div class="preview-row">
                 <span>TVA ({{ form.get('vatRate')?.value || 0 }}%)</span>
                 <span class="value">{{ previewVat() | number:'1.3-3' }} TND</span>
+              </div>
+              <div class="preview-row total">
+                <span>Prix TTC</span>
+                <span class="value">{{ (form.get('salePriceTtc')?.value ?? 0) | number:'1.3-3' }} TND</span>
               </div>
             </div>
           </div>
@@ -691,8 +740,21 @@ interface VatOption {
     }
 
     :host ::ng-deep .section-side > *:last-child .form-section {
-      flex: 1;
-      height: 100%;
+      overflow: visible;
+    }
+
+    .section-trace {
+      overflow: visible;
+    }
+
+    .costing-readonly {
+      margin: 0;
+      padding: var(--spacing-2) var(--spacing-3);
+      border: 1px solid var(--color-neutral-200);
+      border-radius: var(--radius-md);
+      background: var(--color-neutral-50);
+      font-weight: var(--font-weight-medium);
+      color: var(--color-text-primary);
     }
 
     .form-grid-full {
@@ -1018,9 +1080,19 @@ export class ProductFormComponent implements OnInit {
   }
 
   showTraceabilitySection(): boolean {
-    const f = this.stockFeatures();
-    if (!f || !this.isProductCategory() || !this.canMutateProduct()) return false;
-    return f.lotTrackingEnabled || f.serialTrackingEnabled || f.expiryTrackingEnabled || f.fifoLifoValuationEnabled;
+    return isTraceabilitySectionVisible(
+      this.form.get('category')?.value ?? '',
+      this.stockFeatures(),
+      this.canMutateProduct()
+    );
+  }
+
+  traceabilityEditable(): boolean {
+    this.traceabilityUiVersion();
+    return isTraceabilityEditable(
+      this.form.get('category')?.value ?? '',
+      !!this.form.get('isStockManaged')?.value
+    );
   }
 
   hasSideSections(): boolean {
@@ -1050,34 +1122,55 @@ export class ProductFormComponent implements OnInit {
     Object.values(this.variantAxesSelection()).some(ids => ids.length > 0)
   );
 
-  trackingModeOptions = [
-    { label: 'Aucun', value: 0 },
-    { label: 'Lot', value: 1 },
-    { label: 'N° de série', value: 2 }
-  ];
+  showPickingFieldForForm(): boolean {
+    this.traceabilityUiVersion();
+    return showPickingField(this.form.get('trackingMode')?.value);
+  }
 
-  pickingPolicyOptions = [
-    { label: 'Aucun (saisie manuelle)', value: 0 },
-    { label: 'FEFO (péremption)', value: 1 },
-    { label: 'FIFO physique', value: 2 },
-    { label: 'Manuel', value: 3 }
-  ];
+  showExpiryFieldsForForm(): boolean {
+    this.traceabilityUiVersion();
+    return showExpiryFields(this.form.get('trackingMode')?.value, this.stockFeatures());
+  }
 
-  costingMethodOptions = [
-    { label: 'CMUP', value: 0 },
-    { label: 'FIFO', value: 1 },
-    { label: 'LIFO (attention comptes statutaires)', value: 2 }
-  ];
+  showCostingDropdown(): boolean {
+    return showCostingMethodDropdown(this.stockFeatures());
+  }
+
+  trackingModeHint = computed(() => getTrackingModeHint());
+
+  pickingPolicyHint = computed(() => {
+    this.traceabilityUiVersion();
+    return getPickingPolicyHint(!!this.form.get('hasExpiryTracking')?.value);
+  });
+
+  costingMethodHint = computed(() => getCostingMethodHint());
+
+  trackingModeSelectOptions = computed(() => {
+    this.traceabilityUiVersion();
+    return getTrackingModeOptions(this.stockFeatures(), this.form.get('trackingMode')?.value);
+  });
+
+  pickingPolicySelectOptions = computed(() => {
+    this.traceabilityUiVersion();
+    return getPickingPolicyOptions(
+      this.form.get('trackingMode')?.value,
+      !!this.form.get('hasExpiryTracking')?.value
+    );
+  });
 
   originalCostingMethod = signal(0);
 
   costingMethodSelectOptions = computed(() => {
-    const lockAverage = this.isEditMode() && (this.originalCostingMethod() === 1 || this.originalCostingMethod() === 2);
-    return this.costingMethodOptions.map(option => ({
-      ...option,
-      disabled: lockAverage && option.value === 0
-    }));
+    this.traceabilityUiVersion();
+    return getCostingMethodOptions(
+      this.stockFeatures(),
+      this.isEditMode(),
+      this.originalCostingMethod()
+    );
   });
+
+  private traceabilityUiVersion = signal(0);
+  private traceabilityNormalizing = false;
 
   displayImageUrl = computed(() => {
     if (this.imageToRemove()) return null;
@@ -1189,6 +1282,8 @@ export class ProductFormComponent implements OnInit {
     this.syncDiscountControls(this.form.get('isDiscountEnabled')?.value ?? false);
     this.syncMarginControl();
     this.onPricingChange('unitPriceHt');
+    this.setupTraceabilitySubscriptions();
+    this.applyTraceabilityNormalization(false);
   }
 
   isInvalid(field: string): boolean {
@@ -1358,6 +1453,7 @@ export class ProductFormComponent implements OnInit {
           this.syncMarginControl();
 
           this.syncStockManagement(product.typeDisplay || 'Service', true);
+          this.applyTraceabilityNormalization(false);
           this.currentImageUrl.set(product.imageUrl ?? null);
           this.selectedImageFile.set(null);
           this.previewDataUrl.set(null);
@@ -1399,7 +1495,8 @@ export class ProductFormComponent implements OnInit {
 
     this.saving.set(true);
 
-    const formValue = this.form.value;
+    const normalizedTrace = this.applyTraceabilityNormalization(false);
+    const formValue = { ...this.form.getRawValue(), ...normalizedTrace };
     
     if (this.isEditMode()) {
       // Update existing product
@@ -1474,17 +1571,21 @@ export class ProductFormComponent implements OnInit {
             this.toastService.add({
               severity: 'error',
               summary: 'Erreur',
-              detail: response.errors?.join(', ') || 'Une erreur est survenue lors de la mise à jour'
+              detail: this.mapTraceabilityApiError(
+                response.errors?.join(', ') || 'Une erreur est survenue lors de la mise à jour'
+              )
             });
             this.saving.set(false);
           }
         },
         error: (error) => {
-          const errorMessage = this.errorHandler.extractErrorMessage(error);
+          const errorMessage = this.mapTraceabilityApiError(
+            this.errorHandler.extractErrorMessage(error) || 'Une erreur est survenue lors de la mise à jour'
+          );
           this.toastService.add({
             severity: 'error',
             summary: 'Erreur',
-            detail: errorMessage || 'Une erreur est survenue lors de la mise à jour'
+            detail: errorMessage
           });
           this.errorHandler.logError('Failed to update product', error);
           this.saving.set(false);
@@ -1557,17 +1658,21 @@ export class ProductFormComponent implements OnInit {
             this.toastService.add({
               severity: 'error',
               summary: 'Erreur',
-              detail: response.errors?.join(', ') || 'Une erreur est survenue lors de la création'
+              detail: this.mapTraceabilityApiError(
+                response.errors?.join(', ') || 'Une erreur est survenue lors de la création'
+              )
             });
             this.saving.set(false);
           }
         },
         error: (error) => {
-          const errorMessage = this.errorHandler.extractErrorMessage(error);
+          const errorMessage = this.mapTraceabilityApiError(
+            this.errorHandler.extractErrorMessage(error) || 'Une erreur est survenue lors de la création'
+          );
           this.toastService.add({
             severity: 'error',
             summary: 'Erreur',
-            detail: errorMessage || 'Une erreur est survenue lors de la création'
+            detail: errorMessage
           });
           this.errorHandler.logError('Failed to create product', error);
           this.saving.set(false);
@@ -1585,6 +1690,7 @@ export class ProductFormComponent implements OnInit {
       next: res => {
         if (res.success && res.data) {
           this.stockFeatures.set(res.data);
+          this.applyTraceabilityNormalization(false);
           if (res.data.productVariantsEnabled) {
             this.productService.listAttributes().subscribe({
               next: attr => {
@@ -1693,6 +1799,7 @@ export class ProductFormComponent implements OnInit {
     if (!isProduct) {
       control.setValue(false, { emitEvent: false });
       control.disable({ emitEvent: false });
+      this.applyTraceabilityNormalization(false);
       return;
     }
 
@@ -1701,6 +1808,71 @@ export class ProductFormComponent implements OnInit {
     if (!preserveValue && !this.isEditMode()) {
       control.setValue(true, { emitEvent: false });
     }
+
+    this.applyTraceabilityNormalization(false);
+  }
+
+  private setupTraceabilitySubscriptions(): void {
+    const bump = () => this.traceabilityUiVersion.update(v => v + 1);
+
+    this.form.get('trackingMode')?.valueChanges.subscribe(() => {
+      this.applyTraceabilityNormalization(true);
+      bump();
+    });
+    this.form.get('hasExpiryTracking')?.valueChanges.subscribe(() => {
+      this.applyTraceabilityNormalization(true);
+      bump();
+    });
+    this.form.get('isStockManaged')?.valueChanges.subscribe(() => {
+      this.applyTraceabilityNormalization(true);
+      bump();
+    });
+    this.form.get('category')?.valueChanges.subscribe(() => bump());
+  }
+
+  private buildTraceabilityFormState(): TraceabilityFormState {
+    return {
+      category: this.form.get('category')?.value ?? '',
+      isStockManaged: !!this.form.get('isStockManaged')?.value,
+      trackingMode: this.form.get('trackingMode')?.value ?? 0,
+      hasExpiryTracking: !!this.form.get('hasExpiryTracking')?.value,
+      pickingPolicy: this.form.get('pickingPolicy')?.value ?? 0,
+      costingMethod: this.form.get('costingMethod')?.value ?? 0,
+      expiryAlertDays: this.form.get('expiryAlertDays')?.value ?? null
+    };
+  }
+
+  private applyTraceabilityNormalization(notifyFefoDowngrade: boolean): Record<string, unknown> {
+    if (this.traceabilityNormalizing) {
+      return {};
+    }
+
+    const { state, fefoDowngraded } = normalizeTraceabilityForm(
+      this.buildTraceabilityFormState(),
+      this.stockFeatures()
+    );
+
+    this.traceabilityNormalizing = true;
+    this.form.patchValue(state, { emitEvent: false });
+    this.traceabilityNormalizing = false;
+    this.traceabilityUiVersion.update(v => v + 1);
+
+    if (notifyFefoDowngrade && fefoDowngraded) {
+      this.toastService.add({
+        severity: 'info',
+        summary: 'Politique de prélèvement',
+        detail: 'FEFO nécessite le suivi DLUO. Passage à FIFO physique.'
+      });
+    }
+
+    return state;
+  }
+
+  private mapTraceabilityApiError(message: string): string {
+    if (message.includes('couche d\'ouverture') || message.includes('couche d’ouverture')) {
+      return `${message} Utilisez le bouton « Créer la couche d'ouverture FIFO/LIFO » si le stock est à zéro.`;
+    }
+    return message;
   }
 
   previewCombinationCount(): number {

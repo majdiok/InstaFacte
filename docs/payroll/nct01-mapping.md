@@ -81,28 +81,58 @@ créditeurs**, puisque la retenue du bulletin les crédite sans qu'aucun débit 
 ## Comptes auxiliaires salariés
 
 Chaque salarié porte un sous-compte de **425**, marqué **auxiliaire**, rattaché au collectif, et
-**libellé de son nom**. Deux schémas de numérotation coexistent — par construction, ils ne peuvent
-pas se télescoper (7 caractères contre 10) :
+**libellé de son nom**. Le numéro est **alloué séquentiellement** et stocké sur la fiche
+(`Employee.AuxiliaryAccountNumber`) : `425` + 4 chiffres, soit `4250001`, `4250002`…
 
-| Origine | Forme | Quand |
-|---|---|---|
-| **Alloué** (actuel) | `425` + séquence à 4 chiffres — `4250001`, `4250002`… | Salariés créés depuis l'allocation explicite. Le compte est stocké sur la fiche (`Employee.AuxiliaryAccountNumber`). |
-| **Dérivé** (hérité) | `425` + 7 derniers chiffres du matricule, zéro-paddé — `4256854545` | Salariés antérieurs, dont la fiche ne porte pas de compte. Repli inchangé : aucun compte existant n'a bougé. |
+**Règle de forme (`AccountNumberRules`) : au plus 8 chiffres**, séparateurs non comptés. `421.1`
+vaut 4 chiffres et reste valide ; `4259655554` en vaut 10 et est refusé. L'invariant vit dans
+`ChartOfAccount.Create`, donc sur *tous* les chemins de création — y compris l'auto-création de
+sous-comptes, qui contournait FluentValidation.
 
-L'allocation explicite a remplacé la dérivation pour deux raisons : la troncature aux 7 derniers
-chiffres peut faire **collisionner** deux matricules (les dettes de salaire se confondraient, et le
-lettrage du règlement deviendrait arbitraire), et elle **recopiait le matricule** — souvent un CIN —
-dans le plan comptable et dans le FEC.
+### Le schéma dérivé, supprimé
+
+Jusqu'à la remédiation, une fiche sans compte alloué retombait sur une **dérivation du matricule** :
+`425` + ses 7 derniers chiffres, soit **10 chiffres** (`4256854545`, `4259655554`). Deux défauts :
+
+- le numéro **dépassait le plafond de 8 chiffres** ;
+- la troncature **collisionnait** — « 1 » et « 0000001 », ou deux CIN de même queue, produisaient le
+  même compte, donc une seule dette de salaire pour deux salariés — et **recopiait le matricule**,
+  souvent un CIN, dans le plan comptable et dans le FEC.
+
+La dérivation a été retirée de tous les chemins d'écriture. `PayrollEmployeeAuxiliaryAccountResolver`
+subsiste en **reconnaissance de forme héritée** (`ResolveLegacy`) et ne doit plus servir à créer.
+`PayrollRun.FreezeEmployeeAuxiliaryAccounts` refuse désormais un salarié sans compte au lieu d'en
+inventer un ; c'est `ValidatePayrollRunCommandHandler` qui alloue ce qui manque avant de l'appeler.
 
 Règles communes :
 
 - le compte est **figé sur le bulletin à la validation** du cycle : changer le matricule ensuite ne
   déplace pas la dette déjà comptabilisée ;
-- un matricule sans chiffre est refusé sur le chemin dérivé (le compte SCE est strictement numérique) ;
 - deux salariés aboutissant au même compte sont refusés à la création et à la validation ; la sortie
   est d'**allouer un compte explicite** à l'un des deux depuis sa fiche ;
 - l'écran *Plan comptable* affiche une colonne « Auxiliaire » et permet de les masquer ; le contrôle
-  d'intégrité `health-payroll-auxiliary-shape` signale ceux qui ne sont ni typés ni nommés.
+  d'intégrité `health-payroll-auxiliary-shape` signale ceux qui ne sont ni typés ni nommés, et
+  `health-account-number-length` tout numéro de plus de 8 chiffres, où qu'il soit dans le plan.
+
+### Renumérotation de l'existant
+
+`ChartAccountDigitCompactionService` renumérote les comptes hors norme et propage le nouveau numéro
+à **toutes** les colonnes qui le référencent — écritures brouillon *comme* validées et clôturées,
+bulletins figés, lignes de règlement, groupes de lettrage, fiches salariés. Il s'applique
+automatiquement au bootstrap de chaque dossier (`TenantRuntimeCatalogBootstrapper`), dans une
+transaction unique, et refuse de valider si la balance générale a bougé d'un millime.
+
+Il est gardé **par la donnée** (aucun compte hors norme ⇒ aucune action), pas par un jeton
+« déjà appliqué » : un compte trop long réapparu — restauration d'une sauvegarde antérieure — est
+repris à la passe suivante. La table `ChartOfAccountCompactionLogs` conserve chaque correspondance
+`from → to` indéfiniment : c'est la réponse à « où est passé 4259655554 ? », et la carte inverse d'un
+éventuel retour arrière.
+
+Pré-contrôle et forensique :
+
+```bash
+docs/runbooks/sql/CompactOverlongAccountNumbers.readonly.sql
+```
 
 ### Comptes hérités mal libellés
 
@@ -114,7 +144,9 @@ Les auxiliaires créés **avant** la migration NCT 01 portent un libellé du typ
 docs/runbooks/sql/RequalifyPayrollAuxiliaryAccounts.idempotent.sql
 ```
 
-Il ne touche que des colonnes descriptives de `ChartOfAccounts` — aucune écriture, aucun solde.
+Il ne touche que des colonnes descriptives de `ChartOfAccounts` — aucune écriture, aucun solde. Sa
+détection suppose la queue numérique héritée à 7 chiffres : le passer **avant** la renumérotation,
+qui raccourcit les numéros.
 
 ## Reclassement d'un cycle historique
 

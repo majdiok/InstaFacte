@@ -89,7 +89,8 @@ public sealed class SectorDataTemplateApplierTests
         }
     }
 
-    private static DataTemplateSnapshot ChartAccountTemplate(string code, int version, string accountNumber = "9999") => new()
+    // « 9999 » ne serait plus créable : un numéro SCE commence par sa classe, 1 à 7.
+        private static DataTemplateSnapshot ChartAccountTemplate(string code, int version, string accountNumber = "4999") => new()
     {
         Code = code,
         SegmentCode = null,
@@ -126,7 +127,7 @@ public sealed class SectorDataTemplateApplierTests
         Assert.Contains(result.ItemOutcomes, o => o.Outcome == "created");
 
         using var context = factory.CreateContext();
-        Assert.True(await context.ChartOfAccounts.AnyAsync(a => a.AccountNumber == "9999"));
+        Assert.True(await context.ChartOfAccounts.AnyAsync(a => a.AccountNumber == "4999"));
         Assert.True(await context.AppliedSectorTemplates.AnyAsync(t => t.TemplateCode == "tpl-a" && t.Version == 1));
     }
 
@@ -173,7 +174,7 @@ public sealed class SectorDataTemplateApplierTests
         var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
         await using (var seedContext = factory.CreateContext())
         {
-            var account = ChartOfAccount.Create("9999", "Libellé personnalisé", 4, null, AccountNatureType.Debit).Value;
+            var account = ChartOfAccount.Create("4999", "Libellé personnalisé", 4, null, AccountNatureType.Debit).Value;
             seedContext.ChartOfAccounts.Add(account);
             await seedContext.SaveChangesAsync();
         }
@@ -185,7 +186,7 @@ public sealed class SectorDataTemplateApplierTests
         Assert.Contains(result.ItemOutcomes, o => o.Outcome == "existing");
 
         using var context = factory.CreateContext();
-        var reloadedAccount = await context.ChartOfAccounts.SingleAsync(a => a.AccountNumber == "9999");
+        var reloadedAccount = await context.ChartOfAccounts.SingleAsync(a => a.AccountNumber == "4999");
         Assert.Equal("Libellé personnalisé", reloadedAccount.Label);
     }
 

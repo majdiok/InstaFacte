@@ -418,31 +418,33 @@ public sealed class PayrollComplianceDiagnosticQueryHandler
             .Where(e => e.IsActive && !string.IsNullOrWhiteSpace(e.EmployeeNumber))
             .ToList();
 
-        // Un matricule sans chiffre ne produit aucun compte auxiliaire : Resolve lèverait, et un
-        // diagnostic en lecture seule ne doit pas échouer sur une donnée qu'il est justement là pour
-        // signaler. On le remonte comme anomalie et on l'écarte du calcul de collisions.
+        // Une fiche sans compte auxiliaire fait échouer la validation du cycle : on la signale ici,
+        // où c'est encore corrigeable, plutôt que de laisser l'utilisateur le découvrir au moment
+        // d'arrêter la paie.
         var findings = active
-            .Where(e => !PayrollEmployeeAuxiliaryAccountResolver.CanResolve(e.EmployeeNumber))
+            .Where(e => string.IsNullOrWhiteSpace(e.AuxiliaryAccountNumber))
             .Select(e => new PayrollDiagnosticFindingDto
             {
-                Label = $"Matricule non auxiliarisable — {e.FullName}",
+                Label = $"Compte auxiliaire manquant — {e.FullName}",
                 EntityType = "Employee",
                 EntityId = e.Id,
-                Detail = $"Le matricule « {e.EmployeeNumber} » ne contient aucun chiffre : la validation "
-                    + "d'un cycle incluant ce salarié sera refusée (compte SCE strictement numérique)."
+                Detail = $"Le salarié « {e.EmployeeNumber} » n'a pas de compte auxiliaire 425 sur sa "
+                    + "fiche : il lui en sera alloué un à la validation du prochain cycle."
             })
             .ToList();
 
+        // Collision résiduelle : deux fiches reprises depuis des bulletins figés par l'ancienne
+        // dérivation du matricule peuvent porter le même compte. L'allocation séquentielle, elle,
+        // est unique par construction.
         findings.AddRange(active
-            .Where(e => PayrollEmployeeAuxiliaryAccountResolver.CanResolve(e.EmployeeNumber))
-            .Select(e => (Employee: e, Auxiliary: PayrollEmployeeAuxiliaryAccountResolver.Resolve(e.EmployeeNumber)))
-            .GroupBy(x => x.Auxiliary, StringComparer.Ordinal)
+            .Where(e => !string.IsNullOrWhiteSpace(e.AuxiliaryAccountNumber))
+            .GroupBy(e => e.AuxiliaryAccountNumber!.Trim(), StringComparer.Ordinal)
             .Where(g => g.Count() > 1)
             .Select(g => new PayrollDiagnosticFindingDto
             {
                 Label = $"Auxiliaire {g.Key} — {g.Count()} salariés",
                 Amount = g.Count(),
-                Detail = string.Join(", ", g.Select(x => $"{x.Employee.FullName} ({x.Employee.EmployeeNumber})"))
+                Detail = string.Join(", ", g.Select(e => $"{e.FullName} ({e.EmployeeNumber})"))
             }));
 
         return Check("auxiliary_collisions", "Collisions de comptes auxiliaires 425", findings);

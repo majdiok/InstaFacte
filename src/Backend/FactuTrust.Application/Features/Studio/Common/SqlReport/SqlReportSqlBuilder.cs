@@ -123,6 +123,17 @@ public static class SqlReportSqlBuilder
             dimensions.Add(resolved!);
         }
 
+        // Regroupement demandé mais AUCUNE clé résolue : grouper devient impossible (un GROUP BY
+        // sans expression n'est pas du SQL valide) et retomber sur un total global rendrait un état
+        // FAUX. On refuse en nommant les clés fautives — c'est la seule information qui permette de
+        // reformuler.
+        if (grouped && dimensions.Count == 0)
+        {
+            error = $"Aucun des regroupements demandés n'existe sur « {snapshot.FactTable} » : "
+                  + string.Join(", ", requestedDimensions) + ".";
+            return false;
+        }
+
         // Détail sans colonne demandée : on projette les colonnes de la table de faits (plafonnées),
         // comportement attendu d'un « montre-moi cette table ».
         if (!grouped && dimensions.Count == 0)
@@ -242,9 +253,19 @@ public static class SqlReportSqlBuilder
             columns.Add(new ReportColumn(measure.Key, measure.Label, "measure"));
         }
 
+        // Invariant : un SELECT sans expression serait invalide. Inatteignable grâce aux gardes
+        // ci-dessus, répété ici pour que l'assemblage ne dépende d'aucune hypothèse.
+        if (selectParts.Count == 0)
+        {
+            error = "Aucune colonne exploitable sur cette source.";
+            return false;
+        }
+
         var where = whereParts.Count > 0 ? " WHERE " + string.Join(" AND ", whereParts) : string.Empty;
         var from = $" FROM [dbo].{SqlSchemaGuard.Quote(snapshot.FactTable)} AS {aliases.Of(snapshot.FactTable)}{joinSql}";
-        var groupBy = grouped
+        // La condition porte sur les dimensions RÉSOLUES, jamais sur la seule demande : « GROUP BY »
+        // suivi de rien produirait « GROUP BY  ORDER BY … », que SQL Server rejette.
+        var groupBy = grouped && dimensions.Count > 0
             ? " GROUP BY " + string.Join(", ", dimensions.Select(d => Expression(d, aliases)))
             : string.Empty;
 
@@ -259,7 +280,7 @@ public static class SqlReportSqlBuilder
             .ToString();
 
         // Comptage EXACT : sur les lignes de détail, ou sur le nombre de groupes.
-        var countSql = grouped
+        var countSql = groupBy.Length > 0
             ? $"SELECT COUNT(*) FROM (SELECT {string.Join(", ", dimensions.Select(d => $"{Expression(d, aliases)} AS {SqlSchemaGuard.Quote(d.Key)}"))}{from}{where}{groupBy}) AS g"
             : $"SELECT COUNT(*){from}{where}";
 
@@ -581,6 +602,9 @@ public static class SqlReportSqlBuilder
     {
         var available = columns.Select(c => c.Key).ToHashSet(StringComparer.Ordinal);
         var parts = new List<string>();
+        // Un même champ trié deux fois est refusé par SQL Server (« A column has been specified more
+        // than once in the order by list »). On déduplique comme le font déjà dimensions et mesures.
+        var sorted = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var sort in definition.Sort)
         {
@@ -589,6 +613,8 @@ public static class SqlReportSqlBuilder
                 warnings.Add($"Tri sur « {sort.Field} » impossible : colonne absente du résultat, ignoré.");
                 continue;
             }
+            if (!sorted.Add(sort.Field))
+                continue;
             var direction = string.Equals(sort.Dir, "desc", StringComparison.OrdinalIgnoreCase) ? "DESC" : "ASC";
             parts.Add($"{SqlSchemaGuard.Quote(sort.Field)} {direction}");
         }
