@@ -12,11 +12,16 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // ALTER and CREATE INDEX must be separate batches: SQL Server compiles the whole
+            // batch before execution and rejects indexes on columns added in the same batch.
             migrationBuilder.Sql("""
 IF COL_LENGTH(N'dbo.ProjectTasks', N'InvoicedInvoiceId') IS NULL
     ALTER TABLE [ProjectTasks] ADD [InvoicedInvoiceId] uniqueidentifier NULL;
 IF COL_LENGTH(N'dbo.ProjectTasks', N'InvoicedBillingMethod') IS NULL
     ALTER TABLE [ProjectTasks] ADD [InvoicedBillingMethod] int NULL;
+""");
+
+            migrationBuilder.Sql("""
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes
     WHERE name = N'IX_ProjectTasks_InvoicedInvoiceId'
