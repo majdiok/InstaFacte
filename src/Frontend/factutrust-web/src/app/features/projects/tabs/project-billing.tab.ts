@@ -762,7 +762,7 @@ const TASK_BILLING_METHOD_OPTIONS = [
 
     <p-dialog [(visible)]="sitEditVisible" header="Modifier la situation" [modal]="true" [style]="{ width: '32rem' }">
 
-      <div class="proj-field-row flex-column">
+      <div class="proj-field-stack">
 
         <label>Début <p-datepicker [(ngModel)]="editSitStart" dateFormat="dd/mm/yy" /></label>
 
@@ -792,7 +792,7 @@ const TASK_BILLING_METHOD_OPTIONS = [
 
     <p-dialog [(visible)]="subEditVisible" header="Modifier le sous-traitant" [modal]="true" [style]="{ width: '28rem' }">
 
-      <div class="proj-field-row flex-column">
+      <div class="proj-field-stack">
 
         <label>Marché <input pInputText class="w-full" [(ngModel)]="editSubRef" /></label>
 

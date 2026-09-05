@@ -1,6 +1,7 @@
 import {
   isNavChildActive,
   isNavRouteActive,
+  isNavSubItemActive,
   pathMatchesRoute,
   stripPathForMatch,
   findMatchingDirectChild,
@@ -29,6 +30,37 @@ describe('nav-path-match', () => {
     };
     expect(isNavChildActive('/invoices/unpaid', section)).toBeTrue();
     expect(isNavRouteActive('/accounting/home', '/accounting/home')).toBeTrue();
+    expect(isNavSubItemActive('/invoices/unpaid', section, section.children![0])).toBeFalse();
+    expect(isNavSubItemActive('/invoices/unpaid', section, section.children![1])).toBeTrue();
+    expect(isNavSubItemActive('/invoices', section, section.children![0])).toBeTrue();
+    expect(isNavSubItemActive('/invoices', section, section.children![1])).toBeFalse();
+  });
+
+  it('selects a single Projets submenu child via longest match', () => {
+    const projets: NavItem = {
+      label: 'Projets',
+      children: [
+        { label: 'Tableau de bord', route: '/projects/dashboard' },
+        { label: 'Liste des projets', route: '/projects' },
+        { label: 'Saisie des temps', route: '/projects/time' }
+      ]
+    };
+    const [dashboard, list, time] = projets.children!;
+
+    expect(isNavSubItemActive('/projects/time', projets, time)).toBeTrue();
+    expect(isNavSubItemActive('/projects/time', projets, list)).toBeFalse();
+    expect(isNavSubItemActive('/projects/time', projets, dashboard)).toBeFalse();
+
+    expect(isNavSubItemActive('/projects/dashboard', projets, dashboard)).toBeTrue();
+    expect(isNavSubItemActive('/projects/dashboard', projets, list)).toBeFalse();
+
+    expect(isNavSubItemActive('/projects', projets, list)).toBeTrue();
+    expect(isNavSubItemActive('/projects', projets, dashboard)).toBeFalse();
+    expect(isNavSubItemActive('/projects', projets, time)).toBeFalse();
+
+    expect(isNavSubItemActive('/projects/abc-uuid', projets, list)).toBeTrue();
+    expect(isNavSubItemActive('/projects/abc-uuid', projets, time)).toBeFalse();
+    expect(findLongestMatchingChildInParent('/projects/time', projets)?.route).toBe('/projects/time');
   });
 
   it('matches nested grandchildren for section and direct child active state', () => {
@@ -55,5 +87,7 @@ describe('nav-path-match', () => {
     expect(findMatchingDirectChild('/accounting/vat-declaration', section)?.label).toBe(
       'Déclaration mensuelle'
     );
+    expect(isNavSubItemActive('/accounting/journal', section, section.children![0])).toBeTrue();
+    expect(isNavSubItemActive('/accounting/vat-declaration', section, section.children![1])).toBeTrue();
   });
 });

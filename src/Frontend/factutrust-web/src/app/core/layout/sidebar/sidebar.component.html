@@ -370,9 +370,7 @@
 
                           [routerLink]="child.route"
 
-                          routerLinkActive="active"
-
-                          [routerLinkActiveOptions]="{ exact: false }"
+                          [class.active]="isSubmenuChildActive(item, child)"
 
                           class="delegated-footer-sublink"
 
@@ -478,9 +476,7 @@
 
                       [routerLink]="child.route"
 
-                      routerLinkActive="active"
-
-                      [routerLinkActiveOptions]="{ exact: false }"
+                      [class.active]="isSubmenuChildActive(item, child)"
 
                       class="submenu-link"
 
