@@ -76,6 +76,8 @@ export interface ProjectDetail {
   ownerUserName?: string | null;
   siteAddress?: string | null;
   contractNumber?: string | null;
+  isBillable: boolean;
+  timesheetsEnabled: boolean;
   phases: ProjectPhase[];
 }
 
@@ -402,6 +404,8 @@ export interface UpsertProjectPayload {
   ownerUserId?: string | null;
   siteAddress?: string | null;
   contractNumber?: string | null;
+  isBillable: boolean;
+  timesheetsEnabled: boolean;
 }
 
 export interface UpsertTaskPayload {

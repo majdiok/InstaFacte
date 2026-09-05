@@ -709,7 +709,9 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
 
         var created = Project.Create(
             dto.ClientId, dto.Name, dto.Kind, dto.BillingMode, dto.OwnerUserId,
-            dto.StartDate, dto.EndDate, dto.BudgetHt, dto.Description, dto.SiteAddress, dto.ContractNumber);
+            dto.StartDate, dto.EndDate, dto.BudgetHt, dto.Description, dto.SiteAddress, dto.ContractNumber,
+            isBillable: dto.IsBillable,
+            timesheetsEnabled: dto.TimesheetsEnabled);
         if (created.IsFailure)
             return Result.Failure<Guid>(created.Error);
 
@@ -2048,6 +2050,8 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         OwnerUserName = ownerName,
         SiteAddress = p.SiteAddress,
         ContractNumber = p.ContractNumber,
+        IsBillable = p.IsBillable,
+        TimesheetsEnabled = p.TimesheetsEnabled,
         Phases = phases.Select(x => new ProjectPhaseDto { Id = x.Id, Name = x.Name, SortOrder = x.SortOrder, Color = x.Color }).ToList()
     };
 

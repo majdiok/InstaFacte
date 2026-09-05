@@ -61,6 +61,8 @@ public sealed record ProjectDto
     public string? OwnerUserName { get; init; }
     public string? SiteAddress { get; init; }
     public string? ContractNumber { get; init; }
+    public bool IsBillable { get; init; }
+    public bool TimesheetsEnabled { get; init; }
     public IReadOnlyList<ProjectPhaseDto> Phases { get; init; } = Array.Empty<ProjectPhaseDto>();
 }
 
@@ -77,6 +79,8 @@ public sealed record UpsertProjectDto
     public Guid? OwnerUserId { get; init; }
     public string? SiteAddress { get; init; }
     public string? ContractNumber { get; init; }
+    public bool IsBillable { get; init; }
+    public bool TimesheetsEnabled { get; init; }
 }
 
 public sealed record ProjectPhaseDto

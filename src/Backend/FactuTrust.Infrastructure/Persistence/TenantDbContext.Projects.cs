@@ -20,6 +20,8 @@ public partial class TenantDbContext
             entity.Property(p => p.Currency).HasMaxLength(3).IsRequired();
             entity.Property(p => p.SiteAddress).HasMaxLength(500);
             entity.Property(p => p.ContractNumber).HasMaxLength(100);
+            entity.Property(p => p.IsBillable).IsRequired();
+            entity.Property(p => p.TimesheetsEnabled).IsRequired();
             entity.HasIndex(p => p.ClientId);
             entity.HasIndex(p => p.Status);
             entity.HasIndex(p => p.Kind);

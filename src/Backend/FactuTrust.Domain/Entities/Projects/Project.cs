@@ -19,6 +19,8 @@ public sealed class Project : AggregateRoot
 
     public string? SiteAddress { get; private set; }
     public string? ContractNumber { get; private set; }
+    public bool IsBillable { get; private set; }
+    public bool TimesheetsEnabled { get; private set; }
 
     private Project() { }
 
@@ -34,7 +36,9 @@ public sealed class Project : AggregateRoot
         string? description = null,
         string? siteAddress = null,
         string? contractNumber = null,
-        string currency = "TND")
+        string currency = "TND",
+        bool isBillable = true,
+        bool timesheetsEnabled = true)
     {
         name = name?.Trim() ?? string.Empty;
         if (clientId == Guid.Empty)
@@ -65,7 +69,9 @@ public sealed class Project : AggregateRoot
             Currency = string.IsNullOrWhiteSpace(currency) ? "TND" : currency.Trim().ToUpperInvariant(),
             OwnerUserId = ownerUserId,
             SiteAddress = siteAddress?.Trim(),
-            ContractNumber = contractNumber?.Trim()
+            ContractNumber = contractNumber?.Trim(),
+            IsBillable = isBillable,
+            TimesheetsEnabled = timesheetsEnabled
         });
     }
 
