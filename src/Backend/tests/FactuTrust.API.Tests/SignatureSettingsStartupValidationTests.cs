@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
@@ -20,7 +19,7 @@ namespace FactuTrust.API.Tests;
 /// </summary>
 public sealed class SignatureSettingsStartupValidationTests
 {
-    private sealed class SignatureKeyWebApplicationFactory : WebApplicationFactory<Program>
+    private sealed class SignatureKeyWebApplicationFactory : ChannelsDisabledWebApplicationFactory
     {
         private readonly string? _signatureSecretKey;
 
@@ -28,23 +27,18 @@ public sealed class SignatureSettingsStartupValidationTests
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            builder.UseSetting("JwtSettings:SecretKey", ChannelsDisabledWebApplicationFactory.TestJwtSecretKey);
-            if (_signatureSecretKey is not null)
-            {
-                builder.UseSetting("SignatureSettings:SecretKey", _signatureSecretKey);
-            }
+            base.ConfigureWebHost(builder);
+
+            // Override the base factory's test signature key with the scenario under test.
+            // UseSetting is read during host construction; in-memory config wins last for the same key.
+            builder.UseSetting("SignatureSettings:SecretKey", _signatureSecretKey ?? string.Empty);
 
             builder.ConfigureAppConfiguration((_, config) =>
             {
-                var settings = new Dictionary<string, string?>
+                config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Channels:Enabled"] = "false",
-                    ["Channels:WhatsAppEnabled"] = "false",
-                    ["Channels:AutoStart"] = "false",
-                    ["JwtSettings:SecretKey"] = ChannelsDisabledWebApplicationFactory.TestJwtSecretKey,
                     ["SignatureSettings:SecretKey"] = _signatureSecretKey
-                };
-                config.AddInMemoryCollection(settings);
+                });
             });
         }
     }

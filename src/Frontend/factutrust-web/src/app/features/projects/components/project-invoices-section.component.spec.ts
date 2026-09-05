@@ -86,7 +86,7 @@ describe('ProjectInvoicesSectionComponent', () => {
   it('reloads when refreshToken changes', async () => {
     await setup();
     expect(apiSpy.linkedInvoices).toHaveBeenCalledTimes(1);
-    fixture.componentInstance.refreshToken = 1;
+    fixture.componentRef.setInput('refreshToken', 1);
     fixture.detectChanges();
     expect(apiSpy.linkedInvoices).toHaveBeenCalledTimes(2);
   });

@@ -84,7 +84,7 @@ public sealed class ProjectBillableTimeEntriesTests
         var aliceId = Guid.NewGuid();
         var bobId = Guid.NewGuid();
         var alice = ProjectMember.Create(project.Id, aliceId, ProjectMemberRole.Member, null, 80m, 40m).Value;
-        var bob = ProjectMember.Create(project.Id, bobId, ProjectMemberRole.Member, null, 100m, 40m).Value;
+        var bob = ProjectMember.Create(project.Id, bobId, ProjectMemberRole.Member, 320m, 100m, 40m).Value;
 
         var entry1 = ProjectTimeEntry.Create(project.Id, aliceId, new DateTime(2026, 8, 1), 5m, true, null, taskHourly.Id).Value;
         Assert.True(entry1.Submit().IsSuccess);
@@ -147,6 +147,40 @@ public sealed class ProjectBillableTimeEntriesTests
         Assert.Equal(3m, latest.Hours);
         Assert.Equal(40m, latest.HourlyRate);
         Assert.Equal(120m, latest.PreviewAmountHt);
+    }
+
+    [Fact]
+    public async Task GetBillableTimeEntries_WhenTjmAndCostBothSet_UsesTjmForClientBilling()
+    {
+        var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
+        var address = Address.Create("1 rue Test", "Tunis", "Tunis").Value;
+        var email = Email.Create("client@example.com").Value;
+        var client = Client.Create("Client test", ClientType.Individual, address, email).Value;
+
+        var project = Project.Create(client.Id, "Mission", ProjectKind.Esn, ProjectBillingMode.TimeAndMaterials, null, null, null, 5000m).Value;
+        Assert.True(project.Activate().IsSuccess);
+
+        var memberId = Guid.NewGuid();
+        var member = ProjectMember.Create(project.Id, memberId, ProjectMemberRole.Member, 320m, 100m, 40m).Value;
+        var entry = ProjectTimeEntry.Create(project.Id, memberId, new DateTime(2026, 8, 3), 2m, true, null, null).Value;
+        Assert.True(entry.Submit().IsSuccess);
+        Assert.True(entry.Validate().IsSuccess);
+
+        await using (var ctx = factory.CreateContext())
+        {
+            ctx.Clients.Add(client);
+            ctx.Projects.Add(project);
+            ctx.ProjectMembers.Add(member);
+            ctx.ProjectTimeEntries.Add(entry);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var sut = CreateService(factory, client);
+        var items = await sut.GetBillableTimeEntriesAsync(project.Id);
+
+        Assert.Single(items);
+        Assert.Equal(40m, items[0].HourlyRate);
+        Assert.Equal(80m, items[0].PreviewAmountHt);
     }
 
     [Fact]

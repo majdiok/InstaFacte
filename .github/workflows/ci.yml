@@ -16,6 +16,8 @@ jobs:
   backend:
     name: Backend .NET (build + tests)
     runs-on: windows-latest # LocalDB requis par les tests d'intégration API
+    env:
+      FACTUTRUST_TEST_MASTER_CONNECTION: Server=(localdb)\MSSQLLocalDB;Database=FactuTrust_Master_CI;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
