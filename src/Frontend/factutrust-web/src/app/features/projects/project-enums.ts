@@ -219,6 +219,116 @@ export function canCancel(raw: unknown): boolean {
 export function canReceiveTime(raw: unknown): boolean {
   return parseProjectStatus(raw) === 'Active';
 }
+
+export function canProcessExistingTime(raw: unknown): boolean {
+  const s = parseProjectStatus(raw);
+  return s === 'Active' || s === 'OnHold' || s === 'Completed';
+}
+
+export interface ProjectTimeLoggingContext {
+  status: unknown;
+  timesheetsEnabled?: boolean;
+}
+
+export function canCreateTimeEntry(project: ProjectTimeLoggingContext | null | undefined): boolean {
+  if (!project) return false;
+  return canReceiveTime(project.status) && project.timesheetsEnabled !== false;
+}
+
+/** @deprecated Use canCreateTimeEntry for new time entry; showTimeTab for tab visibility. */
+export function canLogTime(project: ProjectTimeLoggingContext | null | undefined): boolean {
+  return canCreateTimeEntry(project);
+}
+
+export function showTimeTab(project: ProjectTimeLoggingContext | null | undefined): boolean {
+  if (!project) return false;
+  if (project.timesheetsEnabled === false) return false;
+  return canProcessExistingTime(project.status);
+}
+
+export function canProcessTimeEntries(project: ProjectTimeLoggingContext | null | undefined): boolean {
+  return showTimeTab(project);
+}
+
+export function timesheetsDisabledMessage(): string {
+  return 'La saisie des temps est désactivée pour ce projet.';
+}
+
+export function cannotReceiveTimeMessage(raw: unknown): string {
+  const s = parseProjectStatus(raw);
+  switch (s) {
+    case 'Draft':
+      return 'Activez le projet pour saisir du temps. La saisie est interdite en statut Brouillon.';
+    case 'OnHold':
+      return 'La saisie de temps est interdite pour un projet en pause.';
+    case 'Completed':
+      return 'Aucune nouvelle saisie de temps n\'est autorisée sur un projet terminé.';
+    case 'Cancelled':
+      return 'Aucune nouvelle saisie de temps n\'est autorisée sur un projet annulé.';
+    default:
+      return 'Activez le projet pour saisir du temps. La saisie est réservée aux projets Actif.';
+  }
+}
+
+export function timeEntryCreationBlockedMessage(raw: unknown): string {
+  const s = parseProjectStatus(raw);
+  if (s === 'OnHold' || s === 'Completed') {
+    return 'La saisie de nouveaux temps est désactivée. Les temps déjà saisis restent consultables et traitables.';
+  }
+  return cannotReceiveTimeMessage(raw);
+}
+
+export interface TimeEntryActionContext {
+  status: unknown;
+  invoicedInvoiceId?: string | null;
+  statusDisplay?: string;
+}
+
+export function isInvoicedTimeEntry(entry: TimeEntryActionContext): boolean {
+  return !!entry.invoicedInvoiceId;
+}
+
+export function canEditTimeEntry(entry: TimeEntryActionContext): boolean {
+  return parseProjectTimeStatus(entry.status) === 'Draft' && !isInvoicedTimeEntry(entry);
+}
+
+export function canDeleteTimeEntry(entry: TimeEntryActionContext): boolean {
+  return canEditTimeEntry(entry);
+}
+
+export function canSubmitTimeEntry(entry: TimeEntryActionContext): boolean {
+  return parseProjectTimeStatus(entry.status) === 'Draft' && !isInvoicedTimeEntry(entry);
+}
+
+export function canValidateTimeEntry(entry: TimeEntryActionContext): boolean {
+  return parseProjectTimeStatus(entry.status) === 'Submitted';
+}
+
+export function canReopenTimeEntry(entry: TimeEntryActionContext): boolean {
+  if (isInvoicedTimeEntry(entry)) return false;
+  const s = parseProjectTimeStatus(entry.status);
+  return s === 'Submitted' || s === 'Validated';
+}
+
+export function canReopenSubmittedTimeEntry(entry: TimeEntryActionContext): boolean {
+  return canReopenTimeEntry(entry) && parseProjectTimeStatus(entry.status) === 'Submitted';
+}
+
+export function canReopenValidatedTimeEntry(entry: TimeEntryActionContext): boolean {
+  return canReopenTimeEntry(entry) && parseProjectTimeStatus(entry.status) === 'Validated';
+}
+
+export function timeEntryStatusLabel(entry: TimeEntryActionContext): string {
+  if (isInvoicedTimeEntry(entry)) return 'Facturé';
+  if (entry.statusDisplay) return entry.statusDisplay;
+  return parseProjectTimeStatus(entry.status) ?? 'Draft';
+}
+
+export function timeEntryStatusBadge(entry: TimeEntryActionContext): StatusBadgeStatus {
+  if (isInvoicedTimeEntry(entry)) return 'paid';
+  return timeStatusBadge(entry.status);
+}
+
 export function canBeBilled(raw: unknown): boolean {
   const s = parseProjectStatus(raw);
   return s === 'Active' || s === 'Completed';

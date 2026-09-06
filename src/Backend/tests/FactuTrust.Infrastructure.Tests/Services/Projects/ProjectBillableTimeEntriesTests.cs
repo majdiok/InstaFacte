@@ -204,6 +204,42 @@ public sealed class ProjectBillableTimeEntriesTests
     }
 
     [Fact]
+    public async Task GetBillableTimeEntries_ExcludesNonBillableEntries()
+    {
+        var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
+        var address = Address.Create("1 rue Test", "Tunis", "Tunis").Value;
+        var email = Email.Create("client@example.com").Value;
+        var client = Client.Create("Client test", ClientType.Individual, address, email).Value;
+
+        var project = Project.Create(client.Id, "Mission", ProjectKind.Esn, ProjectBillingMode.TimeAndMaterials, null, null, null, 5000m).Value;
+        Assert.True(project.Activate().IsSuccess);
+
+        var memberId = Guid.NewGuid();
+        var member = ProjectMember.Create(project.Id, memberId, ProjectMemberRole.Member, null, 80m, 40m).Value;
+        var billable = ProjectTimeEntry.Create(project.Id, memberId, new DateTime(2026, 8, 1), 4m, true, null, null).Value;
+        var nonBillable = ProjectTimeEntry.Create(project.Id, memberId, new DateTime(2026, 8, 2), 2m, false, null, null).Value;
+        Assert.True(billable.Submit().IsSuccess);
+        Assert.True(billable.Validate().IsSuccess);
+        Assert.True(nonBillable.Submit().IsSuccess);
+        Assert.True(nonBillable.Validate().IsSuccess);
+
+        await using (var ctx = factory.CreateContext())
+        {
+            ctx.Clients.Add(client);
+            ctx.Projects.Add(project);
+            ctx.ProjectMembers.Add(member);
+            ctx.ProjectTimeEntries.AddRange(billable, nonBillable);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var sut = CreateService(factory, client);
+        var items = await sut.GetBillableTimeEntriesAsync(project.Id);
+
+        Assert.Single(items);
+        Assert.Equal(billable.Id, items[0].Id);
+    }
+
+    [Fact]
     public async Task GetBillableTimeEntries_ExcludesEntriesOnForfaitInvoicedTask()
     {
         var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());

@@ -6,6 +6,21 @@ import {
   canHold,
   canHoldOrComplete,
   canReceiveTime,
+  canCreateTimeEntry,
+  canLogTime,
+  showTimeTab,
+  canProcessTimeEntries,
+  canEditTimeEntry,
+  canDeleteTimeEntry,
+  canSubmitTimeEntry,
+  canValidateTimeEntry,
+  canReopenTimeEntry,
+  canReopenSubmittedTimeEntry,
+  canReopenValidatedTimeEntry,
+  timeEntryStatusLabel,
+  timeEntryStatusBadge,
+  timesheetsDisabledMessage,
+  cannotReceiveTimeMessage,
   defaultBillingForKind,
   isBtp,
   isEsn,
@@ -110,6 +125,47 @@ describe('project-enums', () => {
   it('hides the invoice action while the project is still Draft', () => {
     expect(canBeBilled('Draft')).toBe(false);
     expect(canBeBilled('Brouillon')).toBe(false);
+  });
+
+  it('gates time logging on project status and timesheets flag', () => {
+    expect(canCreateTimeEntry({ status: 'Active', timesheetsEnabled: true })).toBe(true);
+    expect(canLogTime({ status: 'Active', timesheetsEnabled: true })).toBe(true);
+    expect(canCreateTimeEntry({ status: 'Active', timesheetsEnabled: false })).toBe(false);
+    expect(canCreateTimeEntry({ status: 'OnHold', timesheetsEnabled: true })).toBe(false);
+    expect(canCreateTimeEntry({ status: 'Completed', timesheetsEnabled: true })).toBe(false);
+    expect(timesheetsDisabledMessage()).toContain('désactivée');
+    expect(cannotReceiveTimeMessage('OnHold')).toContain('pause');
+  });
+
+  it('shows time tab when timesheets enabled on active, on hold or completed projects', () => {
+    expect(showTimeTab({ status: 'Active', timesheetsEnabled: true })).toBe(true);
+    expect(showTimeTab({ status: 'Active', timesheetsEnabled: false })).toBe(false);
+    expect(showTimeTab({ status: 'OnHold', timesheetsEnabled: true })).toBe(true);
+    expect(showTimeTab({ status: 'Completed', timesheetsEnabled: true })).toBe(true);
+    expect(showTimeTab({ status: 'Draft', timesheetsEnabled: true })).toBe(false);
+    expect(showTimeTab({ status: 'Cancelled', timesheetsEnabled: true })).toBe(false);
+    expect(canProcessTimeEntries({ status: 'Completed', timesheetsEnabled: true })).toBe(true);
+  });
+
+  it('derives time entry actions and invoiced display', () => {
+    const draft = { status: 'Draft', statusDisplay: 'Brouillon' };
+    const submitted = { status: 'Submitted', statusDisplay: 'Soumis' };
+    const validated = { status: 'Validated', statusDisplay: 'Validé' };
+    const invoiced = { status: 'Validated', statusDisplay: 'Validé', invoicedInvoiceId: 'inv-1' };
+
+    expect(canEditTimeEntry(draft)).toBe(true);
+    expect(canDeleteTimeEntry(draft)).toBe(true);
+    expect(canSubmitTimeEntry(draft)).toBe(true);
+    expect(canValidateTimeEntry(draft)).toBe(false);
+    expect(canReopenTimeEntry(submitted)).toBe(true);
+    expect(canReopenSubmittedTimeEntry(submitted)).toBe(true);
+    expect(canReopenValidatedTimeEntry(submitted)).toBe(false);
+    expect(canReopenTimeEntry(validated)).toBe(true);
+    expect(canReopenValidatedTimeEntry(validated)).toBe(true);
+    expect(canEditTimeEntry(invoiced)).toBe(false);
+    expect(canReopenTimeEntry(invoiced)).toBe(false);
+    expect(timeEntryStatusLabel(invoiced)).toBe('Facturé');
+    expect(timeEntryStatusBadge(invoiced)).toBe('paid');
   });
 
   it('shows workload for ESN and TimeAndMaterials billing', () => {

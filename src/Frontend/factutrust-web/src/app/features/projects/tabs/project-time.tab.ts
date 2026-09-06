@@ -32,7 +32,21 @@ import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.
 
 import { ProjectDetail, ProjectTask, ProjectTimeEntry } from '../project-api.service';
 
-import { canReceiveTime, parseProjectTimeStatus, timeStatusBadge, toIsoDate } from '../project-enums';
+import {
+  canCreateTimeEntry,
+  canDeleteTimeEntry,
+  canEditTimeEntry,
+  canReopenSubmittedTimeEntry,
+  canReopenValidatedTimeEntry,
+  canSubmitTimeEntry,
+  canValidateTimeEntry,
+  parseProjectStatus,
+  parseProjectTimeStatus,
+  timeEntryCreationBlockedMessage,
+  timeEntryStatusBadge,
+  timeEntryStatusLabel,
+  toIsoDate
+} from '../project-enums';
 
 
 
@@ -120,18 +134,12 @@ const TIME_STATUS_FILTER_OPTIONS = [
 
   template: `
 
-    @if (project && !canReceiveTime(project.status)) {
-
+    @if (project && !canCreateTimeEntry(project)) {
       <p-message severity="warn" styleClass="w-full mb-3"
-
-        text="Activez le projet pour saisir du temps. La saisie est réservée aux projets Actif." />
-
-      @if (canActivate) {
-
+        [text]="timeLoggingBlockedMessage()" />
+      @if (canActivate && isDraftProject(project)) {
         <app-button class="mb-3" variant="primary" (click)="activate.emit()">Activer le projet</app-button>
-
       }
-
     }
 
 
@@ -154,7 +162,7 @@ const TIME_STATUS_FILTER_OPTIONS = [
 
 
 
-    @if (project && canReceiveTime(project.status) && canCreate) {
+    @if (project && canCreateTimeEntry(project) && canCreate) {
 
       <div class="card p-3 mb-3">
 
@@ -227,35 +235,45 @@ const TIME_STATUS_FILTER_OPTIONS = [
           <td>{{ e.isBillable ? 'Oui' : 'Non' }}</td>
 
           <td>
-
-            <app-status-badge [status]="timeStatusBadge(e.status)" [label]="e.statusDisplay" />
-
+            <app-status-badge [status]="timeEntryStatusBadge(e)" [label]="timeEntryStatusLabel(e)" />
           </td>
 
           <td class="proj-time-row-actions">
 
-            @if (parseProjectTimeStatus(e.status) === 'Draft' && canCreate) {
-
+            @if (canEditTimeEntry(e) && canCreate) {
               <app-button size="sm" variant="ghost" icon="pi-pencil" [iconOnly]="true"
                 [iconAlwaysVisible]="true" pTooltip="Modifier" tooltipPosition="top"
                 ariaLabel="Modifier" (click)="openEdit(e)" />
-
             }
 
-            @if (parseProjectTimeStatus(e.status) === 'Draft' && canSubmit) {
+            @if (canDeleteTimeEntry(e) && canCreate) {
+              <app-button size="sm" variant="ghost" icon="pi-trash" [iconOnly]="true"
+                [iconAlwaysVisible]="true" pTooltip="Supprimer" tooltipPosition="top"
+                ariaLabel="Supprimer" (click)="deleteEntry.emit(e.id)" />
+            }
 
+            @if (canSubmitTimeEntry(e) && canSubmit) {
               <app-button size="sm" variant="ghost" icon="pi-send" [iconOnly]="true"
                 [iconAlwaysVisible]="true" pTooltip="Soumettre" tooltipPosition="top"
                 ariaLabel="Soumettre" (click)="submitEntry.emit(e.id)" />
-
             }
 
-            @if (parseProjectTimeStatus(e.status) === 'Submitted' && canValidate) {
-
+            @if (canValidateTimeEntry(e) && canValidate) {
               <app-button size="sm" variant="primary" icon="pi-check" [iconOnly]="true"
                 [iconAlwaysVisible]="true" pTooltip="Valider" tooltipPosition="top"
                 ariaLabel="Valider" (click)="validateEntry.emit(e.id)" />
+            }
 
+            @if (canReopenSubmittedTimeEntry(e) && canSubmit) {
+              <app-button size="sm" variant="ghost" icon="pi-undo" [iconOnly]="true"
+                [iconAlwaysVisible]="true" pTooltip="Rouvrir en brouillon" tooltipPosition="top"
+                ariaLabel="Rouvrir en brouillon" (click)="reopenEntry.emit(e.id)" />
+            }
+
+            @if (canReopenValidatedTimeEntry(e) && canValidate) {
+              <app-button size="sm" variant="ghost" icon="pi-undo" [iconOnly]="true"
+                [iconAlwaysVisible]="true" pTooltip="Rouvrir en brouillon" tooltipPosition="top"
+                ariaLabel="Rouvrir en brouillon" (click)="reopenEntry.emit(e.id)" />
             }
 
             @if (e.invoicedInvoiceId) {
@@ -356,6 +374,10 @@ export class ProjectTimeTabComponent {
 
   @Output() validateEntry = new EventEmitter<string>();
 
+  @Output() deleteEntry = new EventEmitter<string>();
+
+  @Output() reopenEntry = new EventEmitter<string>();
+
   @Output() activate = new EventEmitter<void>();
 
 
@@ -394,13 +416,25 @@ export class ProjectTimeTabComponent {
 
 
 
-  readonly canReceiveTime = canReceiveTime;
-
+  readonly canCreateTimeEntry = canCreateTimeEntry;
   readonly parseProjectTimeStatus = parseProjectTimeStatus;
+  readonly canEditTimeEntry = canEditTimeEntry;
+  readonly canDeleteTimeEntry = canDeleteTimeEntry;
+  readonly canSubmitTimeEntry = canSubmitTimeEntry;
+  readonly canValidateTimeEntry = canValidateTimeEntry;
+  readonly canReopenSubmittedTimeEntry = canReopenSubmittedTimeEntry;
+  readonly canReopenValidatedTimeEntry = canReopenValidatedTimeEntry;
+  readonly timeEntryStatusBadge = timeEntryStatusBadge;
+  readonly timeEntryStatusLabel = timeEntryStatusLabel;
 
-  readonly timeStatusBadge = timeStatusBadge;
+  timeLoggingBlockedMessage(): string {
+    if (!this.project) return '';
+    return timeEntryCreationBlockedMessage(this.project.status);
+  }
 
-
+  isDraftProject(project: ProjectDetail): boolean {
+    return parseProjectStatus(project.status) === 'Draft';
+  }
 
   applyFilters(): void {
 

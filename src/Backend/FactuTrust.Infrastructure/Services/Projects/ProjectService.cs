@@ -176,7 +176,8 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
                 OwnerUserName = p.OwnerUserId is { } oid ? ownerNames.GetValueOrDefault(oid) : null,
                 ProgressPercent = progressPercent,
                 CompletedTaskCount = prog.Completed,
-                TotalTaskCount = prog.Total
+                TotalTaskCount = prog.Total,
+                TimesheetsEnabled = p.TimesheetsEnabled
             };
         }).ToList();
     }
@@ -1116,7 +1117,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             IsBillable = t.IsBillable,
             Notes = t.Notes,
             Status = t.Status,
-            StatusDisplay = t.Status.ToDisplayString(),
+            StatusDisplay = t.Status.ToDisplayString(t.InvoicedInvoiceId.HasValue),
             InvoicedInvoiceId = t.InvoicedInvoiceId
         }).ToList();
     }
@@ -1125,8 +1126,8 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
     {
         var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == dto.ProjectId, cancellationToken);
         if (project is null) return Result.Failure<Guid>(Error.NotFound("Project", dto.ProjectId));
-        if (!project.Status.CanReceiveTime())
-            return Result.Failure<Guid>(Error.Validation("Status", project.Status.CannotReceiveTimeMessage()));
+        var guard = EnsureProjectAllowsNewTimeEntry(project);
+        if (guard is not null) return Result.Failure<Guid>(guard);
         var userId = dto.UserId ?? _currentUser.UserId;
         if (userId is null || userId == Guid.Empty)
             return Result.Failure<Guid>(Error.Validation("UserId", "L'utilisateur est obligatoire"));
@@ -1141,6 +1142,12 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
     {
         var entry = await _db.ProjectTimeEntries.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
         if (entry is null) return Result.Failure(Error.NotFound("ProjectTimeEntry", id));
+        if (entry.ProjectId != dto.ProjectId)
+            return Result.Failure(Error.Validation("ProjectId", "Le projet ne peut pas être modifié"));
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == entry.ProjectId, cancellationToken);
+        if (project is null) return Result.Failure(Error.NotFound("Project", entry.ProjectId));
+        var guard = EnsureProjectAllowsTimeWorkflow(project);
+        if (guard is not null) return Result.Failure(guard);
         var updated = entry.Update(dto.WorkDate, dto.Hours, dto.IsBillable, dto.Notes, dto.TaskId);
         if (updated.IsFailure) return updated;
         await _db.SaveChangesAsync(cancellationToken);
@@ -1151,6 +1158,10 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
     {
         var entry = await _db.ProjectTimeEntries.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
         if (entry is null) return Result.Failure(Error.NotFound("ProjectTimeEntry", id));
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == entry.ProjectId, cancellationToken);
+        if (project is null) return Result.Failure(Error.NotFound("Project", entry.ProjectId));
+        var guard = EnsureProjectAllowsTimeWorkflow(project);
+        if (guard is not null) return Result.Failure(guard);
         var submitted = entry.Submit();
         if (submitted.IsFailure) return submitted;
         await _db.SaveChangesAsync(cancellationToken);
@@ -1161,6 +1172,10 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
     {
         var entry = await _db.ProjectTimeEntries.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
         if (entry is null) return Result.Failure(Error.NotFound("ProjectTimeEntry", id));
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == entry.ProjectId, cancellationToken);
+        if (project is null) return Result.Failure(Error.NotFound("Project", entry.ProjectId));
+        var guard = EnsureProjectAllowsTimeWorkflow(project);
+        if (guard is not null) return Result.Failure(guard);
         var validated = entry.Validate();
         if (validated.IsFailure) return validated;
 
@@ -1173,6 +1188,55 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
                 _db.ProjectCostLines.Add(cost.Value);
         }
 
+        await _db.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> DeleteTimeEntryAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var entry = await _db.ProjectTimeEntries.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
+        if (entry is null) return Result.Failure(Error.NotFound("ProjectTimeEntry", id));
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == entry.ProjectId, cancellationToken);
+        if (project is null) return Result.Failure(Error.NotFound("Project", entry.ProjectId));
+        var guard = EnsureProjectAllowsTimeWorkflow(project);
+        if (guard is not null) return Result.Failure(guard);
+        if (!entry.CanBeDeleted())
+            return Result.Failure(Error.Validation("Status", "Seuls les temps en brouillon peuvent être supprimés"));
+        _db.ProjectTimeEntries.Remove(entry);
+        await _db.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> ReopenTimeEntryAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var entry = await _db.ProjectTimeEntries.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
+        if (entry is null) return Result.Failure(Error.NotFound("ProjectTimeEntry", id));
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == entry.ProjectId, cancellationToken);
+        if (project is null) return Result.Failure(Error.NotFound("Project", entry.ProjectId));
+        var guard = EnsureProjectAllowsTimeWorkflow(project);
+        if (guard is not null) return Result.Failure(guard);
+
+        var permission = entry.Status switch
+        {
+            ProjectTimeEntryStatus.Submitted => Permissions.ProjectTime.Submit,
+            ProjectTimeEntryStatus.Validated => Permissions.ProjectTime.Validate,
+            _ => null
+        };
+        if (permission is null)
+            return Result.Failure(Error.Validation("Status", "Seuls les temps soumis ou validés peuvent être rouverts"));
+        if (!_currentUser.HasPermission(permission))
+            return Result.Failure(Error.Forbidden("Vous n'avez pas la permission de rouvrir ce temps"));
+
+        if (entry.Status == ProjectTimeEntryStatus.Validated)
+        {
+            var costLines = await _db.ProjectCostLines
+                .Where(c => c.TimeEntryId == entry.Id)
+                .ToListAsync(cancellationToken);
+            _db.ProjectCostLines.RemoveRange(costLines);
+        }
+
+        var reopened = entry.ReopenToDraft();
+        if (reopened.IsFailure) return reopened;
         await _db.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
@@ -1282,7 +1346,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         {
             CanBill = project.Status.CanBeBilled(),
             CanInvoiceTime = project.Status.CanBeBilled() && hours > 0 && withoutRate.Count == 0,
-            CanReceiveTime = project.Status.CanReceiveTime(),
+            CanReceiveTime = project.Status.CanReceiveTime() && project.TimesheetsEnabled,
             Status = project.Status,
             StatusDisplay = project.Status.ToDisplayString(),
             ValidatedUninvoicedHours = hours,
@@ -2120,6 +2184,24 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         return await _master.Users.AsNoTracking()
             .Where(u => list.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => u.FirstName + " " + u.LastName, cancellationToken);
+    }
+
+    private static Error? EnsureProjectAllowsNewTimeEntry(Project project)
+    {
+        if (!project.TimesheetsEnabled)
+            return Error.Validation("TimesheetsEnabled", ProjectEnumExtensions.TimesheetsDisabledMessage);
+        if (!project.Status.CanReceiveTime())
+            return Error.Validation("Status", project.Status.CannotReceiveTimeMessage());
+        return null;
+    }
+
+    private static Error? EnsureProjectAllowsTimeWorkflow(Project project)
+    {
+        if (!project.TimesheetsEnabled)
+            return Error.Validation("TimesheetsEnabled", ProjectEnumExtensions.TimesheetsDisabledMessage);
+        if (!project.Status.CanProcessExistingTime())
+            return Error.Validation("Status", project.Status.CannotProcessExistingTimeMessage());
+        return null;
     }
 
     private void AddActivity(Guid projectId, string type, string message, Guid? taskId = null)
