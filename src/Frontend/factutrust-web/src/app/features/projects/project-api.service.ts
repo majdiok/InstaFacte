@@ -47,6 +47,7 @@ export interface ProjectListItem {
   progressPercent: number;
   completedTaskCount: number;
   totalTaskCount: number;
+  timesheetsEnabled: boolean;
 }
 
 export interface ProjectPhase {
@@ -664,6 +665,14 @@ export class ProjectApiService {
     notes?: string;
   }): Observable<ApiResponse<boolean>> {
     return this.http.put<ApiResponse<boolean>>(`${this.base}/time/${id}`, payload);
+  }
+
+  deleteTime(id: string): Observable<ApiResponse<boolean>> {
+    return this.http.delete<ApiResponse<boolean>>(`${this.base}/time/${id}`);
+  }
+
+  reopenTime(id: string): Observable<ApiResponse<boolean>> {
+    return this.http.post<ApiResponse<boolean>>(`${this.base}/time/${id}/reopen`, {});
   }
 
   costs(projectId: string): Observable<ApiResponse<ProjectCostLine[]>> {

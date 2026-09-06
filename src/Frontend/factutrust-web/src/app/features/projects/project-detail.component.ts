@@ -57,6 +57,7 @@ import {
   parseProjectKind,
   projectStatusBadge,
   projectUiProfile,
+  showTimeTab,
   toIsoDate
 } from './project-enums';
 import { ProjectOverviewTabComponent } from './tabs/project-overview.tab';
@@ -135,9 +136,11 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
           <p-tab value="tasks" [class.proj-tab-emphasis]="isEmphasizedTab('tasks')">
             <i class="pi pi-check-square"></i> Tâches
           </p-tab>
+          @if (showTimeTab(p)) {
           <p-tab value="time" [class.proj-tab-emphasis]="isEmphasizedTab('time')">
             <i class="pi pi-clock"></i> Temps
           </p-tab>
+          }
           <p-tab value="budget" [class.proj-tab-emphasis]="isEmphasizedTab('budget')">
             <i class="pi pi-wallet"></i> Budget
           </p-tab>
@@ -180,13 +183,16 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
               (refresh)="reloadTasks()"
               (logTime)="logTimeFromTasks($event)" />
           </p-tabpanel>
+          @if (showTimeTab(p)) {
           <p-tabpanel value="time">
             <app-project-time-tab [project]="p" [entries]="timeEntries()" [tasks]="tasks()"
               [canCreate]="canCreateTime" [canSubmit]="canSubmitTime" [canValidate]="canValidateTime"
               [canActivate]="canUpdate" (create)="createTime($event)" (updateEntry)="updateTime($event)"
               (filterChange)="onTimeFilter($event)" (submitEntry)="submitTime($event)"
-              (validateEntry)="validateTime($event)" (activate)="activate()" />
+              (validateEntry)="validateTime($event)" (deleteEntry)="deleteTime($event)"
+              (reopenEntry)="reopenTime($event)" (activate)="activate()" />
           </p-tabpanel>
+          }
           <p-tabpanel value="budget">
             <app-project-budget-tab [project]="p" [budget]="budget()" [costs]="costs()" [products]="products()"
               [purchaseOrders]="purchaseOrders()" [linkedPurchaseOrders]="linkedPurchaseOrders()"
@@ -353,6 +359,8 @@ export class ProjectDetailComponent implements OnInit {
   get canManageTeam(): boolean { return this.auth.hasPermission(PERMISSIONS.projects.manageTeam); }
   get canCreateBilling(): boolean { return this.auth.hasPermission(PERMISSIONS.projectBilling.create); }
 
+  readonly showTimeTab = showTimeTab;
+
   breadcrumbItems(): BreadcrumbItem[] {
     return [
       { label: 'Accueil', route: '/' },
@@ -401,7 +409,14 @@ export class ProjectDetailComponent implements OnInit {
 
   private reloadProject(): void {
     this.api.get(this.id).subscribe({
-      next: r => { if (r.success && r.data) this.project.set(r.data); },
+      next: r => {
+        if (r.success && r.data) {
+          this.project.set(r.data);
+          if (this.tab() === 'time' && !showTimeTab(r.data)) {
+            this.goTab('overview');
+          }
+        }
+      },
       error: err => this.fail(err, 'Chargement du projet')
     });
     this.api.budget(this.id).subscribe({
@@ -656,6 +671,20 @@ export class ProjectDetailComponent implements OnInit {
     this.api.validateTime(id).subscribe({
       next: () => { this.ok('Temps validé'); this.loadTab('time'); this.reloadProject(); },
       error: err => this.fail(err, 'Validation impossible')
+    });
+  }
+
+  deleteTime(id: string): void {
+    this.api.deleteTime(id).subscribe({
+      next: () => { this.ok('Temps supprimé'); this.loadTab('time'); },
+      error: err => this.fail(err, 'Suppression impossible')
+    });
+  }
+
+  reopenTime(id: string): void {
+    this.api.reopenTime(id).subscribe({
+      next: () => { this.ok('Temps rouvert en brouillon'); this.loadTab('time'); this.reloadProject(); },
+      error: err => this.fail(err, 'Réouverture impossible')
     });
   }
 

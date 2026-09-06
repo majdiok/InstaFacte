@@ -48,6 +48,8 @@ public interface IProjectService
     Task<Result> UpdateTimeEntryAsync(Guid id, UpsertProjectTimeEntryDto dto, CancellationToken cancellationToken = default);
     Task<Result> SubmitTimeEntryAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Result> ValidateTimeEntryAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<Result> DeleteTimeEntryAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<Result> ReopenTimeEntryAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ProjectCostLineDto>> ListCostLinesAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<Result<Guid>> AddManualCostAsync(Guid projectId, AddProjectCostLineDto dto, CancellationToken cancellationToken = default);

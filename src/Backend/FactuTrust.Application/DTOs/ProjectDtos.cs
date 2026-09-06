@@ -38,6 +38,7 @@ public sealed record ProjectListItemDto
     public int ProgressPercent { get; init; }
     public int CompletedTaskCount { get; init; }
     public int TotalTaskCount { get; init; }
+    public bool TimesheetsEnabled { get; init; }
 }
 
 public sealed record ProjectDto

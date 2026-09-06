@@ -1,4 +1,5 @@
 using FactuTrust.API.Authorization;
+using FactuTrust.API.Http;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
@@ -187,6 +188,23 @@ public sealed class ProjectsController : ControllerBase
         var result = await _service.ValidateTimeEntryAsync(id, cancellationToken);
         if (result.IsFailure) return BadRequest(ApiResponse<bool>.Fail(result.Error.Description));
         return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    [HttpDelete("time/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.ProjectTimeCreate)]
+    public async Task<IActionResult> DeleteTime(Guid id, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.DeleteTimeEntryAsync(id, cancellationToken);
+        return ResultHttp.ToActionResult(this, result);
+    }
+
+    [HttpPost("time/{id:guid}/reopen")]
+    public async Task<IActionResult> ReopenTime(Guid id, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.ReopenTimeEntryAsync(id, cancellationToken);
+        return ResultHttp.ToActionResult(this, result);
     }
 
     [HttpGet("{id:guid}")]
