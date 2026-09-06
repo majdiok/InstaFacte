@@ -370,6 +370,51 @@ describe('AuthService', () => {
       expect(service.user()?.companySegment).toBe('commerce');
       expect(service.user()?.businessDomain).toBe('textile-habillement');
     });
+
+    // Garde anti-régression (fuite de secrets) : la réponse d'inscription transporte
+    // accessToken/refreshToken et le profil complet. Un `console.log` de cette réponse a
+    // existé dans `register()` et affichait les jetons en clair dans la console du
+    // navigateur (visibles sur toute capture d'écran de support).
+    it('never writes the registration response to the console (tokens must not leak)', () => {
+      const logSpy = spyOn(console, 'log');
+      const errorSpy = spyOn(console, 'error');
+      const service = TestBed.inject(AuthService);
+      const payload = {
+        email: 'a@b.c',
+        password: 'x',
+        confirmPassword: 'x',
+        firstName: 'A',
+        lastName: 'B',
+        companyName: 'Co',
+        nif: '1234567/A/B/C/000',
+        taxRegime: 0,
+        street: 'Rue 1',
+        city: 'Tunis',
+        governorate: 'Tunis',
+        companyEmail: 'co@b.c',
+        phone: '20000000'
+      };
+      const authData: AuthResponse = {
+        accessToken: makeJwt(),
+        refreshToken: 'super-secret-refresh',
+        expiresAt: '',
+        user: minimalUser,
+        requires2Fa: false
+      };
+
+      service.register(payload).subscribe();
+      httpMock
+        .expectOne(r => r.url === `${environment.apiUrl}/auth/register` && r.method === 'POST')
+        .flush({ success: true, data: authData, message: null, errors: [] });
+
+      service.register(payload).subscribe({ error: () => undefined });
+      httpMock
+        .expectOne(r => r.url === `${environment.apiUrl}/auth/register` && r.method === 'POST')
+        .flush({ success: false, message: 'boom', errors: [] }, { status: 400, statusText: 'Bad Request' });
+
+      expect(logSpy).not.toHaveBeenCalled();
+      expect(errorSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('refreshUserProfile', () => {

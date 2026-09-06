@@ -139,31 +139,19 @@ describe('sector catalog parity contract (frontend static catalog vs backend sna
     }
   });
 
-  it('the fixture\'s availableOnFreePlan:false module set exactly matches PREMIUM_MODULE_IDS (frontend premium mirror)', () => {
-    const fixtureLocked = snapshot.modules
-      .filter(m => m.availableOnFreePlan === false)
-      .map(m => m.id as AppModule)
-      .sort((a, b) => a - b);
-    const frontendPremium = [...PREMIUM_MODULE_IDS].sort((a, b) => a - b);
-    expect(fixtureLocked).toEqual(frontendPremium);
+  it('no catalog module has availableOnFreePlan:false (all modules available on Free)', () => {
+    const locked = snapshot.modules.filter(m => m.availableOnFreePlan === false);
+    expect(locked).toEqual([]);
+    expect(PREMIUM_MODULE_IDS).toEqual([]);
   });
 
-  it('PREMIUM_MODULE_IDS is exactly AI, Forecasting, Studio, Payroll (canonical paid-plan module ids)', () => {
-    expect([...PREMIUM_MODULE_IDS].sort((a, b) => a - b)).toEqual(
-      [AppModule.AI, AppModule.Forecasting, AppModule.Studio, AppModule.Payroll].sort((a, b) => a - b)
-    );
-  });
-
-  it('premium modules are never core and never appear in any segment\'s coreModuleIds', () => {
-    for (const m of snapshot.modules) {
-      if (PREMIUM_MODULE_IDS.includes(m.id as AppModule)) {
-        expect(m.isCore).withContext(`premium module ${m.code}`).toBe(false);
-      }
-    }
-    for (const segment of backendSegments) {
-      for (const premiumId of PREMIUM_MODULE_IDS) {
-        expect(segment.coreModuleIds).withContext(`segment "${segment.code}" coreModuleIds`).not.toContain(premiumId);
-      }
+  it('former premium modules (AI, Forecasting, Studio, Payroll) are available on Free in the fixture', () => {
+    const formerPremiumIds = [AppModule.AI, AppModule.Forecasting, AppModule.Studio, AppModule.Payroll];
+    for (const id of formerPremiumIds) {
+      const mod = snapshot.modules.find(m => m.id === id);
+      expect(mod).withContext(`module id ${id}`).toBeDefined();
+      expect(mod!.availableOnFreePlan).toBe(true);
+      expect(mod!.isCore).toBe(false);
     }
   });
 

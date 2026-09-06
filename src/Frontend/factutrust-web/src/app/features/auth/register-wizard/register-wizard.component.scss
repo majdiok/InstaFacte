@@ -66,6 +66,13 @@
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease;
 
+  /* Espace créé : les étapes ne sont plus navigables (cf. goToStep) — on ne laisse pas
+     un curseur « cliquable » suggérer une action qui n'aura aucun effet. */
+  &.locked {
+    cursor: default;
+    pointer-events: none;
+  }
+
   .step-ico {
     width: 2.375rem;
     height: 2.375rem;

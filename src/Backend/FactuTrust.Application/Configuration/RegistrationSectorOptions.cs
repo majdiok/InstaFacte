@@ -31,4 +31,15 @@ public sealed class RegistrationSectorOptions
     /// restriction", independent of this flag.
     /// </summary>
     public bool EnforceSegmentDomainLinks { get; set; } = true;
+
+    /// <summary>
+    /// Kill-switch for the non-blocking NIF-category ⇄ segment coherence notice emitted by
+    /// <c>POST /api/auth/register</c> (see <c>NifCategorySegmentCoherenceChecker</c>). Defaults to
+    /// <c>true</c> (today's behavior). Set to <c>false</c> to stop emitting that notice entirely —
+    /// no redeploy, no data migration — which is the intended rollback if the A–G taxpayer-category
+    /// mapping turns out not to match the real matricule fiscal layout
+    /// (see docs/fiscal/nif-taxpayer-category.md). Registration itself is never affected: the
+    /// notice has always been informational.
+    /// </summary>
+    public bool NifSegmentCoherenceWarningEnabled { get; set; } = true;
 }

@@ -210,19 +210,12 @@ export const CORE_MODULE_IDS: readonly AppModule[] = [
 ];
 
 /**
- * Modules reserved for a paid plan — never freely selectable on the Free plan
- * during signup, never submitted in `enabledModules`. Mirrors the backend's
- * canonical premium set exactly (`AppModule.AI`, `Forecasting`, `Studio`,
- * `Payroll`). The `sector-catalog-parity.spec.ts` contract pins this constant
- * against the sector-catalog snapshot's `availableOnFreePlan: false` module set
- * so the frontend and backend notions of "premium" cannot silently drift apart.
+ * Modules reserved for a paid plan — never freely selectable on the Free plan during signup.
+ * Politique actuelle (2026-09) : liste vide — tous les modules sont disponibles sur Free ;
+ * les modules libérés apparaissent dans « Autres modules » (opt-in, interrupteur OFF).
+ * Retour arrière : réinsérer AI, Forecasting, Studio, Payroll ici et dans le snapshot backend.
  */
-export const PREMIUM_MODULE_IDS: readonly AppModule[] = [
-  AppModule.AI,
-  AppModule.Forecasting,
-  AppModule.Studio,
-  AppModule.Payroll
-];
+export const PREMIUM_MODULE_IDS: readonly AppModule[] = [];
 
 const SEGMENT_RECOMMENDED_MODULES: Record<CompanySegmentCode, readonly AppModule[]> = {
   'entreprise': [AppModule.Purchases, AppModule.Stock, AppModule.Accounting, AppModule.CRM, AppModule.Fiscal],

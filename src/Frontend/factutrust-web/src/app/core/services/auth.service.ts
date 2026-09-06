@@ -57,6 +57,27 @@ export interface User {
   tenantCreatedAtUtc?: string | null;
 }
 
+/** Codes stables d'avertissement d'inscription (miroir de `RegistrationWarningCodes` côté API). */
+export type RegistrationWarningCode =
+  | 'SECTOR_SELECTION_IGNORED'
+  | 'NIF_SEGMENT_MISMATCH'
+  | 'MODULES_SELECTION_IGNORED'
+  | 'MODULES_DENIED_BY_PLAN'
+  | 'MODULES_ACTIVATION_FAILED'
+  | 'MODULES_IGNORED_AT_REGISTRATION'
+  | 'UNKNOWN';
+
+/**
+ * Avertissement non bloquant typé (miroir de `RegistrationWarningDto` côté API).
+ * `code` permet à l'UI de proposer une action ciblée au lieu de deviner le sujet du message
+ * (une remarque sur le NIF n'est pas un échec d'activation de module).
+ */
+export interface RegistrationWarningDetail {
+  code: RegistrationWarningCode;
+  message: string;
+  severity: 'info' | 'warning';
+}
+
 export interface AuthResponse {
   accessToken: string;
   refreshToken: string;
@@ -67,8 +88,34 @@ export interface AuthResponse {
    * Non-blocking warnings surfaced by the backend (e.g. a module requested by
    * the wizard could not be enabled). Absent/empty ⇒ nothing to show. Never
    * used as a security signal — purely informational for the UI banner.
+   *
+   * Contrat historique conservé : `warningDetails` porte la même liste, typée.
    */
   warnings?: string[];
+  /**
+   * Même liste que `warnings`, avec code + sévérité. Absente si l'API est antérieure à ce
+   * champ : les appelants doivent alors retomber sur `warnings` (cf. `toRegistrationWarnings`).
+   */
+  warningDetails?: RegistrationWarningDetail[];
+}
+
+/**
+ * Normalise les avertissements d'une réponse d'inscription : `warningDetails` s'il est présent,
+ * sinon repli sur `warnings` (API plus ancienne) en code `UNKNOWN`. Les messages vides sont
+ * écartés dans les deux cas.
+ */
+export function toRegistrationWarnings(response: AuthResponse | null | undefined): RegistrationWarningDetail[] {
+  if (!response) {
+    return [];
+  }
+
+  if (response.warningDetails?.length) {
+    return response.warningDetails.filter(w => !!w?.message?.trim());
+  }
+
+  return (response.warnings ?? [])
+    .filter(message => !!message?.trim())
+    .map(message => ({ code: 'UNKNOWN' as const, message, severity: 'warning' as const }));
 }
 
 export interface ApiResponse<T> {
@@ -362,18 +409,21 @@ export class AuthService {
     return this.http.post<ApiResponse<null>>(`${this.API_URL}/reset-password`, dto);
   }
 
+  /**
+   * Inscription société.
+   *
+   * SÉCURITÉ — la réponse transporte `accessToken` + `refreshToken` + le profil complet :
+   * elle ne doit JAMAIS être journalisée (console, télémétrie, capture d'écran de support).
+   * Un `console.log` de cette réponse a existé ici et exposait les jetons en clair.
+   * Les erreurs ne sont pas journalisées non plus : elles remontent telles quelles aux
+   * composants d'inscription, qui les affichent via `ErrorHandlerService`.
+   */
   register(data: RegisterRequest): Observable<ApiResponse<AuthResponse>> {
     return this.http.post<ApiResponse<AuthResponse>>(`${this.API_URL}/register`, data)
       .pipe(
-        tap({
-          next: (response) => {
-            console.log('[AuthService] Réponse reçue:', response);
-            if (response.success && response.data) {
-              this.handleAuthResponse(response.data, false);
-            }
-          },
-          error: (error) => {
-            console.error('[AuthService] Erreur lors de l\'enregistrement:', error);
+        tap(response => {
+          if (response.success && response.data) {
+            this.handleAuthResponse(response.data, false);
           }
         })
       );

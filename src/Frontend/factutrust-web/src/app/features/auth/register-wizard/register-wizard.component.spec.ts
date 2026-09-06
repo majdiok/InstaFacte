@@ -6,10 +6,17 @@ import { provideHttpClientTesting, HttpTestingController } from '@angular/common
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { of, throwError, NEVER } from 'rxjs';
 import { RegisterWizardComponent } from './register-wizard.component';
-import { AuthService, ApiResponse, AuthResponse, RegisterRequest } from '@core/services/auth.service';
+import {
+  AuthService,
+  ApiResponse,
+  AuthResponse,
+  RegisterRequest,
+  RegistrationWarningDetail
+} from '@core/services/auth.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import { AppModule } from '@core/models/app-module';
+import { RegistrationDraftService } from './registration-draft.service';
 
 /** Mock ApiResponse success pour register */
 function validRegisterResponse(): ApiResponse<AuthResponse> {
@@ -21,11 +28,30 @@ function validRegisterResponse(): ApiResponse<AuthResponse> {
   };
 }
 
-/** Mock ApiResponse success avec avertissements (tâche 1.2 du plan) pour register */
+/**
+ * Mock ApiResponse success avec avertissements — forme HISTORIQUE (messages seuls, sans
+ * `warningDetails`). Sert aussi de garde de compatibilité descendante : le composant doit
+ * savoir l'interpréter si l'API déployée est antérieure aux avertissements typés.
+ */
 function warningsRegisterResponse(warnings: string[]): ApiResponse<AuthResponse> {
   return {
     success: true,
     data: { warnings } as AuthResponse,
+    message: null,
+    errors: []
+  };
+}
+
+/** Mock ApiResponse success avec avertissements TYPÉS (contrat courant). */
+function typedWarningsRegisterResponse(
+  warningDetails: RegistrationWarningDetail[]
+): ApiResponse<AuthResponse> {
+  return {
+    success: true,
+    data: {
+      warnings: warningDetails.map(w => w.message),
+      warningDetails
+    } as AuthResponse,
     message: null,
     errors: []
   };
@@ -261,28 +287,28 @@ describe('RegisterWizardComponent', () => {
     });
   });
 
-  describe('Free-plan premium module gating (AI/Forecasting/Studio/Payroll never submitted)', () => {
-    const PREMIUM = [AppModule.AI, AppModule.Forecasting, AppModule.Studio, AppModule.Payroll];
+  describe('Free-plan module selection (former premium modules are opt-in, OFF by default)', () => {
+    const FORMER_PREMIUM = [AppModule.AI, AppModule.Forecasting, AppModule.Studio, AppModule.Payroll];
 
-    it('recommendedModules never includes a premium module, so the initial enabledModules selection never does either', () => {
+    it('initial enabledModules never includes former premium modules (not recommended)', () => {
       component.form.patchValue({ companySegment: 'commerce', businessDomain: 'artisanat' });
       const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
-      for (const premium of PREMIUM) {
-        expect(enabled).not.toContain(premium);
+      for (const moduleId of FORMER_PREMIUM) {
+        expect(enabled).not.toContain(moduleId);
       }
     });
 
-    it('resetModulesToRecommendations never reintroduces a premium module', () => {
+    it('resetModulesToRecommendations never reintroduces former premium modules', () => {
       component.form.patchValue({ companySegment: 'services', businessDomain: 'technologie-informatique' });
       component.form.get('enabledModules')?.setValue([AppModule.Accounting]);
       component.resetModulesToRecommendations();
       const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
-      for (const premium of PREMIUM) {
-        expect(enabled).not.toContain(premium);
+      for (const moduleId of FORMER_PREMIUM) {
+        expect(enabled).not.toContain(moduleId);
       }
     });
 
-    it('the submitted RegisterRequest.enabledModules never contains a premium module', () => {
+    it('the submitted RegisterRequest.enabledModules excludes former premium unless explicitly toggled on', () => {
       authService.register.and.returnValue(of(validRegisterResponse()));
       component.form.patchValue({
         companySegment: 'commerce',
@@ -307,8 +333,8 @@ describe('RegisterWizardComponent', () => {
       expect(authService.register).toHaveBeenCalled();
       const request = authService.register.calls.mostRecent().args[0] as RegisterRequest;
       const enabled: AppModule[] = request.enabledModules ?? [];
-      for (const premium of PREMIUM) {
-        expect(enabled).not.toContain(premium);
+      for (const moduleId of FORMER_PREMIUM) {
+        expect(enabled).not.toContain(moduleId);
       }
     });
   });
@@ -510,6 +536,72 @@ describe('RegisterWizardComponent', () => {
     });
   });
 
+  // Le format du NIF n'était vérifié qu'à la soumission (étape 4), en bandeau global, alors que
+  // le champ vit à l'étape 2. Le validateur travaille sur la valeur NETTOYÉE : les valeurs
+  // masquées (sans le premier « / ») restent valides, un `Validators.pattern` direct les aurait
+  // rejetées à tort.
+  describe('validation du format NIF (étape 2)', () => {
+    const nifControl = () => component.form.get('nif')!;
+
+    it('accepts the masked value the PrimeNG input produces', () => {
+      nifControl().setValue('1234567A/B/C/000');
+      expect(nifControl().valid).toBeTrue();
+
+      nifControl().setValue('1234567/A/B/C/000');
+      expect(nifControl().valid).toBeTrue();
+    });
+
+    it('rejects a malformed NIF with a dedicated error', () => {
+      nifControl().setValue('12/A');
+      expect(nifControl().valid).toBeFalse();
+      expect(nifControl().hasError('nifFormat')).toBeTrue();
+    });
+
+    it('leaves the empty case to Validators.required', () => {
+      nifControl().setValue('');
+      expect(nifControl().hasError('required')).toBeTrue();
+      expect(nifControl().hasError('nifFormat')).toBeFalse();
+    });
+
+    it('blocks step 2 until the NIF format is valid', () => {
+      component.form.patchValue({
+        companySegment: 'commerce',
+        businessDomain: 'artisanat',
+        firstName: 'John',
+        lastName: 'Doe',
+        email: 'test@example.com',
+        password: 'Test1234@Password',
+        confirmPassword: 'Test1234@Password',
+        companyName: 'Test Company',
+        nif: '12/A',
+        taxRegime: 0,
+        companyEmail: 'contact@test.tn',
+        phone: '98455112'
+      });
+      component.currentStep.set(1);
+      expect(component.isCurrentStepValid()).toBeFalse();
+
+      component.form.patchValue({ nif: '1234567A/B/C/000' });
+      expect(component.isCurrentStepValid()).toBeTrue();
+    });
+  });
+
+  // `scrollAuthWizardStepIntoView()` cherchait `.form-header-text` / `.auth-form-card`, qui
+  // n'existent que dans le formulaire legacy : le défilement était un no-op sur ce wizard.
+  describe('défilement au changement d’étape', () => {
+    it('scrolls the wizard card into view when the step changes', async () => {
+      const scrollSpy = spyOn(Element.prototype, 'scrollIntoView');
+      component.form.patchValue({ companySegment: 'commerce', businessDomain: 'artisanat' });
+
+      component.nextStep();
+      await Promise.resolve();
+
+      expect(scrollSpy).toHaveBeenCalled();
+      const target = scrollSpy.calls.mostRecent().object as Element;
+      expect(target.classList).toContain('panel-card');
+    });
+  });
+
   describe('onSubmit', () => {
     beforeEach(() => {
       component.form.patchValue({
@@ -640,6 +732,135 @@ describe('RegisterWizardComponent', () => {
 
       expect(component.registrationWarnings()).toEqual([]);
       expect(warehouseContext.navigateAfterSuccessfulAuth).toHaveBeenCalledWith('/dashboard');
+    });
+
+    // L'écran d'avertissement laissait le formulaire valide et `loading` à false : le bouton
+    // « Créer mon espace » redevenait actif et un second POST /auth/register partait (échec sur
+    // l'unicité e-mail/NIF, après avoir consommé le quota de la politique de limitation).
+    it('refuses any further submission once the account exists', () => {
+      authService.register.and.returnValue(
+        of(warningsRegisterResponse(['Module Comptabilité refusé par votre plan']))
+      );
+
+      component.onSubmit();
+      component.onSubmit();
+      component.onSubmit();
+
+      expect(authService.register).toHaveBeenCalledTimes(1);
+      expect(component.accountCreated()).toBeTrue();
+      expect(component.form.disabled).toBeTrue();
+    });
+
+    it('closes step navigation once the account exists', () => {
+      authService.register.and.returnValue(
+        of(warningsRegisterResponse(['Module Comptabilité refusé par votre plan']))
+      );
+      // Soumission depuis la dernière étape, comme dans l'UI réelle.
+      component.currentStep.set(3);
+      component.onSubmit();
+
+      component.goToStep(0);
+      component.previousStep();
+      component.nextStep();
+
+      expect(component.currentStep()).toBe(3);
+    });
+
+    // Le brouillon (nom, e-mail, NIF, téléphone, adresse) était réécrit dans sessionStorage
+    // par la moindre interaction postérieure à la création, juste après son effacement.
+    it('stops the draft autosave once the account exists', fakeAsync(() => {
+      const draftService = TestBed.inject(RegistrationDraftService);
+      const saveSpy = spyOn(draftService, 'save');
+      authService.register.and.returnValue(
+        of(warningsRegisterResponse(['Module Comptabilité refusé par votre plan']))
+      );
+
+      component.onSubmit();
+      saveSpy.calls.reset();
+
+      component.form.get('companyName')?.setValue('Nouveau nom');
+      tick(1000);
+
+      expect(saveSpy).not.toHaveBeenCalled();
+      discardPeriodicTasks();
+    }));
+
+    it('normalizes typed warnings and exposes the NIF one for a targeted action', () => {
+      authService.register.and.returnValue(
+        of(typedWarningsRegisterResponse([
+          {
+            code: 'NIF_SEGMENT_MISMATCH',
+            message: 'Le segment sélectionné est « Association »…',
+            severity: 'warning'
+          },
+          {
+            code: 'MODULES_DENIED_BY_PLAN',
+            message: 'Certains modules choisis nécessitent une offre supérieure…',
+            severity: 'info'
+          }
+        ]))
+      );
+
+      component.onSubmit();
+
+      expect(component.registrationWarningDetails().length).toBe(2);
+      expect(component.nifWarning()?.code).toBe('NIF_SEGMENT_MISMATCH');
+      expect(component.registrationWarnings()).toEqual([
+        'Le segment sélectionné est « Association »…',
+        'Certains modules choisis nécessitent une offre supérieure…'
+      ]);
+    });
+
+    // Compatibilité descendante : API antérieure aux avertissements typés.
+    it('falls back to plain warnings when the API sends no warningDetails', () => {
+      authService.register.and.returnValue(
+        of(warningsRegisterResponse(['Module Comptabilité refusé par votre plan']))
+      );
+
+      component.onSubmit();
+
+      expect(component.registrationWarningDetails()).toEqual([
+        { code: 'UNKNOWN', message: 'Module Comptabilité refusé par votre plan', severity: 'warning' }
+      ]);
+      expect(component.nifWarning()).toBeNull();
+    });
+
+    it('renders one list item per warning, plus the NIF action link', () => {
+      authService.register.and.returnValue(
+        of(typedWarningsRegisterResponse([
+          { code: 'NIF_SEGMENT_MISMATCH', message: 'Vérifiez votre NIF.', severity: 'warning' },
+          { code: 'MODULES_DENIED_BY_PLAN', message: 'Offre supérieure requise.', severity: 'info' }
+        ]))
+      );
+
+      component.onSubmit();
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      // Le formulaire a disparu : plus rien à modifier ni à re-soumettre.
+      expect(host.querySelector('form')).toBeNull();
+      expect(host.querySelectorAll('.success-warnings li').length).toBe(2);
+      expect(host.querySelector('a.success-action')?.getAttribute('href')).toBe('/settings/company');
+      // Le libellé « Certains modules n'ont pas pu être activés » ne doit plus coiffer
+      // des avertissements qui ne parlent pas de modules.
+      expect(host.textContent).not.toContain("Certains modules n'ont pas pu être activés :");
+    });
+
+    it('clears a previous warning banner when a new submission starts', () => {
+      authService.register.and.returnValue(
+        of(warningsRegisterResponse(['Module Comptabilité refusé par votre plan']))
+      );
+      component.onSubmit();
+      expect(component.registrationWarnings().length).toBe(1);
+
+      // Simule une reprise du formulaire (l'état terminal l'interdit désormais côté UI) :
+      // le bandeau de la tentative précédente ne doit pas survivre à la suivante.
+      component.accountCreated.set(false);
+      component.form.enable({ emitEvent: false });
+      authService.register.and.returnValue(NEVER);
+      component.onSubmit();
+
+      expect(component.registrationWarnings()).toEqual([]);
     });
 
     it('should set the error message on a failure response', () => {

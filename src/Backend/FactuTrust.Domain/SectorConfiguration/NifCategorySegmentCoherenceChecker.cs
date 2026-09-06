@@ -10,6 +10,12 @@ namespace FactuTrust.Domain.SectorConfiguration;
 /// only flags the one clearly-incoherent case the plan calls out (association category vs a
 /// non-association segment, and vice versa). An unknown/unmapped combination never produces a
 /// warning — never a false positive.
+///
+/// In particular, a category letter outside the A–G table (<see cref="TaxpayerCategories.IsKnown"/>)
+/// is NOT evidence of an incoherence: the NIF format accepts any <c>[A-Z]</c> and real matricules
+/// carry letters this table does not map. Warning on those produced messages such as
+/// « votre NIF indique la catégorie P (Inconnu) », i.e. an accusation built on a letter the code
+/// admits it cannot interpret. See docs/fiscal/nif-taxpayer-category.md.
 /// </summary>
 public static class NifCategorySegmentCoherenceChecker
 {
@@ -37,7 +43,9 @@ public static class NifCategorySegmentCoherenceChecker
                    "Vérifiez votre choix de segment.";
         }
 
-        if (isAssociationSegment && !isAssociationCategory && category != ' ')
+        // `IsKnown` (et non `category != ' '`) : sur une lettre hors table (P, M, N…) on
+        // s'abstient. Cf. le contrat « jamais de faux positif » ci-dessus.
+        if (isAssociationSegment && !isAssociationCategory && TaxpayerCategories.IsKnown(category))
         {
             return $"Le segment sélectionné est « Association », mais votre NIF indique la catégorie {category} " +
                    $"({TaxpayerCategories.GetDescription(category)}) et non une association. " +

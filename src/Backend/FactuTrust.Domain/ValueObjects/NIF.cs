@@ -90,4 +90,18 @@ public static class TaxpayerCategories
         'G' => "Autre",
         _ => "Inconnu"
     };
+
+    /// <summary>
+    /// True when <paramref name="category"/> is one of the letters this table actually maps
+    /// (A–G). The NIF format accepts <c>[A-Z]</c>, so real matricules carry letters outside this
+    /// set (P, M, N, …) which <see cref="GetDescription"/> renders as "Inconnu". Any rule derived
+    /// from the category MUST abstain on those letters rather than infer a meaning:
+    /// "Inconnu" means "not interpretable here", never "incoherent".
+    /// Kept switch-explicit (not an ASCII range) so it stays 1:1 with <see cref="GetDescription"/>.
+    /// </summary>
+    public static bool IsKnown(char category) => category switch
+    {
+        'A' or 'B' or 'C' or 'D' or 'E' or 'F' or 'G' => true,
+        _ => false
+    };
 }
