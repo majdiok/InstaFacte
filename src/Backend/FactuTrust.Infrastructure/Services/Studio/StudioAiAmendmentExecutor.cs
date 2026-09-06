@@ -226,6 +226,15 @@ public sealed class StudioAiAmendmentExecutor
         SetFormOp op, Guid entityId, IReadOnlyList<CustomFieldDto> fields, List<string> applied, List<string> warnings,
         Action<string, string, string, string?> report, CancellationToken ct)
     {
+        // Un plan Amendment n'exige que `design_entities` : la sous-opération `set_form` doit vérifier
+        // son propre droit (même règle que `set_report` ↔ `design_reports`). La commande le revérifie
+        // aussi ; ici on évite d'annoncer une étape qui sera refusée.
+        if (!_currentUser.HasPermission(Permissions.Studio.DesignForms))
+        {
+            warnings.Add("Formulaire ignoré : permission de conception des formulaires absente.");
+            return;
+        }
+
         var layout = StudioAiAmendmentPlanner.ResolveForm(op.FormNode, fields);
         if (layout is null)
         {

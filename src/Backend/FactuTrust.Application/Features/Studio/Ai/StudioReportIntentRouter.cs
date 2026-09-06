@@ -38,14 +38,29 @@ public static class StudioReportIntentRouter
 
     // ---- Portes d'entrée -------------------------------------------------------------------
 
+    /// <summary>
+    /// Formulations du chiffre d'affaires, partagées par la porte d'entrée et le domaine Ventes.
+    /// Le pluriel « chiffres d'affaires » — celui de la capture d'écran — n'était pas reconnu : le
+    /// domaine restait muet malgré le mot « rapport », et la demande partait au modèle. Les entrées
+    /// s'arrêtent avant le « s » final pour couvrir « affaire » et « affaires » d'un coup ;
+    /// l'apostrophe typographique et les espaces insécables sont ramenés à leur forme ASCII par
+    /// <see cref="Normalize"/>, il n'y a donc pas à les énumérer ici.
+    /// Déclaré AVANT les tableaux qui le reprennent : les initialiseurs statiques s'exécutent dans
+    /// l'ordre de déclaration.
+    /// </summary>
+    private static readonly string[] RevenueExpressions =
+    {
+        "chiffre d'affaire", "chiffres d'affaire", "chiffre d affaire", "chiffres d affaire"
+    };
+
     /// <summary>Marqueurs d'une intention d'ANALYSE (par opposition à une intention de construction).</summary>
-    private static readonly string[] AnalysisMarkers =
+    private static readonly string[] AnalysisMarkers = new[]
     {
         "rapport", "etat des", "un etat", "etats des", "analyse", "analytique", "statistique",
         "tableau de bord", "palmares", "classement", "repartition", "evolution", "recapitulatif",
-        "chiffre d'affaires", "chiffre d affaires", "combien", "total des", "totaux",
+        "combien", "total des", "totaux",
         "top ", "meilleurs", "meilleures"
-    };
+    }.Concat(RevenueExpressions).ToArray();
 
     /// <summary>
     /// Marqueurs d'une demande de STRUCTURE à créer. Ils opposent un veto : « crée une table Rapports
@@ -73,13 +88,13 @@ public static class StudioReportIntentRouter
 
     // Les tableaux de domaine sont déclarés AVANT Matchers : les initialiseurs de champs statiques
     // s'exécutent dans l'ordre de déclaration, l'inverse laisserait des références nulles.
-    private static readonly string[] VentesDomain =
+    private static readonly string[] VentesDomain = new[]
     {
-        "vente", "ventes", "vendu", "vendus", "chiffre d'affaires", "chiffre d affaires", "facturation", " ca ",
+        "vente", "ventes", "vendu", "vendus", "facturation", " ca ",
         // Expression complète, volontairement : une « remise en banque » est de la trésorerie,
         // une « remise accordée » est commerciale. Le mot « remise » seul serait ambigu.
         "remise accordee", "remises accordees"
-    };
+    }.Concat(RevenueExpressions).ToArray();
     private static readonly string[] AchatsDomain =
         { "achat", "achats", "approvisionnement", "fournisseur", "fournisseurs" };
     private static readonly string[] StockDomain =
@@ -157,6 +172,27 @@ public static class StudioReportIntentRouter
             return null;
 
         return new StudioReportDetection(best.PresetKey, InferPeriodPreset(normalized), HasSaveIntent(normalized));
+    }
+
+    /// <summary>
+    /// Période à appliquer à une demande reconnue, par ordre de priorité : celle que l'utilisateur a
+    /// exprimée, puis celle que le préréglage déclare pour lui-même
+    /// (<see cref="SqlReportPreset.DefaultPeriodPreset"/> — pluriannuelle pour un état PAR ANNÉE),
+    /// puis <see cref="DefaultPeriodPreset"/>. L'appelant passe le résultat tel quel à
+    /// <see cref="ReportingPeriodResolver.Resolve"/>. Jusqu'ici, le raccourci sautait l'étage
+    /// intermédiaire : « ventes par année » sans période tombait sur l'année en cours et ne rendait
+    /// qu'une seule ligne. Une période explicite reste souveraine, même pour un état annuel : si
+    /// l'utilisateur écrit « par année cette année », il obtient ce qu'il a demandé.
+    /// </summary>
+    public static string ResolvePeriodPreset(StudioReportDetection detection)
+    {
+        ArgumentNullException.ThrowIfNull(detection);
+
+        if (!string.IsNullOrWhiteSpace(detection.PeriodPreset))
+            return detection.PeriodPreset;
+
+        var presetDefault = SqlReportPresetCatalog.Find(detection.PresetKey)?.DefaultPeriodPreset;
+        return string.IsNullOrWhiteSpace(presetDefault) ? DefaultPeriodPreset : presetDefault;
     }
 
     /// <summary>
@@ -313,18 +349,46 @@ public static class StudioReportIntentRouter
     private static bool Contains(string haystack, params string[] needles) =>
         needles.Any(n => haystack.Contains(n, StringComparison.Ordinal));
 
-    /// <summary>Minuscules sans diacritiques : « Créé », « CRÉÉ » et « cree » se comparent à l'identique.</summary>
+    /// <summary>
+    /// Minuscules sans diacritiques : « Créé », « CRÉÉ » et « cree » se comparent à l'identique.
+    /// Ramène aussi les apostrophes typographiques (« d’affaires », saisi par un clavier mobile ou un
+    /// traitement de texte) à l'apostrophe droite des mots-clés, et toute espace Unicode (insécable,
+    /// fine, tabulation, retour à la ligne) à une espace simple — les suites d'espaces sont réduites à
+    /// une seule. Rien de sémantique : aucun mot n'est remplacé par un autre.
+    /// </summary>
     public static string Normalize(string text)
     {
         var decomposed = text.Normalize(NormalizationForm.FormD);
         var sb = new StringBuilder(decomposed.Length);
         foreach (var c in decomposed)
         {
-            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+            if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.NonSpacingMark)
+                continue;
+
+            if (IsApostropheVariant(c))
+            {
+                sb.Append('\'');
+            }
+            else if (char.IsWhiteSpace(c))
+            {
+                if (sb.Length > 0 && sb[^1] != ' ')
+                    sb.Append(' ');
+            }
+            else
+            {
                 sb.Append(c);
+            }
         }
-        return CollapseRepeats(sb.ToString().Normalize(NormalizationForm.FormC).ToLowerInvariant());
+        return CollapseRepeats(sb.ToString().Normalize(NormalizationForm.FormC).ToLowerInvariant()).TrimEnd();
     }
+
+    /// <summary>
+    /// Apostrophes que les claviers et les traitements de texte substituent à l'apostrophe droite :
+    /// guillemets simples typographiques, lettre modificative apostrophe, prime, accents isolés et
+    /// apostrophe pleine largeur.
+    /// </summary>
+    private static bool IsApostropheVariant(char c) =>
+        c is '\u2018' or '\u2019' or '\u201B' or '\u02BC' or '\u2032' or '\u0060' or '\u00B4' or '\uFF07';
 
     /// <summary>
     /// Réduit toute lettre répétée 3 fois ou plus à deux occurrences : « annnée » redevient

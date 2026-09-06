@@ -14,6 +14,7 @@ import {
 import { DynamicReportComponent } from '@shared/studio-runtime/dynamic-report.component';
 import { StudioPageShellComponent } from './shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
+import { classifyStudioFailure, StudioFailureView } from './studio-ai-failure.util';
 
 interface NavAction { label: string; route: string; }
 interface BuildStep { phase: string; label: string; status: string; entityRef?: string; }
@@ -87,8 +88,9 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
                 <div class="sab-failure__head">
                   <i class="fa-solid fa-circle-exclamation"></i>
                   <div>
-                    <h4>L'état n'a pas pu être calculé</h4>
-                    <p class="sab-failure__reason">{{ failure.message }}</p>
+                    <p class="sab-failure__eyebrow">{{ failureView(failure).eyebrow }}</p>
+                    <h4>{{ failureView(failure).title }}</h4>
+                    <p class="sab-failure__reason">{{ failureView(failure).message }}</p>
                   </div>
                 </div>
                 @if (failure.title || failure.periodLabel) {
@@ -98,8 +100,9 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
                     @if (failure.periodLabel) { <span> — période : {{ failure.periodLabel }}</span> }
                   </p>
                 }
-                @if (failure.suggestions.length) {
-                  <p class="sab-failure__hint">Ces états fonctionnent sur vos données :</p>
+                <p class="sab-failure__hint">{{ failureView(failure).hint }}</p>
+                @if (failureView(failure).showSuggestions && failure.suggestions.length) {
+                  <p class="sab-failure__suggest-hint">États suggérés :</p>
                   <div class="sab-examples">
                     @for (s of failure.suggestions; track s.preset) {
                       <button type="button" class="sab-chip" [disabled]="busy()"
@@ -108,9 +111,11 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
                   </div>
                 }
                 <div class="sab-failure__actions">
-                  <button pButton type="button" class="p-button-sm p-button-outlined"
-                    icon="fa-solid fa-rotate-right" label="Réessayer"
-                    [disabled]="busy() || !lastUserMessage" (click)="retry()"></button>
+                  @if (failureView(failure).retryable) {
+                    <button pButton type="button" class="p-button-sm p-button-outlined"
+                      icon="fa-solid fa-rotate-right" label="Réessayer"
+                      [disabled]="busy() || !lastUserMessage" (click)="retry()"></button>
+                  }
                 </div>
               </div>
             }
@@ -255,9 +260,11 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
     .sab-failure__head { display: flex; gap: .75rem; align-items: flex-start; }
     .sab-failure__head h4 { margin: 0; font-size: 1rem; }
     .sab-failure__head i { color: var(--red-500); margin-top: .2rem; }
+    .sab-failure__eyebrow { margin: 0; font-size: .74rem; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--text-color-secondary); }
     .sab-failure__reason { margin: .15rem 0 0; font-size: .9rem; line-height: 1.45; }
     .sab-failure__attempt { margin: .75rem 0 0; font-size: .85rem; color: var(--text-color-secondary); }
     .sab-failure__hint { margin: .9rem 0 .4rem; font-size: .85rem; color: var(--text-color-secondary); }
+    .sab-failure__suggest-hint { margin: .9rem 0 .4rem; font-size: .85rem; color: var(--text-color-secondary); }
     .sab-failure__actions { display: flex; gap: .5rem; margin-top: 1rem; }
   `]
 })
@@ -482,6 +489,23 @@ export class StudioAiBuilderComponent {
     } catch {
       // Payload illisible : le flux se termine normalement, le texte de l'assistant reste affiché.
     }
+  }
+
+  /**
+   * Lecture « métier » d'une carte d'échec. Pure et déléguée à `classifyStudioFailure` : le titre,
+   * le message, la prochaine étape et la présence du bouton « Réessayer » dépendent de la catégorie
+   * (précision, refus, fournisseur, délai, désactivé, session, serveur) au lieu d'un texte unique
+   * « L'état n'a pas pu être calculé » avec un message serveur brut. Un code serveur explicite, s'il
+   * est émis, prime ; sinon une heuristique locale classe le message déjà fourni par le protocole.
+   */
+  failureView(failure: StudioReportFailureEvent): StudioFailureView {
+    return classifyStudioFailure({
+      message: failure.message,
+      code: failure.code,
+      stage: failure.stage,
+      retryable: failure.retryable,
+      fromReportTool: true
+    });
   }
 
   /** Rejoue la dernière demande à l'identique après un échec. */

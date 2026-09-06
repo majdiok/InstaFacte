@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Studio;
+using FactuTrust.Domain.Enums;
 using MediatR;
 
 namespace FactuTrust.Application.Features.Studio.Forms;
@@ -76,6 +77,12 @@ public sealed class UpsertDefaultFormCommandHandler : IRequestHandler<UpsertDefa
     {
         if (!StudioContext.TryGet(_currentUser, out var tenantId, out var userId, out var err))
             return Result.Failure<CustomFormDto>(err);
+
+        // La commande est aussi invoquée hors contrôleur (plans IA : système, modification `set_form`).
+        // Le droit de concevoir les formulaires est donc revérifié ici, au niveau réellement exécuté :
+        // détenir `design_entities` n'autorise pas à lui seul à réécrire la mise en page d'un formulaire.
+        if (!_currentUser.HasPermission(Permissions.Studio.DesignForms))
+            return Result.Failure<CustomFormDto>(Error.Unauthorized("Permission de conception des formulaires requise."));
 
         var entity = await _entities.GetByIdAsync(tenantId, command.EntityId, cancellationToken);
         if (entity is null)

@@ -782,8 +782,11 @@ public sealed class SendChatMessageHandler
         if (studioReportDetection is not null && !conversationalFastPath)
         {
             var reportTool = studioReportDetection.Save ? "studio_plan_report" : "studio_run_report";
+            // Priorité : période exprimée par l'utilisateur > période propre au préréglage
+            // (pluriannuelle pour un état PAR ANNÉE) > défaut global. Sans l'étage intermédiaire,
+            // « ventes par année » se calculait sur l'année en cours et ne rendait qu'une ligne.
             var period = ReportingPeriodResolver.Resolve(
-                studioReportDetection.PeriodPreset ?? StudioReportIntentRouter.DefaultPeriodPreset,
+                StudioReportIntentRouter.ResolvePeriodPreset(studioReportDetection),
                 _timeProvider);
             var preset = SqlReportPresetCatalog.Find(studioReportDetection.PresetKey);
 
@@ -1474,9 +1477,15 @@ public sealed class SendChatMessageHandler
 
                     yield return ChatStreamEvent.ToolCallStart(toolCall.Function.Name, callId);
 
-                    _logger.LogInformation("AI tool call: {ToolName} with args: {Args}",
+                    // Les arguments d'outil peuvent contenir des données métier (spec_json, seed, filtres,
+                    // montants) : on ne journalise que les clés et la taille, jamais les valeurs (CWE-532).
+                    _logger.LogInformation(
+                        "AI chat {CorrelationId} phase=ai_tool_call tool={Tool} call_id={CallId} arg_keys={ArgKeys} arg_bytes={ArgBytes}",
+                        LogSanitizer.Sanitize(correlationId ?? "-"),
                         toolCall.Function.Name,
-                        JsonSerializer.Serialize(toolCall.Function.Arguments));
+                        callId,
+                        DescribeToolArgumentKeys(toolCall.Function.Arguments),
+                        MeasureToolArgumentBytes(toolCall.Function.Arguments));
 
                     AiToolResult toolResult;
                     long toolElapsedMs;
@@ -2654,6 +2663,38 @@ public sealed class SendChatMessageHandler
         => isScreenAnalysis
            && string.Equals(toolName, "generate_dashboard_config", StringComparison.Ordinal)
            && !string.IsNullOrEmpty(accumulatedDashboardJson);
+
+    /// <summary>
+    /// Description NON sensible des arguments d'un tool-call pour les logs : uniquement les noms de
+    /// clés (triés, tronqués, sans CR/LF), jamais les valeurs — les arguments transportent des specs
+    /// Studio complètes, des données seed ou des filtres financiers (CWE-532).
+    /// </summary>
+    public static string DescribeToolArgumentKeys(Dictionary<string, object?>? arguments)
+    {
+        if (arguments is null || arguments.Count == 0)
+            return "-";
+
+        var keys = arguments.Keys
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .Select(k => LogSanitizer.Sanitize(k, 40));
+        return LogSanitizer.Sanitize(string.Join(",", keys), 200);
+    }
+
+    /// <summary>Taille sérialisée (UTF-8) des arguments d'un tool-call — un ordre de grandeur pour le diagnostic, sans le contenu.</summary>
+    public static int MeasureToolArgumentBytes(Dictionary<string, object?>? arguments)
+    {
+        if (arguments is null || arguments.Count == 0)
+            return 0;
+
+        try
+        {
+            return JsonSerializer.SerializeToUtf8Bytes(arguments).Length;
+        }
+        catch (Exception)
+        {
+            return -1;
+        }
+    }
 
     /// <summary>Message-nudge renvoyé au modèle à la place d'une ré-exécution (aucun nom d'outil dedans).</summary>
     public const string ScreenAnalysisDashboardAlreadyGeneratedMessage =
