@@ -122,6 +122,24 @@
   }
 }
 
+/* Create-project dialog: full-width PrimeNG controls inside ft-field */
+.proj-create-dialog {
+  .ft-field {
+    :is(.p-select, .p-datepicker, .p-inputnumber) {
+      width: 100%;
+    }
+
+    .p-select,
+    .p-datepicker {
+      display: flex;
+    }
+  }
+
+  .proj-create-options {
+    margin-top: 0.25rem;
+  }
+}
+
 .proj-kind-cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
