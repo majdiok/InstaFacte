@@ -50,13 +50,22 @@ export interface StudioReportSuggestion {
   prompt: string;
 }
 
-/** Payload de l'événement SSE `studio_report_error` — miroir de `StudioReportFailurePayload`. */
+/**
+ * Payload de l'événement SSE `studio_report_error` — miroir de `StudioReportFailurePayload`.
+ * Les champs `code` / `stage` / `retryable` / `traceId` sont optionnels et purement additifs : le
+ * backend peut les émettre pour une classification exacte ; leur absence n'affecte pas les clients
+ * historiques, qui se rabattent sur l'heuristique de `studio-ai-failure.util.ts`.
+ */
 export interface StudioReportFailureEvent {
   message: string;
   preset?: string | null;
   title?: string | null;
   periodLabel?: string | null;
   suggestions: StudioReportSuggestion[];
+  code?: string | null;
+  stage?: string | null;
+  retryable?: boolean | null;
+  traceId?: string | null;
 }
 
 /** Payload de l'événement SSE `studio_plan` (retour de l'outil studio_plan_*). */

@@ -46,13 +46,44 @@ public static class StudioAiPlanDefaults
             plan.ResultJson, plan.ErrorMessage, plan.CreatedAt, plan.ExpiresAt, plan.ExecutedAt);
     }
 
-    /// <summary>Permission de design requise pour confirmer/annuler un plan selon sa nature.</summary>
+    /// <summary>Permission de design requise pour consulter/confirmer/annuler un plan selon sa nature.</summary>
     public static string RequiredPermission(StudioAiPlanKind kind) => kind switch
     {
         StudioAiPlanKind.View => Permissions.Studio.DesignForms,
         StudioAiPlanKind.Report => Permissions.Studio.DesignReports,
         _ => Permissions.Studio.DesignEntities
     };
+
+    /// <summary>
+    /// Politique de propriété (décision D1 du plan) : un plan n'est visible et actionnable QUE par
+    /// son créateur. Un plan sans créateur connu n'appartient à personne et n'est donc jamais rendu
+    /// (deny-by-default) ; un tel plan Pending expire de lui-même au bout de <see cref="Lifetime"/>.
+    /// </summary>
+    public static bool IsOwnedBy(StudioAiBuildPlan plan, Guid? userId) =>
+        plan.CreatedBy is { } creator && userId is { } actor && creator == actor;
+
+    /// <summary>
+    /// Charge un plan puis applique, dans l'ordre, tenant → propriétaire → permission par nature.
+    /// Un plan d'un autre tenant OU d'un autre utilisateur est indistinguable d'un plan inexistant
+    /// (NotFound) : la référence ne révèle rien. Une permission révoquée entre l'aperçu et l'action
+    /// est en revanche un refus explicite (Unauthorized), pour que l'UI n'affiche pas « introuvable ».
+    /// </summary>
+    internal static async Task<Result<StudioAiBuildPlan>> LoadAuthorizedAsync(
+        IStudioAiBuildPlanRepository plans, ICurrentUser currentUser, Guid planId, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(currentUser, out var tenantId, out var userId, out var err))
+            return Result.Failure<StudioAiBuildPlan>(err);
+
+        var plan = await plans.GetByIdAsync(tenantId, planId, cancellationToken);
+        if (plan is null || !IsOwnedBy(plan, userId))
+            return Result.Failure<StudioAiBuildPlan>(Error.NotFound("StudioAiBuildPlan", planId));
+
+        // Revalidation à chaque action : le droit détenu au moment de l'aperçu ne vaut pas pour la suite.
+        if (!currentUser.HasPermission(RequiredPermission(plan.Kind)))
+            return Result.Failure<StudioAiBuildPlan>(Error.Unauthorized("Permission de conception Studio requise."));
+
+        return Result.Success(plan);
+    }
 }
 
 // ---- Create ----
@@ -116,13 +147,12 @@ public sealed class GetStudioAiPlanQueryHandler : IRequestHandler<GetStudioAiPla
 
     public async Task<Result<StudioAiPlanDto>> Handle(GetStudioAiPlanQuery request, CancellationToken cancellationToken)
     {
-        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
-            return Result.Failure<StudioAiPlanDto>(err);
-
-        var plan = await _plans.GetByIdAsync(tenantId, request.Id, cancellationToken);
-        return plan is null
-            ? Result.Failure<StudioAiPlanDto>(Error.NotFound("StudioAiBuildPlan", request.Id))
-            : Result.Success(StudioAiPlanDefaults.ToDto(plan));
+        // Le GET restitue SummaryJson (échantillon de données) et ResultJson : mêmes gardes que les
+        // actions — propriétaire uniquement et droit de conception revalidé pour la nature du plan.
+        var loaded = await StudioAiPlanDefaults.LoadAuthorizedAsync(_plans, _currentUser, request.Id, cancellationToken);
+        return loaded.IsFailure
+            ? Result.Failure<StudioAiPlanDto>(loaded.Error)
+            : Result.Success(StudioAiPlanDefaults.ToDto(loaded.Value));
     }
 }
 
@@ -153,16 +183,12 @@ public sealed class ConfirmStudioAiPlanCommandHandler
 
     public async Task<Result<StudioAiPlanDto>> Handle(ConfirmStudioAiPlanCommand command, CancellationToken cancellationToken)
     {
-        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
-            return Result.Failure<StudioAiPlanDto>(err);
-
-        var plan = await _plans.GetByIdAsync(tenantId, command.Id, cancellationToken);
-        if (plan is null)
-            return Result.Failure<StudioAiPlanDto>(Error.NotFound("StudioAiBuildPlan", command.Id));
-
-        // Défense en profondeur : la politique du contrôleur exige déjà une permission de design.
-        if (!_currentUser.HasPermission(StudioAiPlanDefaults.RequiredPermission(plan.Kind)))
-            return Result.Failure<StudioAiPlanDto>(Error.Unauthorized("Permission de conception Studio requise."));
+        // Tenant → propriétaire → permission par nature (défense en profondeur : la politique du
+        // contrôleur exige une permission de design, mais pas celle qui correspond au plan).
+        var loaded = await StudioAiPlanDefaults.LoadAuthorizedAsync(_plans, _currentUser, command.Id, cancellationToken);
+        if (loaded.IsFailure)
+            return Result.Failure<StudioAiPlanDto>(loaded.Error);
+        var plan = loaded.Value;
 
         if (plan.IsExpired(DateTime.UtcNow))
         {
@@ -188,9 +214,11 @@ public sealed class ConfirmStudioAiPlanCommandHandler
             plan.MarkFailed(error ?? "Échec de l'exécution du plan.");
 
         await _plans.TryUpdateAsync(plan, cancellationToken);
+        // Auteur du plan et acteur de la confirmation sont tracés séparément (l'acteur est porté par
+        // le service d'audit ; l'auteur est celui du plan), même si la politique actuelle les confond.
         await StudioAudit.SafeLogAsync(_audit,
             success ? "Studio.AiPlan.Executed" : "Studio.AiPlan.Failed", "StudioAiBuildPlan", plan.Id,
-            null, new { plan.Kind, plan.Status }, cancellationToken);
+            null, new { plan.Kind, plan.Status, PlanCreatedBy = plan.CreatedBy, ConfirmedBy = _currentUser.UserId }, cancellationToken);
 
         return success
             ? Result.Success(StudioAiPlanDefaults.ToDto(plan))
@@ -219,12 +247,11 @@ public sealed class CancelStudioAiPlanCommandHandler
 
     public async Task<Result<StudioAiPlanDto>> Handle(CancelStudioAiPlanCommand command, CancellationToken cancellationToken)
     {
-        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
-            return Result.Failure<StudioAiPlanDto>(err);
-
-        var plan = await _plans.GetByIdAsync(tenantId, command.Id, cancellationToken);
-        if (plan is null)
-            return Result.Failure<StudioAiPlanDto>(Error.NotFound("StudioAiBuildPlan", command.Id));
+        // Annuler est aussi une action sur le plan : propriétaire uniquement et droit par nature revalidé.
+        var loaded = await StudioAiPlanDefaults.LoadAuthorizedAsync(_plans, _currentUser, command.Id, cancellationToken);
+        if (loaded.IsFailure)
+            return Result.Failure<StudioAiPlanDto>(loaded.Error);
+        var plan = loaded.Value;
 
         if (plan.Status != StudioAiPlanStatus.Pending)
             return Result.Failure<StudioAiPlanDto>(Error.Conflict("Seul un plan en attente peut être annulé."));
@@ -234,7 +261,7 @@ public sealed class CancelStudioAiPlanCommandHandler
             return Result.Failure<StudioAiPlanDto>(Error.Conflict("Ce plan est déjà en cours d'exécution."));
 
         await StudioAudit.SafeLogAsync(_audit, "Studio.AiPlan.Cancelled", "StudioAiBuildPlan", plan.Id,
-            null, new { plan.Kind }, cancellationToken);
+            null, new { plan.Kind, PlanCreatedBy = plan.CreatedBy, CancelledBy = _currentUser.UserId }, cancellationToken);
         return Result.Success(StudioAiPlanDefaults.ToDto(plan));
     }
 }
