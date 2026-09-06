@@ -123,6 +123,14 @@ public sealed record AuthResponseDto
     /// because a kill-switch was off).
     /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Same warnings as <see cref="Warnings"/>, typed (code + severity) so the client can render
+    /// each one correctly and offer a targeted action. Additive: a client that only reads
+    /// <see cref="Warnings"/> keeps working, and <see cref="Warnings"/> is derived from this list
+    /// so the two can never drift apart.
+    /// </summary>
+    public IReadOnlyList<RegistrationWarningDto> WarningDetails { get; init; } = Array.Empty<RegistrationWarningDto>();
 }
 
 /// <summary>

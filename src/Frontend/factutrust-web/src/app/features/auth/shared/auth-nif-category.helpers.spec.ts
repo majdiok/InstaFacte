@@ -112,6 +112,34 @@ describe('auth-nif-category.helpers (plan §3.2)', () => {
       expect(result).not.toBeNull();
       expect(result!.hintMessage).toContain('unknown-seg');
     });
+
+    // Parité avec le contrôle serveur (`TaxpayerCategories.IsKnown`) : une lettre hors table
+    // n'est PAS une incohérence. Le serveur affichait « catégorie P (Inconnu) et non une
+    // association » ; les deux côtés doivent désormais s'abstenir de la même façon.
+    ['P', 'M', 'N', 'Z'].forEach(letter => {
+      it(`stays silent for the unmapped category letter ${letter}`, () => {
+        expect(evaluateNifSegmentSuggestion(`1234567/${letter}/B/C/000`, 'association', resolver)).toBeNull();
+        expect(evaluateNifSegmentSuggestion(`1234567/${letter}/B/C/000`, 'commerce', resolver)).toBeNull();
+        expect(parseNifCategory(`1234567/${letter}/B/C/000`)).toBeNull();
+      });
+    });
+
+    // Cas miroir du contrôle serveur, désormais signalé AVANT la création de l'espace.
+    it('warns when the segment is association but the NIF category says otherwise', () => {
+      const result = evaluateNifSegmentSuggestion('1234567/C/B/C/000', 'association', resolver);
+      expect(result).not.toBeNull();
+      expect(result!.autoSelect).toBeFalse();
+      expect(result!.hintMessage).toBe(
+        'Votre segment est Association, mais la catégorie de votre NIF est « Société de capitaux » — vérifier ?'
+      );
+      // Pas de segment cible à proposer dans ce sens : l'UI n'affiche que « Confirmer mon segment ».
+      expect(result!.category.suggestedSegmentCode).toBeUndefined();
+    });
+
+    it('stays silent for a known non-association category on a non-association segment', () => {
+      expect(evaluateNifSegmentSuggestion('1234567/C/B/C/000', 'entreprise', resolver)).toBeNull();
+      expect(evaluateNifSegmentSuggestion('1234567/A/B/C/000', 'services', resolver)).toBeNull();
+    });
   });
 
   describe('NIF_CATEGORY_SUGGESTED_SEGMENT', () => {

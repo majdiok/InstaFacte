@@ -146,18 +146,30 @@ public class AuthController : ControllerBase
 
         // Plan §1.2: the sector kill-switch silently returns a null profile — surface it as a
         // non-blocking warning rather than pretending the client's segment/domain choice was applied.
-        var warnings = new List<string>();
+        var warnings = new List<RegistrationWarningDto>();
         if (!_registrationSectorOptions.Enabled
             && (!string.IsNullOrWhiteSpace(dto.CompanySegment) || !string.IsNullOrWhiteSpace(dto.BusinessDomain)))
         {
-            warnings.Add("La sélection du type de société/domaine d'activité n'a pas été appliquée (fonctionnalité désactivée) ; la configuration par défaut est active.");
+            warnings.Add(RegistrationWarningDto.Info(
+                RegistrationWarningCodes.SectorSelectionIgnored,
+                "La sélection du type de société/domaine d'activité n'a pas été appliquée (fonctionnalité désactivée) ; la configuration par défaut est active."));
         }
 
         // Plan §3.2: non-blocking coherence check between the NIF's taxpayer category and the
         // chosen segment. Never blocks registration — fail-open by design (see checker doc).
-        var nifCoherenceWarning = NifCategorySegmentCoherenceChecker.CheckCoherence(nifResult.Value, dto.CompanySegment);
-        if (nifCoherenceWarning is not null)
-            warnings.Add(nifCoherenceWarning);
+        // Gated by NifSegmentCoherenceWarningEnabled: the A–G taxpayer-category mapping is an
+        // unsourced assumption (docs/fiscal/nif-taxpayer-category.md), so the notice must be
+        // switchable off without a redeploy.
+        if (_registrationSectorOptions.NifSegmentCoherenceWarningEnabled)
+        {
+            var nifCoherenceWarning = NifCategorySegmentCoherenceChecker.CheckCoherence(nifResult.Value, dto.CompanySegment);
+            if (nifCoherenceWarning is not null)
+            {
+                warnings.Add(RegistrationWarningDto.Warning(
+                    RegistrationWarningCodes.NifSegmentMismatch,
+                    nifCoherenceWarning));
+            }
+        }
 
         LogCompanyRegistrationStep("Validation", validationSw.ElapsedMilliseconds, null, correlationId);
 
@@ -406,8 +418,16 @@ public class AuthController : ControllerBase
         var tokens = await _tokenService.GenerateTokensAsync(user.Id, tenant.Id, cancellationToken: cancellationToken);
         LogCompanyRegistrationStep("TokenGeneration", tokenSw.ElapsedMilliseconds, tenant.Id, correlationId);
 
+        // `Warnings` (contrat historique, string[]) est DÉRIVÉ de `WarningDetails` : une seule
+        // source de vérité, donc aucune dérive possible entre les deux vues.
         if (warnings.Count > 0)
-            tokens = tokens with { Warnings = warnings };
+        {
+            tokens = tokens with
+            {
+                Warnings = warnings.Select(w => w.Message).ToList(),
+                WarningDetails = warnings
+            };
+        }
 
         totalSw.Stop();
         LogCompanyRegistrationStep("Total", totalSw.ElapsedMilliseconds, tenant.Id, correlationId);
@@ -423,11 +443,13 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>Plan §1.2 — turns a <see cref="ModuleSelectionOutcome"/> into French, non-blocking warnings (also logged).</summary>
-    private void AppendModuleSelectionWarnings(List<string> warnings, ModuleSelectionOutcome outcome, Guid tenantId, string correlationId)
+    private void AppendModuleSelectionWarnings(List<RegistrationWarningDto> warnings, ModuleSelectionOutcome outcome, Guid tenantId, string correlationId)
     {
         if (outcome.Ignored)
         {
-            warnings.Add("La sélection de modules n'a pas été appliquée (fonctionnalité désactivée) ; les modules par défaut sont actifs.");
+            warnings.Add(RegistrationWarningDto.Info(
+                RegistrationWarningCodes.ModulesSelectionIgnored,
+                "La sélection de modules n'a pas été appliquée (fonctionnalité désactivée) ; les modules par défaut sont actifs."));
             _logger.LogWarning(
                 "Register: module selection ignored (kill-switch off) for tenant {TenantId}. CorrelationId={CorrelationId}",
                 tenantId,
@@ -447,7 +469,9 @@ public class AuthController : ControllerBase
             if (premiumDenied.Count > 0)
             {
                 var premiumNames = string.Join(", ", premiumDenied.Select(m => m.ToDisplayString()));
-                warnings.Add($"Certains modules choisis nécessitent une offre supérieure et n'ont pas été activés : {premiumNames}.");
+                warnings.Add(RegistrationWarningDto.Info(
+                    RegistrationWarningCodes.ModulesDeniedByPlan,
+                    $"Certains modules choisis nécessitent une offre supérieure et n'ont pas été activés : {premiumNames}."));
                 _logger.LogInformation(
                     "Register: premium modules denied by plan for tenant {TenantId}: {Modules}. CorrelationId={CorrelationId}",
                     tenantId,
@@ -458,7 +482,9 @@ public class AuthController : ControllerBase
             if (misconfiguredDenied.Count > 0)
             {
                 var misconfiguredNames = string.Join(", ", misconfiguredDenied.Select(m => m.ToDisplayString()));
-                warnings.Add($"Certains modules choisis n'ont pas pu être activés et le seront prochainement : {misconfiguredNames}. Nos équipes en sont informées.");
+                warnings.Add(RegistrationWarningDto.Warning(
+                    RegistrationWarningCodes.ModulesActivationFailed,
+                    $"Certains modules choisis n'ont pas pu être activés et le seront prochainement : {misconfiguredNames}. Nos équipes en sont informées."));
                 _logger.LogError(
                     "Register: plan {Plan} denies non-premium module(s) for tenant {TenantId}: {Modules}. This is a PLAN MISCONFIGURATION, not a subscription limit — check the PlanModules rows. CorrelationId={CorrelationId}",
                     SubscriptionPlan.Free,
@@ -470,7 +496,9 @@ public class AuthController : ControllerBase
 
         if (outcome.DroppedInvalidIds.Count > 0)
         {
-            warnings.Add("Certains modules sélectionnés ne sont pas disponibles à l'inscription et ont été ignorés.");
+            warnings.Add(RegistrationWarningDto.Info(
+                RegistrationWarningCodes.ModulesIgnoredAtRegistration,
+                "Certains modules sélectionnés ne sont pas disponibles à l'inscription et ont été ignorés."));
             _logger.LogWarning(
                 "Register: dropped invalid/disallowed module id(s) for tenant {TenantId}: {Ids}. CorrelationId={CorrelationId}",
                 tenantId,

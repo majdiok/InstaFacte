@@ -198,9 +198,13 @@
             <i class="pi pi-exclamation-triangle"></i>
             <span>{{ nifSegmentSuggestion()!.hintMessage }}</span>
             <div class="nif-coherence-actions">
-              <button type="button" class="btn-link" (click)="applySuggestedSegmentFromNif()">
-                Changer pour {{ suggestedSegmentLabelFromNif() }}
-              </button>
+              <!-- Le cas miroir (segment « Association » + catégorie NIF autre) n'a pas de segment
+                   cible à proposer : on n'affiche alors que la confirmation. -->
+              @if (nifSegmentSuggestion()?.category?.suggestedSegmentCode) {
+                <button type="button" class="btn-link" (click)="applySuggestedSegmentFromNif()">
+                  Changer pour {{ suggestedSegmentLabelFromNif() }}
+                </button>
+              }
               <button type="button" class="btn-link btn-link--muted" (click)="dismissNifSegmentHint()">
                 Confirmer mon segment
               </button>

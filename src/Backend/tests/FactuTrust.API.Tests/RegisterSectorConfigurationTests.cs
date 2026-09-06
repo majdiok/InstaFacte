@@ -221,7 +221,7 @@ public sealed class RegisterSectorConfigurationSqlTests : IClassFixture<Channels
         _factory = factory;
     }
 
-    private static RegisterDto BuildDto(string unique, string? segment = null, string? domain = null, int[]? enabledModules = null, string? warehouseName = null)
+    private static RegisterDto BuildDto(string unique, string? segment = null, string? domain = null, int[]? enabledModules = null, string? warehouseName = null, char nifCategory = 'A')
     {
         var nifDigits = (Convert.ToUInt64(unique, 16) % 10_000_000_000UL).ToString("D10");
         return new RegisterDto
@@ -232,7 +232,7 @@ public sealed class RegisterSectorConfigurationSqlTests : IClassFixture<Channels
             FirstName = "Sector",
             LastName = "Test",
             CompanyName = $"Société Sector {unique}",
-            Nif = $"{nifDigits[..7]}/A/B/C/{nifDigits[7..]}",
+            Nif = $"{nifDigits[..7]}/{nifCategory}/B/C/{nifDigits[7..]}",
             TaxRegime = TaxRegime.RealRegime,
             Street = "1 rue Test",
             City = "Tunis",
@@ -519,6 +519,54 @@ public sealed class RegisterSectorConfigurationSqlTests : IClassFixture<Channels
 
         var warehouseName = await GetTenantDefaultWarehouseNameAsync(_factory, body!.Data!.User.TenantId);
         Assert.Equal("Magasin principal", warehouseName);
+    }
+
+    /// <summary>
+    /// Régression : un NIF réel dont la lettre de catégorie sort de la table A–G (ici « P »)
+    /// déclenchait « votre NIF indique la catégorie P (Inconnu) et non une association » alors
+    /// que rien ne permettait de conclure. Une lettre non interprétable ⇒ aucun avertissement.
+    /// </summary>
+    [Fact]
+    public async Task Register_association_segment_with_unknown_nif_category_emits_no_warning()
+    {
+        if (!ShouldRun) return;
+
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var unique = Guid.NewGuid().ToString("N")[..12];
+        var dto = BuildDto(unique, segment: CompanySegments.Association, domain: BusinessDomains.Autre, nifCategory: 'P');
+
+        var response = await client.PostAsJsonAsync("/api/auth/register", dto, TenantUsersTestSupport.ApiJsonOptions);
+        var body = await response.Content.ReadFromJsonAsync<FactuTrust.Application.DTOs.ApiResponse<AuthResponseDto>>(TenantUsersTestSupport.ApiJsonOptions);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.NotNull(body?.Data);
+        Assert.DoesNotContain(body!.Data!.WarningDetails, w => w.Code == RegistrationWarningCodes.NifSegmentMismatch);
+        Assert.DoesNotContain(body.Data.Warnings, w => w.Contains("Inconnu", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Une catégorie CONNUE et non associative reste signalée — et l'avertissement est typé,
+    /// avec `Warnings` (contrat historique) strictement dérivé de `WarningDetails`.
+    /// </summary>
+    [Fact]
+    public async Task Register_association_segment_with_known_non_association_category_emits_typed_warning()
+    {
+        if (!ShouldRun) return;
+
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var unique = Guid.NewGuid().ToString("N")[..12];
+        var dto = BuildDto(unique, segment: CompanySegments.Association, domain: BusinessDomains.Autre, nifCategory: 'C');
+
+        var response = await client.PostAsJsonAsync("/api/auth/register", dto, TenantUsersTestSupport.ApiJsonOptions);
+        var body = await response.Content.ReadFromJsonAsync<FactuTrust.Application.DTOs.ApiResponse<AuthResponseDto>>(TenantUsersTestSupport.ApiJsonOptions);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.NotNull(body?.Data);
+
+        var nifWarning = Assert.Single(body!.Data!.WarningDetails, w => w.Code == RegistrationWarningCodes.NifSegmentMismatch);
+        Assert.Equal(RegistrationWarningSeverities.Warning, nifWarning.Severity);
+        Assert.Contains(nifWarning.Message, body.Data.Warnings);
+        Assert.Equal(body.Data.WarningDetails.Select(w => w.Message), body.Data.Warnings);
     }
 
     [Fact]

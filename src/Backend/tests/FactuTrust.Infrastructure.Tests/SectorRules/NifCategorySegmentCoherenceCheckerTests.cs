@@ -77,4 +77,52 @@ public sealed class NifCategorySegmentCoherenceCheckerTests
 
         Assert.Null(warning);
     }
+
+    /// <summary>
+    /// Régression observée en production : un NIF réel dont la lettre de catégorie est « P »
+    /// (hors table A–G) produisait « votre NIF indique la catégorie P (Inconnu) et non une
+    /// association » — une accusation bâtie sur une lettre que le code déclare lui-même ne pas
+    /// savoir interpréter. Une catégorie inconnue n'est pas une incohérence.
+    /// </summary>
+    [Theory]
+    [InlineData('P')]
+    [InlineData('M')]
+    [InlineData('N')]
+    [InlineData('Z')]
+    public void Unknown_category_letter_never_warns(char category)
+    {
+        var nif = MakeNif(category);
+
+        Assert.Null(NifCategorySegmentCoherenceChecker.CheckCoherence(nif, CompanySegments.Association));
+        Assert.Null(NifCategorySegmentCoherenceChecker.CheckCoherence(nif, CompanySegments.Commerce));
+    }
+
+    /// <summary>Les catégories connues (A–G) restent recoupées : le durcissement n'a rien désactivé.</summary>
+    [Theory]
+    [InlineData('A')]
+    [InlineData('B')]
+    [InlineData('C')]
+    [InlineData('E')]
+    [InlineData('F')]
+    [InlineData('G')]
+    public void Known_non_association_category_with_association_segment_still_warns(char category)
+    {
+        var nif = MakeNif(category);
+        var warning = NifCategorySegmentCoherenceChecker.CheckCoherence(nif, CompanySegments.Association);
+
+        Assert.NotNull(warning);
+        Assert.DoesNotContain("Inconnu", warning);
+    }
+
+    [Theory]
+    [InlineData('A', true)]
+    [InlineData('G', true)]
+    [InlineData('P', false)]
+    [InlineData('M', false)]
+    [InlineData(' ', false)]
+    public void IsKnown_matches_the_description_table(char category, bool expected)
+    {
+        Assert.Equal(expected, TaxpayerCategories.IsKnown(category));
+        Assert.Equal(expected, TaxpayerCategories.GetDescription(category) != "Inconnu");
+    }
 }

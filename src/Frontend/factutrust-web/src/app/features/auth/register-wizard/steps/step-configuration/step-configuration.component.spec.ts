@@ -99,8 +99,8 @@ describe('StepConfigurationComponent', () => {
     expect(emitted).toBeTrue();
   });
 
-  describe('premium module gating — "Plan supérieur" (Free plan, static-fallback path)', () => {
-    const PREMIUM = [AppModule.AI, AppModule.Forecasting, AppModule.Studio, AppModule.Payroll];
+  describe('free-plan module availability — no "Plan supérieur" section (static-fallback path)', () => {
+    const FORMER_PREMIUM = [AppModule.AI, AppModule.Forecasting, AppModule.Studio, AppModule.Payroll];
 
     beforeEach(() => {
       component.segment = 'commerce';
@@ -108,39 +108,33 @@ describe('StepConfigurationComponent', () => {
       fixture.detectChanges();
     });
 
-    it('premium modules are never listed as optional or recommended', () => {
-      for (const premium of PREMIUM) {
-        expect(component.optionalModules.some(m => m.id === premium)).toBeFalse();
-        expect(component.recommendedModules.some(m => m.id === premium)).toBeFalse();
+    it('former premium modules appear in optional, not recommended', () => {
+      for (const moduleId of FORMER_PREMIUM) {
+        expect(component.optionalModules.some(m => m.id === moduleId)).toBeTrue();
+        expect(component.recommendedModules.some(m => m.id === moduleId)).toBeFalse();
       }
     });
 
-    it('premiumModules getter returns the 4 premium modules present in the static catalog, sorted', () => {
-      expect(component.premiumModules.map(m => m.id)).toEqual(PREMIUM);
+    it('premiumModules getter returns an empty list', () => {
+      expect(component.premiumModules).toEqual([]);
     });
 
-    it('renders one locked "Plan supérieur" card per premium module, with a lock badge and no toggle', () => {
+    it('renders no locked "Plan supérieur" cards', () => {
       const premiumCards: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.mod-card.locked-plan'));
-      expect(premiumCards.length).toBe(component.premiumModules.length);
-      for (const card of premiumCards) {
-        expect(card.getAttribute('aria-disabled')).toBe('true');
-        expect(card.querySelector('.mod-locked-badge--plan')?.textContent).toContain('Plan supérieur');
-        // A locked-plan card must not carry an input switch (not toggleable).
-        expect(card.querySelector('p-inputswitch, .p-inputswitch')).toBeNull();
-      }
+      expect(premiumCards.length).toBe(0);
     });
 
-    it('locked-plan cards are distinct from core "Inclus" cards', () => {
+    it('core "Inclus" cards are rendered without plan-locked cards', () => {
       const coreLocked = fixture.nativeElement.querySelectorAll('.mod-card.locked').length;
       const planLocked = fixture.nativeElement.querySelectorAll('.mod-card.locked-plan').length;
       expect(coreLocked).toBe(component.coreModules.length);
-      expect(planLocked).toBe(component.premiumModules.length);
+      expect(planLocked).toBe(0);
     });
 
-    it('premium modules are not present in the enabledModules control (never submitted)', () => {
+    it('former premium modules are not in the initial enabledModules selection (opt-in OFF)', () => {
       const enabled: AppModule[] = component.form.get('enabledModules')?.value ?? [];
-      for (const premium of PREMIUM) {
-        expect(enabled).not.toContain(premium);
+      for (const moduleId of FORMER_PREMIUM) {
+        expect(enabled).not.toContain(moduleId);
       }
     });
   });

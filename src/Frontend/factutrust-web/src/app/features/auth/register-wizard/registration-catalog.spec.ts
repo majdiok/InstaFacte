@@ -120,48 +120,41 @@ describe('registration-catalog', () => {
     });
   });
 
-  describe('PREMIUM_MODULE_IDS / premium gating (Free plan — static-fallback path)', () => {
-    it('PREMIUM_MODULE_IDS is exactly AI, Forecasting, Studio, Payroll', () => {
-      expect([...PREMIUM_MODULE_IDS].sort((a, b) => a - b)).toEqual(
-        [AppModule.AI, AppModule.Forecasting, AppModule.Studio, AppModule.Payroll].sort((a, b) => a - b)
-      );
+  describe('PREMIUM_MODULE_IDS / free-plan module availability (static-fallback path)', () => {
+    const FORMER_PREMIUM = [AppModule.AI, AppModule.Forecasting, AppModule.Studio, AppModule.Payroll];
+
+    it('PREMIUM_MODULE_IDS is empty — all modules are available on Free', () => {
+      expect(PREMIUM_MODULE_IDS).toEqual([]);
     });
 
-    it('premium modules are never core', () => {
-      for (const premium of PREMIUM_MODULE_IDS) {
-        expect((CORE_MODULE_IDS as readonly AppModule[]).includes(premium)).toBe(false);
-      }
-    });
-
-    it('optionalModulesFor never includes a premium module, for any segment/domain', () => {
+    it('optionalModulesFor includes former premium modules as opt-in (OFF by default)', () => {
       for (const segment of SEGMENT_OPTIONS) {
         for (const domain of DOMAIN_OPTIONS) {
           const optional = optionalModulesFor(segment.code, domain.code);
-          for (const premium of PREMIUM_MODULE_IDS) {
-            expect(optional).withContext(`${segment.code}/${domain.code}`).not.toContain(premium);
+          for (const moduleId of FORMER_PREMIUM) {
+            expect(optional).withContext(`${segment.code}/${domain.code}`).toContain(moduleId);
           }
         }
       }
     });
 
-    it('optionalModulesFor still surfaces non-premium optional modules where not recommended (commerce + autre)', () => {
+    it('optionalModulesFor still surfaces non-recommended standard modules (commerce + autre)', () => {
       const optional = optionalModulesFor('commerce', 'autre');
-      // commerce base = {Purchases, Stock, Fiscal}; no domain overlay for autre.
       expect(optional).toContain(AppModule.Accounting);
       expect(optional).toContain(AppModule.CRM);
       expect(optional).toContain(AppModule.Projects);
       expect(optional).toContain(AppModule.RecurringContracts);
-      for (const premium of PREMIUM_MODULE_IDS) {
-        expect(optional).not.toContain(premium);
+      for (const moduleId of FORMER_PREMIUM) {
+        expect(optional).toContain(moduleId);
       }
     });
 
-    it('recommendedModulesFor never includes a premium module (premium never recommended in the static catalog)', () => {
+    it('recommendedModulesFor never includes former premium modules (never auto-recommended)', () => {
       for (const segment of SEGMENT_OPTIONS) {
         for (const domain of DOMAIN_OPTIONS) {
           const recommended = recommendedModulesFor(segment.code, domain.code);
-          for (const premium of PREMIUM_MODULE_IDS) {
-            expect(recommended).withContext(`${segment.code}/${domain.code}`).not.toContain(premium);
+          for (const moduleId of FORMER_PREMIUM) {
+            expect(recommended).withContext(`${segment.code}/${domain.code}`).not.toContain(moduleId);
           }
         }
       }
@@ -530,52 +523,44 @@ describe('registration-catalog', () => {
       expect(result).toContain(AppModule.Stock);
     });
 
-    // Premium (paid-plan) module gating — Free plan must not let users freely select
-    // AI/Forecasting/Studio/Payroll, and they must never be submitted in enabledModules.
-    describe('premium module gating (Free plan)', () => {
-      it('isLockedOnFreePlan is true for every PREMIUM_MODULE_IDS id and false for core/standard modules (idle/static path)', () => {
-        for (const premium of PREMIUM_MODULE_IDS) {
-          expect(service.isLockedOnFreePlan(premium)).toBe(true);
+    // Free-plan module availability — former premium modules are opt-in in « Autres modules ».
+    describe('free-plan module availability', () => {
+      const FORMER_PREMIUM = [AppModule.AI, AppModule.Forecasting, AppModule.Studio, AppModule.Payroll];
+
+      it('isLockedOnFreePlan is false for all modules in the static-fallback (idle) path', () => {
+        for (const moduleId of FORMER_PREMIUM) {
+          expect(service.isLockedOnFreePlan(moduleId)).toBe(false);
         }
         expect(service.isLockedOnFreePlan(AppModule.Administration)).toBe(false);
         expect(service.isLockedOnFreePlan(AppModule.Stock)).toBe(false);
         expect(service.isLockedOnFreePlan(AppModule.Honoraires)).toBe(false);
       });
 
-      it('optionalModules excludes premium modules in the static-fallback (idle) path', () => {
+      it('optionalModules includes former premium modules in the static-fallback (idle) path', () => {
         const optional = service.optionalModules('commerce', 'autre');
-        for (const premium of PREMIUM_MODULE_IDS) {
-          expect(optional).not.toContain(premium);
+        for (const moduleId of FORMER_PREMIUM) {
+          expect(optional).toContain(moduleId);
         }
       });
 
-      it('premiumModules returns exactly the premium ids present in the static catalog, sorted, never core (idle path)', () => {
-        const premium = service.premiumModules();
-        expect(premium).toEqual([...PREMIUM_MODULE_IDS].sort((a, b) => a - b));
-        for (const id of premium) {
-          expect(service.isCoreModule(id)).toBe(false);
-        }
+      it('premiumModules returns an empty list (no Plan supérieur section) in the idle path', () => {
+        expect(service.premiumModules()).toEqual([]);
       });
 
-      it('recommended/optional/premium are mutually disjoint and partition every non-core, non-Honoraires module (idle path)', () => {
+      it('recommended and optional partition every non-core, non-Honoraires module (idle path)', () => {
         const segment = 'entreprise';
         const domain = 'technologie-informatique';
         const recommended = new Set(service.recommendedModules(segment, domain));
         const optional = new Set(service.optionalModules(segment, domain));
-        const premium = new Set(service.premiumModules());
+        expect(service.premiumModules().length).toBe(0);
         for (const id of optional) {
           expect(recommended.has(id)).toBe(false);
-          expect(premium.has(id)).toBe(false);
-        }
-        for (const id of premium) {
-          expect(recommended.has(id)).toBe(false);
-          expect(optional.has(id)).toBe(false);
         }
         const all = service.modules
           .filter(m => !service.isCoreModule(m.id) && m.id !== AppModule.Honoraires)
           .map(m => m.id);
         for (const id of all) {
-          const count = (recommended.has(id) ? 1 : 0) + (optional.has(id) ? 1 : 0) + (premium.has(id) ? 1 : 0);
+          const count = (recommended.has(id) ? 1 : 0) + (optional.has(id) ? 1 : 0);
           expect(count).withContext(`module id ${id}`).toBe(1);
         }
       });
@@ -616,7 +601,7 @@ describe('registration-catalog', () => {
           expect(service.isLockedOnFreePlan(AppModule.Stock)).toBe(false);
         });
 
-        it('optionalModules excludes premium modules but keeps non-premium optional ones (remote path)', () => {
+        it('optionalModules excludes remote-locked modules but keeps non-locked optional ones (remote path)', () => {
           loadRemote();
           const optional = service.optionalModules('commerce', 'artisanat');
           expect(optional).not.toContain(AppModule.AI);
@@ -624,14 +609,13 @@ describe('registration-catalog', () => {
           expect(optional).toContain(AppModule.Accounting);
         });
 
-        it('premiumModules returns only the premium modules present in the remote catalog (remote path)', () => {
+        it('premiumModules returns only remote-locked modules present in the remote catalog (remote path)', () => {
           loadRemote();
           expect(service.premiumModules()).toEqual([AppModule.AI, AppModule.Forecasting]);
         });
 
         it('a non-canonical module flagged availableOnFreePlan:false is also locked (defensive remote field)', () => {
           const catalog = fakePremiumCatalog();
-          // Flag a non-premium module as unavailable on Free — the remote field must gate it too.
           const accounting = catalog.modules.find(m => m.id === AppModule.Accounting)!;
           accounting.availableOnFreePlan = false;
           loadRemote(catalog);
@@ -641,17 +625,16 @@ describe('registration-catalog', () => {
           expect(service.premiumModules()).toContain(AppModule.Accounting);
         });
 
-        it('a premium module with an absent availableOnFreePlan flag is still locked via PREMIUM_MODULE_IDS (older payload)', () => {
-          // Simulate an older payload that omits the flag entirely on AI.
+        it('a module with an absent availableOnFreePlan flag is unlocked when PREMIUM_MODULE_IDS is empty (older payload)', () => {
           const catalog = fakePremiumCatalog();
           catalog.modules = catalog.modules.map(m =>
             m.id === AppModule.AI ? { id: m.id, code: m.code, labelFr: m.labelFr, isCore: m.isCore } : m
           );
           loadRemote(catalog);
 
-          expect(service.isLockedOnFreePlan(AppModule.AI)).toBe(true);
-          expect(service.optionalModules('commerce', 'artisanat')).not.toContain(AppModule.AI);
-          expect(service.premiumModules()).toContain(AppModule.AI);
+          expect(service.isLockedOnFreePlan(AppModule.AI)).toBe(false);
+          expect(service.optionalModules('commerce', 'artisanat')).toContain(AppModule.AI);
+          expect(service.premiumModules()).not.toContain(AppModule.AI);
         });
       });
     });
@@ -770,7 +753,7 @@ describe('registration-catalog', () => {
       expect(result).not.toContain(AppModule.Purchases);
     });
 
-    it('la tranche d’effectif ne modifie pas la sélection (RH & Paie est un module payant)', () => {
+    it('la tranche d’effectif ne modifie pas la sélection (headcount overlay is a no-op today)', () => {
       const before = base().sort((a, b) => a - b);
       for (const band of ['1', '2-9', '10-49', '50+'] as const) {
         expect(applyProfileOverlay(before, { ...EMPTY_PROFILE_ANSWERS, headcountBand: band }, OPTS)).toEqual(before);

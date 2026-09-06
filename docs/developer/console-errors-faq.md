@@ -25,6 +25,13 @@ de ces chaînes dans `src/Frontend/factutrust-web/src/**`.
 | `Unchecked runtime.lastError: Could not establish connection. Receiving end does not exist.` | — | API `chrome.runtime` d’extension (émis par Chrome) |
 | `Uncaught TypeError: Cannot read properties of undefined (reading 'toLowerCase')` | `keyboard.ts-*.js` | Extension (gestionnaire de mots de passe / assistant clavier) — **aucun** `keyboard.ts` dans `factutrust-web` |
 
+**Preuve de non-régression (2026-09-05)** : `http://localhost:4200/auth/register` chargée dans un
+navigateur **sans extensions** ne produit que `[vite] connected` et
+`Angular is running in development mode` — **zéro erreur**. Les 18 erreurs / 48 warnings visibles
+sur le profil Chrome de développement proviennent donc des extensions installées, pas de
+l'application. Refaire cette vérification (profil vierge) **avant** d'ouvrir un ticket sur une
+erreur console de cette page.
+
 Indices fiables que c’est une extension : présence de `chrome.runtime` / `runtime.lastError`,
 préfixe `[MindStudio]`, type `launcher/current_url_updated`, pile mentionnant `content.js`,
 `keyboard.ts-*.js` ou `chrome-extension://…`. Extensions vues dans les captures : **MindStudio, MaxAI, Cookie-Editor**,
@@ -187,6 +194,28 @@ L'appel IA a abouti mais le JSON renvoyé par le modèle n'a pas pu être analys
 2. S'assurer que `InvoiceImportVisionOnImages` est `true` (défaut) pour forcer la vision sur les fichiers image.
 3. Backoffice → Configuration IA → modèle d'import instruct (`qwen2.5:7b-instruct`), pas d'embedding.
 4. Consulter `GET /api/accounting/document-import/capabilities` : `visionModelReady` doit être `true` pour les imports photo.
+
+### Inscription — jetons en console (corrigé, ne pas réintroduire)
+
+`AuthService.register()` a longtemps journalisé la réponse complète du serveur
+(`console.log('[AuthService] Réponse reçue:', response)`), c'est-à-dire **accessToken,
+refreshToken et le profil utilisateur en clair** dans la console — visibles sur n'importe quelle
+capture d'écran de support. Ce log a été supprimé et un test le verrouille
+(`auth.service.spec.ts` : « never writes the registration response to the console »).
+
+Règle : **aucune réponse d'authentification ne doit être passée à `console.*` ni à un puits de
+télémétrie.** Pour déboguer une inscription, utiliser l'onglet **Network** (la réponse y est
+lisible ponctuellement) plutôt qu'un log persistant dans le code.
+
+### Inscription — avertissements après création d'espace
+
+Le bandeau de fin d'inscription affiche les avertissements renvoyés par l'API
+(`AuthResponseDto.WarningDetails`, code + message + sévérité). Un message du type
+« Le segment sélectionné est « Association », mais votre NIF indique la catégorie … »
+(`NIF_SEGMENT_MISMATCH`) **n'est pas** un échec d'activation de module : l'espace et les modules
+sont bien créés. Sur la sémantique — non validée fiscalement — de la lettre de catégorie du NIF,
+voir `docs/fiscal/nif-taxpayer-category.md` (et le kill-switch
+`Features:RegistrationSector:NifSegmentCoherenceWarningEnabled`).
 
 ## Politique « pas de régression » (important)
 

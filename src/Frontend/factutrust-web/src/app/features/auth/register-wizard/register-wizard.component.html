@@ -8,10 +8,13 @@
 
     <nav class="step-list" aria-label="Étapes de l'inscription">
       @for (step of stepsMeta; track step.name; let i = $index) {
+        <!-- `locked` : une fois l'espace créé, les étapes ne sont plus navigables (goToStep
+             refuse déjà l'appel) — on le rend visible plutôt que de laisser un clic sans effet. -->
         <div class="step-item"
              [class.active]="currentStep() === i"
-             [class.done]="currentStep() > i"
-             [attr.aria-current]="currentStep() === i ? 'step' : 'false'"
+             [class.done]="currentStep() > i || accountCreated()"
+             [class.locked]="accountCreated()"
+             [attr.aria-current]="currentStep() === i && !accountCreated() ? 'step' : 'false'"
              (click)="goToStep(i)">
           <span class="step-ico"><i class="pi {{ step.icon }}"></i></span>
           <span class="step-txt">
@@ -54,7 +57,42 @@
   </aside>
 
   <main class="panel">
-    <div class="panel-card">
+    <div class="panel-card" #panelCard>
+      @if (accountCreated()) {
+        <!-- État TERMINAL : l'espace existe. Le formulaire n'est plus rendu — il ne doit plus être
+             ni modifiable ni re-soumettable (un second POST /auth/register échouerait sur l'unicité
+             e-mail/NIF après avoir consommé le quota de la politique de limitation). -->
+        <section class="success-panel" role="status" @fadeInOut>
+          <div class="success-icon"><i class="pi pi-check-circle" aria-hidden="true"></i></div>
+          <h2 class="success-title">Votre espace a été créé</h2>
+
+          @if (registrationWarningDetails().length > 0) {
+            <p class="success-sub">Votre compte est prêt. Quelques points à vérifier&nbsp;:</p>
+            <ul class="success-warnings">
+              @for (warning of registrationWarningDetails(); track warning.message) {
+                <li [class.is-info]="warning.severity === 'info'">
+                  <i class="pi"
+                     [class.pi-info-circle]="warning.severity === 'info'"
+                     [class.pi-exclamation-triangle]="warning.severity !== 'info'"
+                     aria-hidden="true"></i>
+                  <span>{{ warning.message }}</span>
+                </li>
+              }
+            </ul>
+            @if (nifWarning()) {
+              <a class="success-action" routerLink="/settings/company">
+                Vérifier mon matricule fiscal <i class="pi pi-arrow-right" aria-hidden="true"></i>
+              </a>
+            }
+          } @else {
+            <p class="success-sub">Votre compte est prêt.</p>
+          }
+
+          <button type="button" class="btn-continue" (click)="continueAfterWarnings()">
+            Continuer vers le tableau de bord <i class="pi pi-arrow-right" aria-hidden="true"></i>
+          </button>
+        </section>
+      } @else {
       <div class="hstepper" role="group" aria-label="Progression de l'inscription">
         @for (step of stepsMeta; track step.name; let i = $index; let last = $last) {
           <div class="hstep" [class.active]="currentStep() === i" [class.done]="currentStep() > i">
@@ -101,20 +139,6 @@
           </div>
         }
 
-        @if (registrationWarnings().length > 0) {
-          <div class="global-warning" role="alert" @fadeInOut>
-            <div class="warning-icon">
-              <i class="pi pi-exclamation-circle"></i>
-            </div>
-            <div class="warning-content">
-              <h4>Votre espace a été créé</h4>
-              <p>Certains modules n'ont pas pu être activés : {{ registrationWarnings().join(', ') }}</p>
-              <button type="button" class="btn-continue" (click)="continueAfterWarnings()">
-                Continuer vers le tableau de bord <i class="pi pi-arrow-right" aria-hidden="true"></i>
-              </button>
-            </div>
-          </div>
-        }
 
         <div class="steps-container">
           @if (currentStep() === 0) {
@@ -195,6 +219,7 @@
           <p class="mt-2">Cabinet comptable ? <a routerLink="/auth/register-firm" class="link-primary fw-semibold">Inscription cabinet</a></p>
         }
       </div>
+      }
     </div>
   </main>
 </div>

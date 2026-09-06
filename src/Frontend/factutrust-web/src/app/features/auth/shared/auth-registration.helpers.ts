@@ -1,4 +1,4 @@
-import { FormGroup } from '@angular/forms';
+import { AbstractControl, FormGroup, ValidationErrors } from '@angular/forms';
 import { NIF_PATTERN } from '@shared/validation/validation-rules';
 import type { RegisterRequest } from '@core/services/auth.service';
 
@@ -137,30 +137,74 @@ export function validateFirmRegisterFormData(
   return errors;
 }
 
+/**
+ * Validateur de format NIF appliqué à la valeur **nettoyée**.
+ *
+ * Le contrôle porte la valeur du masque PrimeNG (`1234567A/B/C/000`, voire des `_` résiduels) :
+ * un `Validators.pattern(NIF_PATTERN)` direct la rejetterait alors qu'elle est parfaitement
+ * valide une fois normalisée par `cleanNifValue()` — d'où ce validateur dédié.
+ *
+ * Vide ⇒ valide : l'obligation de saisie relève de `Validators.required`.
+ */
+export function nifFormatValidator(control: AbstractControl): ValidationErrors | null {
+  const raw = control.value;
+  if (raw === null || raw === undefined || raw === '') {
+    return null;
+  }
+
+  return NIF_PATTERN.test(cleanNifValue(String(raw))) ? null : { nifFormat: true };
+}
+
 export function markAllFormControlsTouched(form: FormGroup): void {
   Object.keys(form.controls).forEach(key => {
     form.get(key)?.markAsTouched();
   });
 }
 
+/** `true` si l'utilisateur a demandé à réduire les animations (défilement instantané). */
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function scrollBehavior(): ScrollBehavior {
+  return prefersReducedMotion() ? 'auto' : 'smooth';
+}
+
 export function scrollToFirstInvalidField(): void {
-  const firstInvalidField = document.querySelector('.ng-invalid');
+  // On vise un CONTRÔLE invalide, pas le premier `.ng-invalid` venu : Angular pose aussi cette
+  // classe sur l'élément `<form>` lui-même, qui est donc toujours le premier match — le
+  // défilement « vers le champ fautif » ramenait en réalité vers le formulaire entier.
+  const firstInvalidField =
+    document.querySelector('input.ng-invalid, select.ng-invalid, textarea.ng-invalid, [formcontrolname].ng-invalid')
+    ?? document.querySelector('.ng-invalid');
   if (firstInvalidField) {
-    firstInvalidField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    const input = firstInvalidField.querySelector('input, select, textarea') as HTMLElement;
+    firstInvalidField.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
+    const input = firstInvalidField.matches('input, select, textarea')
+      ? (firstInvalidField as HTMLElement)
+      : (firstInvalidField.querySelector('input, select, textarea') as HTMLElement | null);
     if (input) {
       setTimeout(() => input.focus(), 300);
     }
   }
 }
 
-/** After a wizard step change, bring the form header back into view (page scroll). */
-export function scrollAuthWizardStepIntoView(): void {
+/**
+ * After a wizard step change, bring the form header back into view (page scroll).
+ *
+ * `target` explicite pour le wizard v2 : ses sélecteurs de repli (`.form-header-text` /
+ * `.auth-form-card`) n'existent que dans le formulaire d'inscription legacy, si bien que
+ * l'appel était un no-op sur `/auth/register` — la page ne remontait pas d'une étape à l'autre.
+ * Sans `target`, le comportement legacy est conservé à l'identique.
+ */
+export function scrollAuthWizardStepIntoView(target?: Element | null): void {
   queueMicrotask(() => {
-    const target =
+    const element =
+      target ??
       document.querySelector('.form-header-text') ??
       document.querySelector('.auth-form-card');
-    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    element?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
   });
 }
 

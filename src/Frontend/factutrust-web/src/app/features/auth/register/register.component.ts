@@ -345,13 +345,9 @@ export class RegisterComponent implements OnInit, OnDestroy {
       warehouseName: trimOptional(formValue.warehouseName)
     };
 
-    // Log request for debugging (remove sensitive data in production)
-    console.log('[RegisterComponent] Submitting registration request:', {
-      ...request,
-      password: '***',
-      confirmPassword: '***'
-    });
-
+    // Aucune journalisation de la requête ici : même masquée sur les mots de passe, elle
+    // contient des données personnelles (e-mail, NIF, téléphone, adresse). Voir la note
+    // de sécurité sur `AuthService.register()`.
     this.authService.register(request).pipe(
       timeout(RegisterComponent.REGISTRATION_TIMEOUT_MS),
       catchError(err => {

@@ -33,6 +33,9 @@ export const NIF_CATEGORY_SUGGESTED_SEGMENT: Partial<Record<NifTaxpayerCategory,
   D: 'association'
 };
 
+/** Segment « Association » — seul segment que la table de catégories sait recouper. */
+const ASSOCIATION_SEGMENT_CODE: CompanySegmentCode = 'association';
+
 export interface NifCategoryInfo {
   category: NifTaxpayerCategory;
   categoryLabelFr: string;
@@ -83,22 +86,40 @@ export function evaluateNifSegmentSuggestion(
   currentSegmentCode: string | null | undefined,
   segmentLabelResolver: (code: string) => string | undefined
 ): NifSegmentSuggestion | null {
+  // `parseNifCategory` renvoie null hors table A–G : une lettre non interprétable (P, M, N…)
+  // ne produit donc AUCUN indice — strictement la même abstention que le contrôle serveur
+  // (`TaxpayerCategories.IsKnown`). Cf. docs/fiscal/nif-taxpayer-category.md.
   const category = parseNifCategory(nif);
-  if (!category?.suggestedSegmentCode) {
+  if (!category) {
     return null;
   }
 
-  if (!currentSegmentCode) {
-    return { category, autoSelect: true, hintMessage: null };
+  if (category.suggestedSegmentCode) {
+    if (!currentSegmentCode) {
+      return { category, autoSelect: true, hintMessage: null };
+    }
+
+    if (currentSegmentCode === category.suggestedSegmentCode) {
+      return { category, autoSelect: false, hintMessage: null };
+    }
+
+    const currentLabel = segmentLabelResolver(currentSegmentCode) || currentSegmentCode;
+    const hintMessage =
+      `Votre NIF indique une ${category.categoryLabelFr.toLowerCase()} ; ` +
+      `votre segment est ${currentLabel} — confirmer ?`;
+    return { category, autoSelect: false, hintMessage };
   }
 
-  if (currentSegmentCode === category.suggestedSegmentCode) {
-    return { category, autoSelect: false, hintMessage: null };
+  // Cas miroir du contrôle serveur (segment « Association » + catégorie connue non associative).
+  // Sans cet indice, l'utilisateur ne découvrait la remarque qu'APRÈS la création de l'espace,
+  // alors qu'il peut la corriger — ou l'assumer — ici en une seconde.
+  if (currentSegmentCode === ASSOCIATION_SEGMENT_CODE) {
+    const currentLabel = segmentLabelResolver(currentSegmentCode) || currentSegmentCode;
+    const hintMessage =
+      `Votre segment est ${currentLabel}, mais la catégorie de votre NIF est ` +
+      `« ${category.categoryLabelFr} » — vérifier ?`;
+    return { category, autoSelect: false, hintMessage };
   }
 
-  const currentLabel = segmentLabelResolver(currentSegmentCode) || currentSegmentCode;
-  const hintMessage =
-    `Votre NIF indique une ${category.categoryLabelFr.toLowerCase()} ; ` +
-    `votre segment est ${currentLabel} — confirmer ?`;
-  return { category, autoSelect: false, hintMessage };
+  return null;
 }

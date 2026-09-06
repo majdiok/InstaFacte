@@ -277,20 +277,19 @@ public static class AppModuleExtensions
     public static readonly AppModule[] AllValues = Enum.GetValues<AppModule>();
 
     /// <summary>
-    /// Modules réservés aux plans payants (Monthly/Annual) — NON disponibles sur le plan Free et
-    /// NON proposés par le wizard d'inscription. Source de vérité unique partagée entre
+    /// Modules réservés aux plans payants — NON disponibles sur le plan Free et NON proposés
+    /// librement par le wizard d'inscription. Source de vérité unique partagée entre
     /// <c>PlanSeeder</c> (Infrastructure — seeding du plan Free + alignement) et le mapper du
     /// catalogue sectoriel (Application — flag <c>AvailableOnFreePlan</c> exposé au wizard).
-    /// Plan §1.1, décision D1 (Free = cœur + standard, pas de modules premium).
+    /// Politique actuelle (2026-09) : liste vide — tous les modules sont disponibles sur Free ;
+    /// seules les limites de quota (<see cref="SubscriptionLimits"/>) et les features de plan
+    /// différencient Free de Monthly/Annual.
+    /// Retour arrière : réinsérer AI, Forecasting, Studio, Payroll ici, régénérer les snapshots
+    /// sector-catalog, restaurer <c>PREMIUM_MODULE_IDS</c> côté frontend, redémarrer l'API
+    /// (<c>AlignFreePlanWizardModulesAsync</c> repassera ces modules à <c>IsIncluded=false</c> sur Free).
     /// <see cref="AppModule.Honoraires"/> reste exclu partout (natif cabinet) et n'apparaît pas ici.
     /// </summary>
-    public static IReadOnlyCollection<AppModule> PaidPlanModuleIds { get; } = new[]
-    {
-        AppModule.AI,
-        AppModule.Forecasting,
-        AppModule.Studio,
-        AppModule.Payroll
-    };
+    public static IReadOnlyCollection<AppModule> PaidPlanModuleIds { get; } = Array.Empty<AppModule>();
 
     /// <summary>True si <paramref name="module"/> est réservé aux plans payants (voir <see cref="PaidPlanModuleIds"/>).</summary>
     public static bool IsPaidPlanOnly(this AppModule module) => PaidPlanModuleIds.Contains(module);

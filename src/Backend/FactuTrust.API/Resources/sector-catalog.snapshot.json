@@ -346,28 +346,28 @@
       "code": "AI",
       "labelFr": "Assistant IA",
       "isCore": false,
-      "availableOnFreePlan": false
+      "availableOnFreePlan": true
     },
     {
       "id": 12,
       "code": "Forecasting",
       "labelFr": "Pr\u00E9visions IA",
       "isCore": false,
-      "availableOnFreePlan": false
+      "availableOnFreePlan": true
     },
     {
       "id": 13,
       "code": "Studio",
       "labelFr": "Studio (low-code)",
       "isCore": false,
-      "availableOnFreePlan": false
+      "availableOnFreePlan": true
     },
     {
       "id": 14,
       "code": "Payroll",
       "labelFr": "RH \u0026 Paie",
       "isCore": false,
-      "availableOnFreePlan": false
+      "availableOnFreePlan": true
     },
     {
       "id": 16,

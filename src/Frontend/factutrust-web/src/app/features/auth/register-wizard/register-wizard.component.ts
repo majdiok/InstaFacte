@@ -1,11 +1,16 @@
-import { Component, OnDestroy, OnInit, inject, signal, computed, effect } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, inject, signal, computed, effect, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { HttpErrorResponse } from '@angular/common/http';
-import { timeout, TimeoutError, catchError, throwError, debounceTime } from 'rxjs';
-import { AuthService, RegisterRequest } from '@core/services/auth.service';
+import { timeout, TimeoutError, catchError, throwError, debounceTime, Subscription } from 'rxjs';
+import {
+  AuthService,
+  RegisterRequest,
+  RegistrationWarningDetail,
+  toRegistrationWarnings
+} from '@core/services/auth.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { AppModule } from '@core/models/app-module';
@@ -21,6 +26,7 @@ import {
   buildCompanyRegisterRequest,
   cleanNifValue,
   markAllFormControlsTouched,
+  nifFormatValidator,
   scrollAuthWizardStepIntoView,
   scrollToFirstInvalidField,
   validateCompanyRegisterFormData
@@ -102,8 +108,20 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
    * réussie (ex. module demandé refusé par le plan — tâche 1.2 du plan). Tant
    * qu'ils sont présents, la redirection automatique vers le tableau de bord est
    * suspendue afin que l'utilisateur les voie avant de continuer.
+   *
+   * Source de vérité TYPÉE : `code` permet un libellé et une action justes par
+   * avertissement (un avis NIF n'est pas un échec d'activation de module).
    */
-  registrationWarnings = signal<string[]>([]);
+  registrationWarningDetails = signal<RegistrationWarningDetail[]>([]);
+  /** Vue « messages seuls » — contrat historique conservé pour les appelants existants. */
+  readonly registrationWarnings = computed(() => this.registrationWarningDetails().map(w => w.message));
+  /**
+   * Vrai dès que l'espace est créé côté serveur. État TERMINAL : le formulaire n'est plus
+   * rendu ni modifiable, la navigation entre étapes est fermée et une nouvelle soumission
+   * est refusée. Sans cela, l'écran d'avertissement laissait le bouton « Créer mon espace »
+   * réactivé (form valide + loading=false), donc un second POST /auth/register possible.
+   */
+  accountCreated = signal(false);
   currentStep = signal(0);
   /** Once the user manually toggles a module, recommendation auto-recompute stops overwriting their choices. */
   modulesTouched = signal(false);
@@ -121,6 +139,15 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
 
   private loadingMessageTimer: ReturnType<typeof setInterval> | null = null;
   private loadingStartedAt = 0;
+  /** Sauvegarde automatique du brouillon — arrêtée dès que l'espace est créé (données personnelles). */
+  private draftAutosave: Subscription | null = null;
+
+  /**
+   * Carte du wizard : cible de défilement au changement d'étape. Les anciens sélecteurs
+   * (`.form-header-text` / `.auth-form-card`) n'existent que dans le formulaire legacy,
+   * donc le défilement était un no-op ici — l'utilisateur restait au milieu de la page.
+   */
+  private readonly panelCard = viewChild<ElementRef<HTMLElement>>('panelCard');
 
   /**
    * Late-arriving remote catalog (plan WP-F1): if the fetch resolves to `'remote'`
@@ -214,7 +241,11 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
     confirmPassword: ['', Validators.required],
     // Step 2 §Votre société
     companyName: ['', [Validators.required, Validators.minLength(2)]],
-    nif: ['', Validators.required],
+    // `nifFormatValidator` valide la valeur NETTOYÉE (le contrôle porte la valeur masquée
+    // `1234567A/B/C/000`, qu'un `Validators.pattern(NIF_PATTERN)` rejetterait à tort).
+    // Effet : le format est signalé à l'étape 2, sous le champ, au lieu de l'être en
+    // bandeau à l'étape 4 (validateCompanyRegisterFormData reste le filet de sécurité).
+    nif: ['', [Validators.required, nifFormatValidator]],
     taxRegime: [null, Validators.required],
     companyEmail: ['', [Validators.required, Validators.email]],
     phone: ['', Validators.required],
@@ -305,8 +336,11 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       this.pendingDraftStep.set(draft.step);
     }
 
-    this.form.valueChanges.pipe(debounceTime(600)).subscribe(() => {
-      if (this.loading()) {
+    // Désabonné dès la création de l'espace : sans cela, la moindre interaction sur l'écran
+    // final réécrivait le brouillon (nom, e-mail, NIF, téléphone, adresse) dans sessionStorage
+    // APRÈS le `draftService.clear()` de succès.
+    this.draftAutosave = this.form.valueChanges.pipe(debounceTime(600)).subscribe(() => {
+      if (this.loading() || this.accountCreated()) {
         return;
       }
       this.draftService.save(this.form.getRawValue(), this.currentStep());
@@ -318,6 +352,7 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.stopDraftAutosave();
     this.clearLoadingMessageTimer();
     if (this.autoEnabledHintTimer) {
       clearTimeout(this.autoEnabledHintTimer);
@@ -460,25 +495,34 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   }
 
   goToStep(index: number): void {
+    // L'espace existe : le formulaire n'est plus rendu, la navigation entre étapes n'a plus de sens.
+    if (this.accountCreated()) return;
     if (index < 0 || index >= this.stepsMeta.length || index === this.currentStep()) return;
     // Allow jumping back freely (recap "Modifier" links); only gate forward navigation.
     if (index > this.currentStep() && !this.isCurrentStepValid()) return;
     this.currentStep.set(index);
-    scrollAuthWizardStepIntoView();
+    this.scrollWizardIntoView();
   }
 
   nextStep(): void {
+    if (this.accountCreated()) return;
     if (this.isCurrentStepValid() && this.currentStep() < this.stepsMeta.length - 1) {
       this.currentStep.update(s => s + 1);
-      scrollAuthWizardStepIntoView();
+      this.scrollWizardIntoView();
     }
   }
 
   previousStep(): void {
+    if (this.accountCreated()) return;
     if (this.currentStep() > 0) {
       this.currentStep.update(s => s - 1);
-      scrollAuthWizardStepIntoView();
+      this.scrollWizardIntoView();
     }
+  }
+
+  /** Ramène la carte du wizard en haut de l'écran après un changement d'étape. */
+  private scrollWizardIntoView(): void {
+    scrollAuthWizardStepIntoView(this.panelCard()?.nativeElement);
   }
 
   /** Réinjecte le brouillon dans le formulaire et reprend à l'étape enregistrée. */
@@ -498,7 +542,7 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       this.taxRegimeTouched.set(true);
     }
     this.currentStep.set(draft.step);
-    scrollAuthWizardStepIntoView();
+    this.scrollWizardIntoView();
   }
 
   /** Refuse la reprise et supprime le brouillon. */
@@ -512,6 +556,12 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
   }
 
   onSubmit(): void {
+    // Ré-entrance : le `[disabled]` du bouton ne suffit pas (double-clic, soumission clavier,
+    // et surtout écran d'avertissement où le formulaire redevenait valide et actif).
+    if (this.loading() || this.accountCreated()) {
+      return;
+    }
+
     if (this.form.invalid) {
       markAllFormControlsTouched(this.form);
       scrollToFirstInvalidField();
@@ -532,6 +582,8 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
 
     this.loading.set(true);
     this.error.set(null);
+    // Sans cela, une nouvelle tentative affichait encore le bandeau « espace créé » de la précédente.
+    this.registrationWarningDetails.set([]);
     this.loadingMessage.set('Création de votre espace...');
     this.loadingStartedAt = Date.now();
     this.startLoadingMessageTimer();
@@ -585,14 +637,16 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
       next: (response) => {
         if (response.success) {
           console.log('[RegisterWizardComponent] Registration successful');
-          // L'espace existe : le brouillon n'a plus lieu d'être (et contient des coordonnées).
-          this.draftService.clear();
-          const warnings = response.data?.warnings?.filter(w => !!w?.trim()) ?? [];
+          // L'espace existe : état terminal. Le formulaire n'est plus rendu ni modifiable,
+          // l'autosave du brouillon est arrêtée, et le brouillon (qui contient des
+          // coordonnées personnelles) est supprimé.
+          this.finalizeAccountCreation();
+          const warnings = toRegistrationWarnings(response.data);
           if (warnings.length > 0) {
             // Avertissement non bloquant (ex. module refusé par le plan) : on
             // laisse l'utilisateur le lire avant de le rediriger vers le
             // tableau de bord, plutôt que de le faire disparaître aussitôt.
-            this.registrationWarnings.set(warnings);
+            this.registrationWarningDetails.set(warnings);
             this.stopLoading();
             return;
           }
@@ -659,7 +713,30 @@ export class RegisterWizardComponent implements OnInit, OnDestroy {
 
   /** L'utilisateur a pris connaissance des avertissements : on continue vers le tableau de bord. */
   continueAfterWarnings(): void {
-    this.registrationWarnings.set([]);
+    this.registrationWarningDetails.set([]);
     this.warehouseContext.navigateAfterSuccessfulAuth('/dashboard');
   }
+
+  /**
+   * Bascule irréversible vers l'état « espace créé » : plus de brouillon, plus d'autosave,
+   * formulaire figé. Idempotent.
+   */
+  private finalizeAccountCreation(): void {
+    this.accountCreated.set(true);
+    this.stopDraftAutosave();
+    this.draftService.clear();
+    this.pendingDraftStep.set(null);
+    // `emitEvent: false` : aucune valeur ne change, inutile de réveiller les abonnés.
+    this.form.disable({ emitEvent: false });
+  }
+
+  private stopDraftAutosave(): void {
+    this.draftAutosave?.unsubscribe();
+    this.draftAutosave = null;
+  }
+
+  /** Avertissement de cohérence NIF/segment, s'il y en a un : il appelle une action dédiée. */
+  readonly nifWarning = computed(
+    () => this.registrationWarningDetails().find(w => w.code === 'NIF_SEGMENT_MISMATCH') ?? null
+  );
 }
