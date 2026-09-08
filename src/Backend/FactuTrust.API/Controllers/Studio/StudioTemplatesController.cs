@@ -12,9 +12,9 @@ namespace FactuTrust.API.Controllers.Studio;
 /// Bibliothèque « Modèles de systèmes » (tâche B-P0-08). P0 : lecture du seul catalogue
 /// EMBARQUÉ (<see cref="StudioTemplateCatalog"/>, source « builtin »). Les modèles tenant
 /// (table <c>CustomSystemTemplates</c>, partage Privé/Équipe) arrivent en P3 — la fusion
-/// builtin + tenant se fera ici, sans changement de contrat. Lecture gardée par
-/// <c>EnableStudioAiWorkbench</c> OU <c>EnableStudioTemplates</c> (le catalogue sert aussi à
-/// l'endpoint <c>from-template</c> des plans).
+/// builtin + tenant se fera ici, sans changement de contrat. Lecture subordonnée à
+/// <c>EnableStudioAiWorkbench</c> (le catalogue ne sert qu'au flux d'aperçu) ; P3 pourra
+/// y ajouter <c>EnableStudioTemplates</c>.
 /// </summary>
 [ApiController]
 [Route("api/studio/templates")]
@@ -64,9 +64,14 @@ public sealed class StudioTemplatesController : ControllerBase
             item.Source, item.Visibility, item.EntityCount, item.UpdatedAt, template.SpecJson)));
     }
 
-    /// <summary>Garde de lecture : 404 si NI le workbench NI la bibliothèque tenant ne sont actifs.</summary>
+    /// <summary>
+    /// Garde de lecture : 404 tant que le workbench est inactif. Subordonné au workbench (aligné sur
+    /// <c>StudioAiCapabilitiesDto.TemplatesEnabled</c>) : le catalogue ne sert qu'au flux d'aperçu
+    /// (<c>from-template</c> est gardé par le workbench) ; la bibliothèque tenant P3 pourra ajouter
+    /// <c>EnableStudioTemplates</c> à cette garde.
+    /// </summary>
     private IActionResult? TemplatesUnavailableOrNull() =>
-        _ollamaSettings.EnableStudioAiWorkbench || _ollamaSettings.EnableStudioTemplates
+        _ollamaSettings.EnableStudioAiWorkbench
             ? null
             : NotFound(ApiResponse<object>.Fail("La bibliothèque de modèles Studio n'est pas activée."));
 

@@ -53,11 +53,13 @@ public sealed class StudioTemplatesControllerTests
     }
 
     [Fact]
-    public void List_is_also_available_with_templates_flag_alone()
+    public void List_is_unavailable_when_workbench_is_off_even_with_templates_flag()
     {
+        // La bibliothèque est subordonnée au workbench (aligné sur StudioAiCapabilitiesDto.TemplatesEnabled) :
+        // le catalogue ne sert qu'au flux d'aperçu ; le flag Templates seul ne suffit pas (P3 pourra assouplir).
         var controller = CreateController(workbenchEnabled: false, templatesEnabled: true);
 
-        Assert.IsType<OkObjectResult>(controller.List(null));
+        Assert.IsType<NotFoundObjectResult>(controller.List(null));
     }
 
     [Fact]
