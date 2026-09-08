@@ -103,12 +103,14 @@ public static class StudioAiAppSpec
         var fieldsArr = root?["fields"]?.AsArray();
         if (fieldsArr is null || fieldsArr.Count == 0) { error = "Au moins un champ est requis."; return false; }
 
+        // Rejet franc (cohérent avec StudioAiSystemSpec) plutôt que troncature silencieuse.
+        if (fieldsArr.Count > MaxFields) { error = $"Au plus {MaxFields} champs."; return false; }
+
         var fields = new List<ParsedAppField>();
         var usedKeys = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var fn in fieldsArr)
         {
-            if (fields.Count >= MaxFields) break;
             var label = Str(fn?["label"]) ?? Str(fn?["name"]);
             if (string.IsNullOrWhiteSpace(label)) continue;
 

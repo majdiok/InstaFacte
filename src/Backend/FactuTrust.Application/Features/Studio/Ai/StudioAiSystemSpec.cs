@@ -156,11 +156,14 @@ public static class StudioAiSystemSpec
         var fieldsArr = en?["fields"]?.AsArray();
         if (fieldsArr is null || fieldsArr.Count == 0) { error = $"Entité « {displayName} » : au moins un champ requis."; return null; }
 
+        // Rejet franc (comme les entités et le seed) : tronquer silencieusement induirait l'utilisateur
+        // en erreur dans l'aperçu éditable (« 41 champs proposés, 40 créés »).
+        if (fieldsArr.Count > StudioAiAppSpec.MaxFields) { error = $"Entité « {displayName} » : au plus {StudioAiAppSpec.MaxFields} champs."; return null; }
+
         var fields = new List<ParsedSystemField>();
         var usedKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var fn in fieldsArr)
         {
-            if (fields.Count >= StudioAiAppSpec.MaxFields) break;
             var label = Str(fn?["label"]) ?? Str(fn?["name"]);
             if (string.IsNullOrWhiteSpace(label)) continue;
 
@@ -399,6 +402,13 @@ public static class StudioAiSystemSpec
             {
                 var max = Int(cfg?["max"]) ?? Int(fn?["max"]) ?? 5;
                 return new() { ["max"] = JsonValue.Create(Math.Clamp(max, 1, 10)) };
+            }
+            // Miroir de StudioAiAppSpec.ParseConfig : un code-barres perdait son format en spec système.
+            case CustomFieldType.Barcode:
+            {
+                var format = (Str(cfg?["format"]) ?? Str(fn?["format"]) ?? "code128").Trim().ToLowerInvariant();
+                if (format is not ("code128" or "ean13")) format = "code128";
+                return new() { ["format"] = JsonValue.Create(format) };
             }
             default:
                 return null;

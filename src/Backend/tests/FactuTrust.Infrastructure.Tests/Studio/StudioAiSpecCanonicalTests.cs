@@ -243,4 +243,54 @@ public sealed class StudioAiSpecCanonicalTests
         Assert.Contains("\"label\": \"En attente\"", canonical, StringComparison.Ordinal);
         Assert.Contains("\"width\": \"half\"", canonical, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Entity_with_more_than_max_fields_is_rejected_outright()
+    {
+        // 41 champs valides : rejet franc (revue P0) — aucune troncature silencieuse.
+        var fields = string.Join(", ", Enumerable.Range(1, StudioAiAppSpec.MaxFields + 1)
+            .Select(i => $"{{ \"label\": \"Champ {i}\", \"type\": \"text\" }}"));
+        var json = $$"""
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "a", "displayName": "A", "fields": [ {{fields}} ] } ] }
+        """;
+
+        var ok = StudioAiSystemSpec.TryParse(json, out var spec, out var error);
+
+        Assert.False(ok);
+        Assert.Null(spec);
+        Assert.Contains("40", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Entity_with_exactly_max_fields_is_accepted()
+    {
+        var fields = string.Join(", ", Enumerable.Range(1, StudioAiAppSpec.MaxFields)
+            .Select(i => $"{{ \"label\": \"Champ {i}\", \"type\": \"text\" }}"));
+        var json = $$"""
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "a", "displayName": "A", "fields": [ {{fields}} ] } ] }
+        """;
+
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Equal(StudioAiAppSpec.MaxFields, spec!.Entities[0].Fields.Count);
+    }
+
+    [Fact]
+    public void Barcode_field_keeps_its_format_config_in_system_spec()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "articles", "displayName": "Articles", "fields": [
+            { "key": "code", "label": "Code", "type": "barcode", "config": { "format": "ean13" } } ] } ] }
+        """;
+
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var config = spec!.Entities[0].Fields[0].Config;
+        Assert.NotNull(config);
+        Assert.Equal("ean13", config!["format"]!.GetValue<string>());
+
+        var canonical = StudioAiSpecCanonical.CanonicalSystem(spec);
+        Assert.Contains("\"format\": \"ean13\"", canonical, StringComparison.Ordinal);
+    }
 }
