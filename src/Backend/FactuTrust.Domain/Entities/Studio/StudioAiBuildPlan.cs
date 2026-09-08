@@ -62,6 +62,14 @@ public sealed class StudioAiBuildPlan
 
     public bool IsExpired(DateTime utcNow) => Status == StudioAiPlanStatus.Pending && utcNow >= ExpiresAt;
 
+    /// <summary>Remplace la spec et le résumé d'un plan encore éditable. Ne touche ni au statut ni à l'échéance.</summary>
+    public void UpdateSpec(string specJson, string summaryJson)
+    {
+        if (Status != StudioAiPlanStatus.Pending) throw new InvalidOperationException("Seul un plan en attente est éditable.");
+        SpecJson = specJson;
+        SummaryJson = summaryJson;
+    }
+
     public void MarkExecuting() => Status = StudioAiPlanStatus.Executing;
 
     public void MarkCompleted(string? resultJson)
