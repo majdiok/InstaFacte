@@ -318,11 +318,62 @@ public sealed class ProjectTimeEntryServiceTests
     }
 
     [Fact]
+    public async Task ValidateTimeEntry_UsesHourlyCostOnly_NotSalesRate()
+    {
+        var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
+        var (project, client, userId) = await SeedActiveProjectAsync(factory);
+        var member = ProjectMember.Create(project.Id, userId, ProjectMemberRole.Member, 320m, 100m, 40m).Value;
+        var entry = ProjectTimeEntry.Create(project.Id, userId, new DateTime(2026, 8, 1), 2m, true, null, null).Value;
+        Assert.True(entry.Submit().IsSuccess);
+
+        await using (var ctx = factory.CreateContext())
+        {
+            ctx.ProjectMembers.Add(member);
+            ctx.ProjectTimeEntries.Add(entry);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var sut = CreateService(factory, client, userId);
+        Assert.True((await sut.ValidateTimeEntryAsync(entry.Id)).IsSuccess);
+
+        await using (var ctx = factory.CreateContext())
+        {
+            var costLine = await ctx.ProjectCostLines.FirstAsync(c => c.TimeEntryId == entry.Id);
+            Assert.Equal(200m, costLine.AmountHt);
+        }
+    }
+
+    [Fact]
+    public async Task ValidateTimeEntry_NoCostLineWhenHourlyCostMissing()
+    {
+        var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
+        var (project, client, userId) = await SeedActiveProjectAsync(factory);
+        var member = ProjectMember.Create(project.Id, userId, ProjectMemberRole.Member, 320m, null, 40m).Value;
+        var entry = ProjectTimeEntry.Create(project.Id, userId, new DateTime(2026, 8, 1), 2m, true, null, null).Value;
+        Assert.True(entry.Submit().IsSuccess);
+
+        await using (var ctx = factory.CreateContext())
+        {
+            ctx.ProjectMembers.Add(member);
+            ctx.ProjectTimeEntries.Add(entry);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var sut = CreateService(factory, client, userId);
+        Assert.True((await sut.ValidateTimeEntryAsync(entry.Id)).IsSuccess);
+
+        await using (var ctx = factory.CreateContext())
+        {
+            Assert.False(await ctx.ProjectCostLines.AnyAsync(c => c.TimeEntryId == entry.Id));
+        }
+    }
+
+    [Fact]
     public async Task ReopenTimeEntry_RemovesCostLineWhenValidated()
     {
         var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
         var (project, client, userId) = await SeedActiveProjectAsync(factory);
-        var member = ProjectMember.Create(project.Id, userId, ProjectMemberRole.Member, null, 80m, 40m).Value;
+        var member = ProjectMember.Create(project.Id, userId, ProjectMemberRole.Member, 640m, 80m, 40m).Value;
         var entry = ProjectTimeEntry.Create(project.Id, userId, new DateTime(2026, 8, 1), 4m, true, null, null).Value;
         Assert.True(entry.Submit().IsSuccess);
 

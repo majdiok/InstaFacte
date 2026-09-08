@@ -1034,7 +1034,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             return Result.Failure<Guid>(Error.NotFound("Project", projectId));
         if (await _db.ProjectMembers.AnyAsync(m => m.ProjectId == projectId && m.UserId == dto.UserId, cancellationToken))
             return Result.Failure<Guid>(Error.Validation("UserId", "Ce membre est déjà dans l'équipe"));
-        var created = ProjectMember.Create(projectId, dto.UserId, dto.Role, dto.DailyRate, dto.HourlyCost, dto.WeeklyCapacityHours);
+        var created = ProjectMember.Create(projectId, dto.UserId, dto.Role, dto.SalesRate, dto.HourlyCost, dto.WeeklyCapacityHours);
         if (created.IsFailure) return Result.Failure<Guid>(created.Error);
         _db.ProjectMembers.Add(created.Value);
         await _db.SaveChangesAsync(cancellationToken);
@@ -1045,7 +1045,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
     {
         var member = await _db.ProjectMembers.FirstOrDefaultAsync(m => m.Id == memberId, cancellationToken);
         if (member is null) return Result.Failure(Error.NotFound("ProjectMember", memberId));
-        var updated = member.Update(dto.Role, dto.DailyRate, dto.HourlyCost, dto.WeeklyCapacityHours);
+        var updated = member.Update(dto.Role, dto.SalesRate, dto.HourlyCost, dto.WeeklyCapacityHours);
         if (updated.IsFailure) return updated;
         await _db.SaveChangesAsync(cancellationToken);
         return Result.Success();
@@ -1180,7 +1180,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         if (validated.IsFailure) return validated;
 
         var member = await _db.ProjectMembers.FirstOrDefaultAsync(m => m.ProjectId == entry.ProjectId && m.UserId == entry.UserId, cancellationToken);
-        var rate = member?.HourlyCost ?? (member?.DailyRate is { } daily ? decimal.Round(daily / 8m, 3) : null);
+        var rate = member?.HourlyCost is > 0 ? member.HourlyCost : null;
         if (rate is > 0)
         {
             var cost = ProjectCostLine.Create(entry.ProjectId, ProjectCostSource.Time, $"Temps {entry.WorkDate:dd/MM/yyyy}", entry.Hours * rate.Value, entry.WorkDate, entry.Id, entry.Id);
@@ -1330,7 +1330,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         var members = await _db.ProjectMembers.AsNoTracking().Where(m => m.ProjectId == projectId).ToListAsync(cancellationToken);
         var names = await LoadUserNamesAsync(members.Select(m => m.UserId), cancellationToken);
         var withoutRate = members
-            .Where(m => BillRate(m) <= 0)
+            .Where(m => SalesHourlyRate(m) <= 0)
             .Select(m => names.GetValueOrDefault(m.UserId, "—"))
             .ToList();
 
@@ -1340,7 +1340,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         if (hours <= 0)
             blockers.Add("Aucun temps validé non facturé.");
         if (withoutRate.Count > 0)
-            blockers.Add("Définissez un TJM ou un coût horaire sur l'équipe.");
+            blockers.Add("Définissez un tarif de vente sur l'équipe.");
 
         return new ProjectBillingReadinessDto
         {
@@ -1394,9 +1394,9 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         foreach (var group in entries.GroupBy(e => e.UserId))
         {
             var hours = group.Sum(e => e.Hours);
-            var rate = BillRate(memberMap.GetValueOrDefault(group.Key));
+            var rate = SalesHourlyRate(memberMap.GetValueOrDefault(group.Key));
             if (rate <= 0)
-                return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("DailyRate", "Définissez un TJM ou un coût horaire sur l'équipe"));
+                return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("SalesRate", "Définissez un tarif de vente sur l'équipe"));
             lines.Add(($"Régie — {names.GetValueOrDefault(group.Key, "Intervenant")}", hours, rate));
         }
 
@@ -1435,7 +1435,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         return entries
             .Select(e =>
             {
-                var rate = BillRate(memberMap.GetValueOrDefault(e.UserId));
+                var rate = SalesHourlyRate(memberMap.GetValueOrDefault(e.UserId));
                 var eligible = rate > 0;
                 return new BillableProjectTimeEntryDto
                 {
@@ -1449,7 +1449,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
                     HourlyRate = rate,
                     PreviewAmountHt = eligible ? decimal.Round(e.Hours * rate, 3) : 0m,
                     IsEligible = eligible,
-                    BlockReason = eligible ? null : "Pas de TJM ou coût horaire"
+                    BlockReason = eligible ? null : "Pas de tarif de vente"
                 };
             })
             .OrderByDescending(d => d.WorkDate)
@@ -1496,7 +1496,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
                 .ToList();
 
             var hours = taskEntries.Sum(e => e.Hours);
-            var rate = WeightedBillRate(taskEntries, memberMap);
+            var rate = WeightedSalesHourlyRate(taskEntries, memberMap);
 
             if (isHourly)
             {
@@ -1513,7 +1513,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
                         HourlyRate = rate,
                         PreviewAmountHt = decimal.Round(hours * rate, 3),
                         IsEligible = false,
-                        BlockReason = "Définissez un TJM ou un coût horaire sur l'équipe."
+                        BlockReason = "Définissez un tarif de vente sur l'équipe."
                     });
                     continue;
                 }
@@ -1614,7 +1614,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             else
             {
                 var hours = taskEntries.Sum(e => e.Hours);
-                var defaultRate = WeightedBillRate(taskEntries, memberMap);
+                var defaultRate = WeightedSalesHourlyRate(taskEntries, memberMap);
                 var rate = line.HourlyRate is > 0 ? line.HourlyRate.Value : defaultRate;
                 if (hours <= 0 || rate <= 0)
                     return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Tasks", $"La tâche « {task.Title} » n'a pas de temps facturable"));
@@ -2126,7 +2126,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         UserName = name,
         Role = m.Role,
         RoleDisplay = m.Role.ToDisplayString(),
-        DailyRate = m.DailyRate,
+        SalesRate = m.SalesRate,
         HourlyCost = m.HourlyCost,
         WeeklyCapacityHours = m.WeeklyCapacityHours
     };
@@ -2222,13 +2222,10 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         return Result.Success(id);
     }
 
-    private static decimal BillRate(ProjectMember? member)
+    private static decimal SalesHourlyRate(ProjectMember? member)
     {
-        if (member is null) return 0m;
-        if (member.DailyRate is > 0)
-            return decimal.Round(member.DailyRate.Value / 8m, 3);
-        if (member.HourlyCost is > 0)
-            return member.HourlyCost.Value;
+        if (member?.SalesRate is > 0)
+            return decimal.Round(member.SalesRate.Value / 8m, 3);
         return 0m;
     }
 
@@ -2252,7 +2249,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             .ToList();
     }
 
-    private static decimal WeightedBillRate(
+    private static decimal WeightedSalesHourlyRate(
         IReadOnlyList<ProjectTimeEntry> entries,
         IReadOnlyDictionary<Guid, ProjectMember> memberMap)
     {
@@ -2260,7 +2257,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         decimal totalHours = 0m;
         foreach (var entry in entries)
         {
-            var rate = BillRate(memberMap.GetValueOrDefault(entry.UserId));
+            var rate = SalesHourlyRate(memberMap.GetValueOrDefault(entry.UserId));
             if (rate <= 0) return 0m;
             weightedSum += entry.Hours * rate;
             totalHours += entry.Hours;

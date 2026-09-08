@@ -135,7 +135,7 @@ export interface ProjectMember {
   userName: string;
   role: ProjectMemberRoleCode | number;
   roleDisplay: string;
-  dailyRate?: number | null;
+  salesRate?: number | null;
   hourlyCost?: number | null;
   weeklyCapacityHours: number;
 }
@@ -425,7 +425,7 @@ export interface UpsertTaskPayload {
 export interface UpsertMemberPayload {
   userId: string;
   role: ProjectMemberRoleCode | number;
-  dailyRate?: number | null;
+  salesRate?: number | null;
   hourlyCost?: number | null;
   weeklyCapacityHours: number;
 }

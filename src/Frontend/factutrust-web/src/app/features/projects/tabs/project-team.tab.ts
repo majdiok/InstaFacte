@@ -72,7 +72,7 @@ import { ProjectDetail } from '../project-api.service';
 
         <p-message severity="warn" styleClass="w-full mb-3"
 
-          text="Sans TJM ni coût horaire, la facturation régie est impossible." />
+          text="Sans tarif de vente, la facturation régie est impossible." />
 
       }
 
@@ -124,13 +124,13 @@ import { ProjectDetail } from '../project-api.service';
 
             <div class="proj-team-field">
 
-              <span class="proj-team-field__label">TJM</span>
+              <span class="proj-team-field__label">Tarif de vente</span>
 
               <p-inputNumber
 
                 styleClass="w-full"
 
-                [(ngModel)]="dailyRate"
+                [(ngModel)]="salesRate"
 
                 mode="decimal"
 
@@ -224,7 +224,7 @@ import { ProjectDetail } from '../project-api.service';
 
             <th>Rôle</th>
 
-            <th>TJM</th>
+            <th>Tarif de vente</th>
 
             <th>Coût h</th>
 
@@ -244,7 +244,7 @@ import { ProjectDetail } from '../project-api.service';
 
             <td>{{ m.roleDisplay }}</td>
 
-            <td>{{ m.dailyRate != null ? (m.dailyRate | number:'1.0-3') : '—' }}</td>
+            <td>{{ m.salesRate != null ? (m.salesRate | number:'1.0-3') : '—' }}</td>
 
             <td>{{ m.hourlyCost != null ? (m.hourlyCost | number:'1.0-3') : '—' }}</td>
 
@@ -354,13 +354,13 @@ import { ProjectDetail } from '../project-api.service';
 
           <div class="proj-team-field">
 
-            <span class="proj-team-field__label">TJM</span>
+            <span class="proj-team-field__label">Tarif de vente</span>
 
             <p-inputNumber
 
               styleClass="w-full"
 
-              [(ngModel)]="editDaily"
+              [(ngModel)]="editSales"
 
               mode="decimal"
 
@@ -450,7 +450,7 @@ export class ProjectTeamTabComponent {
 
   role: 'Viewer' | 'Member' | 'Manager' = 'Member';
 
-  dailyRate: number | null = null;
+  salesRate: number | null = null;
 
   hourlyCost: number | null = null;
 
@@ -474,7 +474,7 @@ export class ProjectTeamTabComponent {
 
   get missingRate(): boolean {
 
-    return this.members.some(m => !(m.dailyRate && m.dailyRate > 0) && !(m.hourlyCost && m.hourlyCost > 0));
+    return this.members.some(m => !(m.salesRate && m.salesRate > 0));
 
   }
 
@@ -490,7 +490,7 @@ export class ProjectTeamTabComponent {
 
       role: this.role,
 
-      dailyRate: this.dailyRate,
+      salesRate: this.salesRate,
 
       hourlyCost: this.hourlyCost,
 
@@ -512,7 +512,7 @@ export class ProjectTeamTabComponent {
 
   editRole: 'Viewer' | 'Member' | 'Manager' = 'Member';
 
-  editDaily: number | null = null;
+  editSales: number | null = null;
 
   editHourly: number | null = null;
 
@@ -528,7 +528,7 @@ export class ProjectTeamTabComponent {
 
     this.editRole = parseProjectMemberRole(m.role) ?? 'Member';
 
-    this.editDaily = m.dailyRate ?? null;
+    this.editSales = m.salesRate ?? null;
 
     this.editHourly = m.hourlyCost ?? null;
 
@@ -552,7 +552,7 @@ export class ProjectTeamTabComponent {
 
         role: this.editRole,
 
-        dailyRate: this.editDaily,
+        salesRate: this.editSales,
 
         hourlyCost: this.editHourly,
 

@@ -83,7 +83,7 @@ public sealed class ProjectBillableTimeEntriesTests
 
         var aliceId = Guid.NewGuid();
         var bobId = Guid.NewGuid();
-        var alice = ProjectMember.Create(project.Id, aliceId, ProjectMemberRole.Member, null, 80m, 40m).Value;
+        var alice = ProjectMember.Create(project.Id, aliceId, ProjectMemberRole.Member, 640m, 80m, 40m).Value;
         var bob = ProjectMember.Create(project.Id, bobId, ProjectMemberRole.Member, 320m, 100m, 40m).Value;
 
         var entry1 = ProjectTimeEntry.Create(project.Id, aliceId, new DateTime(2026, 8, 1), 5m, true, null, taskHourly.Id).Value;
@@ -150,7 +150,7 @@ public sealed class ProjectBillableTimeEntriesTests
     }
 
     [Fact]
-    public async Task GetBillableTimeEntries_WhenTjmAndCostBothSet_UsesTjmForClientBilling()
+    public async Task GetBillableTimeEntries_WhenSalesRateAndCostBothSet_UsesSalesRateForClientBilling()
     {
         var factory = new InMemoryTenantDbContextFactory(Guid.NewGuid().ToString());
         var address = Address.Create("1 rue Test", "Tunis", "Tunis").Value;
@@ -215,7 +215,7 @@ public sealed class ProjectBillableTimeEntriesTests
         Assert.True(project.Activate().IsSuccess);
 
         var memberId = Guid.NewGuid();
-        var member = ProjectMember.Create(project.Id, memberId, ProjectMemberRole.Member, null, 80m, 40m).Value;
+        var member = ProjectMember.Create(project.Id, memberId, ProjectMemberRole.Member, 640m, 80m, 40m).Value;
         var billable = ProjectTimeEntry.Create(project.Id, memberId, new DateTime(2026, 8, 1), 4m, true, null, null).Value;
         var nonBillable = ProjectTimeEntry.Create(project.Id, memberId, new DateTime(2026, 8, 2), 2m, false, null, null).Value;
         Assert.True(billable.Submit().IsSuccess);
@@ -268,7 +268,7 @@ public sealed class ProjectBillableTimeEntriesTests
         await using (var ctx = factory.CreateContext())
         {
             var member = await ctx.ProjectMembers.FirstAsync();
-            member.Update(ProjectMemberRole.Member, null, null, member.WeeklyCapacityHours);
+            member.Update(ProjectMemberRole.Member, null, member.HourlyCost, member.WeeklyCapacityHours);
             await ctx.SaveChangesAsync();
         }
 
