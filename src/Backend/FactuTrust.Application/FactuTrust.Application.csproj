@@ -36,4 +36,10 @@
     <InternalsVisibleTo Include="FactuTrust.Infrastructure.Tests" />
   </ItemGroup>
 
+  <!-- Modèles de systèmes Studio embarqués (B-P0-06/B-P0-07) : specs JSON chargées par
+       StudioTemplateCatalog depuis les ressources de l'assembly et validées au chargement. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Features\Studio\Templates\Builtin\*.json" />
+  </ItemGroup>
+
 </Project>

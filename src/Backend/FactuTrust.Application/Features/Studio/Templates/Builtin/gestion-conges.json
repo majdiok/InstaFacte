@@ -1,0 +1,172 @@
+{
+  "system": {
+    "displayName": "Gestion des congés",
+    "icon": "calendar",
+    "description": "Suivi des demandes de congés : employés, types de congés, demandes et validations.",
+    "onboarding": [
+      "Créez vos employés",
+      "Vérifiez les types de congés préchargés",
+      "Saisissez une première demande de congé"
+    ],
+    "menu": { "label": "Congés", "icon": "calendar" }
+  },
+  "entities": [
+    {
+      "ref": "employes",
+      "displayName": "Employé",
+      "displayNamePlural": "Employés",
+      "icon": "users",
+      "description": "Employés de l'entreprise pouvant déposer des demandes de congés.",
+      "isReferenceData": true,
+      "fields": [
+        { "key": "nom", "label": "Nom", "type": "text", "required": true },
+        { "key": "prenom", "label": "Prénom", "type": "text", "required": true },
+        { "key": "e_mail", "label": "E-mail", "type": "text" },
+        { "key": "service", "label": "Service", "type": "select",
+          "options": [
+            { "value": "comptabilite", "label": "Comptabilité" },
+            { "value": "commercial", "label": "Commercial" },
+            { "value": "production", "label": "Production" },
+            { "value": "direction", "label": "Direction" }
+          ]
+        },
+        { "key": "date_d_embauche", "label": "Date d'embauche", "type": "date" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Identité", "fields": [
+            { "field": "nom", "width": "half" },
+            { "field": "prenom", "width": "half" },
+            "e_mail",
+            "service",
+            "date_d_embauche"
+          ] }
+        ]
+      }
+    },
+    {
+      "ref": "types_conges",
+      "displayName": "Type de congé",
+      "displayNamePlural": "Types de congés",
+      "icon": "tags",
+      "description": "Référentiel des types de congés et de leurs droits annuels.",
+      "isReferenceData": true,
+      "fields": [
+        { "key": "libelle", "label": "Libellé", "type": "text", "required": true, "unique": true },
+        { "key": "nombre_de_jours", "label": "Nombre de jours", "type": "number", "required": true },
+        { "key": "paye", "label": "Payé", "type": "boolean" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Type de congé", "fields": [
+            "libelle",
+            { "field": "nombre_de_jours", "width": "half" },
+            { "field": "paye", "width": "half" }
+          ] }
+        ]
+      }
+    },
+    {
+      "ref": "demandes_conges",
+      "displayName": "Demande de congé",
+      "displayNamePlural": "Demandes de congés",
+      "icon": "calendar-check",
+      "description": "Demandes de congés soumises par les employés, de la saisie à la décision.",
+      "workflow": {
+        "statusFieldKey": "statut",
+        "states": [
+          { "key": "brouillon", "label": "Brouillon", "color": "gray" },
+          { "key": "soumise", "label": "Soumise", "color": "blue" },
+          { "key": "approuvee", "label": "Approuvée", "color": "green" },
+          { "key": "refusee", "label": "Refusée", "color": "red" }
+        ],
+        "initialState": "brouillon",
+        "transitions": [
+          { "from": "brouillon", "to": "soumise", "label": "Soumettre" },
+          { "from": "soumise", "to": "approuvee", "label": "Approuver" },
+          { "from": "soumise", "to": "refusee", "label": "Refuser" },
+          { "from": "approuvee", "to": "brouillon", "label": "Annuler l'approbation" }
+        ]
+      },
+      "fields": [
+        { "key": "employe", "label": "Employé", "type": "relation", "relationTo": "employes", "required": true },
+        { "key": "type_de_conge", "label": "Type de congé", "type": "relation", "relationTo": "types_conges", "required": true },
+        { "key": "date_debut", "label": "Date de début", "type": "date", "required": true },
+        { "key": "date_fin", "label": "Date de fin", "type": "date", "required": true },
+        { "key": "statut", "label": "Statut", "type": "select", "required": true,
+          "options": [
+            { "value": "brouillon", "label": "Brouillon" },
+            { "value": "soumise", "label": "Soumise" },
+            { "value": "approuvee", "label": "Approuvée" },
+            { "value": "refusee", "label": "Refusée" }
+          ]
+        },
+        { "key": "commentaire", "label": "Commentaire", "type": "multilinetext" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Demande", "fields": [
+            "employe",
+            "type_de_conge",
+            { "field": "date_debut", "width": "half" },
+            { "field": "date_fin", "width": "half" },
+            "statut",
+            "commentaire"
+          ] }
+        ]
+      },
+      "report": {
+        "displayName": "État des congés",
+        "fields": [ "employe", "type_de_conge", "date_debut", "date_fin", "statut" ],
+        "filters": [ { "field": "statut", "op": "neq", "value": "brouillon" } ],
+        "sort": [ { "field": "date_debut", "dir": "desc" } ]
+      },
+      "automations": [
+        { "name": "Notifier le compte à l'approbation",
+          "trigger": "on_update",
+          "action": "add_comment",
+          "condition": { "field": "statut", "op": "eq", "value": "approuvee" },
+          "mapping": [ { "param": "message", "source": "const", "value": "Une demande de congés a été approuvée." } ],
+          "runOnce": true
+        }
+      ]
+    },
+    {
+      "ref": "validations_conges",
+      "displayName": "Validation de congé",
+      "displayNamePlural": "Validations de congés",
+      "icon": "check",
+      "description": "Historique des décisions des valideurs sur les demandes de congés.",
+      "fields": [
+        { "key": "demande", "label": "Demande", "type": "relation", "relationTo": "demandes_conges", "required": true },
+        { "key": "valideur", "label": "Valideur", "type": "text", "required": true },
+        { "key": "decision", "label": "Décision", "type": "select",
+          "options": [
+            { "value": "approuvee", "label": "Approuvée" },
+            { "value": "refusee", "label": "Refusée" }
+          ]
+        },
+        { "key": "date_de_decision", "label": "Date de décision", "type": "datetime" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Validation", "fields": [
+            "demande",
+            "valideur",
+            { "field": "decision", "width": "half" },
+            { "field": "date_de_decision", "width": "half" }
+          ] }
+        ]
+      }
+    }
+  ],
+  "seed": [
+    { "entityRef": "types_conges", "records": [
+      { "libelle": "Congé annuel", "nombre_de_jours": 25, "paye": true },
+      { "libelle": "Maladie", "nombre_de_jours": 15, "paye": true },
+      { "libelle": "Maternité", "nombre_de_jours": 98, "paye": true },
+      { "libelle": "Sans solde", "nombre_de_jours": 0, "paye": false },
+      { "libelle": "Exceptionnel", "nombre_de_jours": 3, "paye": true }
+    ] }
+  ]
+}

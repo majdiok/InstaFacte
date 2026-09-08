@@ -339,6 +339,15 @@ public sealed class OllamaSettings
     /// </summary>
     public bool EnableStudioReportShortcut { get; set; }
 
+    /// <summary>Active le « workbench » Studio IA : liste/lecture/édition de plans, création déterministe (from-spec/from-template), capacités détaillées.</summary>
+    public bool EnableStudioAiWorkbench { get; set; }
+
+    /// <summary>Active la bibliothèque de modèles tenant, l'import/export ZIP et la duplication de systèmes.</summary>
+    public bool EnableStudioTemplates { get; set; }
+
+    /// <summary>Active le constructeur de pages Studio (CRUD pages, rendu serveur des blocs, entrées de navigation).</summary>
+    public bool EnableStudioPages { get; set; }
+
     /// <summary>Lignes de DÉTAIL renvoyées par un état SQL. Les agrégats restent exacts au-delà.</summary>
     public int StudioReportMaxRows { get; set; } = 5000;
 

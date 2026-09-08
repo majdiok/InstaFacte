@@ -1,0 +1,121 @@
+{
+  "system": {
+    "displayName": "Gestion des interventions",
+    "icon": "tool",
+    "description": "Planification et suivi des interventions terrain : techniciens, interventions et pièces consommées.",
+    "onboarding": [
+      "Vérifiez les techniciens préchargés",
+      "Planifiez une intervention",
+      "Consommez des pièces sur l'intervention"
+    ],
+    "menu": { "label": "Interventions", "icon": "tool" }
+  },
+  "entities": [
+    {
+      "ref": "techniciens",
+      "displayName": "Technicien",
+      "displayNamePlural": "Techniciens",
+      "icon": "users",
+      "isReferenceData": true,
+      "fields": [
+        { "key": "nom", "label": "Nom", "type": "text", "required": true },
+        { "key": "prenom", "label": "Prénom", "type": "text" },
+        { "key": "specialite", "label": "Spécialité", "type": "select",
+          "options": [
+            { "value": "electricite", "label": "Électricité" },
+            { "value": "plomberie", "label": "Plomberie" },
+            { "value": "climatisation", "label": "Climatisation" },
+            { "value": "informatique", "label": "Informatique" }
+          ]
+        },
+        { "key": "telephone", "label": "Téléphone", "type": "text" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Technicien", "fields": [
+            { "field": "nom", "width": "half" },
+            { "field": "prenom", "width": "half" },
+            "specialite",
+            "telephone"
+          ] }
+        ]
+      }
+    },
+    {
+      "ref": "interventions",
+      "displayName": "Intervention",
+      "displayNamePlural": "Interventions",
+      "icon": "truck",
+      "workflow": {
+        "statusFieldKey": "statut",
+        "states": [
+          { "key": "planifiee", "label": "Planifiée", "color": "blue" },
+          { "key": "en_cours", "label": "En cours", "color": "orange" },
+          { "key": "terminee", "label": "Terminée", "color": "green" },
+          { "key": "facturee", "label": "Facturée", "color": "purple" }
+        ],
+        "initialState": "planifiee",
+        "transitions": [
+          { "from": "planifiee", "to": "en_cours", "label": "Démarrer" },
+          { "from": "en_cours", "to": "terminee", "label": "Terminer" },
+          { "from": "terminee", "to": "facturee", "label": "Facturer" }
+        ]
+      },
+      "fields": [
+        { "key": "titre", "label": "Titre", "type": "text", "required": true },
+        { "key": "client", "label": "Client", "type": "relation", "relationTo": "clients" },
+        { "key": "technicien", "label": "Technicien", "type": "relation", "relationTo": "techniciens" },
+        { "key": "date_prevue", "label": "Date prévue", "type": "date", "required": true },
+        { "key": "duree_estimee_h", "label": "Durée estimée (h)", "type": "number" },
+        { "key": "statut", "label": "Statut", "type": "select", "required": true,
+          "options": [
+            { "value": "planifiee", "label": "Planifiée" },
+            { "value": "en_cours", "label": "En cours" },
+            { "value": "terminee", "label": "Terminée" },
+            { "value": "facturee", "label": "Facturée" }
+          ]
+        }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Intervention", "fields": [
+            "titre",
+            { "field": "client", "width": "half" },
+            { "field": "technicien", "width": "half" },
+            { "field": "date_prevue", "width": "half" },
+            { "field": "duree_estimee_h", "width": "half" },
+            "statut"
+          ] }
+        ]
+      },
+      "report": {
+        "displayName": "Interventions planifiées",
+        "fields": [ "titre", "client", "technicien", "date_prevue", "statut" ],
+        "filters": [ { "field": "statut", "op": "eq", "value": "planifiee" } ],
+        "sort": [ { "field": "date_prevue", "dir": "asc" } ]
+      }
+    },
+    {
+      "ref": "pieces_consommees",
+      "displayName": "Pièce consommée",
+      "displayNamePlural": "Pièces consommées",
+      "icon": "box",
+      "fields": [
+        { "key": "intervention", "label": "Intervention", "type": "relation", "relationTo": "interventions", "required": true },
+        { "key": "produit", "label": "Produit", "type": "relation", "relationTo": "products" },
+        { "key": "quantite", "label": "Quantité", "type": "number", "required": true }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Pièce consommée", "fields": [ "intervention", "produit", "quantite" ] }
+        ]
+      }
+    }
+  ],
+  "seed": [
+    { "entityRef": "techniciens", "records": [
+      { "nom": "Ben Ali", "prenom": "Karim", "specialite": "electricite" },
+      { "nom": "Trabelsi", "prenom": "Sami", "specialite": "plomberie" }
+    ] }
+  ]
+}

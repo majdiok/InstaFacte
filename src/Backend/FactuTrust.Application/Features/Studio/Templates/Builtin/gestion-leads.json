@@ -1,0 +1,126 @@
+{
+  "system": {
+    "displayName": "Gestion des leads",
+    "icon": "star",
+    "description": "Pipeline commercial : sources, leads et activités de suivi.",
+    "onboarding": [
+      "Vérifiez les sources préchargées",
+      "Créez un premier lead",
+      "Planifiez une activité de suivi"
+    ],
+    "menu": { "label": "Leads", "icon": "star" }
+  },
+  "entities": [
+    {
+      "ref": "sources",
+      "displayName": "Source",
+      "displayNamePlural": "Sources",
+      "icon": "tags",
+      "isReferenceData": true,
+      "fields": [
+        { "key": "libelle", "label": "Libellé", "type": "text", "required": true, "unique": true }
+      ]
+    },
+    {
+      "ref": "leads",
+      "displayName": "Lead",
+      "displayNamePlural": "Leads",
+      "icon": "star",
+      "workflow": {
+        "statusFieldKey": "statut",
+        "states": [
+          { "key": "nouveau", "label": "Nouveau", "color": "blue" },
+          { "key": "contacte", "label": "Contacté", "color": "orange" },
+          { "key": "qualifie", "label": "Qualifié", "color": "purple" },
+          { "key": "converti", "label": "Converti", "color": "green" },
+          { "key": "perdu", "label": "Perdu", "color": "red" }
+        ],
+        "initialState": "nouveau",
+        "transitions": [
+          { "from": "nouveau", "to": "contacte", "label": "Contacter" },
+          { "from": "contacte", "to": "qualifie", "label": "Qualifier" },
+          { "from": "qualifie", "to": "converti", "label": "Convertir" },
+          { "from": "qualifie", "to": "perdu", "label": "Perdre" }
+        ]
+      },
+      "fields": [
+        { "key": "nom", "label": "Nom", "type": "text", "required": true },
+        { "key": "societe", "label": "Société", "type": "text" },
+        { "key": "e_mail", "label": "E-mail", "type": "text" },
+        { "key": "telephone", "label": "Téléphone", "type": "text" },
+        { "key": "source", "label": "Source", "type": "relation", "relationTo": "sources" },
+        { "key": "interet", "label": "Intérêt", "type": "select",
+          "options": [
+            { "value": "faible", "label": "Faible" },
+            { "value": "moyen", "label": "Moyen" },
+            { "value": "fort", "label": "Fort" }
+          ]
+        },
+        { "key": "statut", "label": "Statut", "type": "select", "required": true,
+          "options": [
+            { "value": "nouveau", "label": "Nouveau" },
+            { "value": "contacte", "label": "Contacté" },
+            { "value": "qualifie", "label": "Qualifié" },
+            { "value": "converti", "label": "Converti" },
+            { "value": "perdu", "label": "Perdu" }
+          ]
+        }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Lead", "fields": [
+            "nom",
+            "societe",
+            { "field": "e_mail", "width": "half" },
+            { "field": "telephone", "width": "half" },
+            "source",
+            "interet",
+            "statut"
+          ] }
+        ]
+      },
+      "report": {
+        "displayName": "Leads actifs",
+        "fields": [ "nom", "societe", "source", "interet", "statut" ],
+        "filters": [
+          { "field": "statut", "op": "neq", "value": "converti" },
+          { "field": "statut", "op": "neq", "value": "perdu" }
+        ],
+        "sort": [ { "field": "nom", "dir": "asc" } ]
+      }
+    },
+    {
+      "ref": "activites_suivi",
+      "displayName": "Activité de suivi",
+      "displayNamePlural": "Activités de suivi",
+      "icon": "phone",
+      "fields": [
+        { "key": "lead", "label": "Lead", "type": "relation", "relationTo": "leads", "required": true },
+        { "key": "type_d_activite", "label": "Type d'activité", "type": "select",
+          "options": [
+            { "value": "appel", "label": "Appel" },
+            { "value": "e_mail", "label": "E-mail" },
+            { "value": "reunion", "label": "Réunion" },
+            { "value": "note", "label": "Note" }
+          ]
+        },
+        { "key": "date_de_l_activite", "label": "Date de l'activité", "type": "datetime", "required": true },
+        { "key": "compte_rendu", "label": "Compte rendu", "type": "multilinetext" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Activité", "fields": [ "lead", "type_d_activite", "date_de_l_activite", "compte_rendu" ] }
+        ]
+      }
+    }
+  ],
+  "seed": [
+    { "entityRef": "sources", "records": [
+      { "libelle": "Site web" },
+      { "libelle": "Salon" },
+      { "libelle": "Recommandation" },
+      { "libelle": "Prospection" },
+      { "libelle": "Réseaux sociaux" }
+    ] }
+  ]
+}

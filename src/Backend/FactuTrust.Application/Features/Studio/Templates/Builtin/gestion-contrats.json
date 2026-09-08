@@ -1,0 +1,147 @@
+{
+  "system": {
+    "displayName": "Gestion des contrats",
+    "icon": "file-text",
+    "description": "Suivi des contrats clients : types de contrats, contrats, avenants et échéances.",
+    "onboarding": [
+      "Vérifiez les types de contrats préchargés",
+      "Créez un premier contrat rattaché à un client",
+      "Suivez les échéances à venir"
+    ],
+    "menu": { "label": "Contrats", "icon": "file-text" }
+  },
+  "entities": [
+    {
+      "ref": "types_contrats",
+      "displayName": "Type de contrat",
+      "displayNamePlural": "Types de contrats",
+      "icon": "tags",
+      "isReferenceData": true,
+      "fields": [
+        { "key": "libelle", "label": "Libellé", "type": "text", "required": true, "unique": true },
+        { "key": "duree_par_defaut_mois", "label": "Durée par défaut (mois)", "type": "number" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Type de contrat", "fields": [ "libelle", "duree_par_defaut_mois" ] }
+        ]
+      }
+    },
+    {
+      "ref": "contrats",
+      "displayName": "Contrat",
+      "displayNamePlural": "Contrats",
+      "icon": "file-text",
+      "workflow": {
+        "statusFieldKey": "statut",
+        "states": [
+          { "key": "brouillon", "label": "Brouillon", "color": "gray" },
+          { "key": "actif", "label": "Actif", "color": "green" },
+          { "key": "resilie", "label": "Résilié", "color": "red" }
+        ],
+        "initialState": "brouillon",
+        "transitions": [
+          { "from": "brouillon", "to": "actif", "label": "Activer" },
+          { "from": "actif", "to": "resilie", "label": "Résilier" }
+        ]
+      },
+      "fields": [
+        { "key": "reference", "label": "Référence", "type": "text", "required": true, "unique": true },
+        { "key": "client", "label": "Client", "type": "relation", "relationTo": "clients", "required": true },
+        { "key": "type_de_contrat", "label": "Type de contrat", "type": "relation", "relationTo": "types_contrats" },
+        { "key": "date_debut", "label": "Date de début", "type": "date", "required": true },
+        { "key": "date_fin", "label": "Date de fin", "type": "date" },
+        { "key": "montant", "label": "Montant", "type": "money", "required": true, "config": { "currency": "TND" } },
+        { "key": "statut", "label": "Statut", "type": "select", "required": true,
+          "options": [
+            { "value": "brouillon", "label": "Brouillon" },
+            { "value": "actif", "label": "Actif" },
+            { "value": "resilie", "label": "Résilié" }
+          ]
+        }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Contrat", "fields": [
+            "reference",
+            "client",
+            "type_de_contrat",
+            { "field": "date_debut", "width": "half" },
+            { "field": "date_fin", "width": "half" },
+            "montant",
+            "statut"
+          ] }
+        ]
+      },
+      "report": {
+        "displayName": "Contrats actifs",
+        "fields": [ "reference", "client", "type_de_contrat", "date_debut", "date_fin", "montant", "statut" ],
+        "filters": [ { "field": "statut", "op": "eq", "value": "actif" } ],
+        "sort": [ { "field": "date_fin", "dir": "asc" } ]
+      },
+      "automations": [
+        { "name": "Créer le client ERP à l'activation",
+          "trigger": "on_update",
+          "action": "add_comment",
+          "condition": { "field": "statut", "op": "eq", "value": "actif" },
+          "mapping": [ { "param": "message", "source": "const", "value": "Contrat activé : créer le client dans l'ERP." } ],
+          "runOnce": true
+        }
+      ]
+    },
+    {
+      "ref": "avenants",
+      "displayName": "Avenant",
+      "displayNamePlural": "Avenants",
+      "icon": "edit",
+      "fields": [
+        { "key": "contrat", "label": "Contrat", "type": "relation", "relationTo": "contrats", "required": true },
+        { "key": "numero", "label": "Numéro", "type": "number", "required": true },
+        { "key": "date_d_effet", "label": "Date d'effet", "type": "date" },
+        { "key": "description", "label": "Description", "type": "multilinetext" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Avenant", "fields": [
+            "contrat",
+            { "field": "numero", "width": "half" },
+            { "field": "date_d_effet", "width": "half" },
+            "description"
+          ] }
+        ]
+      }
+    },
+    {
+      "ref": "echeances",
+      "displayName": "Échéance",
+      "displayNamePlural": "Échéances",
+      "icon": "clock",
+      "fields": [
+        { "key": "contrat", "label": "Contrat", "type": "relation", "relationTo": "contrats", "required": true },
+        { "key": "libelle", "label": "Libellé", "type": "text", "required": true },
+        { "key": "date_d_echeance", "label": "Date d'échéance", "type": "date", "required": true },
+        { "key": "montant", "label": "Montant", "type": "money", "config": { "currency": "TND" } },
+        { "key": "payee", "label": "Payée", "type": "boolean" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Échéance", "fields": [
+            "contrat",
+            "libelle",
+            { "field": "date_d_echeance", "width": "half" },
+            { "field": "montant", "width": "half" },
+            "payee"
+          ] }
+        ]
+      }
+    }
+  ],
+  "seed": [
+    { "entityRef": "types_contrats", "records": [
+      { "libelle": "Abonnement", "duree_par_defaut_mois": 12 },
+      { "libelle": "Maintenance", "duree_par_defaut_mois": 12 },
+      { "libelle": "Prestation", "duree_par_defaut_mois": 6 },
+      { "libelle": "Licence", "duree_par_defaut_mois": 36 }
+    ] }
+  ]
+}

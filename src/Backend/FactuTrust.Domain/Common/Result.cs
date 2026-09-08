@@ -66,6 +66,10 @@ public sealed record Error(string Code, string Description)
     public static Error NotFound(string entity, Guid id) =>
         new($"{entity}.NotFound", $"{entity} with ID '{id}' was not found.");
 
+    /// <summary>Introuvable avec message libre (fonctionnalité désactivée, modèle inconnu…).</summary>
+    public static Error NotFound(string message) =>
+        new("NotFound", message);
+
     public static Error Validation(string field, string message) =>
         new($"Validation.{field}", message);
 
