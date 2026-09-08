@@ -172,7 +172,7 @@ public sealed record ProjectMemberDto
     public string UserName { get; init; } = null!;
     public ProjectMemberRole Role { get; init; }
     public string RoleDisplay { get; init; } = null!;
-    public decimal? DailyRate { get; init; }
+    public decimal? SalesRate { get; init; }
     public decimal? HourlyCost { get; init; }
     public decimal WeeklyCapacityHours { get; init; }
 }
@@ -181,7 +181,7 @@ public sealed record UpsertProjectMemberDto
 {
     public Guid UserId { get; init; }
     public ProjectMemberRole Role { get; init; }
-    public decimal? DailyRate { get; init; }
+    public decimal? SalesRate { get; init; }
     public decimal? HourlyCost { get; init; }
     public decimal WeeklyCapacityHours { get; init; }
 }

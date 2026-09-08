@@ -465,7 +465,7 @@ const KIND_CARD_HINTS: Record<ProjectKindCode, string> = {
       }
       @if (draft.kind === 'Esn') {
         <app-form-section title="Mission ESN" icon="pi-users" variant="compact">
-          <p class="text-sm text-color-secondary m-0">Renseignez le TJM (ou le coût horaire) sur l'équipe avant de facturer en régie.</p>
+          <p class="text-sm text-color-secondary m-0">Renseignez le tarif de vente sur l'équipe avant de facturer en régie.</p>
         </app-form-section>
       }
 

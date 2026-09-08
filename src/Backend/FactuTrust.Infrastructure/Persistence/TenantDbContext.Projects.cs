@@ -87,7 +87,7 @@ public partial class TenantDbContext
             entity.ToTable("ProjectMembers");
             entity.HasKey(m => m.Id);
             entity.Property(m => m.Role).HasConversion<int>().IsRequired();
-            entity.Property(m => m.DailyRate).HasPrecision(18, 3);
+            entity.Property(m => m.SalesRate).HasPrecision(18, 3);
             entity.Property(m => m.HourlyCost).HasPrecision(18, 3);
             entity.Property(m => m.WeeklyCapacityHours).HasPrecision(18, 2);
             entity.HasIndex(m => new { m.ProjectId, m.UserId }).IsUnique();

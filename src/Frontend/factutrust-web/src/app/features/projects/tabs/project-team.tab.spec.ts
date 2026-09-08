@@ -12,7 +12,7 @@ describe('ProjectTeamTabComponent', () => {
     userName: 'Alice Martin',
     role: 'Member',
     roleDisplay: 'Membre',
-    dailyRate: 500,
+    salesRate: 500,
     hourlyCost: 60,
     weeklyCapacityHours: 40
   };
@@ -67,7 +67,7 @@ describe('ProjectTeamTabComponent', () => {
     component.canManage = true;
     component.userId = 'u2';
     component.role = 'Manager';
-    component.dailyRate = 400;
+    component.salesRate = 400;
     component.hourlyCost = 50;
     component.capacity = 35;
     fixture.detectChanges();
@@ -78,7 +78,7 @@ describe('ProjectTeamTabComponent', () => {
     expect(spy).toHaveBeenCalledWith({
       userId: 'u2',
       role: 'Manager',
-      dailyRate: 400,
+      salesRate: 400,
       hourlyCost: 50,
       weeklyCapacityHours: 35
     });
@@ -91,7 +91,7 @@ describe('ProjectTeamTabComponent', () => {
 
     const spy = spyOn(component.updateMember, 'emit');
     component.editRole = 'Manager';
-    component.editDaily = 550;
+    component.editSales = 550;
     component.editHourly = 70;
     component.editCapacity = 32;
     component.saveEdit();
@@ -101,11 +101,21 @@ describe('ProjectTeamTabComponent', () => {
       payload: {
         userId: 'u1',
         role: 'Manager',
-        dailyRate: 550,
+        salesRate: 550,
         hourlyCost: 70,
         weeklyCapacityHours: 32
       }
     });
     expect(component.editVisible).toBe(false);
+  });
+
+  it('missingRate is true when member has no sales rate', () => {
+    component.members = [{ ...sampleMember, salesRate: null }];
+    expect(component.missingRate).toBeTrue();
+  });
+
+  it('missingRate is false when member has sales rate even without hourly cost', () => {
+    component.members = [{ ...sampleMember, hourlyCost: null }];
+    expect(component.missingRate).toBeFalse();
   });
 });

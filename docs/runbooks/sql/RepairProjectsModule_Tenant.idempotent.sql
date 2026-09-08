@@ -158,7 +158,7 @@ BEGIN
         [ProjectId] uniqueidentifier NOT NULL,
         [UserId] uniqueidentifier NOT NULL,
         [Role] int NOT NULL,
-        [DailyRate] decimal(18,3) NULL,
+        [SalesRate] decimal(18,3) NULL,
         [HourlyCost] decimal(18,3) NULL,
         [WeeklyCapacityHours] decimal(18,2) NOT NULL,
         [CreatedAt] datetime2 NOT NULL,
@@ -345,10 +345,35 @@ IF COL_LENGTH(N'dbo.Projects', N'TimesheetsEnabled') IS NULL
     ALTER TABLE [Projects] ADD [TimesheetsEnabled] bit NOT NULL CONSTRAINT [DF_Projects_TimesheetsEnabled] DEFAULT (1);
 GO
 
+IF COL_LENGTH(N'dbo.ProjectMembers', N'SalesRate') IS NULL
+    ALTER TABLE [ProjectMembers] ADD [SalesRate] decimal(18,3) NULL;
+GO
+IF COL_LENGTH(N'dbo.ProjectMembers', N'DailyRate') IS NOT NULL
+BEGIN
+    UPDATE [ProjectMembers]
+    SET [SalesRate] = [DailyRate]
+    WHERE [SalesRate] IS NULL AND [DailyRate] IS NOT NULL AND [DailyRate] > 0;
+
+    UPDATE [ProjectMembers]
+    SET [SalesRate] = [HourlyCost] * 8
+    WHERE [SalesRate] IS NULL AND [HourlyCost] IS NOT NULL AND [HourlyCost] > 0;
+
+    UPDATE [ProjectMembers]
+    SET [HourlyCost] = ROUND([DailyRate] / 8, 3)
+    WHERE ([HourlyCost] IS NULL OR [HourlyCost] <= 0)
+      AND [DailyRate] IS NOT NULL AND [DailyRate] > 0;
+END
+GO
+IF COL_LENGTH(N'dbo.ProjectMembers', N'DailyRate') IS NOT NULL
+    ALTER TABLE [ProjectMembers] DROP COLUMN [DailyRate];
+GO
+
 IF NOT EXISTS (SELECT 1 FROM __EFMigrationsHistory WHERE MigrationId = N'20260818120000_AddProjectsModule_Tenant')
     INSERT INTO __EFMigrationsHistory (MigrationId, ProductVersion) VALUES (N'20260818120000_AddProjectsModule_Tenant', N'8.0.0');
 IF NOT EXISTS (SELECT 1 FROM __EFMigrationsHistory WHERE MigrationId = N'20260903190000_AddProjectTaskBillingState_Tenant')
     INSERT INTO __EFMigrationsHistory (MigrationId, ProductVersion) VALUES (N'20260903190000_AddProjectTaskBillingState_Tenant', N'8.0.0');
 IF NOT EXISTS (SELECT 1 FROM __EFMigrationsHistory WHERE MigrationId = N'20260905180000_AddProjectBillableTimesheetsFlags_Tenant')
     INSERT INTO __EFMigrationsHistory (MigrationId, ProductVersion) VALUES (N'20260905180000_AddProjectBillableTimesheetsFlags_Tenant', N'8.0.0');
+IF NOT EXISTS (SELECT 1 FROM __EFMigrationsHistory WHERE MigrationId = N'20260906120000_SplitProjectMemberSalesRate_Tenant')
+    INSERT INTO __EFMigrationsHistory (MigrationId, ProductVersion) VALUES (N'20260906120000_SplitProjectMemberSalesRate_Tenant', N'8.0.0');
 GO

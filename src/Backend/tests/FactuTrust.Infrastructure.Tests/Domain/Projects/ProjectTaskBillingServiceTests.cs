@@ -55,7 +55,7 @@ public sealed class ProjectTaskBillingServiceTests
         var taskHourly = ProjectTask.Create(project.Id, phase.Id, "Tâche horaire", null, ProjectTaskPriority.Normal, null, null, null, 8m).Value;
         var taskFixed = ProjectTask.Create(project.Id, phase.Id, "Tâche forfait", null, ProjectTaskPriority.Normal, null, null, null, 0m).Value;
         var userId = Guid.NewGuid();
-        var member = ProjectMember.Create(project.Id, userId, ProjectMemberRole.Member, null, 80m, 40m).Value;
+        var member = ProjectMember.Create(project.Id, userId, ProjectMemberRole.Member, 640m, 80m, 40m).Value;
 
         var entry = ProjectTimeEntry.Create(project.Id, userId, new DateTime(2026, 8, 1), 5m, true, null, taskHourly.Id).Value;
         Assert.True(entry.Submit().IsSuccess);
@@ -394,8 +394,8 @@ public sealed class ProjectTaskBillingServiceTests
 
         var aliceId = Guid.NewGuid();
         var bobId = Guid.NewGuid();
-        var alice = ProjectMember.Create(project.Id, aliceId, ProjectMemberRole.Member, null, 70m, 40m).Value;
-        var bob = ProjectMember.Create(project.Id, bobId, ProjectMemberRole.Member, null, 130m, 40m).Value;
+        var alice = ProjectMember.Create(project.Id, aliceId, ProjectMemberRole.Member, 560m, 70m, 40m).Value;
+        var bob = ProjectMember.Create(project.Id, bobId, ProjectMemberRole.Member, 1040m, 130m, 40m).Value;
 
         var aliceEntry = ProjectTimeEntry.Create(project.Id, aliceId, new DateTime(2026, 8, 1), 2m, true, null, taskHourly.Id).Value;
         Assert.True(aliceEntry.Submit().IsSuccess);
@@ -432,7 +432,7 @@ public sealed class ProjectTaskBillingServiceTests
         var taskHourly = ProjectTask.Create(project.Id, phase.Id, "Tâche horaire", null, ProjectTaskPriority.Normal, null, null, null, 6m).Value;
         var taskFixed = ProjectTask.Create(project.Id, phase.Id, "Tâche forfait", null, ProjectTaskPriority.Normal, null, null, null, 0m).Value;
         var userId = Guid.NewGuid();
-        var member = ProjectMember.Create(project.Id, userId, ProjectMemberRole.Member, null, 80m, 40m).Value;
+        var member = ProjectMember.Create(project.Id, userId, ProjectMemberRole.Member, 640m, 80m, 40m).Value;
 
         var invoicedEntry = ProjectTimeEntry.Create(project.Id, userId, new DateTime(2026, 8, 1), 3m, true, null, taskHourly.Id).Value;
         Assert.True(invoicedEntry.Submit().IsSuccess);
