@@ -1,0 +1,92 @@
+<app-studio-page-shell [title]="labels.page.title" [subtitle]="labels.page.subtitle" [breadcrumbs]="breadcrumbs">
+  <ng-container studioActions>
+    @if (showConversation()) {
+      <p-button
+        [label]="labels.page.resetConversation"
+        icon="fa-solid fa-rotate-left"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        [disabled]="store.busy()"
+        [pTooltip]="labels.page.resetConversationHint"
+        tooltipPosition="bottom"
+        (onClick)="newRequest()" />
+    }
+  </ng-container>
+
+  <div class="studio-ai-page" [class.studio-ai-page--with-rail]="showConversation()">
+    <section class="studio-ai-page__main" aria-live="polite">
+      @switch (mainView()) {
+        @case ('compose') {
+          <div class="studio-ai-page__hero">
+            <h2 class="studio-ai-page__hero-title">{{ labels.page.heroTitle }}</h2>
+            <p class="studio-ai-page__hero-hint">{{ labels.page.heroHint }}</p>
+          </div>
+
+          <app-studio-ai-composer
+            [disabled]="composerDisabled()"
+            [prefill]="prefill()"
+            [placeholder]="labels.page.composerPlaceholder"
+            (submitted)="submit($event)" />
+
+          @if (store.error(); as error) {
+            <div class="studio-ai-page__error" role="alert">
+              <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              <span>{{ error }}</span>
+              @if (store.lastPrompt()) {
+                <p-button [label]="labels.conversation.retry" [link]="true" size="small" (onClick)="store.retry()" />
+              }
+            </div>
+          }
+
+          <h3 class="studio-ai-page__cards-title">{{ labels.page.whatToCreate }}</h3>
+          <app-studio-ai-intent-cards
+            [capabilities]="capabilities.capabilities()"
+            [disabled]="composerDisabled()"
+            (pick)="pickIntent($event)" />
+        }
+        @case ('preview') {
+          <app-studio-ai-preview
+            [(activeTab)]="previewTab"
+            (confirmRequested)="openConfirm()"
+            (openEntity)="openEntity($event)" />
+        }
+        @case ('progress') {
+          <app-studio-ai-progress [steps]="store.buildSteps()" />
+        }
+        @case ('result') {
+          <app-studio-ai-result-card
+            [result]="store.result()!"
+            [actions]="store.actions()"
+            (open)="store.openCreated($event)"
+            (navigate)="navigate($event)"
+            (newRequest)="newRequest()" />
+        }
+      }
+    </section>
+
+    @if (showConversation()) {
+      <aside class="studio-ai-page__rail">
+        <app-studio-ai-conversation
+          [items]="store.timeline()"
+          [suggestions]="store.suggestions()"
+          [status]="store.status()"
+          [busy]="store.busy()"
+          [error]="mainView() === 'compose' ? null : store.error()"
+          [lastPrompt]="store.lastPrompt()"
+          [(collapsed)]="conversationCollapsed"
+          (retry)="store.retry()"
+          (usePrompt)="usePrompt($event)"
+          (useSuggestion)="usePrompt($event)" />
+      </aside>
+    }
+  </div>
+</app-studio-page-shell>
+
+<app-studio-ai-confirm-dialog
+  [(visible)]="confirmVisible"
+  [plan]="store.plan()"
+  [counters]="store.counters()"
+  [warnings]="store.warnings()"
+  (confirmed)="confirm()"
+  (cancelled)="confirmVisible.set(false)" />

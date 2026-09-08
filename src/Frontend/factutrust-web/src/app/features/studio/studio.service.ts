@@ -234,6 +234,12 @@ export class StudioService {
   }
 
   // ---- Systems ----
+  /** Liste des systèmes du tenant (« Mes projets »). */
+  listSystems(includeInactive = false): Observable<ApiResponse<CustomSystem[]>> {
+    const params = new HttpParams().set('includeInactive', String(includeInactive));
+    return this.http.get<ApiResponse<CustomSystem[]>>(`${this.base}/systems`, { params });
+  }
+
   getSystem(key: string): Observable<ApiResponse<CustomSystemDetail>> {
     return this.http.get<ApiResponse<CustomSystemDetail>>(`${this.base}/systems/${encodeURIComponent(key)}`);
   }

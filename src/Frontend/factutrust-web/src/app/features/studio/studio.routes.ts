@@ -11,11 +11,12 @@ export const STUDIO_ROUTES: Routes = [
     title: 'Studio — Tables - InstaFact'
   },
   // ---- AI builder (natural-language app generation) ----
+  // L'entrée aiguille vers l'atelier (workbench activé) ou la page legacy (`StudioAiBuilderComponent`).
   {
     path: 'ai',
     canActivate: [permissionGuard],
     data: { permissions: [PERMISSIONS.studio.designEntities] },
-    loadComponent: () => import('./studio-ai-builder.component').then(m => m.StudioAiBuilderComponent),
+    loadComponent: () => import('./ai/studio-ai-entry.component').then(m => m.StudioAiEntryComponent),
     title: 'Assistant Studio (IA) - InstaFact'
   },
   {

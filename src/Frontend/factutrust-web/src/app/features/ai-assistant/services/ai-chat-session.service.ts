@@ -10,6 +10,7 @@ import { AiUiContextService } from './ai-ui-context.service';
 import { AiVolatileAnalysisStore, VolatileAnalysisPending } from './ai-volatile-analysis.store';
 import { MessageSelectionService } from './message-selection.service';
 import { appendVolatileScreenBlock } from '../utils/ai-volatile-analysis-payload.util';
+import { buildAttachmentRequests, composeBackendMessage } from '../utils/chat-attachment-payload.util';
 import { shouldDeduplicateContextInMessage } from '../utils/ai-screen-analysis-config';
 import { sanitizeUserMessageForDisplay } from '../utils/ai-message-display-sanitizer.util';
 import {
@@ -434,7 +435,7 @@ export class AiChatSessionService {
     const visionCapable = this.selectedModelSupportsVision();
     const pendingVolatile =
       normalized.volatileContext ?? this.volatileAnalysisStore.takePendingForSend();
-    let messageForBackend = this.composeBackendMessage(normalized.backendText, normalized.attachments);
+    let messageForBackend = composeBackendMessage(normalized.backendText, normalized.attachments);
     if (pendingVolatile) {
       messageForBackend = appendVolatileScreenBlock(
         messageForBackend,
@@ -443,7 +444,7 @@ export class AiChatSessionService {
         shouldDeduplicateContextInMessage()
       );
     }
-    const attachmentsPayload = this.buildAttachmentRequests(normalized.attachments, visionCapable);
+    const attachmentsPayload = buildAttachmentRequests(normalized.attachments, visionCapable);
 
     const userMsg: ChatMessage = {
       id: createClientUuid(),
@@ -1280,66 +1281,6 @@ export class AiChatSessionService {
 
   clearDashboard(): void {
     this.dashboardConfig.set(null);
-  }
-
-  /**
-   * Construit le payload texte envoyé au LLM en intégrant le texte extrait
-   * des pièces jointes (entre marqueurs). Le texte tapé par l'utilisateur
-   * reste affiché tel quel dans la bulle ; on n'enrichit que ce qu'on envoie.
-   */
-  private composeBackendMessage(userText: string, attachments?: ChatAttachment[]): string {
-    if (!attachments || attachments.length === 0) {
-      return userText;
-    }
-    const blocks: string[] = [];
-    for (const att of attachments) {
-      if (!att.fullText) continue;
-      const header = `[PIÈCE JOINTE : ${att.fileName}` +
-        (att.pageCount > 1 ? ` — ${att.pageCount} pages` : '') +
-        (att.ocrApplied ? ' — OCR appliqué' : '') +
-        (att.truncated ? ' — texte tronqué' : '') +
-        ']';
-      blocks.push(`${header}\n${att.fullText}\n[FIN PIÈCE JOINTE]`);
-    }
-    if (blocks.length === 0) {
-      return userText;
-    }
-    return userText ? `${userText}\n\n${blocks.join('\n\n')}` : blocks.join('\n\n');
-  }
-
-  /**
-   * Construit la liste de ChatAttachmentRequest pour le backend.
-   * - Pour les modèles vision : inclut les imageBase64 des pages (max 10 au total).
-   * - Sinon : transmet seulement les métadonnées (le texte est déjà dans le message).
-   */
-  private buildAttachmentRequests(
-    attachments: ChatAttachment[] | undefined,
-    visionCapable: boolean
-  ): ChatAttachmentRequest[] {
-    if (!attachments || attachments.length === 0) return [];
-    const requests: ChatAttachmentRequest[] = [];
-    let imageBudget = 10;
-    for (const att of attachments) {
-      let images: string[] | undefined;
-      if (visionCapable && imageBudget > 0) {
-        const pageImages = att.pages
-          .map(p => p.imageBase64)
-          .filter((b): b is string => !!b);
-        if (pageImages.length > 0) {
-          images = pageImages.slice(0, imageBudget);
-          imageBudget -= images.length;
-        }
-      }
-      requests.push({
-        fileName: att.fileName,
-        format: att.format,
-        pageCount: att.pageCount,
-        ocrApplied: att.ocrApplied,
-        truncated: att.truncated,
-        ...(images && images.length > 0 ? { imagesBase64: images } : {})
-      });
-    }
-    return requests;
   }
 
   private storageKeyActiveConversation(): string | null {
