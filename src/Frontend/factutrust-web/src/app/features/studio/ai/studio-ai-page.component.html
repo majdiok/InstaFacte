@@ -39,7 +39,6 @@
             </div>
           }
 
-          <h3 class="studio-ai-page__cards-title">{{ labels.page.whatToCreate }}</h3>
           <app-studio-ai-intent-cards
             [capabilities]="capabilities.capabilities()"
             [disabled]="composerDisabled()"
@@ -48,8 +47,7 @@
         @case ('preview') {
           <app-studio-ai-preview
             [(activeTab)]="previewTab"
-            (confirmRequested)="openConfirm()"
-            (openEntity)="openEntity($event)" />
+            (confirmRequested)="openConfirm()" />
         }
         @case ('progress') {
           <app-studio-ai-progress [steps]="store.buildSteps()" />
@@ -59,7 +57,7 @@
             [result]="store.result()!"
             [actions]="store.actions()"
             (open)="store.openCreated($event)"
-            (navigate)="navigate($event)"
+            (navigate)="store.go($event)"
             (newRequest)="newRequest()" />
         }
       }

@@ -1,10 +1,14 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, OnDestroy, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { AiStreamService } from '@features/ai-assistant/services/ai-stream.service';
 import {
-  AssistantMode, ChatAttachmentRequest, ChatRequest, ChatStreamEvent
+  AssistantMode, ChatAttachment, ChatRequest, ChatStreamEvent
 } from '@features/ai-assistant/models/ai-chat.models';
+import {
+  buildAttachmentRequests,
+  composeBackendMessage
+} from '@features/ai-assistant/utils/chat-attachment-payload.util';
 import { StudioNavService } from '../studio-nav.service';
 import {
   StudioAiBuildService, StudioPlanEvent, StudioPlanSummary,
@@ -16,12 +20,13 @@ import { cloneSpec, parseSpecPayload, serializeSpec, studioAiHttpError } from '.
 import {
   StudioAiIntent,
   StudioAiSessionPhase,
-  StudioAppSpec,
   StudioBuildResult,
   StudioBuildStep,
   StudioSpecCounters,
   StudioSystemSpec,
   countSpec,
+  isSystemBuildResult,
+  specPayloadForKind,
   toSystemSpecView
 } from './studio-ai.models';
 
@@ -56,10 +61,14 @@ export interface StudioAiValidationState {
   pending: boolean;
 }
 
-/** Ce que le compositeur envoie : le texte, l'intention choisie et les pièces jointes déjà encodées. */
+/**
+ * Ce que le compositeur envoie : le prompt tel que tapé, l'intention choisie et les pièces jointes
+ * déjà extraites. Le store compose lui-même le message backend (texte des annexes entre marqueurs) :
+ * la bulle utilisateur et `lastPrompt` ne montrent que le prompt (plan P1 §4.1).
+ */
 export interface StudioAiSendOptions {
   intent?: StudioAiIntent | null;
-  attachments?: ChatAttachmentRequest[];
+  attachments?: ChatAttachment[];
 }
 
 /**
@@ -76,7 +85,7 @@ export interface StudioAiSendOptions {
  * (SSE chat, SSE confirmation, spec versionnée) vit ici pour être testable sans DOM.
  */
 @Injectable()
-export class StudioAiSessionStore {
+export class StudioAiSessionStore implements OnDestroy {
   private readonly stream = inject(AiStreamService);
   private readonly builds = inject(StudioAiBuildService);
   private readonly studioNav = inject(StudioNavService);
@@ -84,6 +93,9 @@ export class StudioAiSessionStore {
 
   private assistantBuffer = '';
   private streamSub: Subscription | null = null;
+  private confirmSub: Subscription | null = null;
+  /** Pièces jointes de la dernière demande, pour que « Réessayer » les renvoie aussi. */
+  private lastAttachments: ChatAttachment[] = [];
 
   // ---- État ---------------------------------------------------------------------------------------
   readonly phase = signal<StudioAiSessionPhase>('idle');
@@ -136,12 +148,14 @@ export class StudioAiSessionStore {
   // ---- Conversation -------------------------------------------------------------------------------
 
   /** Envoie une demande à l'assistant (mode StudioBuilder). Ignoré si vide ou déjà occupé. */
-  send(message: string, options: StudioAiSendOptions = {}): void {
-    const text = message.trim();
+  send(prompt: string, options: StudioAiSendOptions = {}): void {
+    const text = prompt.trim();
     if (!text || this.busy()) return;
+    const attachments = options.attachments ?? [];
 
     this.timeline.update(l => [...l, { kind: 'text', role: 'user', text }]);
     this.lastPrompt.set(text);
+    this.lastAttachments = attachments;
     if (options.intent !== undefined) this.intent.set(options.intent);
     this.phase.set('planning');
     this.status.set(STUDIO_AI_LABELS.status.analyzing);
@@ -153,11 +167,12 @@ export class StudioAiSessionStore {
     this.clearPlanState();
     this.assistantBuffer = '';
 
+    const attachmentRequests = buildAttachmentRequests(attachments, false);
     const request: ChatRequest = {
-      message: text,
+      message: composeBackendMessage(text, attachments),
       conversationId: this.conversationId(),
       options: { assistantMode: AssistantMode.StudioBuilder },
-      attachments: options.attachments?.length ? options.attachments : undefined
+      attachments: attachmentRequests.length ? attachmentRequests : undefined
     };
 
     this.streamSub?.unsubscribe();
@@ -172,7 +187,15 @@ export class StudioAiSessionStore {
   retry(): void {
     const last = this.lastPrompt();
     if (!last) return;
-    this.send(last, { intent: this.intent() });
+    this.send(last, { intent: this.intent(), attachments: this.lastAttachments });
+  }
+
+  /** Le store meurt avec la page : on coupe les flux SSE encore ouverts (le serveur termine seul). */
+  ngOnDestroy(): void {
+    this.streamSub?.unsubscribe();
+    this.confirmSub?.unsubscribe();
+    this.streamSub = null;
+    this.confirmSub = null;
   }
 
   /**
@@ -185,6 +208,7 @@ export class StudioAiSessionStore {
     const finish = () => {
       this.conversationId.set(undefined);
       this.lastPrompt.set('');
+      this.lastAttachments = [];
       this.intent.set(null);
       this.timeline.set([]);
       this.suggestions.set([]);
@@ -219,7 +243,9 @@ export class StudioAiSessionStore {
         const view = toSystemSpecView(parsed);
         this.spec.set(view);
         this.draft.set(cloneSpec(view));
-        this.plan.update(p => p ? { ...p, rowVersion: res.data.rowVersion, expiresAt: res.data.expiresAt } : p);
+        this.plan.update(p => p
+          ? { ...p, kind: res.data.kind || p.kind, rowVersion: res.data.rowVersion, expiresAt: res.data.expiresAt }
+          : p);
       },
       error: err => {
         this.specLoading.set(false);
@@ -276,7 +302,8 @@ export class StudioAiSessionStore {
 
     this.validation.update(v => ({ ...v, pending: true, errors: [] }));
     this.error.set(null);
-    this.builds.updatePlanSpec(current.planId, serializeSpec(draft), current.rowVersion).subscribe({
+    const payload = serializeSpec(specPayloadForKind(current.kind, draft));
+    this.builds.updatePlanSpec(current.planId, payload, current.rowVersion).subscribe({
       next: res => {
         if (!res?.success || !res.data) {
           this.validation.set({ warnings: [], errors: [STUDIO_AI_LABELS.errors.generic], pending: false });
@@ -315,7 +342,7 @@ export class StudioAiSessionStore {
     const message = changeSummary.trim()
       ? `${last}\n\nModifications demandées :\n${changeSummary.trim()}`
       : last;
-    this.send(message, { intent: this.intent() });
+    this.send(message, { intent: this.intent(), attachments: this.lastAttachments });
   }
 
   // ---- Plan : confirmation / annulation ------------------------------------------------------------
@@ -331,7 +358,8 @@ export class StudioAiSessionStore {
     this.buildSteps.set([]);
     this.result.set(null);
 
-    this.builds.confirm(current.planId).subscribe({
+    this.confirmSub?.unsubscribe();
+    this.confirmSub = this.builds.confirm(current.planId).subscribe({
       next: ev => this.handleConfirmEvent(ev),
       error: e => this.failExecution(e?.message ?? STUDIO_AI_LABELS.errors.executionFailed),
       complete: () => {
@@ -366,9 +394,7 @@ export class StudioAiSessionStore {
   resultUrl(): string | null {
     const r = this.result();
     if (!r) return null;
-    if ('systemUrl' in r && r.systemUrl) return r.systemUrl;
-    if ('openUrl' in r && r.openUrl) return r.openUrl;
-    return null;
+    return (isSystemBuildResult(r) ? r.systemUrl : r.openUrl) || null;
   }
 
   /** Suit une action de navigation proposée par l'assistant. */
@@ -581,6 +607,3 @@ export function parseActions(json: string | undefined): StudioAiNavAction[] {
       : [];
   } catch { return []; }
 }
-
-/** Réexport pratique pour les composants qui n'ont besoin que du type de spec affichée. */
-export type StudioAiDisplayedSpec = StudioSystemSpec | StudioAppSpec;

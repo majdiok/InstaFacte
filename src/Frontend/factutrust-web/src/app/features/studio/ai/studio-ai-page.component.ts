@@ -2,15 +2,11 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 import { ChatAttachment } from '@features/ai-assistant/models/ai-chat.models';
-import {
-  buildAttachmentRequests,
-  composeBackendMessage
-} from '@features/ai-assistant/utils/chat-attachment-payload.util';
 import { StudioPageShellComponent } from '../shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from '../shared/studio-breadcrumb.util';
 import { StudioAiCapabilitiesService } from './studio-ai-capabilities.service';
 import { STUDIO_AI_LABELS, StudioAiIntentCardDef } from './studio-ai-labels';
-import { StudioAiNavAction, StudioAiSessionStore } from './studio-ai-session.store';
+import { StudioAiSessionStore } from './studio-ai-session.store';
 import { StudioAiIntent, StudioAiPreviewTab } from './studio-ai.models';
 import { StudioAiComposerComponent } from './composer/studio-ai-composer.component';
 import { StudioAiIntentCardsComponent } from './composer/studio-ai-intent-cards.component';
@@ -93,9 +89,7 @@ export class StudioAiPageComponent {
   }
 
   submit(payload: { text: string; attachments: ChatAttachment[] }): void {
-    const message = composeBackendMessage(payload.text, payload.attachments);
-    const attachments = buildAttachmentRequests(payload.attachments, false);
-    this.store.send(message, { intent: this.pendingIntent(), attachments });
+    this.store.send(payload.text, { intent: this.pendingIntent(), attachments: payload.attachments });
     this.prefill.set(null);
   }
 
@@ -113,17 +107,9 @@ export class StudioAiPageComponent {
     this.store.confirm();
   }
 
-  openEntity(_ref: string): void {
-    this.previewTab.set('tables');
-  }
-
   newRequest(): void {
     this.store.resetConversation();
     this.pendingIntent.set(null);
     this.previewTab.set('overview');
-  }
-
-  navigate(action: StudioAiNavAction): void {
-    this.store.go(action);
   }
 }

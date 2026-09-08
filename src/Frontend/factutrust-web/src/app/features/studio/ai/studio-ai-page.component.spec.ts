@@ -83,6 +83,7 @@ describe('StudioAiPageComponent', () => {
     const request = stream.streamChat.calls.mostRecent().args[0];
     expect(request.message).toBe('Créer une table contrats');
     expect(request.attachments).toBeUndefined();
+    expect(fixture.componentInstance.store.timeline()[0].text).toBe('Créer une table contrats');
     expect(fixture.componentInstance.store.intent()).toBe('table');
     expect(fixture.componentInstance.showConversation()).toBeTrue();
     expect(fixture.nativeElement.querySelector('app-studio-ai-conversation')).not.toBeNull();

@@ -73,12 +73,13 @@ import { STUDIO_AI_LABELS, formatLabel } from '../studio-ai-labels';
             }
 
             @if (item.failure; as failure) {
+              @let view = failureView(failure);
               <div class="saic__failure">
-                <p class="saic__failure-eyebrow">{{ failureView(failure).eyebrow }}</p>
-                <h5 class="saic__failure-title">{{ failureView(failure).title }}</h5>
-                <p class="saic__text">{{ failureView(failure).message }}</p>
-                <p class="saic__hint">{{ failureView(failure).hint }}</p>
-                @if (failureView(failure).showSuggestions && failure.suggestions.length) {
+                <p class="saic__failure-eyebrow">{{ view.eyebrow }}</p>
+                <h5 class="saic__failure-title">{{ view.title }}</h5>
+                <p class="saic__text">{{ view.message }}</p>
+                <p class="saic__hint">{{ view.hint }}</p>
+                @if (view.showSuggestions && failure.suggestions.length) {
                   <div class="saic__chips">
                     @for (suggestion of failure.suggestions; track suggestion.preset) {
                       <button type="button" class="saic__chip" [disabled]="busy()" (click)="pickSuggestion(suggestion)">
@@ -87,7 +88,7 @@ import { STUDIO_AI_LABELS, formatLabel } from '../studio-ai-labels';
                     }
                   </div>
                 }
-                @if (failureView(failure).retryable) {
+                @if (view.retryable) {
                   <button
                     pButton
                     type="button"

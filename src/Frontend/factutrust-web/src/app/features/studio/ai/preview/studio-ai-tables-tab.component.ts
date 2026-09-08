@@ -1,12 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, effect, input, signal } from '@angular/core';
 import { STUDIO_AI_LABELS } from '../studio-ai-labels';
 import {
-  ERP_RELATION_TARGETS,
   STUDIO_SPEC_LIMITS,
   StudioSpecEntity,
   StudioSpecField,
   StudioSystemSpec,
-  isErpRelationTarget
+  relationTargetName
 } from '../studio-ai.models';
 
 /**
@@ -145,13 +144,10 @@ export class StudioAiTablesTabComponent {
   /** Colonne « Détails » : options d'une liste, cible d'une relation, ou réglage de configuration. */
   details(field: StudioSpecField): string {
     if (field.type === 'relation') {
-      const ref = field.relationTo ?? '';
-      if (isErpRelationTarget(ref)) {
-        const erp = ERP_RELATION_TARGETS.find(t => t.ref === ref);
-        return `→ ${erp?.label ?? ref} (${STUDIO_AI_LABELS.preview.erpBadge})`;
-      }
-      const target = this.entities().find(e => e.ref === ref);
-      return `→ ${target?.displayName || ref || '—'}`;
+      const target = relationTargetName(this.spec(), field.relationTo);
+      return target.erp
+        ? `→ ${target.name} (${STUDIO_AI_LABELS.preview.erpBadge})`
+        : `→ ${target.name || '—'}`;
     }
     if (field.options?.length) {
       return field.options.map(o => o.label || o.value).join(' · ');

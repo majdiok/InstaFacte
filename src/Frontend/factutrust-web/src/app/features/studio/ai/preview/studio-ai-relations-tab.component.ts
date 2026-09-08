@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { TagModule } from 'primeng/tag';
 import { STUDIO_AI_LABELS, formatLabel } from '../studio-ai-labels';
-import { ERP_RELATION_TARGETS, StudioSystemSpec, isErpRelationTarget } from '../studio-ai.models';
+import { StudioSystemSpec, relationTargetName } from '../studio-ai.models';
 
 /** Une ligne du tableau des relations, dérivée d'un champ `type: 'relation'`. */
 interface StudioAiRelationRow {
@@ -94,10 +94,7 @@ export class StudioAiRelationsTabComponent {
       for (const field of entity.fields) {
         if (field.type !== 'relation') continue;
         const targetRef = field.relationTo ?? '';
-        const erp = isErpRelationTarget(targetRef);
-        const targetName = erp
-          ? (ERP_RELATION_TARGETS.find(t => t.ref === targetRef)?.label ?? targetRef)
-          : (spec.entities.find(e => e.ref === targetRef)?.displayName ?? targetRef);
+        const { name: targetName, erp } = relationTargetName(spec, targetRef);
         rows.push({
           sourceRef: entity.ref,
           sourceName: entity.displayName,

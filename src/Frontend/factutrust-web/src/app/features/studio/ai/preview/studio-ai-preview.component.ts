@@ -5,9 +5,10 @@ import { TabsModule } from 'primeng/tabs';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { StudioAiCapabilitiesService } from '../studio-ai-capabilities.service';
-import { STUDIO_AI_LABELS, StudioAiTabDef } from '../studio-ai-labels';
+import { STUDIO_AI_LABELS } from '../studio-ai-labels';
 import { StudioAiSessionStore } from '../studio-ai-session.store';
 import { StudioAiPreviewTab } from '../studio-ai.models';
+import { counterChips } from '../studio-ai-spec.util';
 import { StudioAiFormsTabComponent } from './studio-ai-forms-tab.component';
 import { StudioAiMenuTabComponent } from './studio-ai-menu-tab.component';
 import { StudioAiOverviewTabComponent } from './studio-ai-overview-tab.component';
@@ -118,7 +119,13 @@ import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
           <p-tablist>
             @for (tab of tabs; track tab.id) {
               <p-tab [value]="tab.id" [disabled]="!tab.available">
-                <span [pTooltip]="tab.soonTooltip ?? ''" [tooltipDisabled]="tab.available">
+                <span
+                  class="sai-tab-label"
+                  [class.sai-tab-label--soon]="!tab.available"
+                  [pTooltip]="tab.soonTooltip ?? ''"
+                  [tooltipDisabled]="tab.available"
+                  tooltipPosition="bottom"
+                  (click)="onTabLabelClick($event, tab.available)">
                   <i [class]="tab.icon" aria-hidden="true"></i>
                   {{ tab.label }}
                   @if (tabCount(tab.id) !== null) {
@@ -177,7 +184,7 @@ export class StudioAiPreviewComponent {
   readonly labels = STUDIO_AI_LABELS.preview;
   readonly capabilityLabels = STUDIO_AI_LABELS.capabilities;
   readonly soon = STUDIO_AI_LABELS.soon;
-  readonly tabs: readonly StudioAiTabDef[] = STUDIO_AI_LABELS.tabs;
+  readonly tabs = STUDIO_AI_LABELS.tabs;
 
   /** Table à mettre en avant dans l'onglet Tables (clic dans la Vue d'ensemble). */
   readonly selectedRef = signal<string | null>(null);
@@ -197,17 +204,7 @@ export class StudioAiPreviewComponent {
 
   readonly confirmTooltip = computed(() => (this.store.canConfirm() ? '' : this.labels.integrateDisabledDirty));
 
-  readonly chips = computed(() => {
-    const counters = this.store.counters();
-    return [
-      { label: this.labels.tables, value: counters.entities },
-      { label: this.labels.fields, value: counters.fields },
-      { label: this.labels.relations, value: counters.relations },
-      { label: this.labels.forms, value: counters.forms },
-      { label: this.labels.seedRecords, value: counters.seedRecords },
-      { label: this.labels.reports, value: counters.reports }
-    ];
-  });
+  readonly chips = computed(() => counterChips(this.store.counters()));
 
   /** Compteur affiché dans l'onglet ; `null` = pas de compteur (Vue d'ensemble, Workflow, Pages). */
   tabCount(id: StudioAiPreviewTab): number | null {
@@ -223,7 +220,18 @@ export class StudioAiPreviewComponent {
   }
 
   onTabChange(value: string | number): void {
-    this.activeTab.set(value as StudioAiPreviewTab);
+    const next = value as StudioAiPreviewTab;
+    if (!this.tabs.find(t => t.id === next)?.available) return;
+    this.activeTab.set(next);
+  }
+
+  /**
+   * PrimeNG pose `pointer-events: none` sur un onglet désactivé (et ses enfants), ce qui empêche le
+   * tooltip « Bientôt » de s'afficher. On réactive les événements sur le libellé seul et on stoppe
+   * le clic pour qu'il ne remonte pas au `p-tab` (dont `onClick` n'est pas gardé par `disabled`).
+   */
+  onTabLabelClick(event: Event, available: boolean): void {
+    if (!available) event.stopPropagation();
   }
 
   /** Clic sur une table de la Vue d'ensemble : bascule sur l'onglet Tables, table sélectionnée. */

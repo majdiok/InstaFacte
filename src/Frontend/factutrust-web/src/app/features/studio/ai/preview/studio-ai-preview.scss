@@ -53,6 +53,8 @@
 .sai-chip__num { font-weight: var(--font-weight-semibold, 600); color: var(--color-primary-600, #2563eb); }
 .sai-count { margin-left: 0.35rem; font-weight: var(--font-weight-semibold, 600); color: var(--color-primary-600, #2563eb); }
 .sai-soon { margin-left: 0.35rem; }
+/* Réactive le survol sur le libellé d'un onglet désactivé pour laisser passer le tooltip « Bientôt ». */
+.p-tab.p-disabled .sai-tab-label--soon { pointer-events: auto; cursor: not-allowed; }
 
 .sai-banner {
   display: flex;

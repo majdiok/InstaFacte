@@ -165,6 +165,18 @@ export function isErpRelationTarget(ref: string | undefined | null): boolean {
   return !!ref && ERP_RELATION_TARGETS.some(t => t.ref === ref);
 }
 
+/** Nom affichable de la cible d'une relation (entité de la spec ou table ERP) ; retombe sur `ref`. */
+export function relationTargetName(
+  spec: Pick<StudioSystemSpec, 'entities'>,
+  ref: string | undefined | null
+): { name: string; erp: boolean } {
+  const target = ref ?? '';
+  if (isErpRelationTarget(target)) {
+    return { name: ERP_RELATION_TARGETS.find(t => t.ref === target)?.label ?? target, erp: true };
+  }
+  return { name: spec.entities.find(e => e.ref === target)?.displayName || target, erp: false };
+}
+
 // ---------------------------------------------------------------------------------------------
 // 2. DTO des endpoints P0
 // ---------------------------------------------------------------------------------------------
@@ -423,6 +435,32 @@ export function toSystemSpecView(spec: StudioSystemSpec | StudioAppSpec): Studio
       }
     ]
   };
+}
+
+/**
+ * Inverse de `toSystemSpecView` pour un plan `CreateApp` : le serveur attend `{ entity, fields, report? }`
+ * (contrat `PUT {id}/spec`), pas la vue « système » affichée par l'atelier.
+ */
+export function toAppSpecPayload(view: StudioSystemSpec): StudioAppSpec {
+  const first = view.entities[0];
+  const { ref: _ref, form: _form, fields, report, ...entity } = first ?? {
+    ref: 'entity', displayName: view.system.displayName, displayNamePlural: view.system.displayName, fields: []
+  };
+  return {
+    entity: {
+      displayName: entity.displayName,
+      displayNamePlural: entity.displayNamePlural,
+      ...(entity.icon ? { icon: entity.icon } : {}),
+      ...(entity.description ? { description: entity.description } : {})
+    },
+    fields: fields ?? [],
+    ...(report ? { report } : {})
+  };
+}
+
+/** Charge `specJson` à envoyer au serveur selon le type de plan (vue système → format d'origine). */
+export function specPayloadForKind(kind: string, view: StudioSystemSpec): StudioSystemSpec | StudioAppSpec {
+  return kind === 'CreateApp' ? toAppSpecPayload(view) : view;
 }
 
 export function countSpec(spec: StudioSystemSpec | null | undefined): StudioSpecCounters {

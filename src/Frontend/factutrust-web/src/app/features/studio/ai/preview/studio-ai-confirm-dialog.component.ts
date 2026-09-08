@@ -5,11 +5,7 @@ import { CheckboxModule } from 'primeng/checkbox';
 import { DialogModule } from 'primeng/dialog';
 import { StudioAiActivePlan } from '../studio-ai-session.store';
 import { STUDIO_AI_LABELS, formatLabel } from '../studio-ai-labels';
-import { StudioSpecCounters } from '../studio-ai.models';
-
-const EMPTY_COUNTERS: StudioSpecCounters = {
-  entities: 0, fields: 0, relations: 0, forms: 0, seedRecords: 0, reports: 0
-};
+import { StudioSpecCounters, countSpec } from '../studio-ai.models';
 
 /**
  * Dernière barrière avant écriture (plan P1 §8.1) : rien n'est créé tant que ce dialogue n'a pas
@@ -125,7 +121,7 @@ export class StudioAiConfirmDialogComponent {
   readonly visible = model(false);
   /** Plan en attente ; son `summary.title` donne le nom du système dans l'en-tête. */
   readonly plan = input<StudioAiActivePlan | null>(null);
-  readonly counters = input<StudioSpecCounters>(EMPTY_COUNTERS);
+  readonly counters = input<StudioSpecCounters>(countSpec(null));
   readonly warnings = input<string[]>([]);
   /** Intégration déjà lancée : évite un double clic sur « Intégrer ». */
   readonly busy = input(false);

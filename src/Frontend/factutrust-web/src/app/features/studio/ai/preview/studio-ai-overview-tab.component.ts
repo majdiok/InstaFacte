@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { STUDIO_AI_LABELS, formatLabel } from '../studio-ai-labels';
 import { STUDIO_SPEC_LIMITS, StudioSpecCounters, StudioSystemSpec } from '../studio-ai.models';
+import { counterChips } from '../studio-ai-spec.util';
 
 /** Une entité de l'arbre « Structure du système ». */
 interface StudioAiOverviewNode {
@@ -114,15 +115,5 @@ export class StudioAiOverviewTabComponent {
     }))
   );
 
-  readonly cards = computed(() => {
-    const counters = this.counters();
-    return [
-      { label: this.labels.tables, value: counters.entities },
-      { label: this.labels.fields, value: counters.fields },
-      { label: this.labels.relations, value: counters.relations },
-      { label: this.labels.forms, value: counters.forms },
-      { label: this.labels.seedRecords, value: counters.seedRecords },
-      { label: this.labels.reports, value: counters.reports }
-    ];
-  });
+  readonly cards = computed(() => counterChips(this.counters()));
 }

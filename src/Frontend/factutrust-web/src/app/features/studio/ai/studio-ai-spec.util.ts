@@ -11,6 +11,7 @@ import { STUDIO_AI_LABELS, formatLabel } from './studio-ai-labels';
 import {
   STUDIO_SPEC_LIMITS,
   StudioAppSpec,
+  StudioSpecCounters,
   StudioSpecEntity,
   StudioSpecField,
   StudioSpecFieldType,
@@ -24,10 +25,23 @@ import {
  * Fonctions pures autour de la spec canonique Studio IA (P1a : socle lecture).
  *
  * Tout ce qui se calcule sans réseau vit ici pour être testable directement (convention du dépôt) :
- * clonage, (dé)sérialisation, erreurs HTTP → message FR. Les helpers d'édition (`diffSpec`,
- * `summarizeChanges`, `parseCsv`) arrivent en P1b ; `slugify`, `ensureIntegrity`,
- * `specFieldToCustomField` et `specFormToLayout` sont ajoutés par le lot WP‑A.
+ * clonage, (dé)sérialisation, erreurs HTTP → message FR, bornes/intégrité de la spec, passerelles
+ * vers les modèles runtime (`CustomField`, `FormLayout`) pour le sandbox. Les helpers d'édition
+ * (`diffSpec`, `summarizeChanges`, `parseCsv`) arrivent en P1b.
  */
+
+/** Puces de compteurs (en-tête de l'aperçu, Vue d'ensemble) dans l'ordre canonique. */
+export function counterChips(counters: StudioSpecCounters): { label: string; value: number }[] {
+  const labels = STUDIO_AI_LABELS.preview;
+  return [
+    { label: labels.tables, value: counters.entities },
+    { label: labels.fields, value: counters.fields },
+    { label: labels.relations, value: counters.relations },
+    { label: labels.forms, value: counters.forms },
+    { label: labels.seedRecords, value: counters.seedRecords },
+    { label: labels.reports, value: counters.reports }
+  ];
+}
 
 /** Clone profond structurel — la spec est un JSON pur, `structuredClone` suffit. */
 export function cloneSpec<T>(spec: T): T {

@@ -3,11 +3,11 @@ import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subject, of, throwError } from 'rxjs';
 import { AiStreamService } from '@features/ai-assistant/services/ai-stream.service';
-import { ChatStreamEvent } from '@features/ai-assistant/models/ai-chat.models';
+import { ChatAttachment, ChatStreamEvent } from '@features/ai-assistant/models/ai-chat.models';
 import { StudioAiBuildService, StudioPlanSummary } from '../studio-ai-build.service';
 import { StudioNavService } from '../studio-nav.service';
 import { STUDIO_AI_LABELS } from './studio-ai-labels';
-import { StudioSystemSpec } from './studio-ai.models';
+import { StudioAppSpec, StudioSystemSpec } from './studio-ai.models';
 import {
   StudioAiSessionStore,
   normalizeSummary,
@@ -101,6 +101,43 @@ describe('StudioAiSessionStore', () => {
       expect(store.intent()).toBe('system');
       expect(store.timeline()).toEqual([{ kind: 'text', role: 'user', text: 'Créer un système de congés' }]);
       expect(stream.streamChat.calls.mostRecent().args[0].message).toBe('Créer un système de congés');
+    });
+
+    it('shows only the prompt in the timeline but sends the attachment text to the backend', () => {
+      const events = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(events.asObservable());
+      const attachment: ChatAttachment = {
+        id: 'a1', fileName: 'clients.csv', format: 'csv', sizeBytes: 10, pageCount: 1,
+        ocrApplied: false, truncated: false, fullText: 'nom;ville', pages: [], warnings: []
+      };
+
+      store.send('Importe ces clients', { attachments: [attachment] });
+
+      expect(store.timeline()).toEqual([{ kind: 'text', role: 'user', text: 'Importe ces clients' }]);
+      expect(store.lastPrompt()).toBe('Importe ces clients');
+      const request = stream.streamChat.calls.mostRecent().args[0];
+      expect(request.message).toContain('Importe ces clients');
+      expect(request.message).toContain('[PIÈCE JOINTE : clients.csv]');
+      expect(request.message).toContain('nom;ville');
+      expect(request.attachments).toEqual([jasmine.objectContaining({ fileName: 'clients.csv', format: 'csv' })]);
+
+      // « Réessayer » renvoie la même demande AVEC ses pièces jointes.
+      events.error(new Error('boom'));
+      store.retry();
+      const retried = stream.streamChat.calls.mostRecent().args[0];
+      expect(retried.message).toContain('[PIÈCE JOINTE : clients.csv]');
+      expect(retried.attachments?.length).toBe(1);
+    });
+
+    it('unsubscribes from the open chat stream when destroyed', () => {
+      const events = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(events.asObservable());
+      store.send('Créer');
+      expect(events.observed).toBeTrue();
+
+      store.ngOnDestroy();
+
+      expect(events.observed).toBeFalse();
     });
 
     it('moves to awaiting_confirmation on studio_plan and loads the spec', () => {
@@ -354,6 +391,39 @@ describe('StudioAiSessionStore', () => {
       expect(store.validation()).toEqual({ warnings: ['Vérifiez les soldes.'], errors: [], pending: false });
       expect(store.warnings()).toEqual(['Vérifiez les soldes.']);
       expect(store.timeline().pop()).toEqual({ kind: 'system', text: STUDIO_AI_LABELS.status.draftSaved });
+    });
+
+    it('sends a CreateApp plan back in its { entity, fields } shape', () => {
+      const app: StudioAppSpec = {
+        entity: { displayName: 'Contrat', displayNamePlural: 'Contrats', icon: 'fa-solid fa-file' },
+        fields: [{ key: 'titre', label: 'Titre', type: 'text', required: true, unique: false }]
+      };
+      builds.getPlanSpec.and.returnValue(of({
+        success: true,
+        data: { id: 'p-1', kind: 'CreateApp', status: 'Pending', expiresAt: '2026-09-09T10:00:00Z', rowVersion: 'rv-1', spec: app },
+        message: null,
+        errors: []
+      }) as never);
+      const chat = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(chat.asObservable());
+      store.send('Créer une table contrats');
+      chat.next({ type: 'studio_plan', content: JSON.stringify({ planId: 'p-1', summary: summary({ kind: 'CreateApp', title: 'Contrat' }) }) });
+      expect(store.plan()?.kind).toBe('CreateApp');
+      expect(store.spec()?.entities[0].ref).toBe('entity');
+
+      store.startEditing();
+      const draft = structuredClone(store.draft()!);
+      draft.entities[0].fields.push({ key: 'montant', label: 'Montant', type: 'money', required: false, unique: false });
+      store.updateDraft(draft);
+      builds.updatePlanSpec.and.returnValue(of() as never);
+
+      store.saveDraft();
+
+      const sent = JSON.parse(builds.updatePlanSpec.calls.mostRecent().args[1] as string);
+      expect(sent.system).toBeUndefined();
+      expect(sent.entities).toBeUndefined();
+      expect(sent.entity).toEqual({ displayName: 'Contrat', displayNamePlural: 'Contrats', icon: 'fa-solid fa-file' });
+      expect(sent.fields.map((f: { key: string }) => f.key)).toEqual(['titre', 'montant']);
     });
 
     it('surfaces the conflict message on 409 without losing the draft', () => {
