@@ -1,0 +1,170 @@
+/**
+ * Styles partagés par la coquille de l'aperçu Studio IA et ses onglets.
+ *
+ * Une seule feuille réutilisée via `styleUrl` par chaque composant du dossier `preview/` : les
+ * classes sont préfixées `sai-` et restent volontairement peu nombreuses pour tenir largement sous
+ * le budget `anyComponentStyle` (40 ko d'avertissement) même répétée par composant.
+ */
+
+.sai-panel {
+  border: 1px solid var(--surface-border, #e5e7eb);
+  border-radius: 0.75rem;
+  background: var(--surface-card, #fff);
+}
+
+.sai-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-3, 0.75rem);
+  padding: var(--spacing-4, 1rem);
+  border-bottom: 1px solid var(--surface-border, #e5e7eb);
+}
+
+.sai-head__text { flex: 1 1 18rem; min-width: 0; }
+.sai-head__actions { display: flex; flex-wrap: wrap; gap: var(--spacing-2, 0.5rem); align-items: center; }
+
+.sai-title {
+  margin: 0;
+  font-size: var(--font-size-lg, 1.125rem);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.sai-sub, .sai-hint {
+  margin: 0;
+  color: var(--color-neutral-500, #6b7280);
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+.sai-chips { display: flex; flex-wrap: wrap; gap: var(--spacing-2, 0.5rem); padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem); }
+
+.sai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--surface-border, #e5e7eb);
+  border-radius: 999px;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-neutral-700, #374151);
+  background: var(--surface-ground, #f9fafb);
+}
+
+.sai-chip__num { font-weight: var(--font-weight-semibold, 600); color: var(--color-primary-600, #2563eb); }
+.sai-count { margin-left: 0.35rem; font-weight: var(--font-weight-semibold, 600); color: var(--color-primary-600, #2563eb); }
+.sai-soon { margin-left: 0.35rem; }
+/* Réactive le survol sur le libellé d'un onglet désactivé pour laisser passer le tooltip « Bientôt ». */
+.p-tab.p-disabled .sai-tab-label--soon { pointer-events: auto; cursor: not-allowed; }
+
+.sai-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-2, 0.5rem);
+  margin: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem) 0;
+  padding: var(--spacing-3, 0.75rem);
+  border-radius: 0.5rem;
+  font-size: var(--font-size-sm, 0.875rem);
+  background: var(--color-primary-50, #eff6ff);
+  color: var(--color-neutral-700, #374151);
+}
+
+.sai-banner--warn { background: #fffbeb; }
+.sai-banner--error { background: #fef2f2; color: #991b1b; }
+
+.sai-body { padding: var(--spacing-4, 1rem); }
+
+.sai-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-2, 0.5rem);
+  padding: var(--spacing-6, 1.5rem);
+  text-align: center;
+  color: var(--color-neutral-500, #6b7280);
+}
+
+.sai-empty__icon { font-size: 1.75rem; color: var(--color-primary-600, #2563eb); }
+
+.sai-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--spacing-4, 1rem); }
+.sai-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: var(--spacing-2, 0.5rem); }
+
+.sai-card {
+  border: 1px solid var(--surface-border, #e5e7eb);
+  border-radius: 0.5rem;
+  padding: var(--spacing-3, 0.75rem);
+}
+
+.sai-card__num { font-size: var(--font-size-xl, 1.25rem); font-weight: var(--font-weight-semibold, 600); }
+.sai-card__lbl { color: var(--color-neutral-500, #6b7280); font-size: var(--font-size-sm, 0.875rem); }
+
+.sai-block { margin-bottom: var(--spacing-4, 1rem); }
+.sai-block:last-child { margin-bottom: 0; }
+
+.sai-block__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2, 0.5rem);
+  margin-bottom: var(--spacing-2, 0.5rem);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.sai-list { list-style: none; margin: 0; padding: 0; }
+
+.sai-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2, 0.5rem);
+  width: 100%;
+  padding: var(--spacing-2, 0.5rem);
+  border: 0;
+  border-radius: 0.5rem;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sai-list__item:hover, .sai-list__item:focus-visible { background: var(--color-primary-50, #eff6ff); }
+.sai-list__item--static { cursor: default; }
+.sai-list__item--static:hover { background: none; }
+.sai-list__item--active { background: var(--color-primary-50, #eff6ff); font-weight: var(--font-weight-medium, 500); }
+.sai-list__meta { margin-left: auto; color: var(--color-neutral-500, #6b7280); font-size: var(--font-size-sm, 0.875rem); }
+
+.sai-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm, 0.875rem); }
+.sai-table th, .sai-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--surface-border, #e5e7eb); text-align: left; vertical-align: top; }
+.sai-table th { color: var(--color-neutral-500, #6b7280); font-weight: var(--font-weight-medium, 500); white-space: nowrap; }
+.sai-table__scroll { overflow-x: auto; }
+.sai-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--font-size-xs, 0.75rem); color: var(--color-neutral-700, #374151); }
+.sai-ok { color: var(--color-primary-600, #2563eb); }
+.sai-dash { color: var(--color-neutral-500, #6b7280); }
+
+.sai-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+.sai-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-2, 0.5rem); }
+.sai-form-grid__cell { grid-column: span 2; }
+.sai-form-grid__cell--half { grid-column: span 1; }
+
+.sai-field-box {
+  border: 1px dashed var(--surface-border, #e5e7eb);
+  border-radius: 0.5rem;
+  padding: var(--spacing-2, 0.5rem);
+}
+
+.sai-placeholder {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2, 0.5rem);
+  border: 1px dashed var(--surface-border, #e5e7eb);
+  border-radius: 0.5rem;
+  padding: var(--spacing-4, 1rem);
+  color: var(--color-neutral-500, #6b7280);
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+@media (max-width: 900px) {
+  .sai-grid { grid-template-columns: minmax(0, 1fr); }
+  .sai-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .sai-form-grid__cell, .sai-form-grid__cell--half { grid-column: span 1; }
+}

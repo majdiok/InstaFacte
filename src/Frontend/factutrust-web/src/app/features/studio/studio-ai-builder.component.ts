@@ -16,6 +16,13 @@ import { StudioPageShellComponent } from './shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
 import { classifyStudioFailure, StudioFailureView } from './studio-ai-failure.util';
 
+/*
+ * Page legacy de l'assistant Studio. Depuis la refonte Studio IA (P1), `/studio/ai` passe par
+ * `ai/studio-ai-entry.component.ts` qui n'affiche cette page que lorsque le workbench Studio IA est
+ * désactivé côté serveur (`EnableStudioAiWorkbench=false`) ou que les capacités sont indisponibles.
+ * Ne pas y ajouter de fonctionnalité : l'atelier (`ai/studio-ai-page.component.ts`) est la cible.
+ */
+
 interface NavAction { label: string; route: string; }
 interface BuildStep { phase: string; label: string; status: string; entityRef?: string; }
 

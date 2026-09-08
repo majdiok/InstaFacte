@@ -1,11 +1,24 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, firstValueFrom } from 'rxjs';
 import { environment } from '@environments/environment';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { AuthService } from '@core/services/auth.service';
 import { ApiResponse } from '@core/services/client.service';
 import { ChatStreamEvent } from '@features/ai-assistant/models/ai-chat.models';
 import { ReportResult } from '@shared/studio-runtime/studio-runtime.models';
+import {
+  StudioAiCapabilitiesDto,
+  StudioAiPlanCreationResponse,
+  StudioAiPlanListItemDto,
+  StudioAiPlanListQuery,
+  StudioAiPlanSpecDto,
+  StudioAiSpecValidationDto,
+  StudioPagedResult,
+  StudioTemplateDetailDto,
+  StudioTemplateListItemDto,
+  UpdateStudioAiPlanSpecResponse
+} from './ai/studio-ai.models';
 
 /** Étape de l'aperçu (checklist) d'un plan Studio IA. */
 export interface StudioPlanStep {
@@ -102,9 +115,90 @@ export class StudioAiBuildService {
   private readonly http = inject(HttpClient);
   private readonly auth = inject(AuthService);
   private readonly baseUrl = `${environment.apiUrl}/studio/ai/plans`;
+  private readonly templatesUrl = `${environment.apiUrl}/studio/templates`;
+  private readonly capabilitiesUrl = `${environment.apiUrl}/ai/studio/capabilities`;
 
   getPlan(planId: string): Observable<ApiResponse<StudioAiPlanDto>> {
     return this.http.get<ApiResponse<StudioAiPlanDto>>(`${this.baseUrl}/${planId}`);
+  }
+
+  // ---- Workbench (P0) : tous ces appels renvoient 404 quand `EnableStudioAiWorkbench` est faux. -------
+  // Les erreurs sont gérées inline par l'atelier (bannières / messages) : on coupe le toast global.
+
+  /** `GET api/ai/studio/capabilities` — pilote l'aiguillage legacy / atelier et l'état des cartes. */
+  getCapabilities(): Observable<ApiResponse<StudioAiCapabilitiesDto>> {
+    return this.http.get<ApiResponse<StudioAiCapabilitiesDto>>(this.capabilitiesUrl, { context: createHttpContextSkipGlobalErrorUi() });
+  }
+
+  /** Historique paginé des plans du propriétaire (`pageSize` ≤ 50 côté serveur). */
+  listPlans(query: StudioAiPlanListQuery = {}): Observable<ApiResponse<StudioPagedResult<StudioAiPlanListItemDto>>> {
+    let params = new HttpParams()
+      .set('page', String(query.page ?? 1))
+      .set('pageSize', String(Math.min(query.pageSize ?? 20, 50)));
+    if (query.status) params = params.set('status', query.status);
+    if (query.kind) params = params.set('kind', query.kind);
+    return this.http.get<ApiResponse<StudioPagedResult<StudioAiPlanListItemDto>>>(this.baseUrl, {
+      params,
+      context: createHttpContextSkipGlobalErrorUi()
+    });
+  }
+
+  /** Spec canonique + `rowVersion` d'un plan (nécessaire à l'aperçu détaillé et à l'édition). */
+  getPlanSpec(planId: string): Observable<ApiResponse<StudioAiPlanSpecDto>> {
+    return this.http.get<ApiResponse<StudioAiPlanSpecDto>>(`${this.baseUrl}/${planId}/spec`, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
+  }
+
+  /** Édition d'un plan en attente ; le serveur re-parse, recalcule le résumé et vérifie `rowVersion` (409 sinon). */
+  updatePlanSpec(planId: string, specJson: string, rowVersion: string): Observable<ApiResponse<UpdateStudioAiPlanSpecResponse>> {
+    return this.http.put<ApiResponse<UpdateStudioAiPlanSpecResponse>>(
+      `${this.baseUrl}/${planId}/spec`,
+      { specJson, rowVersion },
+      { context: createHttpContextSkipGlobalErrorUi() }
+    );
+  }
+
+  /** Validation serveur sans création : une spec invalide répond 400 (jamais `valid=false`). */
+  validate(kind: string, specJson: string): Observable<ApiResponse<StudioAiSpecValidationDto>> {
+    return this.http.post<ApiResponse<StudioAiSpecValidationDto>>(
+      `${this.baseUrl}/validate`,
+      { kind, specJson },
+      { context: createHttpContextSkipGlobalErrorUi() }
+    );
+  }
+
+  /** Modèle du catalogue → plan `Pending` (aucun appel au LLM). */
+  createFromTemplate(templateKey: string, displayNameOverride?: string | null): Observable<ApiResponse<StudioAiPlanCreationResponse>> {
+    return this.http.post<ApiResponse<StudioAiPlanCreationResponse>>(
+      `${this.baseUrl}/from-template`,
+      { templateKey, displayNameOverride: displayNameOverride || null },
+      { context: createHttpContextSkipGlobalErrorUi() }
+    );
+  }
+
+  /** Spec fournie → plan `Pending` (import P3 ; utilisé par les tests en P1). */
+  createFromSpec(kind: string, specJson: string): Observable<ApiResponse<StudioAiPlanCreationResponse>> {
+    return this.http.post<ApiResponse<StudioAiPlanCreationResponse>>(
+      `${this.baseUrl}/from-spec`,
+      { kind, specJson },
+      { context: createHttpContextSkipGlobalErrorUi() }
+    );
+  }
+
+  /** « Réinitialiser la conversation » : annule (n'efface jamais) les plans en attente ; renvoie leur nombre. */
+  cancelPending(): Observable<ApiResponse<number>> {
+    return this.http.post<ApiResponse<number>>(`${this.baseUrl}/cancel-pending`, {}, { context: createHttpContextSkipGlobalErrorUi() });
+  }
+
+  listTemplates(): Observable<ApiResponse<StudioTemplateListItemDto[]>> {
+    return this.http.get<ApiResponse<StudioTemplateListItemDto[]>>(this.templatesUrl, { context: createHttpContextSkipGlobalErrorUi() });
+  }
+
+  getTemplate(key: string): Observable<ApiResponse<StudioTemplateDetailDto>> {
+    return this.http.get<ApiResponse<StudioTemplateDetailDto>>(`${this.templatesUrl}/${encodeURIComponent(key)}`, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
   }
 
   cancel(planId: string): Observable<ApiResponse<StudioAiPlanDto>> {
