@@ -166,7 +166,23 @@ public static class StudioAiSystemSpec
 
             var rawType = Str(fn?["type"]) ?? "text";
             var relationTo = Str(fn?["relationTo"]) ?? Str(fn?["relationToRef"]) ?? Str(fn?["targetRef"]);
-            var key = UniqueFieldKey(label!, usedKeys);
+
+            // Clé explicite (éditeur d'aperçu « Personnaliser ») prioritaire sur la dérivation du
+            // libellé : renommer un libellé ne doit jamais casser les références formulaire/rapport.
+            // Une clé explicite invalide, réservée ou dupliquée rejette la spec (rejet franc).
+            var explicitKey = Str(fn?["key"]);
+            string key;
+            if (!string.IsNullOrWhiteSpace(explicitKey))
+            {
+                key = StudioKey.Slugify(explicitKey!);
+                if (StudioKey.IsReservedFieldKey(key) || !StudioKey.IsValidShape(key))
+                { error = $"Clé de champ « {key} » invalide ou réservée."; return null; }
+                if (!usedKeys.Add(key)) { error = $"Clé de champ « {key} » dupliquée."; return null; }
+            }
+            else
+            {
+                key = UniqueFieldKey(label!, usedKeys);
+            }
             var required = Bool(fn?["required"]) ?? Bool(fn?["isRequired"]) ?? false;
             var unique = Bool(fn?["unique"]) ?? Bool(fn?["isUnique"]) ?? false;
 

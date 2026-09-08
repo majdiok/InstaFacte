@@ -113,7 +113,22 @@ public static class StudioAiAppSpec
             if (string.IsNullOrWhiteSpace(label)) continue;
 
             var fieldType = MapType(Str(fn?["type"]));
-            var key = UniqueFieldKey(label!, usedKeys);
+
+            // Clé explicite (éditeur d'aperçu) prioritaire sur la dérivation du libellé — même
+            // règle que StudioAiSystemSpec : invalide, réservée ou dupliquée ⇒ rejet franc.
+            var explicitKey = Str(fn?["key"]);
+            string key;
+            if (!string.IsNullOrWhiteSpace(explicitKey))
+            {
+                key = StudioKey.Slugify(explicitKey!);
+                if (StudioKey.IsReservedFieldKey(key) || !StudioKey.IsValidShape(key))
+                { error = $"Clé de champ « {key} » invalide ou réservée."; return false; }
+                if (!usedKeys.Add(key)) { error = $"Clé de champ « {key} » dupliquée."; return false; }
+            }
+            else
+            {
+                key = UniqueFieldKey(label!, usedKeys);
+            }
 
             var required = Bool(fn?["required"]) ?? Bool(fn?["isRequired"]) ?? false;
             var unique = Bool(fn?["unique"]) ?? Bool(fn?["isUnique"]) ?? false;
