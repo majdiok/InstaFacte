@@ -34,6 +34,125 @@ public sealed class StudioAiPlansController : ControllerBase
         _ollamaSettings = ollamaSettings.Value;
     }
 
+    // ---- Endpoints « workbench » (P0) : tous gardés par EnableStudioAiWorkbench (flag off ⇒ 404).
+    // Les routes fixes (« cancel-pending », « validate », …) sont déclarées avant « {id:guid} »
+    // par lisibilité ; la contrainte :guid empêche de toute façon toute collision.
+
+    /// <summary>Historique paginé des générations de l'utilisateur courant (jamais de spec ici).</summary>
+    [HttpGet]
+    public async Task<IActionResult> List(
+        [FromQuery] string? status,
+        [FromQuery] string? kind,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (WorkbenchUnavailableOrNull() is { } unavailable)
+            return unavailable;
+
+        var result = await _mediator.Send(
+            new ListStudioAiPlansQuery(status, kind, page, pageSize), cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            value => Ok(ApiResponse<PagedResult<StudioAiPlanListItemDto>>.Ok(value)));
+    }
+
+    /// <summary>« Réinitialiser la conversation » : annule les plans en attente de l'utilisateur.</summary>
+    [HttpPost("cancel-pending")]
+    public async Task<IActionResult> CancelPending(CancellationToken cancellationToken)
+    {
+        if (WorkbenchUnavailableOrNull() is { } unavailable)
+            return unavailable;
+
+        var result = await _mediator.Send(new CancelPendingStudioAiPlansCommand(), cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            cancelled => Ok(ApiResponse<int>.Ok(cancelled, "Plans en attente annulés.")));
+    }
+
+    /// <summary>
+    /// Valide une spec sans rien créer ni lire en base (alimente « Tester » / « Personnaliser »
+    /// en direct) : renvoie la forme canonique et le résumé recalculé côté serveur.
+    /// </summary>
+    [HttpPost("validate")]
+    public async Task<IActionResult> ValidateSpec(
+        [FromBody] ValidateStudioAiSpecRequest request, CancellationToken cancellationToken)
+    {
+        if (WorkbenchUnavailableOrNull() is { } unavailable)
+            return unavailable;
+
+        var result = await _mediator.Send(
+            new ValidateStudioAiSpecCommand(request.Kind, request.SpecJson), cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            value => Ok(ApiResponse<StudioAiSpecValidationDto>.Ok(value)));
+    }
+
+    /// <summary>Crée un plan Pending directement depuis une spec JSON — AUCUN appel LLM.</summary>
+    [HttpPost("from-spec")]
+    public async Task<IActionResult> CreateFromSpec(
+        [FromBody] CreatePlanFromSpecRequest request, CancellationToken cancellationToken)
+    {
+        if (WorkbenchUnavailableOrNull() is { } unavailable)
+            return unavailable;
+
+        var result = await _mediator.Send(
+            new CreateStudioAiPlanFromSpecCommand(request.Kind, request.SpecJson), cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            value => Ok(ApiResponse<StudioAiPlanCreationResponse>.Ok(value, "Plan créé.")));
+    }
+
+    /// <summary>
+    /// Instancie un modèle de la bibliothèque (clé du catalogue embarqué en P0 ; identifiant de
+    /// modèle tenant à partir de P3) en plan Pending — AUCUN appel LLM.
+    /// </summary>
+    [HttpPost("from-template")]
+    public async Task<IActionResult> CreateFromTemplate(
+        [FromBody] CreatePlanFromTemplateRequest request, CancellationToken cancellationToken)
+    {
+        if (WorkbenchUnavailableOrNull() is { } unavailable)
+            return unavailable;
+
+        var result = await _mediator.Send(
+            new CreateStudioAiPlanFromTemplateCommand(
+                request.TemplateKey, request.TemplateId, request.DisplayNameOverride),
+            cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            value => Ok(ApiResponse<StudioAiPlanCreationResponse>.Ok(value, "Plan créé.")));
+    }
+
+    /// <summary>Spec canonique d'un plan possédé (entrée de l'éditeur « Personnaliser »).</summary>
+    [HttpGet("{id:guid}/spec")]
+    public async Task<IActionResult> GetSpec(Guid id, CancellationToken cancellationToken)
+    {
+        if (WorkbenchUnavailableOrNull() is { } unavailable)
+            return unavailable;
+
+        var result = await _mediator.Send(new GetStudioAiPlanSpecQuery(id), cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            value => Ok(ApiResponse<StudioAiPlanSpecDto>.Ok(value)));
+    }
+
+    /// <summary>
+    /// Réécrit la spec d'un plan en attente (re-parse + résumé recalculé côté serveur,
+    /// jeton <c>rowVersion</c> obligatoire contre les écritures concurrentes).
+    /// </summary>
+    [HttpPut("{id:guid}/spec")]
+    public async Task<IActionResult> UpdateSpec(
+        Guid id, [FromBody] UpdateStudioAiPlanSpecRequest request, CancellationToken cancellationToken)
+    {
+        if (WorkbenchUnavailableOrNull() is { } unavailable)
+            return unavailable;
+
+        var result = await _mediator.Send(
+            new UpdateStudioAiPlanSpecCommand(id, request.SpecJson, request.RowVersion), cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            value => Ok(ApiResponse<UpdateStudioAiPlanSpecResponse>.Ok(value, "Plan mis à jour.")));
+    }
+
+    /// <summary>Garde du workbench : 404 tant que le flag est désactivé (surface d'API inchangée).</summary>
+    private IActionResult? WorkbenchUnavailableOrNull() =>
+        _ollamaSettings.EnableStudioAiWorkbench
+            ? null
+            : NotFound(ApiResponse<object>.Fail("Le workbench Studio IA n'est pas activé."));
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Get(Guid id, CancellationToken cancellationToken)
     {
