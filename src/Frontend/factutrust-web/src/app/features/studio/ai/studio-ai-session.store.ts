@@ -92,6 +92,8 @@ export class StudioAiSessionStore implements OnDestroy {
   private readonly router = inject(Router);
 
   private assistantBuffer = '';
+  /** Une carte d'échec a été émise pendant le tour courant (miroir de `reportFailure` sur la page legacy). */
+  private failureReported = false;
   private streamSub: Subscription | null = null;
   private confirmSub: Subscription | null = null;
   /** Pièces jointes de la dernière demande, pour que « Réessayer » les renvoie aussi. */
@@ -166,6 +168,7 @@ export class StudioAiSessionStore implements OnDestroy {
     this.suggestions.set([]);
     this.clearPlanState();
     this.assistantBuffer = '';
+    this.failureReported = false;
 
     const attachmentRequests = buildAttachmentRequests(attachments, false);
     const request: ChatRequest = {
@@ -413,7 +416,7 @@ export class StudioAiSessionStore implements OnDestroy {
         if (ev.content) this.assistantBuffer += ev.content;
         break;
       case 'content_replace':
-        if (ev.content != null && !this.lastItemIsFailure()) this.assistantBuffer = stripStudioAssistantText(ev.content);
+        if (ev.content != null && !this.failureReported) this.assistantBuffer = stripStudioAssistantText(ev.content);
         break;
       case 'studio_plan':
         this.applyPlan(ev.content);
@@ -510,6 +513,7 @@ export class StudioAiSessionStore implements OnDestroy {
       if (!payload?.message) return;
       payload.suggestions ??= [];
       this.timeline.update(l => [...l, { kind: 'failure', failure: payload }]);
+      this.failureReported = true;
       // La carte remplace la bulle : ce qui avait déjà été accumulé n'a plus lieu d'être affiché.
       this.assistantBuffer = '';
     } catch { /* payload illisible */ }
@@ -570,10 +574,6 @@ export class StudioAiSessionStore implements OnDestroy {
     this.validation.set({ warnings: [], errors: [], pending: false });
   }
 
-  private lastItemIsFailure(): boolean {
-    const items = this.timeline();
-    return items.length > 0 && items[items.length - 1].kind === 'failure';
-  }
 }
 
 // ---- Helpers purs (exportés pour les tests) ---------------------------------------------------------

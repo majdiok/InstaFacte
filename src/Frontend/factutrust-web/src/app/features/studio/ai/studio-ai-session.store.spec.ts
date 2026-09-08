@@ -214,6 +214,25 @@ describe('StudioAiSessionStore', () => {
       expect(store.phase()).toBe('idle');
     });
 
+    it('ignores content_replace after a failure card in the same turn, but not on the next turn', () => {
+      const events = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(events.asObservable());
+      store.send('Rapport CA');
+      events.next({ type: 'studio_report_error', content: JSON.stringify({ message: 'Aucune donnée', suggestions: [] }) });
+      events.next({ type: 'content_replace', content: 'Texte à ignorer' });
+      events.next({ type: 'done' });
+      events.complete();
+      expect(store.timeline().filter(i => i.kind === 'text' && i.role === 'assistant')).toEqual([]);
+      expect(store.phase()).toBe('idle');
+
+      const next = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(next.asObservable());
+      store.send('Rapport CA 2025');
+      next.next({ type: 'content_replace', content: 'Voici le rapport' });
+      next.next({ type: 'done' });
+      expect(store.timeline().pop()).toEqual({ kind: 'text', role: 'assistant', text: 'Voici le rapport' });
+    });
+
     it('collects suggestions and client actions', () => {
       const events = new Subject<ChatStreamEvent>();
       stream.streamChat.and.returnValue(events.asObservable());
