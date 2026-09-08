@@ -1,0 +1,94 @@
+{
+  "system": {
+    "displayName": "Catalogue produits",
+    "icon": "box",
+    "description": "Catalogue d'articles : familles, fiches articles avec prix et TVA, mouvements de stock.",
+    "onboarding": [
+      "Vérifiez les familles préchargées",
+      "Créez vos articles",
+      "Saisissez un mouvement de stock"
+    ],
+    "menu": { "label": "Catalogue", "icon": "box" }
+  },
+  "entities": [
+    {
+      "ref": "familles",
+      "displayName": "Famille",
+      "displayNamePlural": "Familles",
+      "icon": "tags",
+      "isReferenceData": true,
+      "fields": [
+        { "key": "libelle", "label": "Libellé", "type": "text", "required": true, "unique": true }
+      ]
+    },
+    {
+      "ref": "articles",
+      "displayName": "Article",
+      "displayNamePlural": "Articles",
+      "icon": "box",
+      "isReferenceData": true,
+      "fields": [
+        { "key": "reference", "label": "Référence", "type": "text", "required": true, "unique": true },
+        { "key": "designation", "label": "Désignation", "type": "text", "required": true },
+        { "key": "famille", "label": "Famille", "type": "relation", "relationTo": "familles", "required": true },
+        { "key": "prix_unitaire", "label": "Prix unitaire", "type": "money", "required": true, "config": { "currency": "TND" } },
+        { "key": "tva", "label": "TVA (%)", "type": "percentage" },
+        { "key": "actif", "label": "Actif", "type": "boolean" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Article", "fields": [
+            "reference",
+            "designation",
+            "famille",
+            { "field": "prix_unitaire", "width": "half" },
+            { "field": "tva", "width": "half" },
+            "actif"
+          ] }
+        ]
+      },
+      "report": {
+        "displayName": "Catalogue par famille",
+        "grouping": [ "famille" ],
+        "aggregations": [ { "fn": "count" }, { "field": "prix_unitaire", "fn": "avg" } ]
+      }
+    },
+    {
+      "ref": "mouvements_stock",
+      "displayName": "Mouvement de stock",
+      "displayNamePlural": "Mouvements de stock",
+      "icon": "repeat",
+      "fields": [
+        { "key": "article", "label": "Article", "type": "relation", "relationTo": "articles", "required": true },
+        { "key": "type_de_mouvement", "label": "Type de mouvement", "type": "select", "required": true,
+          "options": [
+            { "value": "entree", "label": "Entrée" },
+            { "value": "sortie", "label": "Sortie" }
+          ]
+        },
+        { "key": "quantite", "label": "Quantité", "type": "number", "required": true },
+        { "key": "date_du_mouvement", "label": "Date du mouvement", "type": "date", "required": true },
+        { "key": "commentaire", "label": "Commentaire", "type": "multilinetext" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Mouvement", "fields": [
+            "article",
+            { "field": "type_de_mouvement", "width": "half" },
+            { "field": "quantite", "width": "half" },
+            "date_du_mouvement",
+            "commentaire"
+          ] }
+        ]
+      }
+    }
+  ],
+  "seed": [
+    { "entityRef": "familles", "records": [
+      { "libelle": "Fournitures" },
+      { "libelle": "Consommables" },
+      { "libelle": "Équipements" },
+      { "libelle": "Services" }
+    ] }
+  ]
+}

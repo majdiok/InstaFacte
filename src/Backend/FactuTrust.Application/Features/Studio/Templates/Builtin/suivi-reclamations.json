@@ -1,0 +1,119 @@
+{
+  "system": {
+    "displayName": "Suivi des réclamations",
+    "icon": "headset",
+    "description": "Traitement des réclamations clients : motifs, réclamations et actions correctives.",
+    "onboarding": [
+      "Vérifiez les motifs préchargés",
+      "Enregistrez une réclamation",
+      "Affectez une action corrective"
+    ],
+    "menu": { "label": "Réclamations", "icon": "headset" }
+  },
+  "entities": [
+    {
+      "ref": "motifs",
+      "displayName": "Motif",
+      "displayNamePlural": "Motifs",
+      "icon": "tags",
+      "isReferenceData": true,
+      "fields": [
+        { "key": "libelle", "label": "Libellé", "type": "text", "required": true, "unique": true }
+      ]
+    },
+    {
+      "ref": "reclamations",
+      "displayName": "Réclamation",
+      "displayNamePlural": "Réclamations",
+      "icon": "headset",
+      "workflow": {
+        "statusFieldKey": "statut",
+        "states": [
+          { "key": "ouverte", "label": "Ouverte", "color": "blue" },
+          { "key": "en_cours", "label": "En cours", "color": "orange" },
+          { "key": "resolue", "label": "Résolue", "color": "green" },
+          { "key": "cloturee", "label": "Clôturée", "color": "gray" }
+        ],
+        "initialState": "ouverte",
+        "transitions": [
+          { "from": "ouverte", "to": "en_cours", "label": "Prendre en charge" },
+          { "from": "en_cours", "to": "resolue", "label": "Résoudre" },
+          { "from": "resolue", "to": "cloturee", "label": "Clôturer" }
+        ]
+      },
+      "fields": [
+        { "key": "reference", "label": "Référence", "type": "text", "required": true, "unique": true },
+        { "key": "client", "label": "Client", "type": "relation", "relationTo": "clients", "required": true },
+        { "key": "motif", "label": "Motif", "type": "relation", "relationTo": "motifs", "required": true },
+        { "key": "description", "label": "Description", "type": "multilinetext" },
+        { "key": "priorite", "label": "Priorité", "type": "select", "required": true,
+          "options": [
+            { "value": "basse", "label": "Basse" },
+            { "value": "normale", "label": "Normale" },
+            { "value": "haute", "label": "Haute" }
+          ]
+        },
+        { "key": "date_d_ouverture", "label": "Date d'ouverture", "type": "date", "required": true },
+        { "key": "statut", "label": "Statut", "type": "select", "required": true,
+          "options": [
+            { "value": "ouverte", "label": "Ouverte" },
+            { "value": "en_cours", "label": "En cours" },
+            { "value": "resolue", "label": "Résolue" },
+            { "value": "cloturee", "label": "Clôturée" }
+          ]
+        }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Réclamation", "fields": [
+            "reference",
+            "client",
+            "motif",
+            "description",
+            { "field": "priorite", "width": "half" },
+            { "field": "date_d_ouverture", "width": "half" },
+            "statut"
+          ] }
+        ]
+      },
+      "report": {
+        "displayName": "Réclamations ouvertes",
+        "fields": [ "reference", "client", "motif", "priorite", "date_d_ouverture", "statut" ],
+        "filters": [ { "field": "statut", "op": "neq", "value": "cloturee" } ],
+        "sort": [ { "field": "date_d_ouverture", "dir": "desc" } ]
+      }
+    },
+    {
+      "ref": "actions_correctives",
+      "displayName": "Action corrective",
+      "displayNamePlural": "Actions correctives",
+      "icon": "check",
+      "fields": [
+        { "key": "reclamation", "label": "Réclamation", "type": "relation", "relationTo": "reclamations", "required": true },
+        { "key": "description", "label": "Description", "type": "text", "required": true },
+        { "key": "responsable", "label": "Responsable", "type": "text" },
+        { "key": "date_limite", "label": "Date limite", "type": "date" },
+        { "key": "terminee", "label": "Terminée", "type": "boolean" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Action corrective", "fields": [
+            "reclamation",
+            "description",
+            { "field": "responsable", "width": "half" },
+            { "field": "date_limite", "width": "half" },
+            "terminee"
+          ] }
+        ]
+      }
+    }
+  ],
+  "seed": [
+    { "entityRef": "motifs", "records": [
+      { "libelle": "Retard de livraison" },
+      { "libelle": "Produit défectueux" },
+      { "libelle": "Erreur de facturation" },
+      { "libelle": "Qualité de service" }
+    ] }
+  ]
+}
