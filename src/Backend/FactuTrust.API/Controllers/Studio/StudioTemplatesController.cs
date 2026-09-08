@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using FactuTrust.API.Authorization;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Ai;
@@ -23,10 +21,9 @@ namespace FactuTrust.API.Controllers.Studio;
 [Authorize(Policy = PermissionPolicies.StudioDesignEntities)]
 public sealed class StudioTemplatesController : ControllerBase
 {
-    // Nombre de tables de chaque modèle, calculé UNE FOIS via le résumé canonique
-    // (StudioAiPlanSummary.ForSystem) puis mis en cache — les specs embarquées sont immuables.
-    private static readonly Lazy<IReadOnlyDictionary<string, int>> EntityCounts =
-        new(ComputeEntityCounts);
+    // Nombre de tables de chaque modèle, calculé UNE FOIS — les specs embarquées sont immuables
+    // et déjà validées au chargement du catalogue (TryParse ne peut pas échouer ici).
+    private static readonly IReadOnlyDictionary<string, int> EntityCounts = ComputeEntityCounts();
 
     private readonly OllamaSettings _ollamaSettings;
 
@@ -82,30 +79,17 @@ public sealed class StudioTemplatesController : ControllerBase
         template.ModuleTag,
         Source: "builtin",
         Visibility: null,      // le partage Privé/Équipe n'existe que pour les modèles tenant (P3)
-        EntityCounts.Value.TryGetValue(template.Key, out var count) ? count : 0,
+        EntityCounts[template.Key],
         UpdatedAt: null);
 
     private static IReadOnlyDictionary<string, int> ComputeEntityCounts()
     {
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var template in StudioTemplateCatalog.All)
-        {
-            var count = 0;
-            if (StudioAiSystemSpec.TryParse(template.SpecJson, out var spec, out _) && spec is not null)
-            {
-                try
-                {
-                    count = (JsonNode.Parse(StudioAiPlanSummary.ForSystem(spec)) as JsonObject)?["entities"]
-                        is JsonArray entities ? entities.Count : 0;
-                }
-                catch (JsonException)
-                {
-                    // Résumé illisible : la ligne reste affichée avec 0 table (les specs embarquées
-                    // sont déjà validées au chargement du catalogue — garde purement défensive).
-                }
-            }
-            counts[template.Key] = count;
-        }
+            counts[template.Key] =
+                StudioAiSystemSpec.TryParse(template.SpecJson, out var spec, out _) && spec is not null
+                    ? spec.Entities.Count
+                    : 0;
         return counts;
     }
 }

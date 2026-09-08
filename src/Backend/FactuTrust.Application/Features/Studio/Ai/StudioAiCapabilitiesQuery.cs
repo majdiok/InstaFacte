@@ -69,10 +69,8 @@ public sealed class StudioAiCapabilitiesQueryHandler
 
         // TODO(P5) : lire IPlatformAiSettingsService.GetStudioAiAdvancedModelRefAsync (colonne
         // PlatformAiSettings.StudioAiAdvancedModelRef, migration AddStudioAiAdvancedModelRef_Master)
-        // dès que la phase P5 existe — tant qu'elle est absente, aucun modèle avancé n'est exposé.
-        const bool advancedModelAvailable = false;
-        const string? advancedModelLabel = null;
-
+        // dès que la phase P5 existe — tant qu'elle est absente, aucun modèle avancé n'est exposé
+        // (AdvancedModelAvailable: false, AdvancedModelLabel: null).
         return Result.Success(new StudioAiCapabilitiesDto(
             PlanPreviewEnabled: _settings.EnableStudioAiPlanPreview,
             SystemGenerationEnabled: _settings.EnableStudioSystemGeneration,
@@ -82,9 +80,9 @@ public sealed class StudioAiCapabilitiesQueryHandler
             WorkbenchEnabled: workbenchEnabled,
             TemplatesEnabled: _settings.EnableStudioTemplates && workbenchEnabled,
             PagesEnabled: _settings.EnableStudioPages && workbenchEnabled,
-            AdvancedModelAvailable: advancedModelAvailable,
+            AdvancedModelAvailable: false,
             StandardModelLabel: standardModelLabel,
-            AdvancedModelLabel: advancedModelLabel));
+            AdvancedModelLabel: null));
     }
 
     /// <summary>

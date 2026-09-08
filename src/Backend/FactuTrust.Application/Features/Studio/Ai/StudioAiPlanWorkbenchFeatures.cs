@@ -140,31 +140,19 @@ public sealed class UpdateStudioAiPlanSpecCommandHandler
         // résumé est RECALCULÉ ici. Seules les créations ont un résumé recalculable sans base :
         // l'aperçu d'une modification/fenêtre/état se résout contre le schéma réel ou des données
         // vivantes, ces natures ne sont donc pas éditables en P0.
-        string canonical;
-        string summary;
-        switch (plan.Kind)
-        {
-            case StudioAiPlanKind.CreateSystem:
-                if (!StudioAiSystemSpec.TryParse(command.SpecJson, out var system, out var systemError) || system is null)
-                    return Result.Failure<UpdateStudioAiPlanSpecResponse>(
-                        Error.Validation("specJson", systemError ?? "La spec est invalide."));
-                canonical = StudioAiSpecCanonical.CanonicalSystem(system);
-                summary = StudioAiPlanSummary.ForSystem(system);
-                break;
-            case StudioAiPlanKind.CreateApp:
-                if (!StudioAiAppSpec.TryParse(command.SpecJson, out var app, out var appError) || app is null)
-                    return Result.Failure<UpdateStudioAiPlanSpecResponse>(
-                        Error.Validation("specJson", appError ?? "La spec est invalide."));
-                canonical = StudioAiSpecCanonical.CanonicalApp(app);
-                summary = StudioAiPlanSummary.ForApp(app);
-                break;
-            default:
-                return Result.Failure<UpdateStudioAiPlanSpecResponse>(
-                    Error.Validation("kind", "Seuls les plans de création (système ou table) sont modifiables."));
-        }
+        if (plan.Kind is not (StudioAiPlanKind.CreateSystem or StudioAiPlanKind.CreateApp))
+            return Result.Failure<UpdateStudioAiPlanSpecResponse>(
+                Error.Validation("kind", "Seuls les plans de création (système ou table) sont modifiables."));
+
+        // Même chaîne parse → canonicalisation → résumé recalculé que la création « from-spec »
+        // (pour une création, le résumé est toujours recalculé : la forme canonique se re-parse).
+        if (!StudioAiPlanCreation.TryCanonicalize(
+                plan.Kind, command.SpecJson, out var canonical, out var summary, out var parseError))
+            return Result.Failure<UpdateStudioAiPlanSpecResponse>(
+                Error.Validation("specJson", parseError ?? "La spec est invalide."));
 
         var previousSpec = plan.SpecJson;
-        plan.UpdateSpec(canonical, summary); // garde domaine : jette si le plan n'est plus Pending
+        plan.UpdateSpec(canonical!, summary!); // garde domaine : jette si le plan n'est plus Pending
 
         // Jeton de concurrence fourni par le client (base64, comme SaveCustomRecordRequest) ;
         // illisible ⇒ repli sur le jeton rechargé, la concurrence reste protégée côté persistance.
@@ -180,7 +168,7 @@ public sealed class UpdateStudioAiPlanSpecCommandHandler
                 Error.Conflict("Le plan a été modifié entre-temps. Rechargez-le."));
 
         await StudioAudit.SafeLogAsync(_audit, "Studio.AiPlan.Updated", "StudioAiBuildPlan", plan.Id,
-            StudioAiPlanWorkbench.SpecFingerprint(previousSpec), StudioAiPlanWorkbench.SpecFingerprint(canonical), cancellationToken);
+            StudioAiPlanWorkbench.SpecFingerprint(previousSpec), StudioAiPlanWorkbench.SpecFingerprint(canonical!), cancellationToken);
 
         return Result.Success(new UpdateStudioAiPlanSpecResponse(
             StudioAiPlanDefaults.ToDto(plan), StudioAiPlanWorkbench.ToSpecDto(plan)));
@@ -210,28 +198,12 @@ public sealed class ListStudioAiPlansQueryHandler
         if (!StudioContext.TryGet(_currentUser, out var tenantId, out var userId, out var err))
             return Result.Failure<PagedResult<StudioAiPlanListItemDto>>(err);
 
-        // Filtres parsés par NOM exact d'enum (insensible à la casse), jamais par valeur numérique.
-        StudioAiPlanStatus? status = null;
-        if (!string.IsNullOrWhiteSpace(request.Status))
-        {
-            var name = Enum.GetNames<StudioAiPlanStatus>()
-                .FirstOrDefault(n => string.Equals(n, request.Status.Trim(), StringComparison.OrdinalIgnoreCase));
-            if (name is null)
-                return Result.Failure<PagedResult<StudioAiPlanListItemDto>>(
-                    Error.Validation("status", $"Statut de plan inconnu : « {request.Status} »."));
-            status = Enum.Parse<StudioAiPlanStatus>(name);
-        }
-
-        StudioAiPlanKind? kind = null;
-        if (!string.IsNullOrWhiteSpace(request.Kind))
-        {
-            var name = Enum.GetNames<StudioAiPlanKind>()
-                .FirstOrDefault(n => string.Equals(n, request.Kind.Trim(), StringComparison.OrdinalIgnoreCase));
-            if (name is null)
-                return Result.Failure<PagedResult<StudioAiPlanListItemDto>>(
-                    Error.Validation("kind", $"Nature de plan inconnue : « {request.Kind} »."));
-            kind = Enum.Parse<StudioAiPlanKind>(name);
-        }
+        if (!TryParseEnumName<StudioAiPlanStatus>(request.Status, out var status))
+            return Result.Failure<PagedResult<StudioAiPlanListItemDto>>(
+                Error.Validation("status", $"Statut de plan inconnu : « {request.Status} »."));
+        if (!TryParseEnumName<StudioAiPlanKind>(request.Kind, out var kind))
+            return Result.Failure<PagedResult<StudioAiPlanListItemDto>>(
+                Error.Validation("kind", $"Nature de plan inconnue : « {request.Kind} »."));
 
         var page = Math.Max(1, request.Page);
         var pageSize = request.PageSize <= 0
@@ -244,6 +216,18 @@ public sealed class ListStudioAiPlansQueryHandler
         var utcNow = DateTime.UtcNow;
         var dtos = items.Select(plan => ToListItemDto(plan, utcNow)).ToList();
         return Result.Success(PagedResult<StudioAiPlanListItemDto>.Create(dtos, page, pageSize, total));
+    }
+
+    /// <summary>Filtre enum optionnel parsé par NOM exact (insensible à la casse), jamais par valeur numérique.</summary>
+    private static bool TryParseEnumName<TEnum>(string? raw, out TEnum? value) where TEnum : struct, Enum
+    {
+        value = null;
+        if (string.IsNullOrWhiteSpace(raw)) return true;
+        var name = Enum.GetNames<TEnum>()
+            .FirstOrDefault(n => string.Equals(n, raw.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (name is null) return false;
+        value = Enum.Parse<TEnum>(name);
+        return true;
     }
 
     /// <summary>Un plan Pending échu est PRÉSENTÉ « Expired » sans écriture (comme <see cref="StudioAiPlanDefaults.ToDto"/>).</summary>
