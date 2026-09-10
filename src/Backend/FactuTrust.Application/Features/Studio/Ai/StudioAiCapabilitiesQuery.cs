@@ -67,10 +67,14 @@ public sealed class StudioAiCapabilitiesQueryHandler
         var standardModelLabel = HumanFriendlyModelLabel(
             await _platformAiSettings.GetStudioAiModelRefAsync(cancellationToken));
 
-        // TODO(P5) : lire IPlatformAiSettingsService.GetStudioAiAdvancedModelRefAsync (colonne
-        // PlatformAiSettings.StudioAiAdvancedModelRef, migration AddStudioAiAdvancedModelRef_Master)
-        // dès que la phase P5 existe — tant qu'elle est absente, aucun modèle avancé n'est exposé
-        // (AdvancedModelAvailable: false, AdvancedModelLabel: null).
+        // Modèle avancé : disponible seulement si le flag est levé ET qu'un modèle est réellement
+        // configuré en back-office (colonne Master PlatformAiSettings.StudioAiAdvancedModelRef).
+        // Lecture séquentielle : la base master est partagée, jamais de Task.WhenAll ici.
+        var advancedModelRef = _settings.EnableStudioAiAdvancedModel
+            ? await _platformAiSettings.GetStudioAiAdvancedModelRefAsync(cancellationToken)
+            : null;
+        var advancedModelAvailable = !string.IsNullOrWhiteSpace(advancedModelRef);
+
         return Result.Success(new StudioAiCapabilitiesDto(
             PlanPreviewEnabled: _settings.EnableStudioAiPlanPreview,
             SystemGenerationEnabled: _settings.EnableStudioSystemGeneration,
@@ -80,9 +84,9 @@ public sealed class StudioAiCapabilitiesQueryHandler
             WorkbenchEnabled: workbenchEnabled,
             TemplatesEnabled: _settings.EnableStudioTemplates && workbenchEnabled,
             PagesEnabled: _settings.EnableStudioPages && workbenchEnabled,
-            AdvancedModelAvailable: false,
+            AdvancedModelAvailable: advancedModelAvailable,
             StandardModelLabel: standardModelLabel,
-            AdvancedModelLabel: null));
+            AdvancedModelLabel: advancedModelAvailable ? HumanFriendlyModelLabel(advancedModelRef) : null));
     }
 
     /// <summary>
@@ -91,6 +95,10 @@ public sealed class StudioAiCapabilitiesQueryHandler
     /// référence plateforme → <c>Ollama:StudioAiModel</c> → <c>Ollama:DefaultModel</c> (même
     /// ordre que la résolution d'envoi de message). Si l'analyse est ambiguë, la valeur brute
     /// est conservée telle quelle — c'est un nom de modèle, jamais une chaîne de connexion.
+    ///
+    /// <para>Pour le modèle avancé, l'appelant garantit une référence non vide : la chaîne de repli
+    /// ne s'applique jamais (un modèle avancé absent doit rester <c>null</c>, pas retomber sur le
+    /// modèle standard).</para>
     /// </summary>
     private string HumanFriendlyModelLabel(string? studioModelRef)
     {

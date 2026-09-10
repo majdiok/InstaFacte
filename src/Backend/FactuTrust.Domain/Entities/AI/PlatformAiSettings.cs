@@ -19,6 +19,12 @@ public sealed class PlatformAiSettings : Entity
     /// <summary>Modèle dédié à l'Assistant Studio (IA) ; null = modèle Assistant plateforme puis Ollama:DefaultModel.</summary>
     public string? StudioAiModelRef { get; private set; }
 
+    /// <summary>
+    /// Modèle Studio « avancé » (GPU distant ou cloud) utilisé quand l'utilisateur active
+    /// « Modèle avancé » dans le Studio ; null = aucun modèle avancé proposé.
+    /// </summary>
+    public string? StudioAiAdvancedModelRef { get; private set; }
+
     /// <summary>Moteur d'inférence Ollama (GPU auto ou CPU uniquement).</summary>
     public OllamaInferenceDevice InferenceDevice { get; private set; } = OllamaInferenceDevice.Gpu;
 
@@ -68,6 +74,9 @@ public sealed class PlatformAiSettings : Entity
 
     public void SetStudioAiModel(string? modelRef)
         => StudioAiModelRef = string.IsNullOrWhiteSpace(modelRef) ? null : modelRef.Trim();
+
+    public void SetStudioAiAdvancedModel(string? modelRef)
+        => StudioAiAdvancedModelRef = string.IsNullOrWhiteSpace(modelRef) ? null : modelRef.Trim();
 
     public void SetInferenceDevice(OllamaInferenceDevice device)
     {

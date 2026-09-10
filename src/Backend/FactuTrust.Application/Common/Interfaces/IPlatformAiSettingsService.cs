@@ -36,6 +36,18 @@ public interface IPlatformAiSettingsService
         Guid actorUserId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Modèle Studio « avancé » (GPU distant / cloud) utilisé quand l'utilisateur active
+    /// « Modèle avancé » dans le Studio ; null = aucun modèle avancé configuré.
+    /// </summary>
+    Task<string?> GetStudioAiAdvancedModelRefAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Persiste le modèle Studio avancé.</summary>
+    Task<string?> SetStudioAiAdvancedModelRefAsync(
+        string? modelRef,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Moteur d'inférence Ollama (GPU auto ou CPU uniquement).</summary>
     Task<OllamaInferenceDevice> GetInferenceDeviceAsync(CancellationToken cancellationToken = default);
 

@@ -27,6 +27,7 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
     private const string CacheKeyDefaultModel = "platform:ai:default-model";
     private const string CacheKeyImportModel = "platform:ai:import-model";
     private const string CacheKeyStudioModel = "platform:ai:studio-model";
+    private const string CacheKeyStudioAdvancedModel = "platform:ai:studio-advanced-model";
     private const string CacheKeyInferenceDevice = "platform:ai:inference-device";
     private const string CacheKeyOpenRouter = "platform:ai:openrouter";
     private const string CacheKeyCursor = "platform:ai:cursor";
@@ -160,6 +161,43 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
         await _db.SaveChangesAsync(cancellationToken);
         InvalidateReadCache();
         return current.StudioAiModelRef;
+    }
+
+    public Task<string?> GetStudioAiAdvancedModelRefAsync(CancellationToken cancellationToken = default) =>
+        _cache.GetOrCreateAsync(CacheKeyStudioAdvancedModel, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = CacheTtl;
+            try
+            {
+                return await _db.PlatformAiSettings
+                    .AsNoTracking()
+                    .Select(s => s.StudioAiAdvancedModelRef)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+            catch (Exception ex) when (ex is SqlException or DbUpdateException or InvalidOperationException)
+            {
+                _logger.LogWarning(ex,
+                    "Impossible de lire StudioAiAdvancedModelRef depuis PlatformAiSettings ; aucun modèle Studio avancé exposé.");
+                return null;
+            }
+        });
+
+    public async Task<string?> SetStudioAiAdvancedModelRefAsync(
+        string? modelRef,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var normalized = string.IsNullOrWhiteSpace(modelRef)
+            ? null
+            : ModelRef.NormalizeStored(modelRef);
+
+        var current = await GetOrCreateRowAsync(actorUserId, cancellationToken);
+        current.SetStudioAiAdvancedModel(normalized);
+        current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
+
+        await _db.SaveChangesAsync(cancellationToken);
+        InvalidateReadCache();
+        return current.StudioAiAdvancedModelRef;
     }
 
     public Task<OllamaInferenceDevice> GetInferenceDeviceAsync(CancellationToken cancellationToken = default) =>
@@ -626,6 +664,7 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
         _cache.Remove(CacheKeyDefaultModel);
         _cache.Remove(CacheKeyImportModel);
         _cache.Remove(CacheKeyStudioModel);
+        _cache.Remove(CacheKeyStudioAdvancedModel);
         _cache.Remove(CacheKeyInferenceDevice);
         _cache.Remove(CacheKeyOpenRouter);
         _cache.Remove(CacheKeyCursor);
