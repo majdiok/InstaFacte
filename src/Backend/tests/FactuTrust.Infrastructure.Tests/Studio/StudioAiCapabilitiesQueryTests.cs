@@ -11,8 +11,8 @@ namespace FactuTrust.Infrastructure.Tests.Studio;
 /// <summary>
 /// Matrice des flags de l'endpoint capacités (B-P0-08) : tout coupé ⇒ tout faux, le workbench
 /// exige l'aperçu de plan, templates/pages sont subordonnés au workbench, les libellés de modèle
-/// sont des noms humains (jamais la référence canonique) et le modèle avancé reste absent tant
-/// que la phase P5 n'est pas livrée.
+/// sont des noms humains (jamais la référence canonique) et le modèle avancé n'est annoncé que si
+/// le flag EnableStudioAiAdvancedModel est levé ET qu'un modèle avancé est configuré en plateforme.
 /// </summary>
 public sealed class StudioAiCapabilitiesQueryTests
 {
@@ -22,6 +22,9 @@ public sealed class StudioAiCapabilitiesQueryTests
     {
         _platformAiSettings
             .Setup(s => s.GetStudioAiModelRefAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
+        _platformAiSettings
+            .Setup(s => s.GetStudioAiAdvancedModelRefAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync((string?)null);
     }
 
@@ -146,16 +149,65 @@ public sealed class StudioAiCapabilitiesQueryTests
     }
 
     [Fact]
-    public async Task Advanced_model_is_not_exposed_before_phase_p5()
+    public async Task Advanced_model_is_not_exposed_when_the_flag_is_off()
     {
+        _platformAiSettings
+            .Setup(s => s.GetStudioAiAdvancedModelRefAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("openrouter:qwen/qwen-2.5-72b-instruct");
+
         var result = await CreateHandler(new OllamaSettings
         {
             EnableStudioAiWorkbench = true,
-            EnableStudioAiPlanPreview = true
+            EnableStudioAiPlanPreview = true,
+            EnableStudioAiAdvancedModel = false
         }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
 
         Assert.False(result.Value.AdvancedModelAvailable);
         Assert.Null(result.Value.AdvancedModelLabel);
+        // Flag baissé : on ne lit même pas la colonne plateforme.
+        _platformAiSettings.Verify(
+            s => s.GetStudioAiAdvancedModelRefAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Advanced_model_is_not_exposed_when_no_model_is_configured()
+    {
+        _platformAiSettings
+            .Setup(s => s.GetStudioAiAdvancedModelRefAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("   ");
+
+        var result = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioAiWorkbench = true,
+            EnableStudioAiPlanPreview = true,
+            EnableStudioAiAdvancedModel = true
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+
+        Assert.False(result.Value.AdvancedModelAvailable);
+        Assert.Null(result.Value.AdvancedModelLabel);
+    }
+
+    [Fact]
+    public async Task Advanced_model_is_exposed_with_a_human_label_when_flag_and_model_are_set()
+    {
+        _platformAiSettings
+            .Setup(s => s.GetStudioAiModelRefAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("ollama:qwen2.5:7b-instruct");
+        _platformAiSettings
+            .Setup(s => s.GetStudioAiAdvancedModelRefAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("openrouter:qwen/qwen-2.5-72b-instruct");
+
+        var result = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioAiWorkbench = true,
+            EnableStudioAiPlanPreview = true,
+            EnableStudioAiAdvancedModel = true
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+
+        Assert.True(result.Value.AdvancedModelAvailable);
+        Assert.Equal("qwen/qwen-2.5-72b-instruct", result.Value.AdvancedModelLabel);
+        Assert.Equal("qwen2.5:7b-instruct", result.Value.StandardModelLabel);
     }
 
     private StudioAiCapabilitiesQueryHandler CreateHandler(OllamaSettings settings) => new(
