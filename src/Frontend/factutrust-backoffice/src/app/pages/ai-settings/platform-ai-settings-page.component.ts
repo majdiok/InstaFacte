@@ -19,6 +19,7 @@ import { PlatformAiSettingsService } from '@core/services/platform-ai-settings.s
 import type { OllamaInferenceDevice, PlatformAiSettingsDto } from '@core/models/platform.models';
 import { aiProviderLabel } from './ai-provider-label';
 import { needsCursorCatalogWarning, needsCursorModelWarning } from './cursor-settings-warnings';
+import { isStudioAdvancedModelSameAsStandard } from './studio-advanced-model-warnings';
 import { ModalEndpointFieldsComponent } from './modal-endpoint-fields.component';
 
 import { FtPageHeaderComponent } from '@core/ui/page-header/ft-page-header.component';
@@ -199,6 +200,37 @@ interface InferenceDeviceOption {
               appendTo="body"
               styleClass="w-full" />
           </div>
+          <div class="field field-spaced">
+            <label for="ai-studio-advanced-model">Modèle Studio avancé (GPU / cloud)</label>
+            <p-select
+              inputId="ai-studio-advanced-model"
+              [options]="modelOptions()"
+              [(ngModel)]="selectedStudioAdvancedModelRef"
+              optionLabel="label"
+              optionValue="value"
+              optionDisabled="disabled"
+              appendTo="body"
+              styleClass="w-full" />
+            <small class="hint">
+              Utilisé quand l'utilisateur active « Modèle avancé » dans le Studio : autorise
+              plusieurs tours d'outils (le modèle peut lire le schéma puis proposer un plan).
+              Choisissez un modèle plus puissant que le modèle Studio standard — GPU distant,
+              OpenRouter, Modal ou Cursor. « Aucun » = bascule masquée dans le Studio.
+            </small>
+          </div>
+          @if (isStudioAdvancedModelSameAsStandard()) {
+            <p class="warn">
+              Le modèle Studio avancé doit être différent du modèle Studio standard : sans quoi la
+              bascule « Modèle avancé » n'apporte rien. Choisissez un autre modèle ou « Aucun ».
+            </p>
+          }
+          @if (isModelMissing(selectedStudioAdvancedModelRef)) {
+            <p class="warn">
+              Le modèle Studio avancé « {{ selectedStudioAdvancedModelRef }} » n'est pas installé
+              sur le moteur IA : l'enregistrement sera refusé. Choisissez un modèle de la liste, ou
+              installez-le sur le serveur puis rechargez cette page.
+            </p>
+          }
         }
       </section>
 
@@ -357,7 +389,7 @@ interface InferenceDeviceOption {
           label="Enregistrer"
           icon="pi pi-check"
           severity="primary"
-          [disabled]="!hasChanges() || busy()"
+          [disabled]="!canSubmit() || busy()"
           [loading]="busy()"
           (onClick)="submit()" />
       </div>
@@ -395,6 +427,9 @@ interface InferenceDeviceOption {
         display: flex;
         flex-direction: column;
         gap: 0.35rem;
+      }
+      .field-spaced {
+        margin-top: 0.9rem;
       }
       .field label {
         font-size: 0.78rem;
@@ -458,6 +493,7 @@ export class PlatformAiSettingsPageComponent implements OnInit {
   protected readonly savedModelRef = signal<string>('');
   protected readonly savedImportModelRef = signal<string>('');
   protected readonly savedStudioModelRef = signal<string>('');
+  protected readonly savedStudioAdvancedModelRef = signal<string>('');
   protected readonly savedInferenceDevice = signal<OllamaInferenceDevice>('Gpu');
   protected readonly savedOpenRouterEnabled = signal<boolean>(false);
   protected readonly savedOpenRouterDisplayName = signal<string>('');
@@ -472,6 +508,7 @@ export class PlatformAiSettingsPageComponent implements OnInit {
   protected selectedModelRef = '';
   protected selectedImportModelRef = '';
   protected selectedStudioModelRef = '';
+  protected selectedStudioAdvancedModelRef = '';
   protected selectedInferenceDevice: OllamaInferenceDevice = 'Gpu';
 
   /** OpenRouter (cloud) : clé partagée assistant/WhatsApp/imports. */
@@ -529,7 +566,8 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     const configuredRefs = [
       d.configuredModelRef,
       d.invoiceImportModelRef,
-      d.studioAiModelRef
+      d.studioAiModelRef,
+      d.studioAiAdvancedModelRef
     ];
     for (const configured of configuredRefs) {
       if (configured
@@ -606,6 +644,8 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     this.savedImportModelRef.set(this.selectedImportModelRef);
     this.selectedStudioModelRef = d.studioAiModelRef ?? '';
     this.savedStudioModelRef.set(this.selectedStudioModelRef);
+    this.selectedStudioAdvancedModelRef = d.studioAiAdvancedModelRef ?? '';
+    this.savedStudioAdvancedModelRef.set(this.selectedStudioAdvancedModelRef);
     this.selectedInferenceDevice = d.inferenceDevice ?? 'Gpu';
     this.savedInferenceDevice.set(this.selectedInferenceDevice);
 
@@ -648,6 +688,7 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     return this.selectedModelRef !== this.savedModelRef()
       || this.selectedImportModelRef !== this.savedImportModelRef()
       || this.selectedStudioModelRef !== this.savedStudioModelRef()
+      || this.selectedStudioAdvancedModelRef !== this.savedStudioAdvancedModelRef()
       || this.selectedInferenceDevice !== this.savedInferenceDevice()
       || this.openRouterEnabled !== this.savedOpenRouterEnabled()
       || this.openRouterDisplayName !== this.savedOpenRouterDisplayName()
@@ -684,7 +725,8 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     const refs = [
       this.selectedModelRef,
       this.selectedImportModelRef,
-      this.selectedStudioModelRef
+      this.selectedStudioModelRef,
+      this.selectedStudioAdvancedModelRef
     ];
     const usesCursor = refs.some(r => r.toLowerCase().startsWith('cursor:'));
     const hasKey = this.cursorApiKeyConfigured || !!this.cursorApiKey.trim();
@@ -716,7 +758,8 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     const refs = [
       this.selectedModelRef,
       this.selectedImportModelRef,
-      this.selectedStudioModelRef
+      this.selectedStudioModelRef,
+      this.selectedStudioAdvancedModelRef
     ];
     const usesCloud = refs.some(r => r.toLowerCase().startsWith('openrouter:'));
     const hasKey = this.openRouterApiKeyConfigured || !!this.openRouterApiKey.trim();
@@ -734,12 +777,28 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     const refs = [
       this.selectedModelRef,
       this.selectedImportModelRef,
-      this.selectedStudioModelRef
+      this.selectedStudioModelRef,
+      this.selectedStudioAdvancedModelRef
     ];
     const usesModal = refs.some(r => r.toLowerCase().startsWith('modal:'));
     const hasKey = this.modalApiKeyConfigured
       || (!!this.modalTokenId.trim() && !!this.modalTokenSecret.trim());
     return usesModal && (!this.modalEnabled || !hasKey);
+  }
+
+  /** Vrai si le modèle Studio avancé sélectionné est identique au modèle Studio standard. */
+  protected isStudioAdvancedModelSameAsStandard(): boolean {
+    return isStudioAdvancedModelSameAsStandard({
+      standardModelRef: this.selectedStudioModelRef,
+      advancedModelRef: this.selectedStudioAdvancedModelRef
+    });
+  }
+
+  /** Vrai si la configuration en cours serait refusée par l'API : on désactive l'enregistrement. */
+  protected canSubmit(): boolean {
+    return this.hasChanges()
+      && !this.isStudioAdvancedModelSameAsStandard()
+      && !this.isModelMissing(this.selectedStudioAdvancedModelRef);
   }
 
   protected inferenceDeviceHint(): string {
@@ -766,6 +825,9 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     const modelRef = this.selectedModelRef ? this.selectedModelRef : null;
     const invoiceImportModelRef = this.selectedImportModelRef ? this.selectedImportModelRef : null;
     const studioAiModelRef = this.selectedStudioModelRef ? this.selectedStudioModelRef : null;
+    // Chaîne vide (et non null) : l'API interprète null comme « champ non fourni » et ne toucherait
+    // pas au réglage — « Aucun » doit pouvoir désactiver la bascule « Modèle avancé ».
+    const studioAiAdvancedModelRef = this.selectedStudioAdvancedModelRef?.trim() ?? '';
     const apiKey = this.openRouterApiKey.trim();
     const cursorApiKey = this.cursorApiKey.trim();
     const modalTokenId = this.modalTokenId.trim();
@@ -777,6 +839,7 @@ export class PlatformAiSettingsPageComponent implements OnInit {
       modelRef,
       invoiceImportModelRef,
       studioAiModelRef,
+      studioAiAdvancedModelRef,
       inferenceDevice: this.selectedInferenceDevice,
       openRouter: {
         isEnabled: this.openRouterEnabled,

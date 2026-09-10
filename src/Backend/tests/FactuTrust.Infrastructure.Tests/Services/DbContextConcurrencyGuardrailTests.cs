@@ -60,6 +60,7 @@ public sealed class DbContextConcurrencyGuardrailTests
     private static readonly string[] PlatformAiSettingsGetters =
     [
         "GetStudioAiModelRefAsync",
+        "GetStudioAiAdvancedModelRefAsync",
         "GetDefaultModelRefAsync",
         "GetInvoiceImportModelRefAsync",
         "GetInferenceDeviceAsync",

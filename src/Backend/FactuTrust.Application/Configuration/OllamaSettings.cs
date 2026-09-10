@@ -348,6 +348,15 @@ public sealed class OllamaSettings
     /// <summary>Active le constructeur de pages Studio (CRUD pages, rendu serveur des blocs, entrées de navigation).</summary>
     public bool EnableStudioPages { get; set; }
 
+    /// <summary>
+    /// Bascule « Modèle avancé » du Studio : expose le modèle plateforme
+    /// <c>PlatformAiSettings.StudioAiAdvancedModelRef</c> (GPU distant / cloud) aux utilisateurs du
+    /// Studio. False (défaut) = <c>AdvancedModelAvailable</c> reste false et l'option de requête
+    /// <c>useAdvancedModel</c> est ignorée : la chaîne de résolution du modèle Studio est inchangée.
+    /// Sans effet si aucun modèle avancé n'est configuré en back-office.
+    /// </summary>
+    public bool EnableStudioAiAdvancedModel { get; set; }
+
     /// <summary>Lignes de DÉTAIL renvoyées par un état SQL. Les agrégats restent exacts au-delà.</summary>
     public int StudioReportMaxRows { get; set; } = 5000;
 

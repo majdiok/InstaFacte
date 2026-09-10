@@ -33,6 +33,11 @@ public sealed class PlatformAiSettingsController : ControllerBase
         "Le modèle d'import doit supporter le chat (modèle instruct). "
         + "Les modèles d'embedding (ex. nomic-embed-text) ne conviennent pas.";
 
+    private const string StudioAdvancedModelMustDifferMessage =
+        "Le modèle Studio avancé doit être différent du modèle Studio standard. "
+        + "Choisissez un modèle plus puissant (GPU distant ou cloud), ou laissez « Aucun » "
+        + "pour désactiver la bascule « Modèle avancé ».";
+
     private readonly IPlatformAiSettingsService _settings;
     private readonly IOllamaClient _ollamaClient;
     private readonly IOpenAiChatCompletionsClient _openAiClient;
@@ -74,6 +79,7 @@ public sealed class PlatformAiSettingsController : ControllerBase
         var configured = await _settings.GetDefaultModelRefAsync(cancellationToken);
         var importModel = await _settings.GetInvoiceImportModelRefAsync(cancellationToken);
         var studioModel = await _settings.GetStudioAiModelRefAsync(cancellationToken);
+        var studioAdvancedModel = await _settings.GetStudioAiAdvancedModelRefAsync(cancellationToken);
         var inferenceDevice = await _settings.GetInferenceDeviceAsync(cancellationToken);
         var openRouter = await _settings.GetOpenRouterSettingsAsync(cancellationToken);
         var cursor = await _settings.GetCursorSettingsAsync(cancellationToken);
@@ -198,6 +204,7 @@ public sealed class PlatformAiSettingsController : ControllerBase
             configured,
             importModel,
             studioModel,
+            studioAdvancedModel,
             visionServer,
             inferenceDevice,
             isOllamaAssistant,
@@ -339,31 +346,36 @@ public sealed class PlatformAiSettingsController : ControllerBase
 
         if (request.StudioAiModelRef is not null)
         {
-            if (!string.IsNullOrWhiteSpace(request.StudioAiModelRef))
-            {
-                var parsedStudio = ModelRef.Parse(request.StudioAiModelRef);
-                if (string.IsNullOrEmpty(parsedStudio.CanonicalModelRef))
-                    return BadRequest(ApiResponse<object>.Fail("Référence de modèle Studio invalide."));
-                if (!AiModelCapabilityDetector.DetectChatCapable(parsedStudio))
-                    return BadRequest(ApiResponse<object>.Fail(ChatModelRequiredMessage));
-                if (!CursorModelSelection.TryValidate(parsedStudio, out var cursorStudioError))
-                    return BadRequest(ApiResponse<object>.Fail(cursorStudioError ?? "Référence de modèle Cursor invalide."));
-
-                var allowedStudio = await EnsureCursorAllowedAsync(parsedStudio, cancellationToken);
-                if (allowedStudio is not null)
-                    return allowedStudio;
-
-                var modalStudio = await EnsureModalAllowedAsync(parsedStudio, cancellationToken);
-                if (modalStudio is not null)
-                    return modalStudio;
-
-                var installed = await EnsureModelInstalledAsync(parsedStudio, "Studio", cancellationToken);
-                if (installed is not null)
-                    return installed;
-            }
+            var invalidStudio = await ValidateStudioModelAsync(
+                request.StudioAiModelRef, "Studio", cancellationToken);
+            if (invalidStudio is not null)
+                return invalidStudio;
 
             await _settings.SetStudioAiModelRefAsync(request.StudioAiModelRef, actorId, cancellationToken);
             _logger.LogInformation("Platform admin {ActorId} updated the Studio AI model", actorId);
+        }
+
+        if (request.StudioAiAdvancedModelRef is not null)
+        {
+            var invalidAdvanced = await ValidateStudioModelAsync(
+                request.StudioAiAdvancedModelRef, "Studio avancé", cancellationToken);
+            if (invalidAdvanced is not null)
+                return invalidAdvanced;
+
+            if (!string.IsNullOrWhiteSpace(request.StudioAiAdvancedModelRef))
+            {
+                // Le même PUT peut modifier le modèle standard : comparer à la valeur qui sera
+                // effective, sinon un envoi simultané des deux champs échapperait au contrôle.
+                var effectiveStandard = request.StudioAiModelRef
+                    ?? await _settings.GetStudioAiModelRefAsync(cancellationToken);
+
+                if (IsSameModelRef(request.StudioAiAdvancedModelRef, effectiveStandard))
+                    return BadRequest(ApiResponse<object>.Fail(StudioAdvancedModelMustDifferMessage));
+            }
+
+            await _settings.SetStudioAiAdvancedModelRefAsync(
+                request.StudioAiAdvancedModelRef, actorId, cancellationToken);
+            _logger.LogInformation("Platform admin {ActorId} updated the advanced Studio AI model", actorId);
         }
 
         if (request.InferenceDevice is { } device)
@@ -380,6 +392,58 @@ public sealed class PlatformAiSettingsController : ControllerBase
         }
 
         return await Get(cancellationToken);
+    }
+
+    /// <summary>
+    /// Contrôles communs aux deux modèles Studio (standard et avancé) : référence analysable,
+    /// capacité chat, sélection Cursor valide, fournisseur cloud réellement configuré et — pour un
+    /// modèle Ollama — présence effective dans le catalogue du moteur IA.
+    ///
+    /// <para>Une valeur vide (effacement du réglage) est toujours acceptée.</para>
+    /// </summary>
+    /// <param name="label">
+    /// Libellé français inséré dans les messages d'erreur (« Studio », « Studio avancé »).
+    /// </param>
+    /// <returns><c>null</c> si l'enregistrement peut se poursuivre, sinon la réponse d'erreur.</returns>
+    private async Task<IActionResult?> ValidateStudioModelAsync(
+        string? rawModelRef, string label, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(rawModelRef))
+            return null;
+
+        var parsed = ModelRef.Parse(rawModelRef);
+        if (string.IsNullOrEmpty(parsed.CanonicalModelRef))
+            return BadRequest(ApiResponse<object>.Fail($"Référence de modèle {label} invalide."));
+        if (!AiModelCapabilityDetector.DetectChatCapable(parsed))
+            return BadRequest(ApiResponse<object>.Fail(ChatModelRequiredMessage));
+        if (!CursorModelSelection.TryValidate(parsed, out var cursorError))
+            return BadRequest(ApiResponse<object>.Fail(cursorError ?? "Référence de modèle Cursor invalide."));
+
+        var cursorAllowed = await EnsureCursorAllowedAsync(parsed, cancellationToken);
+        if (cursorAllowed is not null)
+            return cursorAllowed;
+
+        var modalAllowed = await EnsureModalAllowedAsync(parsed, cancellationToken);
+        if (modalAllowed is not null)
+            return modalAllowed;
+
+        return await EnsureModelInstalledAsync(parsed, label, cancellationToken);
+    }
+
+    /// <summary>
+    /// Compare deux références de modèle sur leur forme canonique (« ollama:Qwen2.5:7B » et
+    /// « qwen2.5:7b » désignent le même modèle) : évite qu'un modèle « avancé » identique au
+    /// standard ne soit enregistré et ne promette des tours d'outils supplémentaires pour rien.
+    /// </summary>
+    private static bool IsSameModelRef(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+            return false;
+
+        return string.Equals(
+            ModelRef.NormalizeStored(left),
+            ModelRef.NormalizeStored(right),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

@@ -122,6 +122,94 @@ public sealed class PlatformAiSettingsIntegrationTests : IClassFixture<PlatformB
     }
 
     [Fact]
+    public async Task Platform_ai_settings_get_and_put_studio_advanced_model_roundtrip()
+    {
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var token = await LoginAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var getBefore = await client.GetAsync("/api/platform/ai-settings");
+        Assert.Equal(HttpStatusCode.OK, getBefore.StatusCode);
+        var beforeBody = await getBefore.Content.ReadFromJsonAsync<ApiResponse<PlatformAiSettingsDto>>(ApiJsonOptions);
+        Assert.NotNull(beforeBody?.Data);
+        var previousStudio = beforeBody!.Data!.StudioAiModelRef;
+        var previousAdvanced = beforeBody.Data.StudioAiAdvancedModelRef;
+
+        const string studioRef = "ollama:qwen2.5:7b-instruct";
+        const string advancedRef = "ollama:qwen2.5:32b-instruct";
+        var putResponse = await client.PutAsJsonAsync(
+            "/api/platform/ai-settings",
+            new UpdatePlatformAiSettingsRequest
+            {
+                StudioAiModelRef = studioRef,
+                StudioAiAdvancedModelRef = advancedRef
+            });
+        Assert.Equal(HttpStatusCode.OK, putResponse.StatusCode);
+
+        var putBody = await putResponse.Content.ReadFromJsonAsync<ApiResponse<PlatformAiSettingsDto>>(ApiJsonOptions);
+        Assert.NotNull(putBody);
+        Assert.True(putBody!.Success);
+        Assert.Equal(advancedRef, putBody.Data!.StudioAiAdvancedModelRef);
+
+        var getAfter = await client.GetAsync("/api/platform/ai-settings");
+        var afterBody = await getAfter.Content.ReadFromJsonAsync<ApiResponse<PlatformAiSettingsDto>>(ApiJsonOptions);
+        Assert.Equal(advancedRef, afterBody!.Data!.StudioAiAdvancedModelRef);
+
+        var clearResponse = await client.PutAsJsonAsync(
+            "/api/platform/ai-settings",
+            new UpdatePlatformAiSettingsRequest { StudioAiModelRef = "", StudioAiAdvancedModelRef = "" });
+        Assert.Equal(HttpStatusCode.OK, clearResponse.StatusCode);
+        var clearBody = await clearResponse.Content.ReadFromJsonAsync<ApiResponse<PlatformAiSettingsDto>>(ApiJsonOptions);
+        Assert.Null(clearBody!.Data!.StudioAiAdvancedModelRef);
+
+        // Restaurer la configuration locale éventuellement écrasée.
+        await client.PutAsJsonAsync(
+            "/api/platform/ai-settings",
+            new UpdatePlatformAiSettingsRequest
+            {
+                StudioAiModelRef = previousStudio ?? "",
+                StudioAiAdvancedModelRef = previousAdvanced ?? ""
+            });
+    }
+
+    [Fact]
+    public async Task Platform_ai_settings_rejects_advanced_studio_model_identical_to_standard()
+    {
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var token = await LoginAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var getBefore = await client.GetAsync("/api/platform/ai-settings");
+        var beforeBody = await getBefore.Content.ReadFromJsonAsync<ApiResponse<PlatformAiSettingsDto>>(ApiJsonOptions);
+        Assert.NotNull(beforeBody?.Data);
+        var previousStudio = beforeBody!.Data!.StudioAiModelRef;
+        var previousAdvanced = beforeBody.Data.StudioAiAdvancedModelRef;
+
+        // Même modèle des deux côtés (casse et préfixe fournisseur normalisés) : refusé.
+        var rejected = await client.PutAsJsonAsync(
+            "/api/platform/ai-settings",
+            new UpdatePlatformAiSettingsRequest
+            {
+                StudioAiModelRef = "ollama:qwen2.5:7b-instruct",
+                StudioAiAdvancedModelRef = "ollama:Qwen2.5:7B-Instruct"
+            });
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+
+        var getAfter = await client.GetAsync("/api/platform/ai-settings");
+        var afterBody = await getAfter.Content.ReadFromJsonAsync<ApiResponse<PlatformAiSettingsDto>>(ApiJsonOptions);
+        Assert.Equal(previousAdvanced, afterBody!.Data!.StudioAiAdvancedModelRef);
+
+        // Le modèle standard, lui, a été enregistré avant le refus : on restaure l'état initial.
+        await client.PutAsJsonAsync(
+            "/api/platform/ai-settings",
+            new UpdatePlatformAiSettingsRequest
+            {
+                StudioAiModelRef = previousStudio ?? "",
+                StudioAiAdvancedModelRef = previousAdvanced ?? ""
+            });
+    }
+
+    [Fact]
     public async Task Platform_ai_settings_get_and_put_openrouter_roundtrip_keeps_secret_on_empty_key()
     {
         var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });

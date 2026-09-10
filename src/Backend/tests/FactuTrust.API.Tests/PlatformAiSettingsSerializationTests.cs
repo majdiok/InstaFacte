@@ -31,6 +31,7 @@ public sealed class PlatformAiSettingsSerializationTests
             null,
             null,
             null,
+            null,
             OllamaInferenceDevice.CpuOnly,
             true,
             Array.Empty<UnifiedAiModelInfo>(),
@@ -43,6 +44,7 @@ public sealed class PlatformAiSettingsSerializationTests
 
         Assert.Contains("\"inferenceDevice\":\"CpuOnly\"", json);
         Assert.Contains("\"studioAiModelRef\":null", json);
+        Assert.Contains("\"studioAiAdvancedModelRef\":null", json);
         Assert.Contains("\"openRouter\"", json);
         Assert.Contains("\"cursor\"", json);
         Assert.Contains("\"modal\"", json);
@@ -59,6 +61,7 @@ public sealed class PlatformAiSettingsSerializationTests
               "configuredModelRef": null,
               "invoiceImportModelRef": null,
               "studioAiModelRef": "ollama:qwen2.5:7b-instruct",
+              "studioAiAdvancedModelRef": "openrouter:qwen/qwen-2.5-72b-instruct",
               "serverInvoiceImportVisionModel": null,
               "inferenceDevice": "Gpu",
               "isOllamaAssistantConfigured": true,
@@ -80,6 +83,7 @@ public sealed class PlatformAiSettingsSerializationTests
         Assert.NotNull(dto);
         Assert.Equal(OllamaInferenceDevice.Gpu, dto!.InferenceDevice);
         Assert.Equal("ollama:qwen2.5:7b-instruct", dto.StudioAiModelRef);
+        Assert.Equal("openrouter:qwen/qwen-2.5-72b-instruct", dto.StudioAiAdvancedModelRef);
         Assert.True(dto.OpenRouter.IsEnabled);
         Assert.Equal("ab12", dto.OpenRouter.ApiKeyLast4);
     }
@@ -118,6 +122,8 @@ public sealed class PlatformAiSettingsSerializationTests
 
         Assert.NotNull(dto);
         Assert.NotNull(dto!.Cursor);
+        // Payload antérieur à la PR « modèle Studio avancé » : le champ absent reste null.
+        Assert.Null(dto.StudioAiAdvancedModelRef);
         Assert.True(dto.Cursor.IsEnabled);
         Assert.Equal("xy89", dto.Cursor.ApiKeyLast4);
         Assert.DoesNotContain("sk-", json);

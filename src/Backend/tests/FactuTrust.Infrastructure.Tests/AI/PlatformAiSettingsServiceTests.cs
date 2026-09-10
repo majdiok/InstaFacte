@@ -125,6 +125,87 @@ public sealed class PlatformAiSettingsServiceTests
     }
 
     [Fact]
+    public async Task GetStudioAiAdvancedModelRefAsync_WhenNoRow_ReturnsNull()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var service = CreateService(db);
+
+        var result = await service.GetStudioAiAdvancedModelRefAsync();
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task SetStudioAiAdvancedModelRefAsync_Persists_And_InvalidatesCache()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var service = CreateService(db, cache);
+        var actorId = Guid.NewGuid();
+
+        // Lecture avant écriture : met en cache la valeur nulle, que l'écriture doit invalider.
+        Assert.Null(await service.GetStudioAiAdvancedModelRefAsync());
+
+        var saved = await service.SetStudioAiAdvancedModelRefAsync(
+            "openrouter:qwen/qwen-2.5-72b-instruct", actorId);
+
+        Assert.Equal("openrouter:qwen/qwen-2.5-72b-instruct", saved);
+        Assert.Equal(
+            "openrouter:qwen/qwen-2.5-72b-instruct",
+            await service.GetStudioAiAdvancedModelRefAsync());
+    }
+
+    [Fact]
+    public async Task SetStudioAiAdvancedModelRefAsync_Clear_ReturnsNull()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var service = CreateService(db);
+        var actorId = Guid.NewGuid();
+
+        await service.SetStudioAiAdvancedModelRefAsync("openrouter:qwen/qwen-2.5-72b-instruct", actorId);
+        var cleared = await service.SetStudioAiAdvancedModelRefAsync("", actorId);
+        var read = await service.GetStudioAiAdvancedModelRefAsync();
+
+        Assert.Null(cleared);
+        Assert.Null(read);
+    }
+
+    [Fact]
+    public async Task Studio_standard_and_advanced_models_are_cached_independently()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var row = PlatformAiSettings.CreateDefaults();
+        row.SetStudioAiModel("qwen2.5:7b-instruct");
+        row.SetStudioAiAdvancedModel("openrouter:qwen/qwen-2.5-72b-instruct");
+        db.PlatformAiSettings.Add(row);
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, new MemoryCache(new MemoryCacheOptions()));
+
+        // Lectures séquentielles : le MasterDbContext est scoped, jamais de Task.WhenAll.
+        Assert.Equal("qwen2.5:7b-instruct", await service.GetStudioAiModelRefAsync());
+        Assert.Equal(
+            "openrouter:qwen/qwen-2.5-72b-instruct",
+            await service.GetStudioAiAdvancedModelRefAsync());
+    }
+
+    [Fact]
     public async Task GetInferenceDeviceAsync_WhenNoRow_ReturnsGpu()
     {
         var options = new DbContextOptionsBuilder<MasterDbContext>()
