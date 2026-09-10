@@ -1076,6 +1076,8 @@ export interface PlatformAiSettingsDto {
   configuredModelRef: string | null;
   invoiceImportModelRef: string | null;
   studioAiModelRef: string | null;
+  /** Modèle Studio avancé (GPU / cloud) proposé derrière la bascule « Modèle avancé » du Studio. */
+  studioAiAdvancedModelRef: string | null;
   serverInvoiceImportVisionModel: string | null;
   inferenceDevice: OllamaInferenceDevice;
   isOllamaAssistantConfigured: boolean;
@@ -1090,6 +1092,8 @@ export interface UpdatePlatformAiSettingsRequest {
   modelRef?: string | null;
   invoiceImportModelRef?: string | null;
   studioAiModelRef?: string | null;
+  /** Doit différer de studioAiModelRef ; null/'' = désactiver la bascule « Modèle avancé ». */
+  studioAiAdvancedModelRef?: string | null;
   inferenceDevice?: OllamaInferenceDevice | null;
   openRouter?: UpdatePlatformOpenRouterRequest | null;
   cursor?: UpdatePlatformCursorRequest | null;
