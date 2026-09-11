@@ -67,13 +67,14 @@ import { ProductOption, ProjectBudgetTabComponent } from './tabs/project-budget.
 import { ProjectTeamTabComponent } from './tabs/project-team.tab';
 import { ProjectFilesTabComponent } from './tabs/project-files.tab';
 import { ProjectBillingTabComponent, SupplierOption } from './tabs/project-billing.tab';
+import { ProjectProfitabilityTabComponent } from './tabs/project-profitability.tab';
 import { ProjectSummarySidebarComponent } from './components/project-summary-sidebar.component';
 import { ProjectDetailHeroComponent } from './components/project-detail-hero.component';
 import { ProjectDetailKpiStripComponent } from './components/project-detail-kpi-strip.component';
 import { ProjectActivityTabComponent } from './tabs/project-activity.tab';
 import { ProjectFavoritesService } from './project-favorites.service';
 
-type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'billing' | 'activity';
+type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'profitability' | 'team' | 'files' | 'billing' | 'activity';
 
 @Component({
   selector: 'app-project-detail',
@@ -98,6 +99,7 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
     ProjectTeamTabComponent,
     ProjectFilesTabComponent,
     ProjectBillingTabComponent,
+    ProjectProfitabilityTabComponent,
     ProjectSummarySidebarComponent,
     ProjectDetailHeroComponent,
     ProjectDetailKpiStripComponent,
@@ -144,6 +146,11 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
           <p-tab value="budget" [class.proj-tab-emphasis]="isEmphasizedTab('budget')">
             <i class="pi pi-wallet"></i> Budget
           </p-tab>
+          @if (p.isBillable) {
+          <p-tab value="profitability" [class.proj-tab-emphasis]="isEmphasizedTab('profitability')">
+            <i class="pi pi-chart-line"></i> Rentabilité
+          </p-tab>
+          }
           <p-tab value="team" [class.proj-tab-emphasis]="isEmphasizedTab('team')">
             <i class="pi pi-users"></i> Équipe
           </p-tab>
@@ -199,6 +206,11 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
               [canUpdate]="canUpdate" (cost)="addCost($event)"
               (stockExit)="stockExit($event)" (assignPurchaseOrder)="assignPurchaseOrder($event)" />
           </p-tabpanel>
+          @if (p.isBillable) {
+          <p-tabpanel value="profitability">
+            <app-project-profitability-tab [project]="p" />
+          </p-tabpanel>
+          }
           <p-tabpanel value="team">
             <app-project-team-tab [project]="p" [members]="members()" [users]="users()" [workload]="workload()"
               [canManage]="canManageTeam" (addMember)="addMember($event)" (updateMember)="updateMember($event)"
@@ -377,7 +389,7 @@ export class ProjectDetailComponent implements OnInit {
   ngOnInit(): void {
     this.id = this.route.snapshot.paramMap.get('id') ?? '';
     const initialTab = this.route.snapshot.queryParamMap.get('tab') as TabKey | null;
-    if (initialTab && ['overview', 'tasks', 'time', 'budget', 'team', 'files', 'billing', 'activity'].includes(initialTab)) {
+    if (initialTab && ['overview', 'tasks', 'time', 'budget', 'profitability', 'team', 'files', 'billing', 'activity'].includes(initialTab)) {
       this.tab.set(initialTab);
     }
     this.api.users().subscribe(r => { if (r.success && r.data) this.users.set(r.data); });
@@ -495,6 +507,8 @@ export class ProjectDetailComponent implements OnInit {
             });
           }
         });
+        break;
+      case 'profitability':
         break;
       case 'team':
         this.api.members(this.id).subscribe(r => { if (r.success && r.data) this.members.set(r.data); });

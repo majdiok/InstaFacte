@@ -504,7 +504,7 @@ export interface ProjectUiProfile {
   showSiteChip: boolean;
 }
 
-export type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'billing' | 'activity';
+export type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'profitability' | 'team' | 'files' | 'billing' | 'activity';
 
 export function projectUiProfile(kind: unknown): ProjectUiProfile {
   if (isBtp(kind)) {

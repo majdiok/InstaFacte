@@ -135,6 +135,7 @@ public static class DependencyInjection
             services.AddScoped<IFirmAssignmentService>(sp => sp.GetRequiredService<FirmAssignmentService>());
             services.AddScoped<IHonorairesBillingService, FactuTrust.Infrastructure.Services.Honoraires.HonorairesBillingService>();
             services.AddScoped<IProjectService, FactuTrust.Infrastructure.Services.Projects.ProjectService>();
+            services.AddScoped<ITimesheetService, FactuTrust.Infrastructure.Services.Projects.TimesheetService>();
             services.AddScoped<IRecurringContractService, FactuTrust.Infrastructure.Services.RecurringContracts.RecurringContractService>();
             services.AddScoped<FactuTrust.Infrastructure.Services.RecurringContracts.RecurringContractBillingService>();
             services.AddScoped<FirmDossierAccessService>();

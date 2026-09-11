@@ -19,10 +19,8 @@ export const PROJECTS_ROUTES: Routes = [
   },
   {
     path: 'time',
-    loadComponent: () => import('./project-time.component').then(m => m.ProjectTimeComponent),
-    title: 'Temps projet - FactuTrust',
-    canActivate: [permissionGuard],
-    data: { permissions: [PERMISSIONS.projectTime.read] }
+    redirectTo: '/timesheets',
+    pathMatch: 'full'
   },
   {
     path: ':id',

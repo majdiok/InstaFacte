@@ -17,10 +17,14 @@ public sealed class ProjectTimeEntry : Entity
     public string? Notes { get; private set; }
     public ProjectTimeEntryStatus Status { get; private set; }
     public Guid? InvoicedInvoiceId { get; private set; }
+    public Guid? SalesOrderLineId { get; private set; }
+    public DateTime? TimerStartedAtUtc { get; private set; }
+    public TimesheetEntrySource EntrySource { get; private set; }
     public DateTime? SubmittedAt { get; private set; }
     public DateTime? ValidatedAt { get; private set; }
 
     public bool IsInvoiced => InvoicedInvoiceId.HasValue;
+    public bool IsTimerRunning => TimerStartedAtUtc.HasValue;
 
     private ProjectTimeEntry() { }
 
@@ -31,7 +35,9 @@ public sealed class ProjectTimeEntry : Entity
         decimal hours,
         bool isBillable,
         string? notes,
-        Guid? taskId)
+        Guid? taskId,
+        Guid? salesOrderLineId = null,
+        TimesheetEntrySource entrySource = TimesheetEntrySource.Manual)
     {
         if (projectId == Guid.Empty)
             return Result.Failure<ProjectTimeEntry>(Error.Validation("ProjectId", "Le projet est obligatoire"));
@@ -49,8 +55,44 @@ public sealed class ProjectTimeEntry : Entity
             Hours = decimal.Round(hours, 2),
             IsBillable = isBillable,
             Notes = notes?.Trim(),
+            SalesOrderLineId = salesOrderLineId == Guid.Empty ? null : salesOrderLineId,
+            EntrySource = entrySource,
             Status = ProjectTimeEntryStatus.Draft
         });
+    }
+
+    public Result StartTimer()
+    {
+        if (InvoicedInvoiceId.HasValue)
+            return Result.Failure(Error.Validation("Status", "Un temps facturé est immuable"));
+        if (TimerStartedAtUtc.HasValue)
+            return Result.Failure(Error.Validation("Timer", "Le chronomètre est déjà en cours"));
+        TimerStartedAtUtc = DateTime.UtcNow;
+        EntrySource = TimesheetEntrySource.Timer;
+        return Result.Success();
+    }
+
+    public Result StopTimer()
+    {
+        if (!TimerStartedAtUtc.HasValue)
+            return Result.Failure(Error.Validation("Timer", "Aucun chronomètre en cours"));
+        var elapsed = DateTime.UtcNow - TimerStartedAtUtc.Value;
+        var addedHours = decimal.Round((decimal)elapsed.TotalHours, 2);
+        if (addedHours <= 0)
+            addedHours = 0.01m;
+        Hours = decimal.Round(Hours + addedHours, 2);
+        if (Hours > 24)
+            Hours = 24;
+        TimerStartedAtUtc = null;
+        return Result.Success();
+    }
+
+    public Result SetSalesOrderLine(Guid? salesOrderLineId)
+    {
+        if (InvoicedInvoiceId.HasValue)
+            return Result.Failure(Error.Validation("Status", "Un temps facturé est immuable"));
+        SalesOrderLineId = salesOrderLineId == Guid.Empty ? null : salesOrderLineId;
+        return Result.Success();
     }
 
     public Result Update(DateTime workDate, decimal hours, bool isBillable, string? notes, Guid? taskId)

@@ -1,0 +1,68 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { TableModule } from 'primeng/table';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { ProjectApiService, ProjectTimeEntry } from '../projects/project-api.service';
+import { TimesheetApiService } from './timesheet-api.service';
+
+@Component({
+  selector: 'app-timesheet-validation',
+  standalone: true,
+  imports: [CommonModule, RouterLink, TableModule, PageHeaderComponent, ButtonComponent],
+  template: `
+    <app-page-header title="Validation des feuilles de temps" subtitle="File manageriale centralisée" />
+    <p-table [value]="entries()" [paginator]="true" [rows]="20">
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Date</th><th>Projet</th><th>Utilisateur</th><th>Heures</th><th>Facturable</th><th></th>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-e>
+        <tr>
+          <td>{{ e.workDate | date:'dd/MM/yyyy' }}</td>
+          <td><a [routerLink]="['/projects', e.projectId]">{{ e.projectName }}</a></td>
+          <td>{{ e.userName }}</td>
+          <td>{{ e.hours | number:'1.2-2' }}</td>
+          <td>{{ e.isBillable ? 'Oui' : 'Non' }}</td>
+          <td><app-button size="sm" (clicked)="validate(e.id)">Valider</app-button></td>
+        </tr>
+      </ng-template>
+    </p-table>
+  `
+})
+export class TimesheetValidationComponent implements OnInit {
+  private readonly timesheets = inject(TimesheetApiService);
+  private readonly projects = inject(ProjectApiService);
+  private readonly toast = inject(ToastService);
+  private readonly errors = inject(ErrorHandlerService);
+  entries = signal<ProjectTimeEntry[]>([]);
+
+  ngOnInit(): void { this.load(); }
+
+  load(): void {
+    this.timesheets.getValidationQueue().subscribe({
+      next: r => { if (r.success && r.data) this.entries.set(r.data); },
+      error: e => this.fail(e, 'File de validation')
+    });
+  }
+
+  validate(id: string): void {
+    this.projects.validateTime(id).subscribe({
+      next: r => {
+        if (r.success) {
+          this.toast.add({ severity: 'success', summary: 'Temps validé' });
+          this.load();
+        }
+      },
+      error: e => this.fail(e, 'Validation impossible')
+    });
+  }
+
+  private fail(err: unknown, summary: string): void {
+    this.toast.add({ severity: 'error', summary, detail: this.errors.extractErrorMessage(err) });
+  }
+}

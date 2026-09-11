@@ -196,6 +196,10 @@ export const routes: Routes = [
         loadChildren: () => import('./features/projects/projects.routes').then(m => m.PROJECTS_ROUTES)
       },
       {
+        path: 'timesheets',
+        loadChildren: () => import('./features/timesheets/timesheets.routes').then(m => m.TIMESHEETS_ROUTES)
+      },
+      {
         path: 'recurring-contracts',
         loadChildren: () =>
           import('./features/recurring-contracts/recurring-contracts.routes').then(m => m.RECURRING_CONTRACTS_ROUTES)

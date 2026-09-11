@@ -392,4 +392,50 @@ public sealed class ProjectBillableTimesheetsFlagsTests
         Assert.False(project.IsBillable);
         Assert.False(project.TimesheetsEnabled);
     }
+
+    [Fact]
+    public void SetBillable_UpdatesProjectFlag()
+    {
+        var project = Project.Create(Guid.NewGuid(), "P", ProjectKind.Esn, ProjectBillingMode.TimeAndMaterials, null, null, null, 0m).Value;
+        Assert.True(project.SetBillable(false).IsSuccess);
+        Assert.False(project.IsBillable);
+    }
+}
+
+public sealed class OdooTimesheetAlignmentDomainTests
+{
+    [Fact]
+    public void Milestone_MarkReached_SetsTimestamp()
+    {
+        var m = ProjectMilestone.Create(Guid.NewGuid(), "Phase 1", 25m, 1000m, null).Value;
+        Assert.True(m.MarkReached().IsSuccess);
+        Assert.True(m.IsReached);
+        Assert.NotNull(m.ReachedAt);
+    }
+
+    [Fact]
+    public void TimeEntry_TimerLifecycle()
+    {
+        var entry = ProjectTimeEntry.Create(Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow.Date, 0m, true, null, null).Value;
+        Assert.True(entry.StartTimer().IsSuccess);
+        Assert.True(entry.IsTimerRunning);
+        Assert.True(entry.StartTimer().IsFailure);
+        Assert.True(entry.StopTimer().IsSuccess);
+        Assert.False(entry.IsTimerRunning);
+    }
+
+    [Fact]
+    public void TimeEntry_WithSalesOrderLine_PersistsLink()
+    {
+        var lineId = Guid.NewGuid();
+        var entry = ProjectTimeEntry.Create(Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow.Date, 2m, true, null, null, lineId).Value;
+        Assert.Equal(lineId, entry.SalesOrderLineId);
+    }
+
+    [Fact]
+    public void ServiceInvoicingPolicy_MapsToProjectBillingMode()
+    {
+        Assert.Equal(ProjectBillingMode.TimeAndMaterials, ServiceInvoicingPolicy.BasedOnTimesheets.ToProjectBillingMode());
+        Assert.Equal(ProjectBillingMode.Milestone, ServiceInvoicingPolicy.BasedOnMilestones.ToProjectBillingMode());
+    }
 }

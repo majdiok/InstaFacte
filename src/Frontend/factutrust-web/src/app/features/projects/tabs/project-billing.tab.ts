@@ -264,7 +264,7 @@ const TASK_BILLING_METHOD_OPTIONS = [
 
                 {{ selectedTimeSummary.hours | number:'1.0-2' }} h sélectionnées ·
 
-                {{ selectedTimeSummary.amountHt | number:'1.3-3' }} {{ project?.currency || 'TND' }} HT
+                {{ selectedTimeSummary.amountHt | number:'1.3-3' }} {{ project.currency || 'TND' }} HT
 
               </p>
 
