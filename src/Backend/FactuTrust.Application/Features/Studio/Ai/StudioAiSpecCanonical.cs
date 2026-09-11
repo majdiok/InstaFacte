@@ -68,6 +68,20 @@ public static class StudioAiSpecCanonical
         var entities = new JsonArray();
         foreach (var entity in spec.Entities)
         {
+            // Table réutilisée : la clé existante suffit — aucun champ/formulaire/état n'est émis
+            // (ils ne seraient de toute façon pas appliqués). displayName est ré-émis car il sert de
+            // libellé d'aperçu ; au re-parse il retombe sur existingKey s'il est absent.
+            if (entity.ExistingKey is not null)
+            {
+                entities.Add(new JsonObject
+                {
+                    ["ref"] = entity.Ref,
+                    ["existingKey"] = entity.ExistingKey,
+                    ["displayName"] = entity.EntityDisplayName
+                });
+                continue;
+            }
+
             var node = new JsonObject
             {
                 ["ref"] = entity.Ref,

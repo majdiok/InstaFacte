@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Application.Features.Studio.Ai;
@@ -14,12 +15,21 @@ public static class StudioAiPlanSummary
 
     public sealed record SummaryStep(string Key, string Label, string Detail);
 
-    public sealed record SummaryEntity(string DisplayName, int FieldCount, int RelationCount);
+    /// <summary><paramref name="ExistingKey"/> non null = table existante réutilisée telle quelle
+    /// (propriété omise du JSON quand null : les tables créées n'encombrent pas l'aperçu).</summary>
+    public sealed record SummaryEntity(
+        string DisplayName,
+        int FieldCount,
+        int RelationCount,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExistingKey = null);
 
     /// <summary>
     /// <paramref name="Sample"/> : quelques VRAIES lignes déjà calculées, jointes à l'aperçu d'un état.
     /// L'utilisateur valide alors sur des chiffres, pas sur une promesse. Paramètre optionnel en fin de
     /// record : les aperçus existants (table, système, fenêtre) sont inchangés.
+    /// <paramref name="Duplicates"/> : indices de doublons (table proposée ≈ table existante) — la clé
+    /// <c>duplicates</c> est TOUJOURS émise dans le JSON (tableau vide par défaut, jamais null) pour
+    /// que le bandeau d'aperçu ait une forme stable.
     /// </summary>
     public sealed record PlanSummary(
         string Kind,
@@ -27,29 +37,46 @@ public static class StudioAiPlanSummary
         IReadOnlyList<SummaryStep> Steps,
         IReadOnlyList<SummaryEntity> Entities,
         IReadOnlyList<string> Warnings,
-        Common.ReportResultDto? Sample = null);
+        Common.ReportResultDto? Sample = null,
+        IReadOnlyList<DuplicateHint>? Duplicates = null);
 
-    public static string ForSystem(ParsedSystemSpec spec)
+    /// <summary>
+    /// Un avertissement en clair par indice de doublon : l'utilisateur voit POURQUOI la table est
+    /// signalée et comment la réutiliser (<c>existingKey</c>) au lieu de la recréer.
+    /// </summary>
+    internal static List<string> DuplicateWarnings(IReadOnlyList<DuplicateHint>? duplicates) =>
+        duplicates?.Select(d =>
+            $"Table « {d.SpecDisplayName} » : une table existante « {d.ExistingDisplayName} » (clé « {d.ExistingKey} ») semble équivalente"
+            + " — réutilisez-la plutôt que de la recréer (\"existingKey\" dans la spec).").ToList()
+        ?? new List<string>();
+
+    public static string ForSystem(ParsedSystemSpec spec, IReadOnlyList<DuplicateHint>? duplicates = null)
     {
         var entities = spec.Entities
             .Select(e => new SummaryEntity(
                 e.EntityDisplayName,
                 e.Fields.Count,
-                e.Fields.Count(f => f.FieldType is CustomFieldType.RelationCustom or CustomFieldType.RelationExisting)))
+                e.Fields.Count(f => f.FieldType is CustomFieldType.RelationCustom or CustomFieldType.RelationExisting),
+                e.ExistingKey))
             .ToList();
 
-        var totalFields = entities.Sum(e => e.FieldCount);
-        var totalRelations = entities.Sum(e => e.RelationCount);
-        var formCount = spec.Entities.Count(e => e.Form is not null);
-        var reportCount = spec.Entities.Count(e => e.Report is not null);
+        var created = entities.Where(e => e.ExistingKey is null).ToList();
+        var totalFields = created.Sum(e => e.FieldCount);
+        var totalRelations = created.Sum(e => e.RelationCount);
+        var formCount = spec.Entities.Count(e => e.ExistingKey is null && e.Form is not null);
+        var reportCount = spec.Entities.Count(e => e.ExistingKey is null && e.Report is not null);
         var seedCount = spec.Seed.Sum(s => s.Records.Count);
 
         var steps = new List<SummaryStep>
         {
             new("data_model", "Modèle de données",
-                $"{spec.Entities.Count} table(s) | {totalFields} champ(s)"
+                $"{created.Count} table(s) | {totalFields} champ(s)"
                 + (totalRelations > 0 ? $" | {totalRelations} relation(s)" : string.Empty))
         };
+        var reusedCount = entities.Count(e => e.ExistingKey is not null);
+        if (reusedCount > 0)
+            steps.Add(new SummaryStep("reuse", "Tables réutilisées",
+                $"{reusedCount} table(s) existante(s) reprise(s) telle(s) quelle(s)"));
         if (formCount > 0)
             steps.Add(new SummaryStep("forms", "Formulaires", $"{formCount} formulaire(s) personnalisé(s)"));
         if (reportCount > 0)
@@ -59,11 +86,16 @@ public static class StudioAiPlanSummary
         if (spec.OnboardingSteps is { Count: > 0 })
             steps.Add(new SummaryStep("onboarding", "Guide de démarrage", $"{spec.OnboardingSteps.Count} étape(s)"));
 
+        var warnings = new List<string>(spec.Warnings ?? Array.Empty<string>());
+        warnings.AddRange(DuplicateWarnings(duplicates));
+
+        // Duplicates peut rester null ici : Serialize émet toujours un tableau (vide par défaut).
         return Serialize(new PlanSummary(
-            StudioAiPlanKind.CreateSystem.ToString(), spec.SystemDisplayName, steps, entities, Array.Empty<string>()));
+            StudioAiPlanKind.CreateSystem.ToString(), spec.SystemDisplayName, steps, entities, warnings,
+            Duplicates: duplicates));
     }
 
-    public static string ForApp(ParsedAppSpec spec)
+    public static string ForApp(ParsedAppSpec spec, IReadOnlyList<DuplicateHint>? duplicates = null)
     {
         var steps = new List<SummaryStep>
         {
@@ -74,7 +106,8 @@ public static class StudioAiPlanSummary
 
         var entities = new List<SummaryEntity> { new(spec.EntityDisplayName, spec.Fields.Count, 0) };
         return Serialize(new PlanSummary(
-            StudioAiPlanKind.CreateApp.ToString(), spec.EntityDisplayName, steps, entities, Array.Empty<string>()));
+            StudioAiPlanKind.CreateApp.ToString(), spec.EntityDisplayName, steps, entities,
+            DuplicateWarnings(duplicates), Duplicates: duplicates));
     }
 
     public static string ForView(
@@ -143,5 +176,8 @@ public static class StudioAiPlanSummary
             Array.Empty<SummaryEntity>(), warnings, sample));
     }
 
-    private static string Serialize(PlanSummary summary) => JsonSerializer.Serialize(summary, Options);
+    /// <summary><c>duplicates</c> est TOUJOURS présent dans le JSON (tableau vide par défaut).</summary>
+    private static string Serialize(PlanSummary summary) => JsonSerializer.Serialize(
+        summary.Duplicates is null ? summary with { Duplicates = Array.Empty<DuplicateHint>() } : summary,
+        Options);
 }

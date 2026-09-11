@@ -18,7 +18,8 @@ namespace FactuTrust.Infrastructure.Tests.AI;
 /// PR 1.2 — digest de contexte dans le prompt StudioBuilder. Le prompt n'expose le « SCHÉMA EXISTANT »
 /// que si <see cref="OllamaSettings.EnableStudioAiSchemaDigest"/> est actif ; le budget de caractères
 /// transmis au service dépend du modèle retenu (CPU 1200 / avancé 4000) ; l'intention connue ajoute un
-/// préambule, une intention inconnue n'ajoute rien ; la révision de cache passe à « v4 ».
+/// préambule, une intention inconnue n'ajoute rien ; la révision de cache passe à « v5 »
+/// (PR 1.3 : la règle 11 enseigne « existingKey » pour réutiliser une table existante).
 /// </summary>
 public sealed class AiContextBuilderStudioDigestTests
 {
@@ -116,6 +117,7 @@ public sealed class AiContextBuilderStudioDigestTests
 
         Assert.Contains("11. Le SCHÉMA EXISTANT liste les tables déjà présentes avec leurs VRAIES clés.", prompt);
         Assert.Contains("12. Le DERNIER PLAN décrit ce qui vient d'être préparé ou créé.", prompt);
+        Assert.Contains("\"existingKey\": \"<clé>\"", prompt); // règle 11 complétée (PR 1.3)
         Assert.Contains("SCHÉMA EXISTANT (tables Studio de ce client) :\n- employes « Employés » : nom:text, poste:select", prompt);
         Assert.Contains("(systeme:gestion_conges)", prompt);
         Assert.Contains("DERNIER PLAN :\n- [En attente 09:41] Système « Gestion des congés »", prompt);
@@ -265,13 +267,13 @@ public sealed class AiContextBuilderStudioDigestTests
     }
 
     [Fact]
-    public void System_prompt_cache_revision_is_v4()
+    public void System_prompt_cache_revision_is_v5()
     {
         var field = typeof(AiContextBuilder).GetField(
             "SystemPromptCacheRevision",
             BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(field);
-        Assert.Equal("v4", (string)field!.GetRawConstantValue()!);
+        Assert.Equal("v5", (string)field!.GetRawConstantValue()!);
     }
 
     [Theory]

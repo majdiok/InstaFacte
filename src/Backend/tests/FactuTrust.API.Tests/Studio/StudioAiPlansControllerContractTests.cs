@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using FactuTrust.API.Authorization;
 using FactuTrust.API.Controllers.Studio;
 using FactuTrust.Application.Configuration;
@@ -154,6 +156,24 @@ public sealed class StudioAiPlansControllerContractTests
         var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<StudioAiSpecValidationDto>>(ok.Value);
         Assert.True(body.Success);
         Assert.True(body.Data!.Valid);
+    }
+
+    [Fact]
+    public void Plan_summary_shape_has_duplicates_present_but_empty_by_default()
+    {
+        // Contrat d'aperçu (PR 1.3) : « duplicates » est TOUJOURS sérialisé (tableau vide par
+        // défaut, jamais null) — le bandeau doublon du frontend s'appuie sur cette forme stable.
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "tickets", "displayName": "Tickets", "fields": [ { "label": "Nom" } ] } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+
+        var summary = JsonNode.Parse(StudioAiPlanSummary.ForSystem(spec!))!;
+
+        Assert.Equal(JsonValueKind.Array, summary["duplicates"]!.GetValueKind());
+        Assert.Empty(summary["duplicates"]!.AsArray());
+        Assert.NotNull(summary["warnings"]);
     }
 
     private static async Task<IActionResult> PutSpecFailingWith(Error error)

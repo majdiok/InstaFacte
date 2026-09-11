@@ -161,4 +161,163 @@ public sealed class StudioAiSystemSpecTests
         Assert.Equal(CustomFieldType.RelationCustom, rel.FieldType);
         Assert.Equal("employes", rel.RelationToRef);
     }
+
+    // ---- Réutilisation de tables existantes (existingKey — PR 1.3) ----
+
+    [Theory]
+    [InlineData("existingKey")]
+    [InlineData("existing")]
+    [InlineData("useExisting")]
+    [InlineData("reuse")]
+    public void Reused_entity_parses_via_every_alias_and_needs_no_fields(string alias)
+    {
+        var json = $$"""
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "{{alias}}": "employes" },
+          { "ref": "demandes", "displayName": "Demandes", "fields": [ { "label": "Statut" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+
+        var reused = spec!.Entities.First(e => e.Ref == "employes");
+        Assert.Equal("employes", reused.ExistingKey);
+        Assert.Empty(reused.Fields);
+        Assert.Null(reused.Form);
+        Assert.Null(reused.Report);
+        Assert.Equal("employes", reused.EntityDisplayName); // repli du libellé sur la clé
+    }
+
+    [Fact]
+    public void Reuse_boolean_true_uses_the_entity_ref_as_key()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "existingKey": true, "displayName": "Employés" }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Equal("employes", spec!.Entities[0].ExistingKey);
+        Assert.Equal("Employés", spec.Entities[0].EntityDisplayName);
+    }
+
+    [Fact]
+    public void Reuse_boolean_false_means_no_reuse()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employés", "reuse": false, "fields": [ { "label": "Nom" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Null(spec!.Entities[0].ExistingKey);
+        Assert.Single(spec.Entities[0].Fields);
+    }
+
+    [Fact]
+    public void Invalid_existing_key_rejects_the_entity_with_a_message()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "x", "existingKey": "!!!" }
+        ] }
+        """;
+        Assert.False(StudioAiSystemSpec.TryParse(json, out _, out var error));
+        Assert.Contains("existingKey", error!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Reused_entity_ignores_fields_form_and_report_with_a_warning()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "existingKey": "employes", "displayName": "Employés",
+            "fields": [ { "label": "Nom" } ],
+            "form": { "sections": [ { "fields": [ "nom" ] } ] },
+            "report": { "displayName": "État", "fields": [ "nom" ] } },
+          { "ref": "demandes", "displayName": "Demandes", "fields": [ { "label": "Statut" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+
+        var reused = spec!.Entities.First(e => e.Ref == "employes");
+        Assert.Empty(reused.Fields);
+        Assert.Null(reused.Form);
+        Assert.Null(reused.Report);
+        var warning = Assert.Single(spec.Warnings!);
+        Assert.Contains("réutilisée telle quelle", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Relation_to_a_reused_ref_stays_a_custom_relation()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "existingKey": "employes" },
+          { "ref": "demandes", "displayName": "Demandes", "fields": [
+            { "label": "Employé", "type": "relation", "relationTo": "employes" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var rel = spec!.Entities.First(e => e.Ref == "demandes").Fields[0];
+        Assert.Equal(CustomFieldType.RelationCustom, rel.FieldType);
+        Assert.Equal("employes", rel.RelationToRef);
+    }
+
+    [Fact]
+    public void Eight_new_plus_two_reused_entities_are_accepted()
+    {
+        var newEntities = string.Join(", ", Enumerable.Range(1, 8).Select(i =>
+            $$"""{ "ref": "table_{{i}}", "displayName": "Table {{i}}", "fields": [ { "label": "Nom" } ] }"""));
+        var json = $$"""
+        { "system": { "displayName": "T" }, "entities": [
+          {{newEntities}},
+          { "ref": "employes", "existingKey": "employes" },
+          { "ref": "contrats", "existingKey": "contrats" }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Equal(10, spec!.Entities.Count);
+        Assert.Equal(2, spec.Entities.Count(e => e.ExistingKey is not null));
+    }
+
+    [Fact]
+    public void Ninth_new_entity_is_still_rejected()
+    {
+        var newEntities = string.Join(", ", Enumerable.Range(1, 9).Select(i =>
+            $$"""{ "ref": "table_{{i}}", "displayName": "Table {{i}}", "fields": [ { "label": "Nom" } ] }"""));
+        var json = $$"""{ "system": { "displayName": "T" }, "entities": [ {{newEntities}} ] }""";
+        Assert.False(StudioAiSystemSpec.TryParse(json, out _, out var error));
+        Assert.Contains($"Maximum {StudioAiSystemSpec.MaxEntities} entités", error!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Reused_entities_beyond_the_cap_are_ignored_with_a_warning()
+    {
+        var reusedEntities = string.Join(", ", Enumerable.Range(1, 9).Select(i =>
+            $$"""{ "ref": "existante_{{i}}", "existingKey": "existante_{{i}}" }"""));
+        var json = $$"""
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "demandes", "displayName": "Demandes", "fields": [ { "label": "Statut" } ] },
+          {{reusedEntities}}
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Equal(1 + StudioAiSystemSpec.MaxExistingRefs, spec!.Entities.Count);
+        var warning = Assert.Single(spec.Warnings!);
+        Assert.Contains("ignorée", warning, StringComparison.Ordinal);
+        Assert.Contains($"{StudioAiSystemSpec.MaxExistingRefs}", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Seed_batch_can_target_a_reused_entity_ref()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "existingKey": "employes" },
+          { "ref": "demandes", "displayName": "Demandes", "fields": [ { "label": "Statut" } ] }
+        ], "seed": [ { "entityRef": "employes", "records": [ { "nom": "Sami" } ] } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Equal("employes", spec!.Seed[0].EntityRef);
+    }
 }

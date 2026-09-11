@@ -22,7 +22,7 @@ public sealed class AiContextBuilder : IAiContextBuilder
     /// Révision de la clé de cache du prompt statique. À incrémenter quand le texte du prompt change
     /// (la clé historique ne hashe pas le contenu — sans ça l'ancien prompt resterait jusqu'au TTL).
     /// </summary>
-    private const string SystemPromptCacheRevision = "v4";
+    private const string SystemPromptCacheRevision = "v5";
     private readonly ICompanyRepository _companyRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IMemoryCache _memoryCache;
@@ -214,7 +214,8 @@ public sealed class AiContextBuilder : IAiContextBuilder
         {
             sb.AppendLine("11. Le SCHÉMA EXISTANT liste les tables déjà présentes avec leurs VRAIES clés. Pour modifier ou compléter l'une d'elles, "
                 + "utilise sa clé telle quelle (jamais un nouveau nom) et passe par `studio_plan_changes`. Ne recrée JAMAIS une table qui existe déjà : "
-                + "si l'utilisateur en redemande une équivalente, propose de la réutiliser.");
+                + "si l'utilisateur en redemande une équivalente, propose de la réutiliser. Pour t'appuyer sur une table existante dans un système, "
+                + "déclare l'entité avec `\"existingKey\": \"<clé>\"` au lieu de ses champs.");
             if (!string.IsNullOrEmpty(lastPlanDigest))
             {
                 sb.AppendLine("12. Le DERNIER PLAN décrit ce qui vient d'être préparé ou créé. « Ajoute / complète / continue » se rapporte à ce plan : "

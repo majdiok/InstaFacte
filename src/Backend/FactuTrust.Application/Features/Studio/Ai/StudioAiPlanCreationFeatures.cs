@@ -1,9 +1,11 @@
 using System.Text.Json.Nodes;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Templates;
 using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Entities.Studio;
 using FactuTrust.Domain.Enums;
 using MediatR;
 using Microsoft.Extensions.Options;
@@ -43,9 +45,12 @@ public static class StudioAiPlanCreation
     /// client n'est jamais accepté. Pour les natures dont l'aperçu se résout contre le schéma réel ou
     /// des données vivantes (Amendment/View/Report), le résumé reste <c>null</c> : validation seule,
     /// même restriction que l'édition B-P0-04.
+    /// <paramref name="duplicates"/> : indices de doublons pré-calculés (lecture tenant faite par
+    /// l'appelant) — le résumé recalculé les expose et les traduit en avertissements.
     /// </summary>
     public static bool TryCanonicalize(
-        StudioAiPlanKind kind, string specJson, out string? canonical, out string? summary, out string? error)
+        StudioAiPlanKind kind, string specJson, out string? canonical, out string? summary, out string? error,
+        IReadOnlyList<DuplicateHint>? duplicates = null)
     {
         canonical = StudioAiSpecCanonical.CanonicalFor(kind, specJson, out error);
         summary = null;
@@ -53,11 +58,52 @@ public static class StudioAiPlanCreation
 
         if (kind == StudioAiPlanKind.CreateSystem
             && StudioAiSystemSpec.TryParse(canonical, out var system, out _) && system is not null)
-            summary = StudioAiPlanSummary.ForSystem(system);
+            summary = StudioAiPlanSummary.ForSystem(system, duplicates);
         else if (kind == StudioAiPlanKind.CreateApp
             && StudioAiAppSpec.TryParse(canonical, out var app, out _) && app is not null)
-            summary = StudioAiPlanSummary.ForApp(app);
+            summary = StudioAiPlanSummary.ForApp(app, duplicates);
         return true;
+    }
+
+    /// <summary>
+    /// Indices de doublons contre les tables Studio ACTIVES du tenant courant (UNE lecture
+    /// <c>ListAsync</c>, jamais d'écriture). null quand la lecture est impossible (dépôt absent,
+    /// pas de tenant) ou la nature sans résumé recalculable : le résumé reste alors sans indices.
+    /// </summary>
+    public static async Task<IReadOnlyList<DuplicateHint>?> DetectDuplicatesAsync(
+        StudioAiPlanKind kind, string specJson,
+        ICustomEntityRepository? customEntities, ICurrentUser? currentUser, CancellationToken ct)
+    {
+        if (kind is not (StudioAiPlanKind.CreateSystem or StudioAiPlanKind.CreateApp)) return null;
+        var existing = await ListActiveEntitiesAsync(customEntities, currentUser, ct);
+        if (existing is null) return null;
+
+        return kind == StudioAiPlanKind.CreateSystem
+            ? StudioAiSystemSpec.TryParse(specJson, out var system, out _) && system is not null
+                ? StudioAiDuplicateDetector.Detect(system, existing) : null
+            : StudioAiAppSpec.TryParse(specJson, out var app, out _) && app is not null
+                ? StudioAiDuplicateDetector.Detect(app, existing) : null;
+    }
+
+    /// <summary>
+    /// Même détection pour une spec système DÉJÀ parsée (instanciation d'un modèle embarqué) :
+    /// évite de re-parser le JSON du modèle.
+    /// </summary>
+    public static async Task<IReadOnlyList<DuplicateHint>?> DetectDuplicatesAsync(
+        ParsedSystemSpec spec,
+        ICustomEntityRepository? customEntities, ICurrentUser? currentUser, CancellationToken ct)
+    {
+        var existing = await ListActiveEntitiesAsync(customEntities, currentUser, ct);
+        return existing is null ? null : StudioAiDuplicateDetector.Detect(spec, existing);
+    }
+
+    /// <summary>Tables actives du tenant courant ; null quand la lecture est impossible.</summary>
+    private static async Task<IReadOnlyList<CustomEntityDefinition>?> ListActiveEntitiesAsync(
+        ICustomEntityRepository? customEntities, ICurrentUser? currentUser, CancellationToken ct)
+    {
+        if (customEntities is null || currentUser is null) return null;
+        if (!StudioContext.TryGet(currentUser, out var tenantId, out _, out _)) return null;
+        return await customEntities.ListAsync(tenantId, includeInactive: false, ct);
     }
 
     /// <summary>
@@ -90,7 +136,8 @@ public sealed record StudioAiSpecValidationDto(
 /// <summary>Plan créé + spec canonique persistée (même couple que <c>UpdateStudioAiPlanSpecResponse</c>).</summary>
 public sealed record StudioAiPlanCreationResponse(StudioAiPlanDto Plan, StudioAiPlanSpecDto Spec);
 
-// ---- Validate (validation en direct, SANS état : rien n'est créé, rien n'est lu en base) ----
+// ---- Validate (validation en direct : rien n'est créé ; seule la liste des tables du tenant ----
+// ---- est lue pour signaler les doublons dans l'aperçu) ----
 
 public sealed record ValidateStudioAiSpecCommand(string Kind, string SpecJson)
     : IRequest<Result<StudioAiSpecValidationDto>>;
@@ -99,36 +146,51 @@ public sealed class ValidateStudioAiSpecCommandHandler
     : IRequestHandler<ValidateStudioAiSpecCommand, Result<StudioAiSpecValidationDto>>
 {
     private readonly OllamaSettings _settings;
+    private readonly ICustomEntityRepository? _customEntities;
+    private readonly ICurrentUser? _currentUser;
 
-    public ValidateStudioAiSpecCommandHandler(IOptions<OllamaSettings> settings) => _settings = settings.Value;
+    public ValidateStudioAiSpecCommandHandler(
+        IOptions<OllamaSettings> settings,
+        // Optionnels (défaut null) : sans eux, la validation reste pure et l'aperçu sans indices de
+        // doublons. Production les résout via DI ; les tests de parsing historiques restent valides.
+        ICustomEntityRepository? customEntities = null,
+        ICurrentUser? currentUser = null)
+    {
+        _settings = settings.Value;
+        _customEntities = customEntities;
+        _currentUser = currentUser;
+    }
 
-    public Task<Result<StudioAiSpecValidationDto>> Handle(
+    public async Task<Result<StudioAiSpecValidationDto>> Handle(
         ValidateStudioAiSpecCommand command, CancellationToken cancellationToken)
     {
         if (!_settings.EnableStudioAiWorkbench)
-            return Task.FromResult(Result.Failure<StudioAiSpecValidationDto>(
-                Error.NotFound("Fonctionnalité non disponible.")));
+            return Result.Failure<StudioAiSpecValidationDto>(
+                Error.NotFound("Fonctionnalité non disponible."));
 
         if (!StudioAiPlanCreation.TryParseKind(command.Kind, out var kind))
-            return Task.FromResult(Result.Failure<StudioAiSpecValidationDto>(
-                Error.Validation("kind", $"Nature de plan inconnue : « {command.Kind} ».")));
+            return Result.Failure<StudioAiSpecValidationDto>(
+                Error.Validation("kind", $"Nature de plan inconnue : « {command.Kind} »."));
 
         if (string.IsNullOrWhiteSpace(command.SpecJson))
-            return Task.FromResult(Result.Failure<StudioAiSpecValidationDto>(
-                Error.Validation("specJson", "La spécification du plan est vide.")));
+            return Result.Failure<StudioAiSpecValidationDto>(
+                Error.Validation("specJson", "La spécification du plan est vide."));
         if (command.SpecJson.Length > StudioAiPlanWorkbench.MaxSpecJsonLength)
-            return Task.FromResult(Result.Failure<StudioAiSpecValidationDto>(
-                Error.Validation("specJson", "La spec dépasse 256 Ko.")));
+            return Result.Failure<StudioAiSpecValidationDto>(
+                Error.Validation("specJson", "La spec dépasse 256 Ko."));
 
-        if (!StudioAiPlanCreation.TryCanonicalize(kind, command.SpecJson, out var canonical, out var summary, out var error))
-            return Task.FromResult(Result.Failure<StudioAiSpecValidationDto>(
-                Error.Validation("specJson", error ?? "La spec est invalide.")));
+        var duplicates = await StudioAiPlanCreation.DetectDuplicatesAsync(
+            kind, command.SpecJson, _customEntities, _currentUser, cancellationToken);
 
-        return Task.FromResult(Result.Success(new StudioAiSpecValidationDto(
+        if (!StudioAiPlanCreation.TryCanonicalize(kind, command.SpecJson, out var canonical, out var summary, out var error, duplicates))
+            return Result.Failure<StudioAiSpecValidationDto>(
+                Error.Validation("specJson", error ?? "La spec est invalide."));
+
+        return Result.Success(new StudioAiSpecValidationDto(
             Valid: true,
             Summary: summary is null ? null : JsonNode.Parse(summary),
             CanonicalJson: JsonNode.Parse(canonical!),
-            Warnings: Array.Empty<string>())));
+            Warnings: Array.Empty<string>()));
     }
 }
 
@@ -142,11 +204,17 @@ public sealed class CreateStudioAiPlanFromSpecCommandHandler
 {
     private readonly IMediator _mediator;
     private readonly OllamaSettings _settings;
+    private readonly ICustomEntityRepository? _customEntities;
+    private readonly ICurrentUser? _currentUser;
 
-    public CreateStudioAiPlanFromSpecCommandHandler(IMediator mediator, IOptions<OllamaSettings> settings)
+    public CreateStudioAiPlanFromSpecCommandHandler(
+        IMediator mediator, IOptions<OllamaSettings> settings,
+        ICustomEntityRepository? customEntities = null, ICurrentUser? currentUser = null)
     {
         _mediator = mediator;
         _settings = settings.Value;
+        _customEntities = customEntities;
+        _currentUser = currentUser;
     }
 
     public async Task<Result<StudioAiPlanCreationResponse>> Handle(
@@ -171,7 +239,10 @@ public sealed class CreateStudioAiPlanFromSpecCommandHandler
             return Result.Failure<StudioAiPlanCreationResponse>(
                 Error.Validation("specJson", "La spec dépasse 256 Ko."));
 
-        if (!StudioAiPlanCreation.TryCanonicalize(kind, command.SpecJson, out var canonical, out var summary, out var error))
+        var duplicates = await StudioAiPlanCreation.DetectDuplicatesAsync(
+            kind, command.SpecJson, _customEntities, _currentUser, cancellationToken);
+
+        if (!StudioAiPlanCreation.TryCanonicalize(kind, command.SpecJson, out var canonical, out var summary, out var error, duplicates))
             return Result.Failure<StudioAiPlanCreationResponse>(
                 Error.Validation("specJson", error ?? "La spec est invalide."));
 
@@ -198,13 +269,16 @@ public sealed class CreateStudioAiPlanFromTemplateCommandHandler
     private readonly IMediator _mediator;
     private readonly ICurrentUser _currentUser;
     private readonly OllamaSettings _settings;
+    private readonly ICustomEntityRepository? _customEntities;
 
     public CreateStudioAiPlanFromTemplateCommandHandler(
-        IMediator mediator, ICurrentUser currentUser, IOptions<OllamaSettings> settings)
+        IMediator mediator, ICurrentUser currentUser, IOptions<OllamaSettings> settings,
+        ICustomEntityRepository? customEntities = null)
     {
         _mediator = mediator;
         _currentUser = currentUser;
         _settings = settings.Value;
+        _customEntities = customEntities;
     }
 
     public async Task<Result<StudioAiPlanCreationResponse>> Handle(
@@ -248,6 +322,10 @@ public sealed class CreateStudioAiPlanFromTemplateCommandHandler
             return Result.Failure<StudioAiPlanCreationResponse>(
                 Error.Validation("specJson", parseError ?? "La spec du modèle est invalide."));
 
+        // Indices de doublons contre les tables actives du tenant (UNE lecture, jamais d'écriture).
+        var duplicates = await StudioAiPlanCreation.DetectDuplicatesAsync(
+            parsed, _customEntities, _currentUser, cancellationToken);
+
         if (!string.IsNullOrWhiteSpace(command.DisplayNameOverride))
         {
             var displayName = command.DisplayNameOverride.Trim();
@@ -259,7 +337,7 @@ public sealed class CreateStudioAiPlanFromTemplateCommandHandler
         }
 
         var canonical = StudioAiSpecCanonical.CanonicalSystem(parsed);
-        var summary = StudioAiPlanSummary.ForSystem(parsed); // résumé recalculé APRÈS l'override
+        var summary = StudioAiPlanSummary.ForSystem(parsed, duplicates); // résumé recalculé APRÈS l'override
 
         // Même délégation que from-spec : permission et audit « Studio.AiPlan.Created » inclus.
         var created = await _mediator.Send(

@@ -375,6 +375,81 @@ public sealed class StudioAiPlanCreationFeaturesTests
         VerifyNoCreation();
     }
 
+    // ---- Doublons de tables existantes (PR 1.3) ----
+
+    private static readonly IReadOnlyList<CustomEntityDefinition> ExistingEmployes = new[]
+    {
+        CustomEntityDefinition.Create(TenantId, "employes", "Employés", "Employés", null, null, UserId)
+    };
+
+    private Mock<ICustomEntityRepository> SetupExistingEntities()
+    {
+        var entities = new Mock<ICustomEntityRepository>();
+        entities.Setup(r => r.ListAsync(TenantId, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ExistingEmployes);
+        return entities;
+    }
+
+    [Fact]
+    public async Task Validate_summary_shape_has_duplicates_present_but_empty_without_repository()
+    {
+        var result = await ValidateHandler().Handle(
+            new ValidateStudioAiSpecCommand("CreateSystem", SystemSpec), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        // Forme stable pour l'aperçu : « duplicates » TOUJOURS présent, vide sans lecture tenant.
+        Assert.NotNull(result.Value.Summary!["duplicates"]);
+        Assert.Empty(result.Value.Summary["duplicates"]!.AsArray());
+    }
+
+    [Fact]
+    public async Task Validate_flags_duplicate_of_a_homonym_existing_table()
+    {
+        var entities = SetupExistingEntities();
+
+        var result = await ValidateHandler(entities: entities.Object).Handle(
+            new ValidateStudioAiSpecCommand("CreateSystem", SystemSpec), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var duplicates = result.Value.Summary!["duplicates"]!.AsArray();
+        var hint = Assert.Single(duplicates); // « employes » signalé, « absences » sans doublon
+        Assert.Equal("employes", hint!["specRef"]!.GetValue<string>());
+        Assert.Equal("employes", hint["existingKey"]!.GetValue<string>());
+        Assert.Equal("same_key", hint["reason"]!.GetValue<string>());
+        Assert.Contains(result.Value.Summary["warnings"]!.AsArray(),
+            w => w!.GetValue<string>().Contains("réutilisez-la", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task FromSpec_persists_a_summary_with_duplicate_hints_and_warnings()
+    {
+        SetupRealCreate();
+        var entities = SetupExistingEntities();
+
+        var result = await FromSpecHandler(entities: entities.Object).Handle(
+            new CreateStudioAiPlanFromSpecCommand("CreateSystem", SystemSpec), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var summary = JsonNode.Parse(_addedPlan!.SummaryJson)!;
+        Assert.Single(summary["duplicates"]!.AsArray());
+        Assert.NotEmpty(summary["warnings"]!.AsArray());
+    }
+
+    [Fact]
+    public async Task FromTemplate_summary_flags_template_tables_matching_tenant_tables()
+    {
+        SetupRealCreate();
+        // Le modèle « gestion-conges » propose une table « employes » (clé identique au tenant).
+        var entities = SetupExistingEntities();
+
+        var result = await FromTemplateHandler(entities: entities.Object).Handle(
+            new CreateStudioAiPlanFromTemplateCommand("gestion-conges", null, null), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var duplicates = JsonNode.Parse(_addedPlan!.SummaryJson)!["duplicates"]!.AsArray();
+        Assert.Contains(duplicates, d => d!["existingKey"]!.GetValue<string>() == "employes");
+    }
+
     // ---- Helpers ----
 
     /// <summary>Le mediator exécute le VRAI handler de création (permission + audit réels).</summary>
@@ -397,11 +472,12 @@ public sealed class StudioAiPlanCreationFeaturesTests
     private static IOptions<OllamaSettings> Settings(bool enabled) =>
         Microsoft.Extensions.Options.Options.Create(new OllamaSettings { EnableStudioAiWorkbench = enabled });
 
-    private ValidateStudioAiSpecCommandHandler ValidateHandler(bool enabled = true) => new(Settings(enabled));
+    private ValidateStudioAiSpecCommandHandler ValidateHandler(bool enabled = true, ICustomEntityRepository? entities = null) =>
+        new(Settings(enabled), entities, entities is null ? null : _currentUser.Object);
 
-    private CreateStudioAiPlanFromSpecCommandHandler FromSpecHandler(bool enabled = true) =>
-        new(_mediator.Object, Settings(enabled));
+    private CreateStudioAiPlanFromSpecCommandHandler FromSpecHandler(bool enabled = true, ICustomEntityRepository? entities = null) =>
+        new(_mediator.Object, Settings(enabled), entities, entities is null ? null : _currentUser.Object);
 
-    private CreateStudioAiPlanFromTemplateCommandHandler FromTemplateHandler(bool enabled = true) =>
-        new(_mediator.Object, _currentUser.Object, Settings(enabled));
+    private CreateStudioAiPlanFromTemplateCommandHandler FromTemplateHandler(bool enabled = true, ICustomEntityRepository? entities = null) =>
+        new(_mediator.Object, _currentUser.Object, Settings(enabled), entities);
 }
