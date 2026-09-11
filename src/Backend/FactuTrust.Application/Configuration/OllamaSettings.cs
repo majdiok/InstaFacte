@@ -357,6 +357,31 @@ public sealed class OllamaSettings
     /// </summary>
     public bool EnableStudioAiAdvancedModel { get; set; }
 
+    /// <summary>
+    /// Digest de contexte du Studio : injecte dans le prompt StudioBuilder la liste des tables Studio
+    /// du tenant (vraies clés + champs) et le dernier plan de l'utilisateur. False (défaut) = prompt
+    /// identique à la révision précédente (aucune section « SCHÉMA EXISTANT » / « DERNIER PLAN »).
+    /// </summary>
+    public bool EnableStudioAiSchemaDigest { get; set; }
+
+    /// <summary>
+    /// Budget de tours d'outils quand la requête Studio utilise le modèle avancé (GPU / cloud) :
+    /// remplace le plafond CPU (<see cref="CpuMaxToolCallRounds"/>) pour ce seul tour. Borné 1..20.
+    /// </summary>
+    public int StudioAdvancedMaxToolCallRounds { get; set; } = 4;
+
+    /// <summary>Température des générations StudioBuilder (specs JSON déterministes). Défaut 0.1.</summary>
+    public double StudioTemperature { get; set; } = 0.1;
+
+    /// <summary>Taille maximale (caractères) du digest de schéma sur le modèle standard / CPU.</summary>
+    public int StudioSchemaDigestMaxCharsCpu { get; set; } = 1200;
+
+    /// <summary>Taille maximale (caractères) du digest de schéma quand le modèle avancé sert la requête.</summary>
+    public int StudioSchemaDigestMaxCharsAdvanced { get; set; } = 4000;
+
+    /// <summary>Taille maximale (caractères) du digest « DERNIER PLAN ».</summary>
+    public int StudioLastPlanDigestMaxChars { get; set; } = 600;
+
     /// <summary>Lignes de DÉTAIL renvoyées par un état SQL. Les agrégats restent exacts au-delà.</summary>
     public int StudioReportMaxRows { get; set; } = 5000;
 

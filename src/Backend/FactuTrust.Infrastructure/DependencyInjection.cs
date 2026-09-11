@@ -389,6 +389,8 @@ public static class DependencyInjection
         // Studio IA — plans « aperçu → confirmation » (flux EnableStudioAiPlanPreview).
         services.AddScoped<IStudioAiBuildPlanRepository, Repositories.Studio.StudioAiBuildPlanRepository>();
         services.AddScoped<FactuTrust.Application.Features.Studio.Ai.IStudioAiPlanExecutor, Services.Studio.StudioAiPlanExecutor>();
+        // Digest de contexte Studio (schéma du tenant + dernier plan) injecté dans le prompt StudioBuilder.
+        services.AddScoped<IStudioContextDigestService, Services.Studio.StudioContextDigestService>();
         services.AddScoped<IDocumentTemplateResolver, DocumentTemplateResolver>();
         services.AddScoped<ISignatureService, SignatureService>();
         services.AddScoped<IAuditService, AuditService>();

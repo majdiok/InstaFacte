@@ -57,6 +57,14 @@ public sealed class SendChatMessageHandler
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+    /// <summary>Raisons de repli du modèle avancé Studio (contrat SSE <c>meta.advancedModelFallbackReason</c>, D3).</summary>
+    public const string StudioAdvancedFallbackDisabled = "disabled";
+    public const string StudioAdvancedFallbackNotConfigured = "not_configured";
+    public const string StudioAdvancedFallbackUnavailable = "unavailable";
+
+    /// <summary>Graine Ollama appliquée en mode StudioBuilder quand aucune graine globale n'est configurée.</summary>
+    public const int StudioDefaultSeed = 7;
+
     private readonly TimeProvider _timeProvider;
 
     /// <summary>
@@ -175,8 +183,32 @@ public sealed class SendChatMessageHandler
             ? await _platformAiSettings.GetStudioAiModelRefAsync(cancellationToken)
             : null;
 
+        // Modèle avancé Studio par requête (PR 1.2, décision D3) : lecture Master séquentielle, uniquement
+        // si l'atelier le demande ET que le drapeau est actif. Toute impossibilité ⇒ repli SILENCIEUX sur
+        // le modèle standard, signalé par l'événement SSE `meta` — jamais une erreur.
+        var advancedRequested = isStudioBuilder && command.Options?.UseAdvancedModel == true;
+        string? studioAdvancedConfigured = advancedRequested && _ollamaSettings.EnableStudioAiAdvancedModel
+            ? await _platformAiSettings.GetStudioAiAdvancedModelRefAsync(cancellationToken)
+            : null;
+        var useAdvanced = advancedRequested
+            && _ollamaSettings.EnableStudioAiAdvancedModel
+            && !string.IsNullOrWhiteSpace(studioAdvancedConfigured);
+        string? advancedFallbackReason = !advancedRequested || useAdvanced
+            ? null
+            : !_ollamaSettings.EnableStudioAiAdvancedModel ? StudioAdvancedFallbackDisabled : StudioAdvancedFallbackNotConfigured;
+        if (advancedFallbackReason is not null)
+        {
+            _logger.LogWarning(
+                "AI chat {CorrelationId} Studio advanced model requested but {Reason}; falling back to the standard model",
+                correlationId ?? "-", advancedFallbackReason);
+        }
+
+        var studioPromptOptions = isStudioBuilder
+            ? new StudioPromptOptions(useAdvanced, command.Options?.StudioIntent, _tenantContext.TenantId ?? Guid.Empty, userId.ToString())
+            : null;
+
         // Prompt + historique : factories tenant (contextes distincts) — parallèle sûr.
-        var systemPromptTask = _contextBuilder.BuildSystemPromptAsync(assistantMode, screenId, agentScope, cancellationToken);
+        var systemPromptTask = _contextBuilder.BuildSystemPromptAsync(assistantMode, screenId, agentScope, studioPromptOptions, cancellationToken);
 
         Task<Conversation?>? conversationLoadTask = null;
         if (command.ConversationId.HasValue)
@@ -201,143 +233,130 @@ public sealed class SendChatMessageHandler
 
         // Le modèle est imposé par la configuration globale de la plateforme (back-office) ;
         // le modèle éventuellement transmis par le client et celui de la conversation sont ignorés.
-        // StudioBuilder : StudioAiModelRef → Ollama:StudioAiModel → DefaultModelRef → DefaultModel.
-        string rawModel;
-        if (isStudioBuilder)
+        // StudioBuilder : [avancé si demandé et disponible] → StudioAiModelRef → Ollama:StudioAiModel → DefaultModelRef → DefaultModel.
+        string ResolveStandardRawModel()
         {
-            if (!string.IsNullOrWhiteSpace(studioConfigured))
-                rawModel = studioConfigured;
-            else if (!string.IsNullOrWhiteSpace(_ollamaSettings.StudioAiModel))
-                rawModel = _ollamaSettings.StudioAiModel.Trim();
-            else
-                rawModel = string.IsNullOrWhiteSpace(assistantConfigured) ? defaultModel : assistantConfigured;
-        }
-        else
-        {
-            rawModel = string.IsNullOrWhiteSpace(assistantConfigured) ? defaultModel : assistantConfigured;
+            if (isStudioBuilder)
+            {
+                if (!string.IsNullOrWhiteSpace(studioConfigured))
+                    return studioConfigured;
+                if (!string.IsNullOrWhiteSpace(_ollamaSettings.StudioAiModel))
+                    return _ollamaSettings.StudioAiModel.Trim();
+            }
+            return string.IsNullOrWhiteSpace(assistantConfigured) ? defaultModel : assistantConfigured;
         }
 
-        var modelRef = ModelRef.Parse(rawModel);
-        if (string.IsNullOrEmpty(modelRef.CanonicalModelRef))
-            modelRef = ModelRef.Parse($"{ModelRef.OllamaPrefix}{defaultModel}");
+        var rawModel = useAdvanced ? studioAdvancedConfigured! : ResolveStandardRawModel();
+        var modelRef = ParseModelRefOrDefault(rawModel, defaultModel);
 
-        sw.Restart();
-        yield return ChatStreamEvent.PhaseEvent(
-            "provider_availability",
-            "running",
-            detail: modelRef.CanonicalModelRef);
-        switch (modelRef.Kind)
+        // Disponibilité du fournisseur. Boucle à deux tours au plus : si le modèle AVANCÉ Studio est
+        // indisponible (moteur arrêté, modèle non installé, clé absente…), on retombe sur le modèle
+        // standard et on revérifie — décision D3 : jamais d'erreur pour un repli.
+        while (true)
         {
-            case LlmProviderKind.Ollama:
+            sw.Restart();
+            yield return ChatStreamEvent.PhaseEvent(
+                "provider_availability",
+                "running",
+                detail: modelRef.CanonicalModelRef);
+
+            string? providerError = null;
+            switch (modelRef.Kind)
             {
-                if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
+                case LlmProviderKind.Ollama:
                 {
-                    LogPhase("ollama_availability", sw.ElapsedMilliseconds);
-                    yield return ChatStreamEvent.PhaseEvent(
-                        "provider_availability",
-                        "failed",
-                        sw.ElapsedMilliseconds,
-                        detail: modelRef.CanonicalModelRef);
-                    yield return ChatStreamEvent.ErrorEvent(
-                        "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur, ou choisissez un modèle cloud.");
-                    yield break;
-                }
+                    if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
+                    {
+                        LogPhase("ollama_availability", sw.ElapsedMilliseconds);
+                        providerError = "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur, ou choisissez un modèle cloud.";
+                        break;
+                    }
 
-                if (string.IsNullOrWhiteSpace(modelRef.ProviderModelId) ||
-                    !await _ollamaClient.IsModelInstalledAsync(modelRef.ProviderModelId, cancellationToken))
+                    if (string.IsNullOrWhiteSpace(modelRef.ProviderModelId) ||
+                        !await _ollamaClient.IsModelInstalledAsync(modelRef.ProviderModelId, cancellationToken))
+                    {
+                        LogPhase("model_installed_check", sw.ElapsedMilliseconds);
+                        providerError = "Le modèle configuré pour l'assistant n'est pas installé sur le moteur IA InstaFact. Contactez l'administrateur plateforme.";
+                    }
+
+                    break;
+                }
+                case LlmProviderKind.OpenRouter:
                 {
-                    LogPhase("model_installed_check", sw.ElapsedMilliseconds);
-                    yield return ChatStreamEvent.PhaseEvent(
-                        "provider_availability",
-                        "failed",
-                        sw.ElapsedMilliseconds,
-                        detail: modelRef.CanonicalModelRef);
-                    yield return ChatStreamEvent.ErrorEvent(
-                        "Le modèle configuré pour l'assistant n'est pas installé sur le moteur IA InstaFact. Contactez l'administrateur plateforme.");
-                    yield break;
-                }
+                    var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+                    if (string.IsNullOrEmpty(credentials.ApiKey))
+                    {
+                        LogPhase("openrouter_credentials", sw.ElapsedMilliseconds);
+                        providerError = "Aucune clé API OpenRouter configurée. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter).";
+                    }
 
-                break;
+                    break;
+                }
+                case LlmProviderKind.Modal:
+                {
+                    var credentials = await _modalCredentials.ResolveAsync(_tenantContext.TenantId, cancellationToken);
+                    if (string.IsNullOrEmpty(credentials.ApiKey) || string.IsNullOrWhiteSpace(credentials.BaseUrl))
+                    {
+                        LogPhase("modal_credentials", sw.ElapsedMilliseconds);
+                        providerError = ModalCredentialMessages.Unavailable(credentials);
+                    }
+
+                    break;
+                }
+                case LlmProviderKind.Cursor:
+                {
+                    if (!_cursorSdkSettings.Enabled)
+                    {
+                        providerError = "Cursor SDK est désactivé sur le serveur (CursorSdk:Enabled=false).";
+                        break;
+                    }
+
+                    var cursorCreds = await _platformAiSettings.GetCursorCredentialsAsync(cancellationToken);
+                    if (string.IsNullOrEmpty(cursorCreds.ApiKey))
+                    {
+                        providerError = "Aucune clé API Cursor configurée. Configurez-la dans le back-office plateforme > Configuration IA (Cursor).";
+                        break;
+                    }
+
+                    if (!await _cursorAgentClient.IsAvailableAsync(cancellationToken))
+                        providerError = "Le pont Cursor SDK est indisponible. Vérifiez Node 22.13+ et `npm ci` dans CursorSdkBridge.";
+
+                    break;
+                }
+                default:
+                    providerError = $"Fournisseur LLM non géré : {modelRef.Kind}.";
+                    break;
             }
-            case LlmProviderKind.OpenRouter:
+
+            if (providerError is null)
+                break;
+
+            if (useAdvanced)
             {
-                var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
-                if (string.IsNullOrEmpty(credentials.ApiKey))
+                // Repli D3 « unavailable » : le tour continue sur le modèle standard, l'atelier est prévenu via `meta`.
+                _logger.LogWarning(
+                    "AI chat {CorrelationId} Studio advanced model {Model} unavailable ({Reason}); falling back to the standard model",
+                    correlationId ?? "-", modelRef.CanonicalModelRef, providerError);
+                useAdvanced = false;
+                advancedFallbackReason = StudioAdvancedFallbackUnavailable;
+                modelRef = ParseModelRefOrDefault(ResolveStandardRawModel(), defaultModel);
+                if (studioPromptOptions is not null)
                 {
-                    LogPhase("openrouter_credentials", sw.ElapsedMilliseconds);
-                    yield return ChatStreamEvent.PhaseEvent(
-                        "provider_availability",
-                        "failed",
-                        sw.ElapsedMilliseconds,
-                        detail: modelRef.CanonicalModelRef);
-                    yield return ChatStreamEvent.ErrorEvent(
-                        "Aucune clé API OpenRouter configurée. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter).");
-                    yield break;
+                    // Le prompt a été bâti avec le budget « avancé » : on le rebâtit au budget CPU
+                    // (digest en cache 30 s — coût négligeable) pour ne pas alourdir le modèle standard.
+                    studioPromptOptions = studioPromptOptions with { UseAdvancedModel = false };
+                    systemPromptTask = _contextBuilder.BuildSystemPromptAsync(assistantMode, screenId, agentScope, studioPromptOptions, cancellationToken);
                 }
-
-                break;
+                continue;
             }
-            case LlmProviderKind.Modal:
-            {
-                var credentials = await _modalCredentials.ResolveAsync(_tenantContext.TenantId, cancellationToken);
-                if (string.IsNullOrEmpty(credentials.ApiKey) || string.IsNullOrWhiteSpace(credentials.BaseUrl))
-                {
-                    LogPhase("modal_credentials", sw.ElapsedMilliseconds);
-                    yield return ChatStreamEvent.PhaseEvent(
-                        "provider_availability",
-                        "failed",
-                        sw.ElapsedMilliseconds,
-                        detail: modelRef.CanonicalModelRef);
-                    yield return ChatStreamEvent.ErrorEvent(ModalCredentialMessages.Unavailable(credentials));
-                    yield break;
-                }
 
-                break;
-            }
-            case LlmProviderKind.Cursor:
-            {
-                if (!_cursorSdkSettings.Enabled)
-                {
-                    yield return ChatStreamEvent.PhaseEvent(
-                        "provider_availability",
-                        "failed",
-                        sw.ElapsedMilliseconds,
-                        detail: modelRef.CanonicalModelRef);
-                    yield return ChatStreamEvent.ErrorEvent(
-                        "Cursor SDK est désactivé sur le serveur (CursorSdk:Enabled=false).");
-                    yield break;
-                }
-
-                var cursorCreds = await _platformAiSettings.GetCursorCredentialsAsync(cancellationToken);
-                if (string.IsNullOrEmpty(cursorCreds.ApiKey))
-                {
-                    yield return ChatStreamEvent.PhaseEvent(
-                        "provider_availability",
-                        "failed",
-                        sw.ElapsedMilliseconds,
-                        detail: modelRef.CanonicalModelRef);
-                    yield return ChatStreamEvent.ErrorEvent(
-                        "Aucune clé API Cursor configurée. Configurez-la dans le back-office plateforme > Configuration IA (Cursor).");
-                    yield break;
-                }
-
-                if (!await _cursorAgentClient.IsAvailableAsync(cancellationToken))
-                {
-                    yield return ChatStreamEvent.PhaseEvent(
-                        "provider_availability",
-                        "failed",
-                        sw.ElapsedMilliseconds,
-                        detail: modelRef.CanonicalModelRef);
-                    yield return ChatStreamEvent.ErrorEvent(
-                        "Le pont Cursor SDK est indisponible. Vérifiez Node 22.13+ et `npm ci` dans CursorSdkBridge.");
-                    yield break;
-                }
-
-                break;
-            }
-            default:
-                yield return ChatStreamEvent.ErrorEvent($"Fournisseur LLM non géré : {modelRef.Kind}.");
-                yield break;
+            yield return ChatStreamEvent.PhaseEvent(
+                "provider_availability",
+                "failed",
+                sw.ElapsedMilliseconds,
+                detail: modelRef.CanonicalModelRef);
+            yield return ChatStreamEvent.ErrorEvent(providerError);
+            yield break;
         }
 
         LogPhase("provider_availability", sw.ElapsedMilliseconds);
@@ -346,6 +365,13 @@ public sealed class SendChatMessageHandler
             "completed",
             sw.ElapsedMilliseconds,
             detail: modelRef.CanonicalModelRef);
+
+        if (isStudioBuilder)
+        {
+            // Métadonnées du tour Studio (PR 1.2) : l'atelier affiche « Modèle standard utilisé » quand le
+            // modèle avancé demandé n'a pas pu servir. Émis une seule fois, avant le premier token.
+            yield return ChatStreamEvent.StudioMetaEvent(BuildStudioMetaJson(useAdvanced, advancedFallbackReason, modelRef));
+        }
 
         sw.Restart();
         yield return ChatStreamEvent.PhaseEvent(
@@ -491,7 +517,12 @@ public sealed class SendChatMessageHandler
         var toolSourcesForClient = new List<SourceEntryDto>();
         var accumulatedSuggestedPrompts = new List<string>();
         string? accumulatedDashboardJson = null;
-        var temperature = isScreenAnalysis ? _screenAnalysisOptions.Temperature : _ollamaSettings.Temperature;
+        // StudioBuilder : température basse dédiée (specs JSON déterministes — A13).
+        var temperature = isScreenAnalysis
+            ? _screenAnalysisOptions.Temperature
+            : isStudioBuilder ? _ollamaSettings.StudioTemperature : _ollamaSettings.Temperature;
+        // StudioBuilder : graine fixe par défaut pour des specs reproductibles d'un tour à l'autre.
+        var seed = isStudioBuilder ? (_ollamaSettings.Seed ?? StudioDefaultSeed) : _ollamaSettings.Seed;
         // Lot 3.2 — budget de tokens réduit et scope-guardé pour FirmMission : les synthèses de revue
         // de portefeuille sont courtes, 1536 borne le pire cas de génération CPU. 0 = hérite du global.
         var maxTokens = isScreenAnalysis
@@ -507,7 +538,9 @@ public sealed class SendChatMessageHandler
             assistantMode,
             toolIntent,
             inferenceProfile,
-            agentScope) + 1;
+            agentScope,
+            studioAdvanced: useAdvanced,
+            studioAdvancedMaxToolCallRounds: _ollamaSettings.StudioAdvancedMaxToolCallRounds) + 1;
         var toolCallRound = 0;
         var continueLoop = true;
         // Compteur unique de générations LLM du tour (Lot 2.2) : incrémenté à CHAQUE génération —
@@ -1112,7 +1145,8 @@ public sealed class SendChatMessageHandler
                         temperature,
                         maxTokens,
                         effectiveNumCtx,
-                        inferenceProfile)
+                        inferenceProfile,
+                        seed)
                 };
 
                 using (var gateLease = await _ollamaGenerationGate.AcquireAsync(cancellationToken))
@@ -1203,7 +1237,7 @@ public sealed class SendChatMessageHandler
                     temperature,
                     Math.Max(1, maxTokens),
                     cancellationToken,
-                    _ollamaSettings.Seed,
+                    seed,
                     resolved.Value.Options))
                 {
                     if (chunk.Message?.ToolCalls is { Count: > 0 } toolCalls)
@@ -1842,7 +1876,8 @@ public sealed class SendChatMessageHandler
                         temperature,
                         maxTokens,
                         synthNumCtx,
-                        inferenceProfile)
+                        inferenceProfile,
+                        seed)
                 };
 
                 using (var gateLease = await _ollamaGenerationGate.AcquireAsync(cancellationToken))
@@ -1903,7 +1938,7 @@ public sealed class SendChatMessageHandler
                     temperature,
                     Math.Max(1, maxTokens),
                     cancellationToken,
-                    _ollamaSettings.Seed,
+                    seed,
                     resolved.Value.Options))
                 {
                     if (string.IsNullOrEmpty(chunk.Message?.Content))
@@ -2808,10 +2843,17 @@ public sealed class SendChatMessageHandler
         AssistantMode assistantMode,
         AiToolIntentRouter.AiToolIntent toolIntent,
         OllamaInferenceProfile? inferenceProfile,
-        AssistantAgentScope agentScope = AssistantAgentScope.None)
+        AssistantAgentScope agentScope = AssistantAgentScope.None,
+        bool studioAdvanced = false,
+        int studioAdvancedMaxToolCallRounds = 4)
     {
         if (isScreenAnalysis)
             return Math.Clamp(screenAnalysisMaxRounds, 1, 20);
+
+        // Studio + modèle avancé (PR 1.2) : le budget dédié remplace le plafond CPU pour ce tour —
+        // le modèle avancé tourne sur GPU / cloud, le profil CPU de la plateforme ne le concerne pas.
+        if (assistantMode == AssistantMode.StudioBuilder && studioAdvanced)
+            return Math.Clamp(studioAdvancedMaxToolCallRounds, 1, 20);
 
         var defaultRounds = Math.Clamp(defaultMaxRounds, 1, 20);
         if (inferenceProfile?.Device != OllamaInferenceDevice.CpuOnly)
@@ -2861,7 +2903,8 @@ public sealed class SendChatMessageHandler
         double temperature,
         int maxTokens,
         int? numCtx,
-        OllamaInferenceProfile? inferenceProfile)
+        OllamaInferenceProfile? inferenceProfile,
+        int? seed)
     {
         var options = new OllamaOptions
         {
@@ -2870,7 +2913,7 @@ public sealed class SendChatMessageHandler
             NumCtx = numCtx,
             NumThread = _ollamaSettings.NumThread,
             NumBatch = _ollamaSettings.NumBatch,
-            Seed = _ollamaSettings.Seed,
+            Seed = seed,
             TopP = _ollamaSettings.TopP
         };
 
@@ -2879,6 +2922,30 @@ public sealed class SendChatMessageHandler
 
     /// <inheritdoc cref="AssistantModeResolver.QueryLikelyMutating"/>
     public static bool QueryLikelyMutating(string? text) => AssistantModeResolver.QueryLikelyMutating(text);
+
+    private static ParsedModelRef ParseModelRefOrDefault(string rawModel, string defaultModel)
+    {
+        var modelRef = ModelRef.Parse(rawModel);
+        return string.IsNullOrEmpty(modelRef.CanonicalModelRef)
+            ? ModelRef.Parse($"{ModelRef.OllamaPrefix}{defaultModel}")
+            : modelRef;
+    }
+
+    /// <summary>
+    /// Charge utile de l'événement SSE <c>meta</c> (StudioBuilder, PR 1.2) :
+    /// <c>{ usedAdvancedModel, advancedModelFallbackReason, model }</c>. <c>model</c> est le libellé lisible
+    /// (identifiant fournisseur), même logique que la capacité <c>studioAiModelLabel</c>.
+    /// </summary>
+    public static string BuildStudioMetaJson(bool usedAdvancedModel, string? advancedModelFallbackReason, ParsedModelRef modelRef)
+    {
+        var label = string.IsNullOrWhiteSpace(modelRef.ProviderModelId) ? modelRef.CanonicalModelRef : modelRef.ProviderModelId;
+        return JsonSerializer.Serialize(new
+        {
+            usedAdvancedModel,
+            advancedModelFallbackReason,
+            model = label
+        });
+    }
 
     /// <summary>
     /// Vrai si le suffixe d'intent peut être appliqué pour ce scope : les suffixes Sales/Fallback citent

@@ -119,6 +119,14 @@ public sealed record ChatStreamEvent
         new() { Type = "studio_plan", Content = planJson };
 
     /// <summary>
+    /// Métadonnées du tour Studio (type <c>meta</c>), émises une fois avant le premier token :
+    /// <c>{ "usedAdvancedModel": bool, "advancedModelFallbackReason": "disabled"|"not_configured"|"unavailable"|null, "model": "&lt;libellé&gt;" }</c>.
+    /// Permet à l'atelier d'afficher « Modèle standard utilisé » quand le modèle avancé demandé n'a pas pu servir.
+    /// </summary>
+    public static ChatStreamEvent StudioMetaEvent(string metaJson) =>
+        new() { Type = "meta", Content = metaJson };
+
+    /// <summary>
     /// Résultat d'un état calculé en lecture seule (type <c>studio_report_result</c>) : tableau et
     /// graphique rendus dans la conversation. Rien n'est enregistré — l'utilisateur peut ensuite
     /// demander d'en faire un état Studio.
