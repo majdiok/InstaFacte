@@ -79,6 +79,9 @@ export interface ProjectDetail {
   contractNumber?: string | null;
   isBillable: boolean;
   timesheetsEnabled: boolean;
+  milestonesEnabled: boolean;
+  allocatedHours: number;
+  analyticAccountCode?: string | null;
   phases: ProjectPhase[];
 }
 
@@ -407,6 +410,17 @@ export interface UpsertProjectPayload {
   contractNumber?: string | null;
   isBillable: boolean;
   timesheetsEnabled: boolean;
+  milestonesEnabled: boolean;
+  allocatedHours: number;
+  analyticAccountCode?: string | null;
+}
+
+export interface ProjectSettingsPayload {
+  billingMode: ProjectBillingModeCode | number;
+  isBillable: boolean;
+  timesheetsEnabled: boolean;
+  milestonesEnabled: boolean;
+  allocatedHours: number;
 }
 
 export interface UpsertTaskPayload {
