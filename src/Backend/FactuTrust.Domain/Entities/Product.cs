@@ -136,6 +136,12 @@ public sealed class Product : AggregateRoot
 
     public int? ExpiryAlertDays { get; private set; }
 
+    /// <summary>Odoo Invoicing Policy for service products.</summary>
+    public ServiceInvoicingPolicy ServiceInvoicingPolicy { get; private set; }
+
+    /// <summary>Odoo Create on Order for service products.</summary>
+    public ServiceCreateOnOrder ServiceCreateOnOrder { get; private set; }
+
     private Product() { }
 
     /// <summary>
@@ -244,10 +250,25 @@ public sealed class Product : AggregateRoot
             MaxDiscountPercent = isDiscountEnabled ? maxDiscountPercent : null,
             TrackingMode = TrackingMode.None,
             CostingMethod = CostingMethod.Average,
-            PickingPolicy = PickingPolicy.None
+            PickingPolicy = PickingPolicy.None,
+            ServiceInvoicingPolicy = type == ProductType.Service
+                ? ServiceInvoicingPolicy.BasedOnTimesheets
+                : ServiceInvoicingPolicy.PrepaidFixedPrice,
+            ServiceCreateOnOrder = type == ProductType.Service
+                ? ServiceCreateOnOrder.ProjectAndTask
+                : ServiceCreateOnOrder.Nothing
         };
 
         return Result.Success(product);
+    }
+
+    public Result SetServiceBillingPolicy(ServiceInvoicingPolicy policy, ServiceCreateOnOrder createOnOrder)
+    {
+        if (Type != ProductType.Service)
+            return Result.Failure(Error.Validation("Type", "La politique de facturation service s'applique aux services uniquement"));
+        ServiceInvoicingPolicy = policy;
+        ServiceCreateOnOrder = createOnOrder;
+        return Result.Success();
     }
 
     public void Update(

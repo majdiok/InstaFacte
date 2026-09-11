@@ -276,6 +276,11 @@ public partial class TenantDbContext : DbContext
     public DbSet<Domain.Entities.Projects.ProjectSituation> ProjectSituations => Set<Domain.Entities.Projects.ProjectSituation>();
     public DbSet<Domain.Entities.Projects.ProjectSubcontractor> ProjectSubcontractors => Set<Domain.Entities.Projects.ProjectSubcontractor>();
     public DbSet<Domain.Entities.Projects.ProjectBilling> ProjectBillings => Set<Domain.Entities.Projects.ProjectBilling>();
+    public DbSet<Domain.Entities.Projects.TenantTimesheetSettings> TenantTimesheetSettings => Set<Domain.Entities.Projects.TenantTimesheetSettings>();
+    public DbSet<Domain.Entities.Projects.EmployeeBillingTimeTarget> EmployeeBillingTimeTargets => Set<Domain.Entities.Projects.EmployeeBillingTimeTarget>();
+    public DbSet<Domain.Entities.Projects.TimesheetTip> TimesheetTips => Set<Domain.Entities.Projects.TimesheetTip>();
+    public DbSet<Domain.Entities.Projects.ProjectUpdate> ProjectUpdates => Set<Domain.Entities.Projects.ProjectUpdate>();
+    public DbSet<Domain.Entities.Projects.TimeOffRequest> TimeOffRequests => Set<Domain.Entities.Projects.TimeOffRequest>();
 
     // Recurring contracts / B2B subscriptions — gated by AppModule.RecurringContracts.
     public DbSet<RecurringContract> RecurringContracts => Set<RecurringContract>();

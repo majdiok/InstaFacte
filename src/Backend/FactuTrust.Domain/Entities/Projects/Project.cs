@@ -21,6 +21,10 @@ public sealed class Project : AggregateRoot
     public string? ContractNumber { get; private set; }
     public bool IsBillable { get; private set; }
     public bool TimesheetsEnabled { get; private set; }
+    public Guid? SalesOrderId { get; private set; }
+    public string? AnalyticAccountCode { get; private set; }
+    public bool MilestonesEnabled { get; private set; }
+    public decimal AllocatedHours { get; private set; }
 
     private Project() { }
 
@@ -38,7 +42,11 @@ public sealed class Project : AggregateRoot
         string? contractNumber = null,
         string currency = "TND",
         bool isBillable = true,
-        bool timesheetsEnabled = true)
+        bool timesheetsEnabled = true,
+        Guid? salesOrderId = null,
+        string? analyticAccountCode = null,
+        bool milestonesEnabled = false,
+        decimal allocatedHours = 0)
     {
         name = name?.Trim() ?? string.Empty;
         if (clientId == Guid.Empty)
@@ -71,8 +79,44 @@ public sealed class Project : AggregateRoot
             SiteAddress = siteAddress?.Trim(),
             ContractNumber = contractNumber?.Trim(),
             IsBillable = isBillable,
-            TimesheetsEnabled = timesheetsEnabled
+            TimesheetsEnabled = timesheetsEnabled,
+            SalesOrderId = salesOrderId == Guid.Empty ? null : salesOrderId,
+            AnalyticAccountCode = analyticAccountCode?.Trim(),
+            MilestonesEnabled = milestonesEnabled,
+            AllocatedHours = decimal.Round(Math.Max(0, allocatedHours), 2)
         });
+    }
+
+    public Result LinkSalesOrder(Guid salesOrderId)
+    {
+        if (salesOrderId == Guid.Empty)
+            return Result.Failure(Error.Validation("SalesOrderId", "La commande est obligatoire"));
+        SalesOrderId = salesOrderId;
+        IncrementVersion();
+        return Result.Success();
+    }
+
+    public Result SetAnalyticAccountCode(string? code)
+    {
+        AnalyticAccountCode = string.IsNullOrWhiteSpace(code) ? null : code.Trim();
+        IncrementVersion();
+        return Result.Success();
+    }
+
+    public Result ConfigureTimesheets(bool enabled, bool milestonesEnabled, decimal allocatedHours)
+    {
+        TimesheetsEnabled = enabled;
+        MilestonesEnabled = milestonesEnabled;
+        AllocatedHours = decimal.Round(Math.Max(0, allocatedHours), 2);
+        IncrementVersion();
+        return Result.Success();
+    }
+
+    public Result SetBillable(bool isBillable)
+    {
+        IsBillable = isBillable;
+        IncrementVersion();
+        return Result.Success();
     }
 
     public Result Update(

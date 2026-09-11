@@ -93,12 +93,21 @@
                 "styles": false,
                 "vendor": false
               }
+            },
+            "development-lean": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": false
             }
           },
           "defaultConfiguration": "production"
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
+          "options": {
+            "hmr": false,
+            "poll": 2000
+          },
           "configurations": {
             "production": {
               "buildTarget": "factutrust-web:build:production"
@@ -106,6 +115,12 @@
             "development": {
               "buildTarget": "factutrust-web:build:development",
               "proxyConfig": "proxy.conf.js"
+            },
+            "lean": {
+              "buildTarget": "factutrust-web:build:development-lean",
+              "proxyConfig": "proxy.conf.js",
+              "hmr": false,
+              "poll": 2000
             }
           },
           "defaultConfiguration": "development"
