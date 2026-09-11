@@ -53,6 +53,7 @@ public sealed class SendChatMessageHandlerConversationOwnershipTests
                 It.IsAny<AssistantMode>(),
                 It.IsAny<string?>(),
                 It.IsAny<AssistantAgentScope>(),
+                It.IsAny<StudioPromptOptions?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync("Tu es l'assistant InstaFact.");
 

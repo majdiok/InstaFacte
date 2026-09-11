@@ -89,3 +89,6 @@ steps:
     displayName: Backend tests (SQL réel)
     env:
       FACTUTRUST_TEST_SQL_CONNECTION: 'Server=localhost,1433;User Id=sa;Password=$(SqlSaPassword);TrustServerCertificate=True;'
+
+  - script: dotnet test src/Backend/tests/FactuTrust.API.Tests/FactuTrust.API.Tests.csproj --configuration Release --no-build --verbosity minimal
+    displayName: Backend tests (API — contrats HTTP, autorisation)
