@@ -530,7 +530,10 @@ export class ProjectListComponent implements OnInit {
   createVisible = false;
   startDate: Date | null = null;
   endDate: Date | null = null;
-  draft: UpsertProjectPayload = { clientId: '', name: '', kind: 'Generic', billingMode: 'None', budgetHt: 0, isBillable: true, timesheetsEnabled: true };
+  draft: UpsertProjectPayload = {
+    clientId: '', name: '', kind: 'Generic', billingMode: 'None', budgetHt: 0,
+    isBillable: true, timesheetsEnabled: true, milestonesEnabled: false, allocatedHours: 0, analyticAccountCode: null
+  };
 
   readonly statusOptions = PROJECT_STATUS_OPTIONS;
   readonly kindOptions = PROJECT_KIND_OPTIONS;
@@ -833,7 +836,10 @@ export class ProjectListComponent implements OnInit {
       siteAddress: '',
       contractNumber: '',
       isBillable: false,
-      timesheetsEnabled: false
+      timesheetsEnabled: false,
+      milestonesEnabled: false,
+      allocatedHours: 0,
+      analyticAccountCode: null
     };
     this.startDate = null;
     this.endDate = null;

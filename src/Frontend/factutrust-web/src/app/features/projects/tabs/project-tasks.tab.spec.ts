@@ -40,6 +40,8 @@ describe('ProjectTasksTabComponent', () => {
       currency: 'EUR',
       isBillable: true,
       timesheetsEnabled: true,
+      milestonesEnabled: false,
+      allocatedHours: 0,
       phases: [{ id: 'ph1', name: 'À faire', sortOrder: 0 }]
     };
   }
