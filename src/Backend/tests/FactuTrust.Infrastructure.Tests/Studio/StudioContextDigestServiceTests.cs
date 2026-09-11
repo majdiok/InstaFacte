@@ -130,6 +130,43 @@ public sealed class StudioContextDigestServiceTests
     }
 
     [Fact]
+    public async Task A_very_wide_table_is_cut_per_line_so_other_tables_keep_their_keys()
+    {
+        // 60 champs ⇒ la ligne brute dépasserait 1000 caractères et mangerait tout le budget CPU (1200).
+        // Coupée à MaxLineChars avec « , … (+N champs) », elle laisse la place aux autres tables.
+        var h = new Harness();
+        var wide = Enumerable.Range(1, 60).Select(i => ($"colonne_numero_{i:00}", CustomFieldType.Text)).ToArray();
+        h.AddEntity("grande_table", "Grande table", null, wide);
+        h.AddEntity("petite", "Petite", null, ("nom", CustomFieldType.Text));
+
+        var digest = await h.Build().BuildSchemaDigestAsync(TenantId, 1200, CancellationToken.None);
+        var lines = digest.Split('\n');
+
+        Assert.Equal(2, lines.Length);
+        Assert.StartsWith("- grande_table « Grande table » : colonne_numero_01:text, colonne_numero_02:text, ", lines[0]);
+        Assert.Matches(@", … \(\+\d+ champs\)$", lines[0]);
+        Assert.True(lines[0].Length <= StudioContextDigestService.MaxLineChars, $"ligne de {lines[0].Length} caractères");
+        var shown = lines[0].Split(", ").Count(t => t.Contains(":text"));
+        var omitted = int.Parse(System.Text.RegularExpressions.Regex.Match(lines[0], @"\+(\d+) champs").Groups[1].Value);
+        Assert.Equal(60, shown + omitted);
+        Assert.Equal("- petite « Petite » : nom:text", lines[1]);
+    }
+
+    [Fact]
+    public async Task A_table_that_fits_in_a_line_is_never_cut()
+    {
+        var h = new Harness();
+        var fields = Enumerable.Range(1, 12).Select(i => ($"champ_{i:00}", CustomFieldType.Number)).ToArray();
+        h.AddEntity("moyenne", "Moyenne", null, fields);
+
+        var digest = await h.Build().BuildSchemaDigestAsync(TenantId, 4000, CancellationToken.None);
+
+        Assert.DoesNotContain("champs)", digest);
+        Assert.EndsWith("champ_12:number", digest);
+        Assert.Equal(12, digest.Split(", ").Length);
+    }
+
+    [Fact]
     public async Task Budget_too_small_for_a_single_line_still_announces_the_table_count()
     {
         var h = new Harness();

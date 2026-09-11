@@ -90,5 +90,9 @@ steps:
     env:
       FACTUTRUST_TEST_SQL_CONNECTION: 'Server=localhost,1433;User Id=sa;Password=$(SqlSaPassword);TrustServerCertificate=True;'
 
-  - script: dotnet test src/Backend/tests/FactuTrust.API.Tests/FactuTrust.API.Tests.csproj --configuration Release --no-build --verbosity minimal
-    displayName: Backend tests (API — contrats HTTP, autorisation)
+  # Contrats HTTP Studio (R22 / C6 du plan Studio IA). Filtre volontaire : les classes
+  # WebApplicationFactory du projet (Auth*, Platform*IntegrationTests…) exigent LocalDB, absent sous
+  # Linux (« LocalDB is not supported on this platform ») ; elles tournent dans le workflow GitHub
+  # `CI` (windows-latest), qui exécute le projet complet.
+  - script: dotnet test src/Backend/tests/FactuTrust.API.Tests/FactuTrust.API.Tests.csproj --configuration Release --no-build --verbosity minimal --filter "FullyQualifiedName~FactuTrust.API.Tests.Studio"
+    displayName: Backend tests (API — contrats HTTP Studio)

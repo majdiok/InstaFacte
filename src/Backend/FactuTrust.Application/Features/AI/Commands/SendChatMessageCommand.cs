@@ -186,16 +186,20 @@ public sealed class SendChatMessageHandler
         // Modèle avancé Studio par requête (PR 1.2, décision D3) : lecture Master séquentielle, uniquement
         // si l'atelier le demande ET que le drapeau est actif. Toute impossibilité ⇒ repli SILENCIEUX sur
         // le modèle standard, signalé par l'événement SSE `meta` — jamais une erreur.
-        var advancedRequested = isStudioBuilder && command.Options?.UseAdvancedModel == true;
-        string? studioAdvancedConfigured = advancedRequested && _ollamaSettings.EnableStudioAiAdvancedModel
-            ? await _platformAiSettings.GetStudioAiAdvancedModelRefAsync(cancellationToken)
-            : null;
-        var useAdvanced = advancedRequested
-            && _ollamaSettings.EnableStudioAiAdvancedModel
-            && !string.IsNullOrWhiteSpace(studioAdvancedConfigured);
-        string? advancedFallbackReason = !advancedRequested || useAdvanced
-            ? null
-            : !_ollamaSettings.EnableStudioAiAdvancedModel ? StudioAdvancedFallbackDisabled : StudioAdvancedFallbackNotConfigured;
+        string? studioAdvancedConfigured = null;
+        string? advancedFallbackReason = null;
+        if (isStudioBuilder && command.Options?.UseAdvancedModel == true)
+        {
+            if (!_ollamaSettings.EnableStudioAiAdvancedModel)
+                advancedFallbackReason = StudioAdvancedFallbackDisabled;
+            else
+            {
+                studioAdvancedConfigured = await _platformAiSettings.GetStudioAiAdvancedModelRefAsync(cancellationToken);
+                if (string.IsNullOrWhiteSpace(studioAdvancedConfigured))
+                    advancedFallbackReason = StudioAdvancedFallbackNotConfigured;
+            }
+        }
+        var useAdvanced = !string.IsNullOrWhiteSpace(studioAdvancedConfigured);
         if (advancedFallbackReason is not null)
         {
             _logger.LogWarning(
@@ -233,21 +237,26 @@ public sealed class SendChatMessageHandler
 
         // Le modèle est imposé par la configuration globale de la plateforme (back-office) ;
         // le modèle éventuellement transmis par le client et celui de la conversation sont ignorés.
-        // StudioBuilder : [avancé si demandé et disponible] → StudioAiModelRef → Ollama:StudioAiModel → DefaultModelRef → DefaultModel.
-        string ResolveStandardRawModel()
+        // StudioBuilder : StudioAiModelRef → Ollama:StudioAiModel → DefaultModelRef → DefaultModel.
+        string rawModel;
+        if (isStudioBuilder)
         {
-            if (isStudioBuilder)
-            {
-                if (!string.IsNullOrWhiteSpace(studioConfigured))
-                    return studioConfigured;
-                if (!string.IsNullOrWhiteSpace(_ollamaSettings.StudioAiModel))
-                    return _ollamaSettings.StudioAiModel.Trim();
-            }
-            return string.IsNullOrWhiteSpace(assistantConfigured) ? defaultModel : assistantConfigured;
+            if (!string.IsNullOrWhiteSpace(studioConfigured))
+                rawModel = studioConfigured;
+            else if (!string.IsNullOrWhiteSpace(_ollamaSettings.StudioAiModel))
+                rawModel = _ollamaSettings.StudioAiModel.Trim();
+            else
+                rawModel = string.IsNullOrWhiteSpace(assistantConfigured) ? defaultModel : assistantConfigured;
+        }
+        else
+        {
+            rawModel = string.IsNullOrWhiteSpace(assistantConfigured) ? defaultModel : assistantConfigured;
         }
 
-        var rawModel = useAdvanced ? studioAdvancedConfigured! : ResolveStandardRawModel();
-        var modelRef = ParseModelRefOrDefault(rawModel, defaultModel);
+        // Modèle standard toujours résolu : c'est le modèle du tour, ou celui du repli D3 si le modèle
+        // avancé Studio (demandé et configuré) se révèle indisponible ci-dessous.
+        var standardModelRef = ParseModelRefOrDefault(rawModel, defaultModel);
+        var modelRef = useAdvanced ? ParseModelRefOrDefault(studioAdvancedConfigured!, defaultModel) : standardModelRef;
 
         // Disponibilité du fournisseur. Boucle à deux tours au plus : si le modèle AVANCÉ Studio est
         // indisponible (moteur arrêté, modèle non installé, clé absente…), on retombe sur le modèle
@@ -335,11 +344,11 @@ public sealed class SendChatMessageHandler
             {
                 // Repli D3 « unavailable » : le tour continue sur le modèle standard, l'atelier est prévenu via `meta`.
                 _logger.LogWarning(
-                    "AI chat {CorrelationId} Studio advanced model {Model} unavailable ({Reason}); falling back to the standard model",
-                    correlationId ?? "-", modelRef.CanonicalModelRef, providerError);
+                    "AI chat {CorrelationId} Studio advanced model {Model} unavailable after {ElapsedMs} ms ({Reason}); falling back to the standard model",
+                    correlationId ?? "-", modelRef.CanonicalModelRef, sw.ElapsedMilliseconds, providerError);
                 useAdvanced = false;
                 advancedFallbackReason = StudioAdvancedFallbackUnavailable;
-                modelRef = ParseModelRefOrDefault(ResolveStandardRawModel(), defaultModel);
+                modelRef = standardModelRef;
                 if (studioPromptOptions is not null)
                 {
                     // Le prompt a été bâti avec le budget « avancé » : on le rebâtit au budget CPU
@@ -2850,9 +2859,11 @@ public sealed class SendChatMessageHandler
         if (isScreenAnalysis)
             return Math.Clamp(screenAnalysisMaxRounds, 1, 20);
 
-        // Studio + modèle avancé (PR 1.2) : le budget dédié remplace le plafond CPU pour ce tour —
-        // le modèle avancé tourne sur GPU / cloud, le profil CPU de la plateforme ne le concerne pas.
-        if (assistantMode == AssistantMode.StudioBuilder && studioAdvanced)
+        // Studio + modèle avancé (PR 1.2) : le budget dédié remplace le plafond CPU pour ce tour. Le
+        // modèle avancé est censé tourner sur GPU / cloud ; si l'administrateur a pourtant désigné un
+        // modèle Ollama exécuté sur un hôte CPU seul, le plafond CPU garde tout son sens et s'applique.
+        if (assistantMode == AssistantMode.StudioBuilder && studioAdvanced
+            && inferenceProfile?.Device != OllamaInferenceDevice.CpuOnly)
             return Math.Clamp(studioAdvancedMaxToolCallRounds, 1, 20);
 
         var defaultRounds = Math.Clamp(defaultMaxRounds, 1, 20);
@@ -2938,12 +2949,11 @@ public sealed class SendChatMessageHandler
     /// </summary>
     public static string BuildStudioMetaJson(bool usedAdvancedModel, string? advancedModelFallbackReason, ParsedModelRef modelRef)
     {
-        var label = string.IsNullOrWhiteSpace(modelRef.ProviderModelId) ? modelRef.CanonicalModelRef : modelRef.ProviderModelId;
         return JsonSerializer.Serialize(new
         {
             usedAdvancedModel,
             advancedModelFallbackReason,
-            model = label
+            model = ModelRef.HumanLabel(modelRef.CanonicalModelRef)
         });
     }
 

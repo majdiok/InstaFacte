@@ -119,10 +119,46 @@ public sealed class ResolveMaxToolCallRoundsTests
     // ── PR 1.2 : budget dédié au modèle avancé Studio ──
     // Un tour Studio sur le modèle standard garde le comportement historique (intent Fallback ⇒
     // defaultMaxRounds, même sur CPU). Quand le modèle AVANCÉ a été retenu pour ce tour, le budget
-    // StudioAdvancedMaxToolCallRounds (4 par défaut) s'applique, quel que soit le profil d'inférence :
-    // le modèle avancé ne tourne pas sur le CPU de la plateforme.
+    // StudioAdvancedMaxToolCallRounds (4 par défaut) s'applique dès que le modèle avancé tourne hors du
+    // CPU de la plateforme : fournisseur cloud (aucun profil d'inférence) ou moteur Ollama sur GPU.
     [Fact]
-    public void StudioBuilder_Cpu_AdvancedModel_UsesAdvancedBudget()
+    public void StudioBuilder_CloudAdvancedModel_UsesAdvancedBudget()
+    {
+        var rounds = SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 2,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.StudioBuilder,
+            AiToolIntentRouter.AiToolIntent.Fallback,
+            inferenceProfile: null,
+            studioAdvanced: true,
+            studioAdvancedMaxToolCallRounds: 4);
+
+        Assert.Equal(4, rounds);
+    }
+
+    [Fact]
+    public void StudioBuilder_GpuAdvancedModel_UsesAdvancedBudget()
+    {
+        var rounds = SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 2,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.StudioBuilder,
+            AiToolIntentRouter.AiToolIntent.Fallback,
+            new OllamaInferenceProfile(OllamaInferenceDevice.Gpu, null, null, 256, false),
+            studioAdvanced: true,
+            studioAdvancedMaxToolCallRounds: 4);
+
+        Assert.Equal(4, rounds);
+    }
+
+    // Un modèle Ollama désigné « avancé » mais exécuté sur un hôte CPU seul ne doit pas contourner le
+    // plafond CPU : le budget avancé est réservé au GPU / cloud, le tour garde le comportement standard.
+    [Fact]
+    public void StudioBuilder_CpuOnlyAdvancedModel_KeepsCpuBehavior()
     {
         var rounds = SendChatMessageHandler.ResolveMaxToolCallRounds(
             isScreenAnalysis: false,
@@ -135,7 +171,15 @@ public sealed class ResolveMaxToolCallRoundsTests
             studioAdvanced: true,
             studioAdvancedMaxToolCallRounds: 4);
 
-        Assert.Equal(4, rounds);
+        Assert.Equal(SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 2,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.StudioBuilder,
+            AiToolIntentRouter.AiToolIntent.Fallback,
+            CpuProfile), rounds);
+        Assert.NotEqual(4, rounds);
     }
 
     [Fact]
@@ -179,7 +223,7 @@ public sealed class ResolveMaxToolCallRoundsTests
             cpuMaxToolCallRounds: 1,
             AssistantMode.StudioBuilder,
             AiToolIntentRouter.AiToolIntent.Fallback,
-            CpuProfile,
+            inferenceProfile: null,
             studioAdvanced: true,
             studioAdvancedMaxToolCallRounds: configured);
 

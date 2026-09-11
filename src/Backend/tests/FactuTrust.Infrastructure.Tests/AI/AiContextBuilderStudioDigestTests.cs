@@ -85,6 +85,25 @@ public sealed class AiContextBuilderStudioDigestTests
     }
 
     [Fact]
+    public async Task Unresolved_tenant_skips_the_digest_instead_of_asserting_an_empty_schema()
+    {
+        // Sans tenant résolu (Guid.Empty), interroger la base dirait « Aucune table Studio » — une
+        // affirmation fausse, plus une entrée de cache parasite. On ne dit rien et on n'interroge rien.
+        var digest = DigestMock("- employes « Employés » : nom:text", null);
+        var builder = Build(Settings(digestEnabled: true), digest.Object);
+
+        var prompt = await builder.BuildSystemPromptAsync(
+            AssistantMode.StudioBuilder, null, AssistantAgentScope.None,
+            new StudioPromptOptions(false, "table", Guid.Empty, UserId));
+
+        Assert.DoesNotContain("SCHÉMA EXISTANT", prompt);
+        Assert.DoesNotContain("Aucune table Studio", prompt);
+        Assert.DoesNotContain("11. Le SCHÉMA EXISTANT", prompt);
+        Assert.Contains("INTENTION DE L'UTILISATEUR : créer une table simple.", prompt);
+        digest.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task Flag_on_adds_schema_section_rules_11_and_12_and_last_plan()
     {
         var digest = DigestMock(

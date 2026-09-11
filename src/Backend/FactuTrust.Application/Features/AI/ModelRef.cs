@@ -49,6 +49,23 @@ public static class ModelRef
         return p.CanonicalModelRef;
     }
 
+    /// <summary>
+    /// Libellé humain d'une référence de modèle : l'identifiant du modèle chez le fournisseur
+    /// (« openrouter:anthropic/claude-sonnet-4 » ⇒ « anthropic/claude-sonnet-4 »,
+    /// « ollama:qwen2.5:7b-instruct » ⇒ « qwen2.5:7b-instruct »), ou la référence brute (trim) si
+    /// l'analyse est ambiguë. Jamais une chaîne de connexion ni une clé. Partagé par les capacités
+    /// Studio (<c>standardModelLabel</c> / <c>advancedModelLabel</c>) et l'événement SSE
+    /// <c>meta.model</c> du chat, pour que l'atelier affiche le même nom aux deux endroits.
+    /// </summary>
+    public static string HumanLabel(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return string.Empty;
+
+        var parsed = Parse(raw);
+        return string.IsNullOrWhiteSpace(parsed.ProviderModelId) ? raw.Trim() : parsed.ProviderModelId;
+    }
+
     public static string FormatCursor(string modelId, IReadOnlyList<CursorModelParam>? parameters = null)
     {
         var id = (modelId ?? string.Empty).Trim();

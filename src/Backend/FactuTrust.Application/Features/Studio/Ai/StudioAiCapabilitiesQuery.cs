@@ -93,8 +93,8 @@ public sealed class StudioAiCapabilitiesQueryHandler
     /// Libellé humain du modèle Studio : la partie « nom de modèle » de la référence canonique
     /// (ex. « ollama:qwen2.5:7b-instruct » ⇒ « qwen2.5:7b-instruct »). Chaîne de repli :
     /// référence plateforme → <c>Ollama:StudioAiModel</c> → <c>Ollama:DefaultModel</c> (même
-    /// ordre que la résolution d'envoi de message). Si l'analyse est ambiguë, la valeur brute
-    /// est conservée telle quelle — c'est un nom de modèle, jamais une chaîne de connexion.
+    /// ordre que la résolution d'envoi de message). Le libellé lui-même est <see cref="ModelRef.HumanLabel"/>,
+    /// partagé avec l'événement SSE <c>meta.model</c> du chat.
     ///
     /// <para>Pour le modèle avancé, l'appelant garantit une référence non vide : la chaîne de repli
     /// ne s'applique jamais (un modèle avancé absent doit rester <c>null</c>, pas retomber sur le
@@ -106,12 +106,6 @@ public sealed class StudioAiCapabilitiesQueryHandler
             : !string.IsNullOrWhiteSpace(_settings.StudioAiModel) ? _settings.StudioAiModel
             : _settings.DefaultModel;
 
-        if (string.IsNullOrWhiteSpace(effective))
-            return string.Empty;
-
-        var parsed = ModelRef.Parse(effective);
-        return string.IsNullOrWhiteSpace(parsed.ProviderModelId)
-            ? effective.Trim()
-            : parsed.ProviderModelId;
+        return ModelRef.HumanLabel(effective);
     }
 }

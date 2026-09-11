@@ -328,6 +328,77 @@ public sealed class SendChatMessageHandlerStudioAdvancedModelTests
     }
 
     [Fact]
+    public async Task Unavailable_standard_provider_is_still_an_error_after_the_loop_refactor()
+    {
+        // Verrou de non-régression de la restructuration en boucle : quand c'est le modèle STANDARD
+        // (mode Default, Ollama arrêté) qui est indisponible, la garde de disponibilité émet exactement
+        // comme avant — phase provider_availability « failed » puis l'erreur française — et s'arrête.
+        var h = new Harness();
+        var handler = h.Build();
+        h.Platform.Setup(x => x.GetDefaultModelRefAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("ollama:qwen2.5:7b-instruct");
+        h.Ollama.Setup(x => x.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        var events = await RunAsync(handler, new SendChatMessageCommand(null, "Quel est le chiffre d'affaires d'avril 2026 ?"));
+
+        var failed = Assert.Single(events, e => e.Type == "phase" && e.Phase == "provider_availability" && e.PhaseStatus == "failed");
+        Assert.Equal("ollama:qwen2.5:7b-instruct", failed.Detail);
+        var error = Assert.Single(events, e => e.Type == "error");
+        Assert.Equal(
+            "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur, ou choisissez un modèle cloud.",
+            error.Error);
+        Assert.Same(error, events[^1]);
+        Assert.Equal(1, events.Count(e => e.Type == "phase" && e.Phase == "provider_availability" && e.PhaseStatus == "running"));
+        Assert.DoesNotContain(events, e => e.Type is "meta" or "content" or "done");
+        Assert.Empty(h.ModelsCalled);
+    }
+
+    [Fact]
+    public async Task Unavailable_standard_provider_in_studio_mode_emits_error_without_meta()
+    {
+        // Même garde en StudioBuilder sans bascule : l'événement `meta` n'est émis qu'après une
+        // disponibilité confirmée — un échec du standard reste une erreur, pas un repli.
+        var h = new Harness();
+        var handler = h.Build();
+        h.Platform.Setup(x => x.GetStudioAiModelRefAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("ollama:qwen2.5:7b-instruct");
+        h.Ollama.Setup(x => x.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        h.Ollama.Setup(x => x.IsModelInstalledAsync("qwen2.5:7b-instruct", It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        var events = await RunAsync(handler, StudioCommand(useAdvanced: false));
+
+        Assert.Single(events, e => e.Type == "phase" && e.Phase == "provider_availability" && e.PhaseStatus == "failed");
+        var error = Assert.Single(events, e => e.Type == "error");
+        Assert.Equal(
+            "Le modèle configuré pour l'assistant n'est pas installé sur le moteur IA InstaFact. Contactez l'administrateur plateforme.",
+            error.Error);
+        Assert.DoesNotContain(events, e => e.Type == "meta");
+        Assert.Empty(h.ModelsCalled);
+    }
+
+    [Theory]
+    [InlineData("openrouter:anthropic/claude-sonnet-4", "anthropic/claude-sonnet-4")]
+    [InlineData("ollama:qwen2.5:7b-instruct", "qwen2.5:7b-instruct")]
+    [InlineData("qwen2.5:7b-instruct", "qwen2.5:7b-instruct")]
+    [InlineData("modal:meta/llama-3-70b", "meta/llama-3-70b")]
+    [InlineData("cursor:gpt-5|reasoning=high", "gpt-5")]
+    [InlineData("  ollama:  ", "ollama:")]
+    [InlineData("", "")]
+    [InlineData(null, "")]
+    public void HumanLabel_is_shared_between_capabilities_and_meta(string? raw, string expected)
+    {
+        // Le libellé de `meta.model` et celui des capacités (`advancedModelLabel`) viennent de la même
+        // fonction : l'atelier affiche le même nom dans la bannière et dans la bascule.
+        Assert.Equal(expected, ModelRef.HumanLabel(raw));
+        if (!string.IsNullOrWhiteSpace(raw))
+        {
+            var parsed = ModelRef.Parse(raw);
+            using var doc = JsonDocument.Parse(SendChatMessageHandler.BuildStudioMetaJson(true, null, parsed));
+            Assert.Equal(ModelRef.HumanLabel(parsed.CanonicalModelRef), doc.RootElement.GetProperty("model").GetString());
+        }
+    }
+
+    [Fact]
     public void BuildStudioMetaJson_uses_provider_model_id_as_label()
     {
         var json = SendChatMessageHandler.BuildStudioMetaJson(

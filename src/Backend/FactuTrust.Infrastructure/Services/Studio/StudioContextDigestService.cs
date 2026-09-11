@@ -10,14 +10,22 @@ namespace FactuTrust.Infrastructure.Services.Studio;
 
 /// <summary>
 /// Digests de contexte Studio injectés dans le prompt StudioBuilder (PR 1.2). Métadonnées de schéma
-/// uniquement — jamais de valeurs d'enregistrements. Toutes les lectures sont SÉQUENTIELLES (les
-/// dépôts partagent le même DbContext tenant scoped) et bornées : au plus <see cref="MaxEntities"/>
+/// uniquement — jamais de valeurs d'enregistrements. Toutes les lectures sont SÉQUENTIELLES (chaque
+/// dépôt ouvre son propre DbContext tenant : le séquentiel évite d'ouvrir jusqu'à 50 connexions en
+/// rafale sur le chemin critique d'un tour de chat) et bornées : au plus <see cref="MaxEntities"/>
 /// tables, une lecture de champs par table, le tout mis en cache <see cref="CacheTtl"/> par tenant.
 /// </summary>
 public sealed class StudioContextDigestService : IStudioContextDigestService
 {
     /// <summary>Nombre maximal de tables résumées (au-delà : « … (+N tables) »).</summary>
     public const int MaxEntities = 50;
+
+    /// <summary>
+    /// Longueur maximale d'une ligne de table : au-delà, la liste des champs est coupée avec
+    /// « , … (+N champs) ». Une seule table très large ne doit pas consommer tout le budget CPU
+    /// (1200 caractères) — la règle 11 porte d'abord sur les CLÉS des tables.
+    /// </summary>
+    public const int MaxLineChars = 320;
 
     /// <summary>Durée de vie du digest de schéma en cache. Courte : une table créée doit apparaître vite.</summary>
     public static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(30);
@@ -76,7 +84,7 @@ public sealed class StudioContextDigestService : IStudioContextDigestService
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var entries = new List<string>();
 
-        // Lectures séquentielles (même DbContext tenant).
+        // Lectures séquentielles (un DbContext tenant par appel de dépôt — voir l'en-tête de classe).
         var pending = await _plans.ListPendingByOwnerAsync(tenantId, userId, cancellationToken);
         var latestPending = pending
             .Where(p => p.TenantId == tenantId)
@@ -98,8 +106,7 @@ public sealed class StudioContextDigestService : IStudioContextDigestService
         if (entries.Count == 0)
             return null;
 
-        var text = string.Join("\n", entries);
-        return text.Length <= maxChars ? text : Truncate(text, maxChars);
+        return Truncate(string.Join("\n", entries), maxChars);
     }
 
     // ---------------------------------------------------------------- schéma
@@ -140,16 +147,34 @@ public sealed class StudioContextDigestService : IStudioContextDigestService
         IReadOnlyList<CustomFieldDefinition> fields,
         IReadOnlyDictionary<Guid, string> systemKeys)
     {
-        var sb = new StringBuilder();
-        sb.Append("- ").Append(entity.Key).Append(" « ").Append(entity.DisplayName).Append(" »");
-        if (entity.SystemId is { } systemId && systemKeys.TryGetValue(systemId, out var systemKey))
-            sb.Append(" (systeme:").Append(systemKey).Append(')');
-        sb.Append(" : ");
-        sb.Append(fields.Count == 0
-            ? "(aucun champ)"
-            : string.Join(", ", fields.Select(f => $"{f.Key}:{FieldTypeToken(f.FieldType)}")));
+        var system = entity.SystemId is { } systemId && systemKeys.TryGetValue(systemId, out var systemKey)
+            ? $" (systeme:{systemKey})"
+            : string.Empty;
+        var sb = new StringBuilder($"- {entity.Key} « {entity.DisplayName} »{system} : ");
+        if (fields.Count == 0)
+            return sb.Append("(aucun champ)").ToString();
+
+        // Le premier champ est toujours montré ; les suivants tant que la ligne (suffixe compris) tient
+        // dans MaxLineChars. Au-delà : « , … (+N champs) » — le modèle sait que la table est plus large.
+        var shown = 0;
+        foreach (var field in fields)
+        {
+            var token = $"{field.Key}:{FieldTypeToken(field.FieldType)}";
+            var remainingAfter = fields.Count - shown - 1;
+            var suffixReserve = remainingAfter > 0 ? FieldsOmittedSuffix(remainingAfter).Length : 0;
+            if (shown > 0 && sb.Length + 2 + token.Length + suffixReserve > MaxLineChars)
+                break;
+            if (shown > 0) sb.Append(", ");
+            sb.Append(token);
+            shown++;
+        }
+
+        if (shown < fields.Count)
+            sb.Append(FieldsOmittedSuffix(fields.Count - shown));
         return sb.ToString();
     }
+
+    private static string FieldsOmittedSuffix(int count) => $", {Ellipsis} (+{count} champ{(count > 1 ? "s" : "")})";
 
     /// <summary>Jeton de type court, aligné sur le vocabulaire des specs (<c>text</c>, <c>money</c>, <c>select</c>…).</summary>
     internal static string FieldTypeToken(CustomFieldType type) => type switch
@@ -207,7 +232,7 @@ public sealed class StudioContextDigestService : IStudioContextDigestService
         {
             var suffix = OmittedSuffix(omitted);
             if (sb.Length == 0)
-                return suffix.Length <= maxChars ? suffix : Truncate(suffix, maxChars);
+                return Truncate(suffix, maxChars);
             sb.Append('\n').Append(suffix);
         }
         return sb.ToString();
@@ -220,15 +245,10 @@ public sealed class StudioContextDigestService : IStudioContextDigestService
     private static string DescribePlan(StudioAiBuildPlan plan, string statusLabel, DateTime whenUtc)
     {
         var (title, names) = ReadPlanNames(plan);
-        var sb = new StringBuilder();
-        sb.Append("- [").Append(statusLabel).Append(' ').Append(whenUtc.ToString("HH:mm")).Append("] ")
-          .Append(KindLabel(plan.Kind)).Append(" « ").Append(title).Append(" »");
-        if (names.Count > 0)
-        {
-            sb.Append(" : ").Append(names.Count).Append(names.Count > 1 ? " tables (" : " table (")
-              .Append(string.Join(", ", names)).Append(')');
-        }
-        return sb.ToString();
+        var tables = names.Count == 0
+            ? string.Empty
+            : $" : {names.Count} table{(names.Count > 1 ? "s" : "")} ({string.Join(", ", names)})";
+        return $"- [{statusLabel} {whenUtc:HH:mm}] {KindLabel(plan.Kind)} « {title} »{tables}";
     }
 
     /// <summary>Libellé court du type de plan, dans la langue du prompt.</summary>
@@ -245,31 +265,17 @@ public sealed class StudioContextDigestService : IStudioContextDigestService
     /// <summary>
     /// Titre et tables du plan : clés RÉELLES depuis <c>ResultJson</c> quand le plan a été exécuté
     /// (<c>entityKey</c> / <c>entities[].entityKey</c>), sinon libellés de <c>SummaryJson</c>.
-    /// Toute erreur de lecture JSON dégrade vers « (sans détail) » — jamais d'exception dans le prompt.
+    /// Toute erreur de lecture JSON dégrade vers « (sans titre) » — jamais d'exception dans le prompt.
     /// </summary>
     internal static (string Title, IReadOnlyList<string> Names) ReadPlanNames(StudioAiBuildPlan plan)
     {
         var title = "(sans titre)";
-        var names = new List<string>();
+        IReadOnlyList<string> names = [];
         try
         {
             using var summary = JsonDocument.Parse(plan.SummaryJson);
-            if (summary.RootElement.ValueKind == JsonValueKind.Object)
-            {
-                if (summary.RootElement.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String
-                    && !string.IsNullOrWhiteSpace(t.GetString()))
-                    title = t.GetString()!.Trim();
-
-                if (summary.RootElement.TryGetProperty("entities", out var ents) && ents.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var e in ents.EnumerateArray())
-                    {
-                        if (e.ValueKind == JsonValueKind.Object && e.TryGetProperty("displayName", out var dn)
-                            && dn.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(dn.GetString()))
-                            names.Add(dn.GetString()!.Trim());
-                    }
-                }
-            }
+            title = ReadString(summary.RootElement, "title") ?? title;
+            names = ReadStrings(summary.RootElement, "entities", "displayName");
         }
         catch (JsonException)
         {
@@ -281,27 +287,11 @@ public sealed class StudioContextDigestService : IStudioContextDigestService
             try
             {
                 using var result = JsonDocument.Parse(plan.ResultJson);
-                var root = result.RootElement;
-                if (root.ValueKind == JsonValueKind.Object)
-                {
-                    var keys = new List<string>();
-                    if (root.TryGetProperty("entities", out var ents) && ents.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var e in ents.EnumerateArray())
-                        {
-                            if (e.ValueKind == JsonValueKind.Object && e.TryGetProperty("entityKey", out var k)
-                                && k.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(k.GetString()))
-                                keys.Add(k.GetString()!);
-                        }
-                    }
-                    else if (root.TryGetProperty("entityKey", out var single) && single.ValueKind == JsonValueKind.String
-                             && !string.IsNullOrWhiteSpace(single.GetString()))
-                    {
-                        keys.Add(single.GetString()!);
-                    }
-                    if (keys.Count > 0)
-                        names = keys;
-                }
+                var keys = ReadStrings(result.RootElement, "entities", "entityKey");
+                if (keys.Count == 0 && ReadString(result.RootElement, "entityKey") is { } single)
+                    keys = [single];
+                if (keys.Count > 0)
+                    names = keys;
             }
             catch (JsonException)
             {
@@ -310,6 +300,30 @@ public sealed class StudioContextDigestService : IStudioContextDigestService
         }
 
         return (title, names);
+    }
+
+    /// <summary>Valeur (trim) de la propriété chaîne <paramref name="name"/> d'un objet JSON ; null si absente ou vide.</summary>
+    private static string? ReadString(JsonElement obj, string name) =>
+        obj.ValueKind == JsonValueKind.Object
+        && obj.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.String
+        && value.GetString() is { } text
+        && !string.IsNullOrWhiteSpace(text)
+            ? text.Trim()
+            : null;
+
+    /// <summary>Valeurs non vides de <c>obj[arrayName][*][property]</c> ; liste vide si le tableau est absent.</summary>
+    private static List<string> ReadStrings(JsonElement obj, string arrayName, string property)
+    {
+        if (obj.ValueKind != JsonValueKind.Object
+            || !obj.TryGetProperty(arrayName, out var array)
+            || array.ValueKind != JsonValueKind.Array)
+            return [];
+
+        return array.EnumerateArray()
+            .Select(e => ReadString(e, property))
+            .OfType<string>()
+            .ToList();
     }
 
     private static string Truncate(string text, int maxChars)

@@ -173,8 +173,10 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     `usedAdvancedModel:true` et `model` = identifiant du modèle avancé ; le log `phase=provider_availability`
     cite la référence avancée ; la boucle d'outils dispose de **4** rounds
     (`StudioAdvancedMaxToolCallRounds`) — jusqu'à quatre phases `llm_stream_round` dans le flux et
-    `tool_rounds_executed` dans la ligne `phase=total_request` du log — au lieu du plafond CPU ; la même demande sans la bascule repart sur le modèle standard (`usedAdvancedModel:false`,
-    raison `null`).
+    `tool_rounds_executed` dans la ligne `phase=total_request` du log — au lieu du plafond CPU ; la
+    même demande sans la bascule repart sur le modèle standard (`usedAdvancedModel:false`, raison
+    `null`). Cas limite : si le modèle avancé est un modèle **Ollama** et que le moteur tourne en
+    **CPU seul**, le plafond CPU reste appliqué (le budget avancé est réservé au GPU / cloud).
 
 ### Avant d'activer `EnableStudioSqlSourceGuard`
 
@@ -194,6 +196,8 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   (parsers, planificateur de diff, exécuteurs, cycle de vie des plans, catalogue d'outils, rendu PDF,
   politique d'accès aux tables, constructeur SQL des états, préréglages, digest de contexte).
 - Backend (contexte + modèle avancé) : `--filter "FullyQualifiedName~SendChatMessageHandlerStudioAdvancedModel|FullyQualifiedName~AiContextBuilderStudioDigest|FullyQualifiedName~StudioContextDigestService"`
-  et `dotnet test src\Backend\tests\FactuTrust.API.Tests` (`AiChatOptionsContractTests`, exécuté en CI).
+  et `dotnet test src\Backend\tests\FactuTrust.API.Tests --filter "FullyQualifiedName~FactuTrust.API.Tests.Studio"`
+  (`AiChatOptionsContractTests` + contrats des contrôleurs Studio ; c'est ce filtre qu'exécute `azure-pipelines.yml`
+  sous Linux — le projet complet, qui exige LocalDB, tourne dans le workflow GitHub `CI` sous Windows).
 - Frontend : `ng test --watch=false --browsers=ChromeHeadless` (service de plans + flux SSE de confirmation).
 - Gate complet : `powershell -File scripts\verify-all.ps1`.

@@ -137,7 +137,7 @@ un digest borné du schéma existant et du dernier plan de l'utilisateur, avec l
 
 | Composant | Rôle |
 |---|---|
-| `IStudioContextDigestService` / `StudioContextDigestService` (`Infrastructure/Services/Studio`) | Construit les deux digests. Lectures **séquentielles** sur le DbContext tenant : entités actives → systèmes → champs actifs par entité (≤ 50 tables). Cache mémoire `studio:schema-digest:{tenantId}`, TTL **30 s**, sur la liste non tronquée. |
+| `IStudioContextDigestService` / `StudioContextDigestService` (`Infrastructure/Services/Studio`) | Construit les deux digests. Lectures **séquentielles** (chaque dépôt ouvre son propre DbContext tenant ; le séquentiel évite une rafale de connexions sur le chemin critique d'un tour) : entités actives → systèmes → champs actifs par entité (≤ 50 tables). Cache mémoire `studio:schema-digest:{tenantId}`, TTL **30 s**, sur la liste non tronquée. Aucun digest si le tenant n'est pas résolu (`Guid.Empty`). |
 | `StudioPromptOptions` (`Application/Features/AI/DTOs`) | `UseAdvancedModel`, `StudioIntent` (normalisé : `system · table · relations · form · reference_data · report · workflow · page`, sinon ignoré), `TenantId`, `UserId`. Passé par le handler à `IAiContextBuilder.BuildSystemPromptAsync(...)`. |
 | `AiContextBuilder` | `SystemPromptCacheRevision = "v4"`. En StudioBuilder, si `Ollama:EnableStudioAiSchemaDigest` : appelle le service puis ajoute au prompt le préambule d'intention, les règles **11** (réutiliser les vraies clés, ne jamais recréer) et **12** (le dernier plan est la cible de « ajoute / complète / continue »), puis les sections `SCHÉMA EXISTANT (tables Studio de ce client) :` et `DERNIER PLAN :`. Toute exception du service est **journalisée** (`LogWarning`) et le prompt est produit sans ces sections. |
 
@@ -155,7 +155,9 @@ DERNIER PLAN :
 ```
 
 Règles : métadonnées **uniquement** (jamais une valeur d'enregistrement) ; tables et champs
-inactifs exclus ; une ligne est conservée entière ou omise et comptée dans `… (+N tables)` ; les plans
+inactifs exclus ; une ligne est conservée entière ou omise et comptée dans `… (+N tables)` ; une
+ligne ne dépasse jamais `MaxLineChars` (320) — au-delà, la liste des champs est coupée avec
+`, … (+N champs)` pour qu'une seule table très large ne consomme pas le budget des autres clés ; les plans
 terminés utilisent les clés réelles de `ResultJson`, les plans en attente les libellés de `SummaryJson`
 (les clés ne sont dérivées qu'à l'exécution) ; un plan terminé depuis plus de **24 h** n'est plus « le
 dernier plan » ; aucun plan ⇒ section omise ; aucune table ⇒ « Aucune table Studio pour l'instant. ».
@@ -169,7 +171,7 @@ dernier plan » ; aucun plan ⇒ section omise ; aucune table ⇒ « Aucune tabl
 | `StudioSchemaDigestMaxCharsAdvanced` | 4000 | 4000 | Budget du schéma avec le modèle avancé. |
 | `StudioLastPlanDigestMaxChars` | 600 | 600 | Budget du dernier plan. |
 | `StudioTemperature` | 0.1 | 0.1 | Température dédiée aux tours StudioBuilder (specs JSON déterministes). |
-| `StudioAdvancedMaxToolCallRounds` | 4 | 4 | Rounds d'outils quand le modèle avancé est retenu (borné 1..20), en remplacement du plafond CPU. |
+| `StudioAdvancedMaxToolCallRounds` | 4 | 4 | Rounds d'outils quand le modèle avancé est retenu (borné 1..20), en remplacement du plafond CPU — sauf si le modèle avancé est lui-même un modèle Ollama sur un hôte **CPU seul**, cas où le plafond CPU s'applique comme avant. |
 
 En StudioBuilder, la graine Ollama vaut `Ollama:Seed` si renseignée, sinon **7** — specs reproductibles
 d'un tour à l'autre.
@@ -213,13 +215,14 @@ revérifie. Un fournisseur standard indisponible reste une erreur, comme avant.
 Le résultat est émis **une fois**, avant le premier token, par l'événement SSE
 `{"type":"meta","content":"{\"usedAdvancedModel\":…,\"advancedModelFallbackReason\":…,\"model\":\"…\"}"}`
 (`ChatStreamEvent.StudioMetaEvent`), StudioBuilder uniquement. `model` est le libellé lisible du
-modèle effectivement utilisé (identifiant fournisseur, même logique que `advancedModelLabel` des
-capacités). L'atelier (PR 1.4) affiche « Modèle standard utilisé » dès que `usedAdvancedModel=false`
+modèle effectivement utilisé — `ModelRef.HumanLabel`, la même fonction que `standardModelLabel` /
+`advancedModelLabel` des capacités, pour que l'atelier affiche le même nom partout. L'atelier (PR 1.4) affiche « Modèle standard utilisé » dès que `usedAdvancedModel=false`
 alors que la bascule était active. Aucun `400`, aucun événement `error` pour un repli.
 
 ### 7.4 Effets du modèle avancé sur le tour
 
-- Budget de rounds d'outils : `StudioAdvancedMaxToolCallRounds` (4) au lieu du plafond CPU.
+- Budget de rounds d'outils : `StudioAdvancedMaxToolCallRounds` (4) au lieu du plafond CPU (fournisseur
+  cloud ou Ollama sur GPU ; un modèle Ollama « avancé » exécuté sur CPU seul garde le plafond CPU).
 - Budget de digest : `StudioSchemaDigestMaxCharsAdvanced` (4000) au lieu de 1200.
 - Température `StudioTemperature` et graine fixe : communs à tous les tours Studio, avancé ou non.
 

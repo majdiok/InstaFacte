@@ -86,10 +86,13 @@ public sealed class AiContextBuilder : IAiContextBuilder
             var reportTools = _ollamaSettings.EnableStudioAiReportTools && _ollamaSettings.EnableStudioSqlReportEngine;
             // Digests de contexte (PR 1.2) : lectures tenant SÉQUENTIELLES, jamais mises en cache avec le
             // prompt (le prompt StudioBuilder est reconstruit à chaque appel). Flag off ⇒ null ⇒ aucune
-            // section ajoutée : le prompt est celui de la révision précédente.
+            // section ajoutée : le prompt est celui de la révision précédente. Sans tenant résolu
+            // (Guid.Empty), pas de digest non plus : affirmer « Aucune table Studio » serait faux.
             string? schemaDigest = null;
             string? lastPlanDigest = null;
-            if (_ollamaSettings.EnableStudioAiSchemaDigest && studioOptions is not null && _studioDigest is not null)
+            if (_ollamaSettings.EnableStudioAiSchemaDigest
+                && studioOptions is { TenantId: var digestTenantId } && digestTenantId != Guid.Empty
+                && _studioDigest is not null)
             {
                 var schemaBudget = studioOptions.UseAdvancedModel
                     ? _ollamaSettings.StudioSchemaDigestMaxCharsAdvanced
