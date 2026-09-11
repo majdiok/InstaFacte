@@ -22,7 +22,7 @@ namespace FactuTrust.Infrastructure.Tests.AI;
 /// (tenant, <see cref="AssistantAgentScope.None"/>) restent produits par le chemin d'origine — on
 /// vérifie qu'ils conservent leurs outils tenant et n'empruntent PAS le guide firm (la dispatch
 /// FirmMission n'affecte que ce scope). <see cref="AiContextBuilder"/> SystemPromptCacheRevision
-/// doit être incrémentée à "v3".
+/// doit être incrémentée à chaque changement de contenu ("v4" depuis le digest Studio, PR 1.2).
 /// </summary>
 public sealed class AiContextBuilderFirmPromptTests
 {
@@ -115,14 +115,14 @@ public sealed class AiContextBuilderFirmPromptTests
     }
 
     [Fact]
-    public void System_prompt_cache_revision_is_incremented_to_v3()
+    public void System_prompt_cache_revision_is_incremented_to_v4()
     {
         // Sans incrément, la clé de cache ne hashe pas le contenu : l'ancien prompt resterait servi
-        // jusqu'au TTL. Le plan v3 exige le passage "v2" → "v3".
+        // jusqu'au TTL. Le plan v3 exigeait "v2" → "v3" ; le digest Studio (PR 1.2) impose "v3" → "v4".
         var field = typeof(AiContextBuilder).GetField(
             "SystemPromptCacheRevision",
             BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(field);
-        Assert.Equal("v3", (string)field!.GetRawConstantValue()!);
+        Assert.Equal("v4", (string)field!.GetRawConstantValue()!);
     }
 }

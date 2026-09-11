@@ -80,6 +80,22 @@ public sealed record ChatRequestOptionsDto
     /// web historique inchangé.
     /// </summary>
     public bool ForceReadOnlyTools { get; init; }
+
+    /// <summary>
+    /// Studio uniquement : demande le modèle avancé (GPU / cloud) pour cette requête. Ignoré hors
+    /// <see cref="AssistantMode.StudioBuilder"/>. Si le modèle avancé n'est pas activé, pas configuré
+    /// ou indisponible, le backend retombe SILENCIEUSEMENT sur le modèle standard et le signale via
+    /// l'événement SSE <c>meta</c> (jamais une erreur 400). Rétro-compatible : défaut false.
+    /// </summary>
+    public bool UseAdvancedModel { get; init; }
+
+    /// <summary>
+    /// Studio uniquement : intention déclarée par l'atelier
+    /// (<c>system | table | relations | form | reference_data | report | workflow | page</c>).
+    /// Sert seulement à préfixer le prompt d'un préambule d'intention ; une valeur inconnue est ignorée.
+    /// Rétro-compatible : défaut null.
+    /// </summary>
+    public string? StudioIntent { get; init; }
 }
 
 /// <summary>HTTP body for POST /api/ai/chat (all new fields optional for backward compatibility).</summary>
