@@ -15,6 +15,8 @@
 | `EnableStudioAiReportTools` | **`false`** | `false` | Outils `studio_*_report` de l'assistant. Sans effet si le moteur est off. |
 | `EnableStudioReportShortcut` | **`false`** | `false` | Raccourci DÉTERMINISTE : une demande d'état non ambiguë est exécutée AVANT l'appel au modèle. Rend le résultat indépendant du modèle configuré. |
 | `EnableStudioSqlSourceGuard` | **`false`** | `false` | Étend le classement par domaine aux FENÊTRES. Passer le runbook d'impact d'abord. |
+| `EnableStudioAiAdvancedModel` | **`false`** | `true` | Bascule « Modèle avancé » par requête (`options.useAdvancedModel`). Sans effet tant qu'aucun modèle Studio avancé n'est configuré en back-office. |
+| `EnableStudioAiSchemaDigest` | **`false`** | `true` | Digest du schéma existant + dernier plan dans le prompt StudioBuilder (vraies clés). Budgets : `StudioSchemaDigestMaxCharsCpu` 1200 / `StudioSchemaDigestMaxCharsAdvanced` 4000 / `StudioLastPlanDigestMaxChars` 600. |
 
 > Les drapeaux en gras sont **off par défaut** : sans eux, le comportement du Studio IA est
 > strictement celui d'avant (gardes couvertes par `StudioAiPlanCatalogTests` et
@@ -146,6 +148,34 @@ Attendu : `tools_executed_this_request=1` et `content_chars_persisted>0`. La sig
 `final_response_meaningful=true` **avec** `content_chars_persisted=0` et `content_chars_streamed=0` —
 doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_fallback`.
 
+## Contexte et modèle avancé (`EnableStudioAiSchemaDigest` + `EnableStudioAiAdvancedModel`)
+
+> Architecture : [`docs/architecture/studio-ai-context-and-advanced-model.md`](../architecture/studio-ai-context-and-advanced-model.md) §6–7.
+> Prérequis : au moins une table Studio existante (ex. `fournisseurs`) ; pour 47–48, un modèle Studio
+> avancé configuré en back-office (Configuration IA) et distinct du modèle standard.
+
+46. `EnableStudioAiSchemaDigest=true` — « ajoute un champ téléphone à la table Fournisseurs » ⇒ le plan
+    proposé cible la **clé réelle** `fournisseurs` (jamais `fournisseur`, `suppliers` ni une nouvelle
+    table). Point d'arrêt (ou trace temporaire) sur
+    `AiContextBuilder.BuildStudioBuilderSystemPrompt` : le prompt contient `SCHÉMA EXISTANT (tables Studio de ce
+    client) :` suivi d'une ligne `- fournisseurs « Fournisseurs » : …` et la règle **11**. Aucune
+    valeur d'enregistrement n'apparaît. Après création d'une table, elle figure dans le digest au tour
+    suivant (cache 30 s au plus).
+47. `EnableStudioAiAdvancedModel=false`, requête envoyée avec `options.useAdvancedModel=true` (bascule
+    active dans l'atelier ou corps forgé) ⇒ la réponse arrive **normalement** sur le modèle standard ;
+    le flux SSE contient un événement `type:"meta"` avec `usedAdvancedModel:false` et
+    `advancedModelFallbackReason:"disabled"` ; le log API contient `Studio advanced model requested but
+    disabled`. **Jamais** de `400` ni d'événement `error`. Variante : drapeau `true` mais réglage
+    back-office vide ⇒ `"not_configured"` ; modèle avancé Ollama non installé ⇒ `"unavailable"` et
+    réponse sur le standard.
+48. `EnableStudioAiAdvancedModel=true` + modèle avancé configuré, `options.useAdvancedModel=true` sur
+    « crée un système de gestion de projets avec projets, tâches et jalons liés » ⇒ `meta` porte
+    `usedAdvancedModel:true` et `model` = identifiant du modèle avancé ; le log `phase=provider_availability`
+    cite la référence avancée ; la boucle d'outils dispose de **4** rounds
+    (`StudioAdvancedMaxToolCallRounds`) — jusqu'à quatre phases `llm_stream_round` dans le flux et
+    `tool_rounds_executed` dans la ligne `phase=total_request` du log — au lieu du plafond CPU ; la même demande sans la bascule repart sur le modèle standard (`usedAdvancedModel:false`,
+    raison `null`).
+
 ### Avant d'activer `EnableStudioSqlSourceGuard`
 
 41. Exécuter [`docs/runbooks/sql/studio-views-affected-by-guard.sql`](../runbooks/sql/studio-views-affected-by-guard.sql)
@@ -162,6 +192,8 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
 
 - Backend : `dotnet test src\Backend\tests\FactuTrust.Infrastructure.Tests --filter "FullyQualifiedName~.Studio"`
   (parsers, planificateur de diff, exécuteurs, cycle de vie des plans, catalogue d'outils, rendu PDF,
-  politique d'accès aux tables, constructeur SQL des états, préréglages).
+  politique d'accès aux tables, constructeur SQL des états, préréglages, digest de contexte).
+- Backend (contexte + modèle avancé) : `--filter "FullyQualifiedName~SendChatMessageHandlerStudioAdvancedModel|FullyQualifiedName~AiContextBuilderStudioDigest|FullyQualifiedName~StudioContextDigestService"`
+  et `dotnet test src\Backend\tests\FactuTrust.API.Tests` (`AiChatOptionsContractTests`, exécuté en CI).
 - Frontend : `ng test --watch=false --browsers=ChromeHeadless` (service de plans + flux SSE de confirmation).
 - Gate complet : `powershell -File scripts\verify-all.ps1`.
