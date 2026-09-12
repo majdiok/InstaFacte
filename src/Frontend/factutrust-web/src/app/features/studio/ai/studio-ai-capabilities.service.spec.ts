@@ -4,7 +4,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { provideRouter } from '@angular/router';
 import { environment } from '@environments/environment';
 import { StudioAiCapabilitiesService } from './studio-ai-capabilities.service';
-import { StudioAiCapabilitiesDto } from './studio-ai.models';
+import { STUDIO_AI_CAPABILITIES_FALLBACK, StudioAiCapabilitiesDto } from './studio-ai.models';
 
 describe('StudioAiCapabilitiesService', () => {
   let service: StudioAiCapabilitiesService;
@@ -13,6 +13,7 @@ describe('StudioAiCapabilitiesService', () => {
   const url = `${environment.apiUrl}/ai/studio/capabilities`;
 
   const capabilities: StudioAiCapabilitiesDto = {
+    ...STUDIO_AI_CAPABILITIES_FALLBACK,
     planPreviewEnabled: true,
     systemGenerationEnabled: true,
     modifyToolsEnabled: true,

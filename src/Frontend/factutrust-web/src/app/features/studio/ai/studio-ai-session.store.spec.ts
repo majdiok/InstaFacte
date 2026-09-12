@@ -2,17 +2,21 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subject, of, throwError } from 'rxjs';
+import { AiChatService } from '@features/ai-assistant/services/ai-chat.service';
 import { AiStreamService } from '@features/ai-assistant/services/ai-stream.service';
 import { ChatAttachment, ChatStreamEvent } from '@features/ai-assistant/models/ai-chat.models';
 import { StudioAiBuildService, StudioPlanSummary } from '../studio-ai-build.service';
 import { StudioNavService } from '../studio-nav.service';
 import { STUDIO_AI_LABELS } from './studio-ai-labels';
-import { StudioAppSpec, StudioSystemSpec } from './studio-ai.models';
+import { StudioAppSpec, StudioDuplicateHint, StudioSystemSpec } from './studio-ai.models';
 import {
+  STUDIO_AI_ADVANCED_MODEL_STORAGE_KEY,
   StudioAiSessionStore,
   normalizeSummary,
   parseActions,
-  parsePlanSummary
+  parsePlanSummary,
+  parseStreamMeta,
+  withSuffix
 } from './studio-ai-session.store';
 
 /** Spec renvoyée par `GET {id}/spec` dans les tests. */
@@ -50,6 +54,7 @@ describe('StudioAiSessionStore', () => {
   let stream: jasmine.SpyObj<AiStreamService>;
   let builds: jasmine.SpyObj<StudioAiBuildService>;
   let nav: jasmine.SpyObj<StudioNavService>;
+  let chat: jasmine.SpyObj<AiChatService>;
 
   const specResponse = (rowVersion = 'rv-1') => ({
     success: true,
@@ -61,15 +66,22 @@ describe('StudioAiSessionStore', () => {
   beforeEach(() => {
     stream = jasmine.createSpyObj<AiStreamService>('AiStreamService', ['streamChat']);
     builds = jasmine.createSpyObj<StudioAiBuildService>('StudioAiBuildService', [
-      'confirm', 'cancel', 'cancelPending', 'getPlanSpec', 'updatePlanSpec'
+      'confirm', 'cancel', 'cancelPending', 'getPlanSpec', 'updatePlanSpec', 'listPlans', 'createFromTemplate', 'getPlan'
     ]);
     nav = jasmine.createSpyObj<StudioNavService>('StudioNavService', ['refresh']);
+    chat = jasmine.createSpyObj<AiChatService>('AiChatService', ['deleteConversation']);
 
     stream.streamChat.and.returnValue(of());
     builds.getPlanSpec.and.returnValue(of(specResponse()) as never);
     builds.confirm.and.returnValue(of() as never);
     builds.cancel.and.returnValue(of({ success: true, data: null, message: null, errors: [] }) as never);
     builds.cancelPending.and.returnValue(of({ success: true, data: 1, message: null, errors: [] }) as never);
+    builds.listPlans.and.returnValue(of({
+      success: true, message: null, errors: [],
+      data: { items: [], page: 1, pageSize: 5, totalCount: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false }
+    }) as never);
+    chat.deleteConversation.and.returnValue(of(undefined));
+    localStorage.removeItem(STUDIO_AI_ADVANCED_MODEL_STORAGE_KEY);
 
     TestBed.configureTestingModule({
       providers: [
@@ -77,6 +89,7 @@ describe('StudioAiSessionStore', () => {
         { provide: AiStreamService, useValue: stream },
         { provide: StudioAiBuildService, useValue: builds },
         { provide: StudioNavService, useValue: nav },
+        { provide: AiChatService, useValue: chat },
         { provide: Router, useValue: { navigate: jasmine.createSpy('navigate'), navigateByUrl: jasmine.createSpy('navigateByUrl') } }
       ]
     });
@@ -364,10 +377,241 @@ describe('StudioAiSessionStore', () => {
       expect(store.lastPrompt()).toBe('');
     });
 
-    it('does not call cancel-pending when no plan is pending', () => {
-      store.resetConversation();
-      expect(builds.cancelPending).not.toHaveBeenCalled();
+    it('always cancels the pending plans server-side (other sessions may have left some) but only deletes an existing conversation', () => {
+      builds.cancelPending.and.returnValue(of({ success: true, data: 0, message: null, errors: [] }) as never);
+      const counts: number[] = [];
+
+      store.resetConversation(count => counts.push(count));
+
+      expect(builds.cancelPending).toHaveBeenCalled();
+      expect(chat.deleteConversation).not.toHaveBeenCalled();
+      expect(counts).toEqual([0]);
       expect(store.phase()).toBe('idle');
+    });
+
+    it('deletes the current conversation after cancel-pending and reports the cancelled count', () => {
+      const events = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(events.asObservable());
+      store.send('Créer');
+      events.next({ type: 'done', content: '', conversationId: 'conv-9' });
+      builds.cancelPending.and.returnValue(of({ success: true, data: 2, message: null, errors: [] }) as never);
+      const counts: number[] = [];
+
+      store.resetConversation(count => counts.push(count));
+
+      expect(builds.cancelPending).toHaveBeenCalledBefore(chat.deleteConversation);
+      expect(chat.deleteConversation).toHaveBeenCalledWith('conv-9');
+      expect(counts).toEqual([2]);
+      expect(store.conversationId()).toBeUndefined();
+      expect(store.timeline()).toEqual([]);
+    });
+
+    it('still resets when cancel-pending or the conversation deletion fail', () => {
+      const events = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(events.asObservable());
+      store.send('Créer');
+      events.next({ type: 'done', content: '', conversationId: 'conv-9' });
+      builds.cancelPending.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })) as never);
+      chat.deleteConversation.and.returnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      const counts: number[] = [];
+
+      store.resetConversation(count => counts.push(count));
+
+      expect(counts).toEqual([0]);
+      expect(store.phase()).toBe('idle');
+      expect(store.timeline()).toEqual([]);
+    });
+  });
+
+  describe('advanced model (D3)', () => {
+    it('sends useAdvancedModel and studioIntent with the chat request', () => {
+      store.setAdvancedModel(true);
+      store.send('Créer un système', { intent: 'system' });
+
+      const request = stream.streamChat.calls.mostRecent().args[0];
+      expect(request.options).toEqual(jasmine.objectContaining({ useAdvancedModel: true, studioIntent: 'system' }));
+    });
+
+    it('persists the preference in localStorage and reads it back at construction', () => {
+      store.setAdvancedModel(true);
+      expect(localStorage.getItem(STUDIO_AI_ADVANCED_MODEL_STORAGE_KEY)).toBe('1');
+
+      const fresh = TestBed.runInInjectionContext(() => new StudioAiSessionStore());
+      expect(fresh.useAdvancedModel()).toBeTrue();
+      fresh.ngOnDestroy();
+
+      store.setAdvancedModel(false);
+      expect(localStorage.getItem(STUDIO_AI_ADVANCED_MODEL_STORAGE_KEY)).toBeNull();
+    });
+
+    it('reads the meta event and exposes the fallback when the server downgraded the model', () => {
+      const events = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(events.asObservable());
+      store.setAdvancedModel(true);
+
+      store.send('Créer');
+      expect(store.usedAdvancedModel()).toBeNull();
+      events.next({ type: 'meta', content: JSON.stringify({ usedAdvancedModel: false, advancedModelFallbackReason: 'unavailable', model: 'GPT-4.1 mini' }) });
+
+      expect(store.usedAdvancedModel()).toBeFalse();
+      expect(store.advancedModelFallbackReason()).toBe('unavailable');
+      expect(store.advancedModelFellBack()).toBeTrue();
+    });
+
+    it('does not flag a fallback when the advanced model was not requested', () => {
+      const events = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(events.asObservable());
+
+      store.send('Créer');
+      events.next({ type: 'meta', content: JSON.stringify({ usedAdvancedModel: false }) });
+
+      expect(store.usedAdvancedModel()).toBeFalse();
+      expect(store.advancedModelFellBack()).toBeFalse();
+    });
+
+    it('parseStreamMeta rejects payloads without a boolean usedAdvancedModel', () => {
+      expect(parseStreamMeta('pas du json')).toBeNull();
+      expect(parseStreamMeta(JSON.stringify({ usedAdvancedModel: 'oui' }))).toBeNull();
+      expect(parseStreamMeta(JSON.stringify({ usedAdvancedModel: true }))).toEqual(jasmine.objectContaining({ usedAdvancedModel: true }));
+    });
+  });
+
+  describe('history (rail)', () => {
+    it('loads the last plans and refreshes them after a plan arrives', () => {
+      builds.listPlans.and.returnValue(of({
+        success: true, message: null, errors: [],
+        data: {
+          items: [{ id: 'p-9', kind: 'CreateSystem', status: 'Pending', title: 'Congés', entityCount: 2, createdAt: '2026-09-11T10:00:00Z', expiresAt: '2026-09-12T10:00:00Z' }],
+          page: 1, pageSize: 5, totalCount: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false
+        }
+      }) as never);
+
+      store.loadHistory();
+
+      expect(builds.listPlans).toHaveBeenCalledWith({ page: 1, pageSize: 5 });
+      expect(store.history().length).toBe(1);
+      expect(store.historyError()).toBeNull();
+
+      const events = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(events.asObservable());
+      store.send('Créer');
+      events.next(planEvent());
+      expect(builds.listPlans).toHaveBeenCalledTimes(2);
+    });
+
+    it('tolerates a failing history endpoint', () => {
+      builds.listPlans.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })) as never);
+
+      store.loadHistory();
+
+      expect(store.history()).toEqual([]);
+      expect(store.historyError()).toBe(STUDIO_AI_LABELS.rail.historyLoadFailed);
+      expect(store.historyLoading()).toBeFalse();
+    });
+  });
+
+  describe('duplicates (R21)', () => {
+    const hint: StudioDuplicateHint = {
+      specRef: 'employe', specDisplayName: 'Employé', existingKey: 'employes', existingDisplayName: 'Employés', reason: 'same_name'
+    };
+
+    function withDuplicatePlan(): void {
+      const events = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(events.asObservable());
+      builds.updatePlanSpec.and.returnValue(of(specResponse('rv-2')) as never);
+      store.send('Créer');
+      events.next({ type: 'studio_plan', content: JSON.stringify({ planId: 'p-1', summary: summary({ duplicates: [hint] } as never) }) });
+    }
+
+    it('exposes the server hints of the current plan', () => {
+      withDuplicatePlan();
+      expect(store.duplicates()).toEqual([hint]);
+    });
+
+    it('« Réutiliser » pins existingKey on the entity and saves the draft', () => {
+      withDuplicatePlan();
+
+      store.reuseExistingTable(hint);
+
+      expect(builds.updatePlanSpec).toHaveBeenCalled();
+      const sent = JSON.parse(builds.updatePlanSpec.calls.mostRecent().args[1]) as StudioSystemSpec;
+      expect(sent.entities[0].existingKey).toBe('employes');
+      expect(store.timeline().pop()?.kind).toBe('system');
+    });
+
+    it('« Créer quand même » suffixes the display names, hides the hint and highlights the entity', () => {
+      withDuplicatePlan();
+
+      store.renameDuplicate(hint);
+
+      const sent = JSON.parse(builds.updatePlanSpec.calls.mostRecent().args[1]) as StudioSystemSpec;
+      expect(sent.entities[0].displayName).toBe('Employé (2)');
+      expect(sent.entities[0].displayNamePlural).toBe('Employés (2)');
+      expect(store.duplicates()).toEqual([]);
+      expect(store.highlightedEntityRef()).toBe('employe');
+    });
+
+    it('withSuffix is idempotent', () => {
+      expect(withSuffix('Clients', '(2)')).toBe('Clients (2)');
+      expect(withSuffix('Clients (2)', '(2)')).toBe('Clients (2)');
+      expect(withSuffix('', '(2)')).toBe('');
+    });
+  });
+
+  describe('abandonPlanAndSend (A19)', () => {
+    it('cancels the pending plan, logs it and sends the new request', () => {
+      const first = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(first.asObservable());
+      store.send('Créer');
+      first.next(planEvent());
+      const second = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(second.asObservable());
+
+      store.abandonPlanAndSend('Plutôt un système de notes de frais', { intent: 'system' });
+
+      expect(builds.cancel).toHaveBeenCalledWith('p-1');
+      expect(store.plan()).toBeNull();
+      expect(store.phase()).toBe('planning');
+      expect(stream.streamChat).toHaveBeenCalledTimes(2);
+      expect(stream.streamChat.calls.mostRecent().args[0].message).toBe('Plutôt un système de notes de frais');
+      const texts = store.timeline().map(item => (item as { text?: string }).text);
+      expect(texts).toContain(STUDIO_AI_LABELS.status.planCancelled);
+    });
+
+    it('simply sends when no plan is pending', () => {
+      store.abandonPlanAndSend('Créer', {});
+      expect(builds.cancel).not.toHaveBeenCalled();
+      expect(stream.streamChat).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('createFromTemplate', () => {
+    it('opens the template plan in awaiting_confirmation with its spec', () => {
+      builds.createFromTemplate.and.returnValue(of({
+        success: true, message: null, errors: [],
+        data: {
+          plan: { id: 'p-t', kind: 'CreateSystem', status: 'Pending', summaryJson: JSON.stringify(summary({ title: 'CRM' })), expiresAt: '2026-09-12T10:00:00Z', createdAt: '2026-09-11T10:00:00Z' },
+          spec: { id: 'p-t', kind: 'CreateSystem', status: 'Pending', expiresAt: '2026-09-12T10:00:00Z', rowVersion: 'rv-t', spec: spec() }
+        }
+      }) as never);
+
+      store.createFromTemplate('crm');
+
+      expect(builds.createFromTemplate).toHaveBeenCalledWith('crm');
+      expect(store.phase()).toBe('awaiting_confirmation');
+      expect(store.plan()?.planId).toBe('p-t');
+      expect(store.plan()?.rowVersion).toBe('rv-t');
+      expect(store.spec()?.entities.length).toBe(1);
+      expect(store.timeline().pop()).toEqual({ kind: 'system', text: STUDIO_AI_LABELS.templates.opened });
+    });
+
+    it('reports a failure without leaving the page stuck in planning', () => {
+      builds.createFromTemplate.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })) as never);
+
+      store.createFromTemplate('crm');
+
+      expect(store.phase()).toBe('idle');
+      expect(store.error()).toBeTruthy();
     });
   });
 
@@ -512,7 +756,7 @@ describe('StudioAiSessionStore', () => {
   describe('pure helpers', () => {
     it('normalizeSummary fills the missing collections', () => {
       const normalized = normalizeSummary({ title: 'X' } as StudioPlanSummary);
-      expect(normalized).toEqual({ kind: '', title: 'X', steps: [], entities: [], warnings: [] });
+      expect(normalized).toEqual({ kind: '', title: 'X', steps: [], entities: [], warnings: [], duplicates: [] });
     });
 
     it('parsePlanSummary reads a JSON summary and rejects junk', () => {

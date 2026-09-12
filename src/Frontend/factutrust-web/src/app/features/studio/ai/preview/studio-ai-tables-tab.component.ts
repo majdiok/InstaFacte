@@ -33,11 +33,15 @@ import {
                 type="button"
                 class="sai-list__item"
                 [class.sai-list__item--active]="entity.ref === activeRef()"
+                [class.sai-list__item--highlight]="entity.ref === highlightedRef()"
                 [attr.aria-pressed]="entity.ref === activeRef()"
                 (click)="select(entity.ref)">
                 <i [class]="entity.icon || 'fa-solid fa-table'" aria-hidden="true"></i>
                 <span>
-                  {{ entity.displayName }}
+                  <span [class.sai-highlight]="entity.ref === highlightedRef()">{{ entity.displayName }}</span>
+                  @if (entity.existingKey) {
+                    <span class="sai-code sai-existing" style="display: block">↳ {{ entity.existingKey }}</span>
+                  }
                   <span class="sai-code" style="display: block">{{ entity.ref }}</span>
                 </span>
                 <span class="sai-list__meta">{{ entity.fields.length }} {{ labels.fields }}</span>
@@ -50,7 +54,7 @@ import {
           <div>
             <div class="sai-block__head">
               <i [class]="entity.icon || 'fa-solid fa-table'" aria-hidden="true"></i>
-              <span>{{ entity.displayName }}</span>
+              <span [class.sai-highlight]="entity.ref === highlightedRef()">{{ entity.displayName }}</span>
               <span class="sai-code">{{ entity.ref }}</span>
               <span class="sai-list__meta">{{ entity.fields.length }} / {{ maxFields }} {{ labels.fields }}</span>
             </div>
@@ -107,6 +111,8 @@ export class StudioAiTablesTabComponent {
   readonly selectedRef = input<string | null>(null);
   /** Réservé à P1b : l'onglet reste en lecture seule en P1a. */
   readonly editable = input(false);
+  /** `ref` de la table renommée « (2) » après « Créer quand même » (R21) : libellé en surbrillance. */
+  readonly highlightedRef = input<string | null>(null);
 
   readonly labels = STUDIO_AI_LABELS.preview;
   readonly maxFields = STUDIO_SPEC_LIMITS.maxFields;

@@ -73,12 +73,12 @@ interface MapState { source: 'field' | 'const'; value: string; }
           <div>
             <label>Déclencheur *</label>
             <p-select [options]="triggerOptions" [(ngModel)]="fTrigger" optionLabel="label" optionValue="value"
-              appendTo="body" styleClass="ft-w-full"></p-select>
+              appendTo="body" panelStyleClass="studio-theme" styleClass="ft-w-full"></p-select>
           </div>
           <div>
             <label>Action ERP *</label>
             <p-select [options]="actions()" [(ngModel)]="fAction" optionLabel="name" optionValue="name"
-              (onChange)="onActionChange()" [filter]="true" appendTo="body" styleClass="ft-w-full"
+              (onChange)="onActionChange()" [filter]="true" appendTo="body" panelStyleClass="studio-theme" styleClass="ft-w-full"
               placeholder="Choisir une action"></p-select>
           </div>
         </div>
@@ -90,9 +90,9 @@ interface MapState { source: 'field' | 'const'; value: string; }
           <div class="ft-map" *ngFor="let p of act.parameters">
             <div class="ft-map-name">{{ p.name }} <span *ngIf="p.required" class="ft-req">*</span></div>
             <p-select [options]="sourceOptions" [(ngModel)]="mapState[p.name].source" optionLabel="label" optionValue="value"
-              appendTo="body" styleClass="ft-map-src"></p-select>
+              appendTo="body" panelStyleClass="studio-theme" styleClass="ft-map-src"></p-select>
             <p-select *ngIf="mapState[p.name].source === 'field'" [options]="fieldOptions()" [(ngModel)]="mapState[p.name].value"
-              optionLabel="label" optionValue="value" [showClear]="true" [filter]="true" appendTo="body" styleClass="ft-map-val"
+              optionLabel="label" optionValue="value" [showClear]="true" [filter]="true" appendTo="body" panelStyleClass="studio-theme" styleClass="ft-map-val"
               placeholder="Champ…"></p-select>
             <input *ngIf="mapState[p.name].source === 'const'" pInputText [(ngModel)]="mapState[p.name].value"
               class="ft-map-val" [placeholder]="p.allowedValues?.length ? p.allowedValues!.join(' | ') : 'Valeur fixe'" />

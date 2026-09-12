@@ -271,3 +271,68 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   dans le filtre `FactuTrust.API.Tests.Studio`.
 - Frontend : `ng test --watch=false --browsers=ChromeHeadless` (service de plans + flux SSE de confirmation).
 - Gate complet : `powershell -File scripts\verify-all.ps1`.
+
+## Atelier IA frontend — coquille, modèle avancé, doublons, rail (PR 1.4)
+
+> Prérequis : `EnableStudioAiPlanPreview=true`, `EnableStudioAiAdvancedModel=true` avec un modèle Studio
+> avancé configuré en back-office, `EnableStudioTemplates=true` ; une table Studio `employes` « Employés »
+> existante. Navigateur ≥ 1280 px de large pour la disposition 3 colonnes (rail à droite) ; réduire à
+> 1024 px pour vérifier l'empilement (rail sous la colonne principale). Documentation utilisateur :
+> [`docs/utilisateur/13-studio-ia.md`](../utilisateur/13-studio-ia.md) (chapitre `studio-ia`).
+> Automatisé : `ng test --include='src/app/features/studio/**/*.spec.ts'` et
+> `npx playwright test e2e/studio-ai-atelier.spec.ts` (backend entièrement mocké — `e2e/helpers/studio-mock.helpers.ts`).
+
+91. **Thème indigo scopé et modèle avancé** — `/studio/ai` : l'en-tête, les boutons primaires et les
+    overlays PrimeNG (menu déroulant d'un `p-select` dans `/studio/forms`, dialogue de confirmation) sont
+    **indigo** ; `/dashboard` et `/invoices` restent **bleu** FactuTrust (aucun `.studio-theme` hors
+    `/studio/**`, mode sombre inclus). Sous la zone de saisie, l'interrupteur **Modèle avancé** affiche le
+    libellé du modèle configuré ; l'activer puis envoyer « crée un système de gestion des congés » ⇒ la
+    requête `POST api/ai/chat` (flux SSE) porte `options.useAdvancedModel: true` et `options.studioIntent`
+    (`system` si la carte « Système complet » a été choisie) ; l'événement SSE `meta` renvoie
+    `usedAdvancedModel: true` ⇒ bandeau vert « Généré avec le modèle avancé » (`data-testid="model-advanced"`). Recharger la page ⇒ l'interrupteur
+    est **toujours actif** (mémorisé en `localStorage`). Désactiver le modèle avancé en back-office
+    (`EnableStudioAiAdvancedModel=false` ou modèle retiré) et renvoyer ⇒ `meta.usedAdvancedModel: false`
+    + `advancedModelFallbackReason` (`disabled` / `not_configured` / `unavailable`) ⇒ bandeau
+    **« Modèle standard utilisé : … »** (`data-testid="model-fallback"`, `role="status"`) avec la raison
+    traduite ; la proposition reste exploitable. Si `capabilities.advancedModelAvailable = false`, l'interrupteur
+    n'apparaît pas et aucune option `useAdvancedModel` n'est envoyée.
+92. **Bandeau doublons — Réutiliser / Créer quand même** — « crée un système RH avec une table Employés
+    (nom, poste) et une table Contrats » ⇒ `studio_plan.summary.duplicates[]` non vide ⇒ au-dessus de
+    l'aperçu, le bandeau **« La table « Employés » existe déjà »** (`.sai-dup`) cite la table existante et la
+    raison (`same_key` / `same_name` / `singular_plural`). **Réutiliser la table existante** ⇒
+    `PUT api/studio/ai/plans/{id}/spec` avec `entities[0].existingKey = "employes"`, le bandeau disparaît et
+    l'onglet Vue d'ensemble affiche « Tables réutilisées : 1 » (la confirmation ne recrée ni champ ni
+    formulaire pour `employes`, smoke 50). Rejouer la demande puis **Créer quand même** ⇒ l'entité est renommée
+    **« Employé (2) » / « Employés (2) »** (clé suffixée), mise en surbrillance dans l'onglet Tables, le bandeau
+    disparaît **sans** réapparaître au prochain rendu (`dismissedDuplicateRefs`) ; cliquer une seconde fois ne
+    produit pas « (2) (2) ». Le bandeau n'a **pas** de croix de fermeture : il disparaît dès que chaque doublon
+    a été tranché (Réutiliser / Créer quand même) ; tant qu'un doublon est affiché, le plan reste confirmable
+    tel quel.
+93. **Message pendant un plan en attente, Réinitialiser, Nouvelle demande** — avec une proposition
+    **À valider** affichée, saisir « ajoute une table Formations » dans le composeur situé **sous l'aperçu** et
+    envoyer ⇒ dialogue **« Une proposition est en attente »** ; **Annuler** ⇒ rien n'est envoyé, le plan reste
+    affiché ; **Abandonner le plan et envoyer** ⇒ `POST api/studio/ai/plans/{id}/cancel` **puis** un nouveau
+    `POST api/ai/chat` (jamais l'inverse), l'ancien plan passe **Annulé** dans l'historique. Rail →
+    **Réinitialiser la conversation** ⇒ confirmation, puis `POST api/studio/ai/plans/cancel-pending` (toujours,
+    même sans plan affiché), `DELETE api/ai/conversations/{id}` seulement si une conversation existe, toast
+    « 1 plan(s) en attente annulé(s). » (ou « Conversation réinitialisée. » sans plan), composeur vide, cartes d'intention
+    de nouveau visibles, historique rafraîchi. En-tête → **Nouvelle demande** ⇒ même réinitialisation ; la
+    confirmation n'est demandée que si un plan est affiché. Une carte grisée « Bientôt » (Page) ne fait rien
+    au clic ; **Workflow** n'est active que si `capabilities.workflowToolsEnabled = true`.
+94. **Rail, modèles, historique et pages dédiées** — le rail affiche **Modèles de systèmes** (3 max, badge
+    « Intégré » / « Votre espace »), **Actions rapides**, **Historique** (5 dernières générations, statuts
+    À valider / En cours / Terminé / Échec / Annulé / Expiré, dates relatives) et la carte de suggestion.
+    **Utiliser** sur un modèle ⇒ `POST api/studio/ai/plans/from-template` `{ templateKey }`, la proposition s'ouvre dans l'aperçu
+    sans appel au modèle ; avec un plan déjà affiché ⇒ confirmation « Remplacer la proposition en cours ? ».
+    Cliquer une ligne **À valider** de l'historique ⇒ `GET api/studio/ai/plans/{id}` et reprise dans l'aperçu ;
+    une ligne Terminé/Annulé n'est pas cliquable. **Voir tout** ⇒ `/studio/ai/projects` : tableau paginé
+    **20 par page**, filtres Statut / Genre (retour page 1), compteur « N projet(s) », **Reprendre** ⇒
+    `/studio/ai?plan={id}` (rouvre le plan puis nettoie l'URL ; plan expiré ⇒ bandeau d'erreur en ligne
+    « Ce plan n'est plus en attente… » — `store.error`, pas un toast), **Ouvrir le système** ⇒
+    `/studio/systems/{key}`. **Voir tous** (modèles) ⇒
+    `/studio/ai/templates` : cartes groupées par catégorie (« Autres » pour les modèles sans catégorie),
+    **Utiliser ce modèle** ⇒ `/studio/ai?template={key}` ⇒ plan ouvert. Avec `templatesEnabled = false`
+    ⇒ carte Modèles absente et page `/studio/ai/templates` « La bibliothèque de modèles est désactivée par l’administrateur. » ;
+    `planPreviewEnabled = false` ⇒ carte Historique absente, aucun appel `GET api/studio/ai/plans`.
+    Sans `systemExportEnabled`, **Exporter le système (JSON)** et **Partager** sont grisés « Bientôt » ;
+    Importer / Dupliquer n'apparaissent qu'avec l'export activé (toast « arrive dans une prochaine version »).

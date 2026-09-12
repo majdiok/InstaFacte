@@ -1,0 +1,329 @@
+// ============================================================================
+// Thème indigo scopé du module Studio (décision D2 du programme « Studio IA »)
+// ----------------------------------------------------------------------------
+// L'application conserve son bleu « Trust » (`:root { --color-primary-* }`) et
+// le preset Aura de PrimeNG (émeraude). Le module Studio (`/studio/**`) adopte
+// l'indigo #4f46e5 UNIQUEMENT à l'intérieur de `.studio-theme`, classe portée
+// par l'hôte de `StudioShellComponent` et par les overlays PrimeNG attachés à
+// `<body>` (`panelStyleClass` / `styleClass="studio-theme"`).
+//
+// Pourquoi re-déclarer autant de tokens ?
+//   La valeur calculée d'une propriété personnalisée est figée sur l'élément
+//   qui la déclare, puis héritée comme littéral. PrimeNG émet
+//   `:root { --p-button-primary-background: var(--p-primary-color) }` : poser
+//   seulement `.studio-theme { --p-primary-color: #4f46e5 }` laisserait donc
+//   le bouton émeraude. Chaque alias composant dérivant du primaire est donc
+//   re-déclaré ici pour être résolu au niveau de `.studio-theme`.
+//
+// Source des alias : @primeuix/themes 1.2.5 (preset Aura), PrimeNG 19.1.4.
+//   Tokens retenus : ceux dont la valeur référence `{primary.*}`,
+//   `{highlight.*}`, `{focus.ring.color}`, `{form.field.focus.border.color}`,
+//   `{form.field.float.label.focus.color}` ou `{list.option.selected.*}`.
+//   À régénérer lors d'une montée de version PrimeNG (voir
+//   docs/developer/studio-ai-assistant-qa.md, smoke test 91).
+//
+// Interdits : toute modification de `:root`, de `definePreset` ou de
+// `tailwind.config.js` ; les utilitaires Tailwind de la palette « primary » (bleu
+// littéral) ne doivent pas être utilisés dans `src/app/features/studio`.
+// ============================================================================
+
+.studio-theme {
+  // --- 1. Tokens applicatifs (consommés par les SCSS du module) -------------
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
+  --color-background-hover: var(--color-primary-50);
+  --focus-ring: 0 0 0 3px var(--color-primary-200);
+  --studio-promo-gradient: linear-gradient(135deg, #4f46e5, #7c3aed);
+  // Bridge « supérieur » : styles/_primeng-bridge.scss impose
+  // `.theme-superieur .p-button { background: var(--superieur-primary) }` à TOUTE l'application ;
+  // sans cette re-déclaration, les boutons PrimeNG du Studio resteraient bleu #3862f5.
+  --superieur-primary: #4f46e5;
+  --superieur-primary-dark: #4338ca;
+  --superieur-primary-light: #818cf8;
+
+  // --- 2. Tokens sémantiques PrimeNG (palette + dérivés) --------------------
+  --p-primary-50: #eef2ff;
+  --p-primary-100: #e0e7ff;
+  --p-primary-200: #c7d2fe;
+  --p-primary-300: #a5b4fc;
+  --p-primary-400: #818cf8;
+  --p-primary-500: #6366f1;
+  --p-primary-600: #4f46e5;
+  --p-primary-700: #4338ca;
+  --p-primary-800: #3730a3;
+  --p-primary-900: #312e81;
+  --p-primary-950: #1e1b4b;
+  --p-primary-color: var(--p-primary-600);
+  --p-primary-hover-color: var(--p-primary-700);
+  --p-primary-active-color: var(--p-primary-800);
+  --p-primary-contrast-color: #ffffff;
+  --p-highlight-background: var(--p-primary-50);
+  --p-highlight-focus-background: var(--p-primary-100);
+  --p-highlight-color: var(--p-primary-700);
+  --p-highlight-focus-color: var(--p-primary-800);
+  --p-focus-ring-color: var(--p-primary-color);
+  --p-form-field-focus-border-color: var(--p-primary-color);
+  --p-form-field-float-label-focus-color: var(--p-primary-600);
+  --p-list-option-selected-background: var(--p-highlight-background);
+  --p-list-option-selected-focus-background: var(--p-highlight-focus-background);
+  --p-list-option-selected-color: var(--p-highlight-color);
+  --p-list-option-selected-focus-color: var(--p-highlight-focus-color);
+
+  // --- 3. Alias composants Aura dérivant du primaire (générés) --------------
+  // accordion (1)
+  --p-accordion-header-focus-ring-color: var(--p-focus-ring-color);
+  // autocomplete (6)
+  --p-autocomplete-focus-border-color: var(--p-form-field-focus-border-color);
+  --p-autocomplete-option-selected-background: var(--p-list-option-selected-background);
+  --p-autocomplete-option-selected-focus-background: var(--p-list-option-selected-focus-background);
+  --p-autocomplete-option-selected-color: var(--p-list-option-selected-color);
+  --p-autocomplete-option-selected-focus-color: var(--p-list-option-selected-focus-color);
+  --p-autocomplete-dropdown-focus-ring-color: var(--p-focus-ring-color);
+  // badge (2)
+  --p-badge-primary-background: var(--p-primary-color);
+  --p-badge-primary-color: var(--p-primary-contrast-color);
+  // breadcrumb (1)
+  --p-breadcrumb-item-focus-ring-color: var(--p-focus-ring-color);
+  // button (20)
+  --p-button-primary-background: var(--p-primary-color);
+  --p-button-primary-hover-background: var(--p-primary-hover-color);
+  --p-button-primary-active-background: var(--p-primary-active-color);
+  --p-button-primary-border-color: var(--p-primary-color);
+  --p-button-primary-hover-border-color: var(--p-primary-hover-color);
+  --p-button-primary-active-border-color: var(--p-primary-active-color);
+  --p-button-primary-color: var(--p-primary-contrast-color);
+  --p-button-primary-hover-color: var(--p-primary-contrast-color);
+  --p-button-primary-active-color: var(--p-primary-contrast-color);
+  --p-button-primary-focus-ring-color: var(--p-primary-color);
+  --p-button-outlined-primary-hover-background: var(--p-primary-50);
+  --p-button-outlined-primary-active-background: var(--p-primary-100);
+  --p-button-outlined-primary-border-color: var(--p-primary-200);
+  --p-button-outlined-primary-color: var(--p-primary-color);
+  --p-button-text-primary-hover-background: var(--p-primary-50);
+  --p-button-text-primary-active-background: var(--p-primary-100);
+  --p-button-text-primary-color: var(--p-primary-color);
+  --p-button-link-color: var(--p-primary-color);
+  --p-button-link-hover-color: var(--p-primary-color);
+  --p-button-link-active-color: var(--p-primary-color);
+  // carousel (2)
+  --p-carousel-indicator-focus-ring-color: var(--p-focus-ring-color);
+  --p-carousel-indicator-active-background: var(--p-primary-color);
+  // cascadeselect (5)
+  --p-cascadeselect-focus-border-color: var(--p-form-field-focus-border-color);
+  --p-cascadeselect-option-selected-background: var(--p-list-option-selected-background);
+  --p-cascadeselect-option-selected-focus-background: var(--p-list-option-selected-focus-background);
+  --p-cascadeselect-option-selected-color: var(--p-list-option-selected-color);
+  --p-cascadeselect-option-selected-focus-color: var(--p-list-option-selected-focus-color);
+  // checkbox (8)
+  --p-checkbox-checked-background: var(--p-primary-color);
+  --p-checkbox-checked-hover-background: var(--p-primary-hover-color);
+  --p-checkbox-checked-border-color: var(--p-primary-color);
+  --p-checkbox-checked-hover-border-color: var(--p-primary-hover-color);
+  --p-checkbox-checked-focus-border-color: var(--p-primary-color);
+  --p-checkbox-focus-ring-color: var(--p-focus-ring-color);
+  --p-checkbox-icon-checked-color: var(--p-primary-contrast-color);
+  --p-checkbox-icon-checked-hover-color: var(--p-primary-contrast-color);
+  // chip (1)
+  --p-chip-remove-icon-focus-ring-color: var(--p-focus-ring-color);
+  // colorpicker (1)
+  --p-colorpicker-preview-focus-ring-color: var(--p-focus-ring-color);
+  // datatable (15)
+  --p-datatable-header-cell-selected-background: var(--p-highlight-background);
+  --p-datatable-header-cell-selected-color: var(--p-highlight-color);
+  --p-datatable-header-cell-focus-ring-color: var(--p-focus-ring-color);
+  --p-datatable-row-selected-background: var(--p-highlight-background);
+  --p-datatable-row-selected-color: var(--p-highlight-color);
+  --p-datatable-row-focus-ring-color: var(--p-focus-ring-color);
+  --p-datatable-drop-point-color: var(--p-primary-color);
+  --p-datatable-resize-indicator-color: var(--p-primary-color);
+  --p-datatable-row-toggle-button-selected-hover-color: var(--p-primary-color);
+  --p-datatable-row-toggle-button-focus-ring-color: var(--p-focus-ring-color);
+  --p-datatable-filter-constraint-selected-background: var(--p-list-option-selected-background);
+  --p-datatable-filter-constraint-selected-focus-background: var(--p-list-option-selected-focus-background);
+  --p-datatable-filter-constraint-selected-color: var(--p-list-option-selected-color);
+  --p-datatable-filter-constraint-selected-focus-color: var(--p-list-option-selected-focus-color);
+  --p-datatable-body-cell-selected-border-color: var(--p-primary-100);
+  // datepicker (6)
+  --p-datepicker-dropdown-focus-ring-color: var(--p-focus-ring-color);
+  --p-datepicker-date-selected-background: var(--p-primary-color);
+  --p-datepicker-date-range-selected-background: var(--p-highlight-background);
+  --p-datepicker-date-selected-color: var(--p-primary-contrast-color);
+  --p-datepicker-date-range-selected-color: var(--p-highlight-color);
+  --p-datepicker-date-focus-ring-color: var(--p-focus-ring-color);
+  // dock (1)
+  --p-dock-item-focus-ring-color: var(--p-focus-ring-color);
+  // editor (1)
+  --p-editor-toolbar-item-active-color: var(--p-primary-color);
+  // fieldset (1)
+  --p-fieldset-legend-focus-ring-color: var(--p-focus-ring-color);
+  // fileupload (1)
+  --p-fileupload-content-highlight-border-color: var(--p-primary-color);
+  // floatlabel (1)
+  --p-floatlabel-focus-color: var(--p-form-field-float-label-focus-color);
+  // galleria (5)
+  --p-galleria-nav-button-focus-ring-color: var(--p-focus-ring-color);
+  --p-galleria-thumbnail-nav-button-focus-ring-color: var(--p-focus-ring-color);
+  --p-galleria-indicator-button-active-background: var(--p-primary-color);
+  --p-galleria-indicator-button-focus-ring-color: var(--p-focus-ring-color);
+  --p-galleria-close-button-focus-ring-color: var(--p-focus-ring-color);
+  // iftalabel (1)
+  --p-iftalabel-focus-color: var(--p-form-field-float-label-focus-color);
+  // image (1)
+  --p-image-action-focus-ring-color: var(--p-focus-ring-color);
+  // inplace (1)
+  --p-inplace-focus-ring-color: var(--p-focus-ring-color);
+  // inputchips (1)
+  --p-inputchips-focus-border-color: var(--p-form-field-focus-border-color);
+  // inputtext (1)
+  --p-inputtext-focus-border-color: var(--p-form-field-focus-border-color);
+  // knob (2)
+  --p-knob-focus-ring-color: var(--p-focus-ring-color);
+  --p-knob-value-background: var(--p-primary-color);
+  // listbox (4)
+  --p-listbox-option-selected-background: var(--p-list-option-selected-background);
+  --p-listbox-option-selected-focus-background: var(--p-list-option-selected-focus-background);
+  --p-listbox-option-selected-color: var(--p-list-option-selected-color);
+  --p-listbox-option-selected-focus-color: var(--p-list-option-selected-focus-color);
+  // megamenu (1)
+  --p-megamenu-mobile-button-focus-ring-color: var(--p-focus-ring-color);
+  // menubar (1)
+  --p-menubar-mobile-button-focus-ring-color: var(--p-focus-ring-color);
+  // multiselect (5)
+  --p-multiselect-focus-border-color: var(--p-form-field-focus-border-color);
+  --p-multiselect-option-selected-background: var(--p-list-option-selected-background);
+  --p-multiselect-option-selected-focus-background: var(--p-list-option-selected-focus-background);
+  --p-multiselect-option-selected-color: var(--p-list-option-selected-color);
+  --p-multiselect-option-selected-focus-color: var(--p-list-option-selected-focus-color);
+  // organizationchart (3)
+  --p-organizationchart-node-selected-background: var(--p-highlight-background);
+  --p-organizationchart-node-selected-color: var(--p-highlight-color);
+  --p-organizationchart-node-toggle-button-focus-ring-color: var(--p-focus-ring-color);
+  // paginator (3)
+  --p-paginator-nav-button-selected-background: var(--p-highlight-background);
+  --p-paginator-nav-button-selected-color: var(--p-highlight-color);
+  --p-paginator-nav-button-focus-ring-color: var(--p-focus-ring-color);
+  // progressbar (2)
+  --p-progressbar-value-background: var(--p-primary-color);
+  --p-progressbar-label-color: var(--p-primary-contrast-color);
+  // radiobutton (8)
+  --p-radiobutton-checked-background: var(--p-primary-color);
+  --p-radiobutton-checked-hover-background: var(--p-primary-hover-color);
+  --p-radiobutton-checked-border-color: var(--p-primary-color);
+  --p-radiobutton-checked-hover-border-color: var(--p-primary-hover-color);
+  --p-radiobutton-checked-focus-border-color: var(--p-primary-color);
+  --p-radiobutton-focus-ring-color: var(--p-focus-ring-color);
+  --p-radiobutton-icon-checked-color: var(--p-primary-contrast-color);
+  --p-radiobutton-icon-checked-hover-color: var(--p-primary-contrast-color);
+  // rating (3)
+  --p-rating-focus-ring-color: var(--p-focus-ring-color);
+  --p-rating-icon-hover-color: var(--p-primary-color);
+  --p-rating-icon-active-color: var(--p-primary-color);
+  // scrollpanel (1)
+  --p-scrollpanel-bar-focus-ring-color: var(--p-focus-ring-color);
+  // select (5)
+  --p-select-focus-border-color: var(--p-form-field-focus-border-color);
+  --p-select-option-selected-background: var(--p-list-option-selected-background);
+  --p-select-option-selected-focus-background: var(--p-list-option-selected-focus-background);
+  --p-select-option-selected-color: var(--p-list-option-selected-color);
+  --p-select-option-selected-focus-color: var(--p-list-option-selected-focus-color);
+  // slider (2)
+  --p-slider-range-background: var(--p-primary-color);
+  --p-slider-handle-focus-ring-color: var(--p-focus-ring-color);
+  // splitter (1)
+  --p-splitter-handle-focus-ring-color: var(--p-focus-ring-color);
+  // stepper (4)
+  --p-stepper-separator-active-background: var(--p-primary-color);
+  --p-stepper-step-header-focus-ring-color: var(--p-focus-ring-color);
+  --p-stepper-step-title-active-color: var(--p-primary-color);
+  --p-stepper-step-number-active-color: var(--p-primary-color);
+  // steps (3)
+  --p-steps-item-link-focus-ring-color: var(--p-focus-ring-color);
+  --p-steps-item-label-active-color: var(--p-primary-color);
+  --p-steps-item-number-active-color: var(--p-primary-color);
+  // tabmenu (5)
+  --p-tabmenu-item-active-border-color: var(--p-primary-color);
+  --p-tabmenu-item-active-color: var(--p-primary-color);
+  --p-tabmenu-item-focus-ring-color: var(--p-focus-ring-color);
+  --p-tabmenu-item-icon-active-color: var(--p-primary-color);
+  --p-tabmenu-active-bar-background: var(--p-primary-color);
+  // tabs (6)
+  --p-tabs-tab-active-border-color: var(--p-primary-color);
+  --p-tabs-tab-active-color: var(--p-primary-color);
+  --p-tabs-tab-focus-ring-color: var(--p-focus-ring-color);
+  --p-tabs-tabpanel-focus-ring-color: var(--p-focus-ring-color);
+  --p-tabs-nav-button-focus-ring-color: var(--p-focus-ring-color);
+  --p-tabs-active-bar-background: var(--p-primary-color);
+  // tabview (2)
+  --p-tabview-tab-active-border-color: var(--p-primary-color);
+  --p-tabview-tab-active-color: var(--p-primary-color);
+  // tag (2)
+  --p-tag-primary-background: var(--p-primary-100);
+  --p-tag-primary-color: var(--p-primary-700);
+  // textarea (1)
+  --p-textarea-focus-border-color: var(--p-form-field-focus-border-color);
+  // timeline (1)
+  --p-timeline-event-marker-content-background: var(--p-primary-color);
+  // togglebutton (1)
+  --p-togglebutton-focus-ring-color: var(--p-focus-ring-color);
+  // toggleswitch (5)
+  --p-toggleswitch-focus-ring-color: var(--p-focus-ring-color);
+  --p-toggleswitch-checked-background: var(--p-primary-color);
+  --p-toggleswitch-checked-hover-background: var(--p-primary-hover-color);
+  --p-toggleswitch-handle-checked-color: var(--p-primary-color);
+  --p-toggleswitch-handle-checked-hover-color: var(--p-primary-hover-color);
+  // tree (6)
+  --p-tree-node-selected-background: var(--p-highlight-background);
+  --p-tree-node-selected-color: var(--p-highlight-color);
+  --p-tree-node-focus-ring-color: var(--p-focus-ring-color);
+  --p-tree-node-icon-selected-color: var(--p-highlight-color);
+  --p-tree-node-toggle-button-selected-hover-color: var(--p-primary-color);
+  --p-tree-node-toggle-button-focus-ring-color: var(--p-focus-ring-color);
+  // treeselect (1)
+  --p-treeselect-focus-border-color: var(--p-form-field-focus-border-color);
+  // treetable (10)
+  --p-treetable-header-cell-selected-background: var(--p-highlight-background);
+  --p-treetable-header-cell-selected-color: var(--p-highlight-color);
+  --p-treetable-header-cell-focus-ring-color: var(--p-focus-ring-color);
+  --p-treetable-row-selected-background: var(--p-highlight-background);
+  --p-treetable-row-selected-color: var(--p-highlight-color);
+  --p-treetable-row-focus-ring-color: var(--p-focus-ring-color);
+  --p-treetable-resize-indicator-color: var(--p-primary-color);
+  --p-treetable-node-toggle-button-selected-hover-color: var(--p-primary-color);
+  --p-treetable-node-toggle-button-focus-ring-color: var(--p-focus-ring-color);
+  --p-treetable-body-cell-selected-border-color: var(--p-primary-100);
+}
+
+// Mode sombre (sélecteur `.dark-mode` déclaré dans app.config.ts) : mêmes
+// décalages de nuances que le preset Aura, restreints au module Studio.
+.dark-mode .studio-theme {
+  // Boutons bridge : en sombre, le fond suit le primaire éclairci (cf. --p-primary-color).
+  --superieur-primary: #818cf8;
+  --superieur-primary-dark: #6366f1;
+  --superieur-primary-light: #a5b4fc;
+  --p-primary-color: var(--p-primary-400);
+  --p-primary-hover-color: var(--p-primary-300);
+  --p-primary-active-color: var(--p-primary-200);
+  --p-primary-contrast-color: var(--p-surface-900);
+  --p-highlight-background: color-mix(in srgb, var(--p-primary-400), transparent 84%);
+  --p-highlight-focus-background: color-mix(in srgb, var(--p-primary-400), transparent 76%);
+  --p-highlight-color: rgba(255, 255, 255, 0.87);
+  --p-highlight-focus-color: rgba(255, 255, 255, 0.87);
+  --p-form-field-float-label-focus-color: var(--p-primary-color);
+  --p-button-outlined-primary-hover-background: color-mix(in srgb, var(--p-primary-color), transparent 96%);
+  --p-button-outlined-primary-active-background: color-mix(in srgb, var(--p-primary-color), transparent 84%);
+  --p-button-outlined-primary-border-color: var(--p-primary-700);
+  --p-button-text-primary-hover-background: color-mix(in srgb, var(--p-primary-color), transparent 96%);
+  --p-button-text-primary-active-background: color-mix(in srgb, var(--p-primary-color), transparent 84%);
+  --p-datatable-body-cell-selected-border-color: var(--p-primary-900);
+  --p-treetable-body-cell-selected-border-color: var(--p-primary-900);
+  --p-tag-primary-background: color-mix(in srgb, var(--p-primary-500), transparent 84%);
+  --p-tag-primary-color: var(--p-primary-300);
+}

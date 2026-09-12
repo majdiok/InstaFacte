@@ -5,7 +5,9 @@ import { STUDIO_SPEC_LIMITS, StudioSystemSpec } from './studio-ai.models';
 import {
   checkSpecBounds,
   cloneSpec,
+  diffSpec,
   ensureIntegrity,
+  parseCsv,
   parseSpecPayload,
   serializeSpec,
   slugify,
@@ -13,6 +15,7 @@ import {
   specFieldToCustomField,
   specFormToLayout,
   studioAiHttpError,
+  summarizeChanges,
   uniqueKey
 } from './studio-ai-spec.util';
 
@@ -466,6 +469,103 @@ describe('studio-ai-spec.util', () => {
       expect(studioAiHttpError(httpError(500))).toBe(labels.generic);
       expect(studioAiHttpError(new Error('Flux interrompu'))).toBe('Flux interrompu');
       expect(studioAiHttpError({ nope: true })).toBe(labels.generic);
+    });
+  });
+
+  describe('diffSpec / summarizeChanges', () => {
+    it('returns no change for an identical draft', () => {
+      expect(diffSpec(baseSpec(), cloneSpec(baseSpec()))).toEqual([]);
+    });
+
+    it('detects added, removed and changed fields with a readable path', () => {
+      const draft = baseSpec();
+      draft.entities[0].fields.push({ key: 'email', label: 'E-mail', type: 'text', required: false, unique: true });
+      draft.entities[0].fields = draft.entities[0].fields.filter(f => f.key !== 'solde');
+      draft.entities[1].fields[0].required = false;
+
+      const changes = diffSpec(baseSpec(), draft);
+
+      expect(changes).toContain(jasmine.objectContaining({ path: 'entities.employe.fields.email', kind: 'added' }));
+      expect(changes).toContain(jasmine.objectContaining({ path: 'entities.employe.fields.solde', kind: 'removed' }));
+      expect(changes).toContain(jasmine.objectContaining({ path: 'entities.demande.fields.employe', kind: 'changed' }));
+    });
+
+    it('detects renamed, added and reused entities plus system / seed / form / report changes', () => {
+      const draft = baseSpec();
+      draft.system.displayName = 'Congés 2026';
+      draft.entities[0].displayName = 'Salarié';
+      draft.entities[1].existingKey = 'demandes';
+      draft.entities.push({ ref: 'contrat', displayName: 'Contrat', displayNamePlural: 'Contrats', fields: [] });
+      draft.seed = [{ entityRef: 'employe', records: [{ nom: 'Amine' }] }];
+      draft.entities[0].form = { sections: [] };
+      delete draft.entities[0].report;
+
+      const changes = diffSpec(baseSpec(), draft);
+      const labels = changes.map(c => c.label);
+
+      expect(changes).toContain(jasmine.objectContaining({ path: 'system', kind: 'changed' }));
+      expect(labels).toContain('Table « Employé » renommée « Salarié »');
+      expect(labels).toContain('Table « Demande » : réutilise la table existante demandes');
+      expect(labels).toContain('Table « Contrat » ajoutée');
+      // Les lignes de détail portent le nom courant (renommé) de la table.
+      expect(labels).toContain('Données de référence de « Salarié » modifiées');
+      expect(labels).toContain('Formulaire de « Salarié » modifié');
+      expect(labels).toContain('Rapport de « Salarié » modifié');
+    });
+
+    it('summarizeChanges groups field changes per table in French and keeps the other lines verbatim', () => {
+      const draft = baseSpec();
+      draft.entities[0].fields.push(
+        { key: 'email', label: 'E-mail', type: 'text', required: false, unique: false },
+        { key: 'tel', label: 'Téléphone', type: 'text', required: false, unique: false }
+      );
+      draft.entities[0].fields = draft.entities[0].fields.filter(f => f.key !== 'solde');
+      draft.entities.push({ ref: 'contrat', displayName: 'Contrat', displayNamePlural: 'Contrats', fields: [] });
+
+      const lines = summarizeChanges(diffSpec(baseSpec(), draft));
+
+      expect(lines).toContain('2 champ(s) ajouté(s) à Employé');
+      expect(lines).toContain('1 champ(s) supprimé(s) de Employé');
+      expect(lines).toContain('Table « Contrat » ajoutée');
+      expect(summarizeChanges([])).toEqual([]);
+    });
+  });
+
+  describe('parseCsv', () => {
+    it('parses comma separated text with quotes, escaped quotes and embedded line breaks', () => {
+      const parsed = parseCsv('nom,ville\n"Dupont, Jean","Paris"\n"Ligne ""citée""","Lyon\nCentre"\n');
+
+      expect(parsed.headers).toEqual(['nom', 'ville']);
+      expect(parsed.rows).toEqual([
+        ['Dupont, Jean', 'Paris'],
+        ['Ligne "citée"', 'Lyon\nCentre']
+      ]);
+      expect(parsed.truncated).toBeFalse();
+    });
+
+    it('detects semicolon and tab delimiters, strips the BOM and skips blank lines', () => {
+      const semi = parseCsv('\uFEFFnom;ville\r\nAmine;Tunis\r\n\r\nSonia;Sfax');
+      expect(semi.headers).toEqual(['nom', 'ville']);
+      expect(semi.rows).toEqual([['Amine', 'Tunis'], ['Sonia', 'Sfax']]);
+
+      const tab = parseCsv('nom\tville\nAmine\tTunis');
+      expect(tab.rows).toEqual([['Amine', 'Tunis']]);
+    });
+
+    it('pads or trims rows to the header length and honours the forced delimiter', () => {
+      const parsed = parseCsv('a,b,c\n1,2\n1,2,3,4', { delimiter: ',' });
+      expect(parsed.rows).toEqual([['1', '2', ''], ['1', '2', '3']]);
+    });
+
+    it('flags truncation beyond maxRows', () => {
+      const text = ['nom', ...Array.from({ length: 10 }, (_, i) => `n${i}`)].join('\n');
+      const parsed = parseCsv(text, { maxRows: 3 });
+      expect(parsed.rows.length).toBe(3);
+      expect(parsed.truncated).toBeTrue();
+    });
+
+    it('returns empty headers for empty input', () => {
+      expect(parseCsv('')).toEqual({ headers: [], rows: [], truncated: false });
     });
   });
 });

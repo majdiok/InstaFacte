@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, effect, inject, input, 
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { Textarea } from 'primeng/textarea';
+import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 import { ChatAttachment } from '@features/ai-assistant/models/ai-chat.models';
@@ -22,6 +23,8 @@ const MAX_ATTACHMENTS = 5;
 /** Extraction en cours : l'identifiant local permet de retirer la bonne ligne même en cas d'homonymes. */
 interface PendingExtraction { id: string; name: string; }
 
+let composerSequence = 0;
+
 /**
  * Zone de saisie de l'atelier (plan P1 §4.1) : `textarea` (Entrée envoie, Maj+Entrée insère un
  * retour à la ligne — même geste que la page legacy), bouton trombone et bouton d'envoi.
@@ -30,11 +33,15 @@ interface PendingExtraction { id: string; name: string; }
  * envoyé à `POST ai/document-extract` et c'est le texte extrait par le serveur qui partira avec la
  * demande. Le composer n'encode donc rien lui-même : il émet des `ChatAttachment` et la page
  * compose le message backend (`composeBackendMessage` / `buildAttachmentRequests`).
+ *
+ * PR 1.4 : toggle « Modèle avancé · <libellé> » (masqué si l'administrateur ne l'a pas configuré ;
+ * le choix remonte au store qui le persiste) et bouton micro désactivé « Bientôt » (la dictée
+ * n'existe pas encore dans le mode StudioBuilder).
  */
 @Component({
   selector: 'app-studio-ai-composer',
   standalone: true,
-  imports: [FormsModule, ButtonModule, Textarea, TooltipModule, ChatAttachmentCardComponent],
+  imports: [FormsModule, ButtonModule, Textarea, ToggleSwitchModule, TooltipModule, ChatAttachmentCardComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="sac">
@@ -81,6 +88,34 @@ interface PendingExtraction { id: string; name: string; }
           (keydown.enter)="onEnter($event)"></textarea>
 
         <div class="sac__actions">
+          @if (advancedModelAvailable()) {
+            <div class="sac__model">
+              <p-toggleswitch
+                [inputId]="toggleId"
+                class="sac__model-switch"
+                [ngModel]="useAdvancedModel()"
+                (ngModelChange)="toggleAdvancedModel($event)"
+                [disabled]="disabled()"
+                [pTooltip]="labels.page.advancedModelHint"
+                tooltipPosition="top" />
+              <label class="sac__model-label" [for]="toggleId">
+                {{ labels.page.advancedModel }}
+                @if (advancedModelLabel(); as model) {
+                  <span class="sac__model-name">· {{ model }}</span>
+                }
+              </label>
+            </div>
+          }
+          <span class="sac__spacer"></span>
+          <span class="sac__mic" [pTooltip]="labels.soon" tooltipPosition="top">
+            <button
+              pButton
+              type="button"
+              class="p-button-text p-button-sm sac__mic-button"
+              icon="fa-solid fa-microphone"
+              [attr.aria-label]="labels.page.micStart + ' — ' + labels.page.micSoon"
+              [disabled]="true"></button>
+          </span>
           <button
             pButton
             type="button"
@@ -94,7 +129,7 @@ interface PendingExtraction { id: string; name: string; }
             pButton
             type="button"
             class="p-button-sm sac__send"
-            icon="fa-solid fa-paper-plane"
+            icon="fa-solid fa-wand-magic-sparkles"
             [label]="disabled() ? labels.page.generating : labels.page.generate"
             [disabled]="disabled() || !canSubmit()"
             (click)="submit()"></button>
@@ -127,7 +162,17 @@ interface PendingExtraction { id: string; name: string; }
       background: var(--color-background-elevated, #fff);
     }
     .sac__input { width: 100%; resize: vertical; }
-    .sac__actions { display: flex; justify-content: flex-end; gap: var(--spacing-2); }
+    .sac__actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--spacing-2); }
+    .sac__spacer { flex: 1 1 auto; }
+    .sac__model { display: inline-flex; align-items: center; gap: var(--spacing-2); }
+    .sac__model-label {
+      font-size: var(--font-size-sm);
+      color: var(--color-neutral-700, #374151);
+      cursor: pointer;
+      user-select: none;
+    }
+    .sac__model-name { color: var(--color-neutral-500); }
+    .sac__mic { display: inline-flex; }
   `]
 })
 export class StudioAiComposerComponent {
@@ -141,8 +186,17 @@ export class StudioAiComposerComponent {
    * zone de saisie et prend le focus, sans rien envoyer (§4.2).
    */
   readonly prefill = input<string | null>(null);
+  /** Toggle visible seulement si l'administrateur a configuré un modèle avancé (capabilities). */
+  readonly advancedModelAvailable = input(false);
+  /** Nom court du modèle avancé (« Modèle avancé · GPT-4.1 »), `null` si inconnu. */
+  readonly advancedModelLabel = input<string | null>(null);
+  /** Position courante du toggle (pilotée par le store, persistée dans `localStorage`). */
+  readonly useAdvancedModel = input(false);
 
   readonly submitted = output<StudioAiComposerSubmit>();
+  readonly advancedModelChange = output<boolean>();
+
+  protected readonly toggleId = `sac-advanced-model-${++composerSequence}`;
 
   protected readonly labels = STUDIO_AI_LABELS;
   protected readonly text = signal('');
@@ -164,6 +218,10 @@ export class StudioAiComposerComponent {
 
   protected canSubmit(): boolean {
     return this.text().trim().length > 0 || this.attachments().length > 0;
+  }
+
+  protected toggleAdvancedModel(on: boolean): void {
+    this.advancedModelChange.emit(!!on);
   }
 
   protected extractingLabel(name: string): string {
