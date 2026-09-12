@@ -373,6 +373,20 @@ public sealed class OllamaSettings
     public bool EnableStudioManyToMany { get; set; }
 
     /// <summary>
+    /// PR 2.3 — vues enregistrées du Studio (Liste / Kanban / Calendrier exécutées côté serveur) et
+    /// PATCH partiel d'enregistrement. False (défaut) = <c>api/studio/records/{entityKey}/views[…]</c>
+    /// et <c>PATCH api/studio/records/{entityKey}/{id}</c> répondent 404 et
+    /// <c>CustomEntitySchemaDto.Views</c> est vide ; la table <c>CustomRecordViewDefinitions</c> reste inerte.
+    /// </summary>
+    public bool EnableStudioRecordViews { get; set; }
+
+    /// <summary>Cartes maximales chargées par une vue Kanban (au-delà, <c>truncated = true</c>). Défaut 500.</summary>
+    public int StudioRecordViewMaxKanbanCards { get; set; } = 500;
+
+    /// <summary>Événements maximaux chargés par une vue Calendrier (au-delà, <c>truncated = true</c>). Défaut 1000.</summary>
+    public int StudioRecordViewMaxCalendarEvents { get; set; } = 1000;
+
+    /// <summary>
     /// Budget de tours d'outils quand la requête Studio utilise le modèle avancé (GPU / cloud) :
     /// remplace le plafond CPU (<see cref="CpuMaxToolCallRounds"/>) pour ce seul tour. Borné 1..20.
     /// </summary>

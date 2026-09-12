@@ -9,8 +9,11 @@ public static class StudioQuotas
     public const string MaxEntitiesKey = "MaxCustomEntities";
     public const string MaxFieldsKey = "MaxCustomFieldsPerEntity";
     public const string MaxRecordsKey = "MaxCustomRecordsPerEntity";
+    /// <summary>Vues enregistrées par table (PR 2.3).</summary>
+    public const string MaxRecordViewsKey = "MaxCustomRecordViewsPerEntity";
 
     public const int MaxEntitiesFallback = 50;
     public const int MaxFieldsFallback = 100;
     public const int MaxRecordsFallback = 100_000;
+    public const int MaxRecordViewsFallback = 20;
 }

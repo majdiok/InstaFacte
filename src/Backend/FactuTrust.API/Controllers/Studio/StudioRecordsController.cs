@@ -1,4 +1,5 @@
 using FactuTrust.API.Authorization;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Fields;
@@ -7,6 +8,7 @@ using FactuTrust.Domain.Common;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.API.Controllers.Studio;
 
@@ -21,8 +23,13 @@ namespace FactuTrust.API.Controllers.Studio;
 public sealed class StudioRecordsController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly OllamaSettings _settings;
 
-    public StudioRecordsController(IMediator mediator) => _mediator = mediator;
+    public StudioRecordsController(IMediator mediator, IOptions<OllamaSettings> settings)
+    {
+        _mediator = mediator;
+        _settings = settings.Value;
+    }
 
     /// <summary>Entity + active fields, for the runtime form/table renderer.</summary>
     [HttpGet("schema")]
@@ -100,6 +107,24 @@ public sealed class StudioRecordsController : ControllerBase
         error.Code == StudioErrorCodes.RecordDuplicateLink
             ? StudioErrorMapping.Map(this, error)
             : BadRequest(ApiResponse<object>.Fail(error.Description, error.Code));
+
+    /// <summary>
+    /// PATCH partiel (PR 2.3, R5) : fusion des seules clés fournies (<c>null</c> = effacement), RowVersion
+    /// OBLIGATOIRE (400 <c>Validation.rowVersion</c> absent, 409 <c>Conflict</c> périmé). Gardé par
+    /// <c>Ollama:EnableStudioRecordViews</c> (off ⇒ 404, sans appel MediatR). Contrairement au PUT, le
+    /// PATCH mappe <c>Conflict</c> et <c>*.NotFound</c> via <see cref="StudioErrorMapping"/> (409/404).
+    /// </summary>
+    [HttpPatch("{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.CustomRecordsWrite)]
+    public async Task<IActionResult> Patch(string entityKey, Guid id, [FromBody] PatchCustomRecordRequest request, CancellationToken cancellationToken)
+    {
+        if (!_settings.EnableStudioRecordViews)
+            return NotFound(ApiResponse<object>.Fail("Les vues enregistrées ne sont pas activées.", "NotFound"));
+
+        var result = await _mediator.Send(new PatchCustomRecordCommand(entityKey, id, request), cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            record => Ok(ApiResponse<CustomRecordDto>.Ok(record)));
+    }
 
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = PermissionPolicies.CustomRecordsWrite)]

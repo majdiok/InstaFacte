@@ -84,9 +84,16 @@ public sealed record CustomEntitySchemaDto(
     CustomEntityDto Entity,
     IReadOnlyList<CustomFieldDto> Fields,
     FormLayout Form,
-    IReadOnlyList<EntityRelationDto> Relations = null!)
+    IReadOnlyList<EntityRelationDto> Relations = null!,
+    IReadOnlyList<FactuTrust.Application.Features.Studio.RecordViews.CustomRecordViewDto>? Views = null)
 {
     public IReadOnlyList<EntityRelationDto> Relations { get; init; } = Relations ?? Array.Empty<EntityRelationDto>();
+
+    /// <summary>
+    /// Vues enregistrées actives (PR 2.3, R2), par défaut d'abord ; vide tant que
+    /// <c>Ollama:EnableStudioRecordViews</c> est coupé.
+    /// </summary>
+    public IReadOnlyList<FactuTrust.Application.Features.Studio.RecordViews.CustomRecordViewDto> Views { get; init; } = Views ?? Array.Empty<RecordViews.CustomRecordViewDto>();
 }
 
 // ---- Relations (PR 2.1 — plusieurs-à-plusieurs) ----

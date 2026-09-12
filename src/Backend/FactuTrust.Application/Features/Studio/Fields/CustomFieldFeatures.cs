@@ -51,19 +51,22 @@ public sealed class GetCustomEntitySchemaQueryHandler
     private readonly ICustomFieldRepository _fields;
     private readonly ICustomFormRepository _forms;
     private readonly ICustomRecordRepository _records;
+    private readonly ICustomRecordViewRepository _recordViews;
     private readonly IExistingDataSourceProvider _existing;
     private readonly ICurrentUser _currentUser;
     private readonly OllamaSettings _settings;
 
     public GetCustomEntitySchemaQueryHandler(
         ICustomEntityRepository entities, ICustomFieldRepository fields, ICustomFormRepository forms,
-        ICustomRecordRepository records, IExistingDataSourceProvider existing, ICurrentUser currentUser,
+        ICustomRecordRepository records, ICustomRecordViewRepository recordViews,
+        IExistingDataSourceProvider existing, ICurrentUser currentUser,
         IOptions<OllamaSettings> settings)
     {
         _entities = entities;
         _fields = fields;
         _forms = forms;
         _records = records;
+        _recordViews = recordViews;
         _existing = existing;
         _currentUser = currentUser;
         _settings = settings.Value;
@@ -102,7 +105,17 @@ public sealed class GetCustomEntitySchemaQueryHandler
             ? await Relations.EntityRelationResolver.ResolveAsync(_entities, _fields, tenantId, entity, cancellationToken)
             : Array.Empty<EntityRelationDto>();
 
-        var dtoResult = new CustomEntitySchemaDto(StudioMappers.ToDto(entity, fields.Count), fieldDtos, layout, relations);
+        // PR 2.3 (vues enregistrées) : vues actives exposées sur le schéma runtime, par défaut d'abord ;
+        // vide tant que le drapeau Ollama:EnableStudioRecordViews est coupé.
+        IReadOnlyList<RecordViews.CustomRecordViewDto> views = _settings.EnableStudioRecordViews
+            ? (await _recordViews.ListByEntityAsync(tenantId, entity.Id, includeInactive: false, cancellationToken))
+                .OrderByDescending(v => v.IsDefault)
+                .ThenBy(v => v.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .Select(RecordViews.RecordViewMapper.ToDto)
+                .ToList()
+            : Array.Empty<RecordViews.CustomRecordViewDto>();
+
+        var dtoResult = new CustomEntitySchemaDto(StudioMappers.ToDto(entity, fields.Count), fieldDtos, layout, relations, views);
         return Result.Success(dtoResult);
     }
 
