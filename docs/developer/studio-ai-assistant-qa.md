@@ -305,7 +305,9 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     formulaire pour `employes`, smoke 50). Rejouer la demande puis **Créer quand même** ⇒ l'entité est renommée
     **« Employé (2) » / « Employés (2) »** (clé suffixée), mise en surbrillance dans l'onglet Tables, le bandeau
     disparaît **sans** réapparaître au prochain rendu (`dismissedDuplicateRefs`) ; cliquer une seconde fois ne
-    produit pas « (2) (2) ». Fermer le bandeau (croix) ⇒ le plan reste confirmable tel quel.
+    produit pas « (2) (2) ». Le bandeau n'a **pas** de croix de fermeture : il disparaît dès que chaque doublon
+    a été tranché (Réutiliser / Créer quand même) ; tant qu'un doublon est affiché, le plan reste confirmable
+    tel quel.
 93. **Message pendant un plan en attente, Réinitialiser, Nouvelle demande** — avec une proposition
     **À valider** affichée, saisir « ajoute une table Formations » dans le composeur situé **sous l'aperçu** et
     envoyer ⇒ dialogue **« Une proposition est en attente »** ; **Annuler** ⇒ rien n'est envoyé, le plan reste
@@ -325,8 +327,9 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     Cliquer une ligne **À valider** de l'historique ⇒ `GET api/studio/ai/plans/{id}` et reprise dans l'aperçu ;
     une ligne Terminé/Annulé n'est pas cliquable. **Voir tout** ⇒ `/studio/ai/projects` : tableau paginé
     **20 par page**, filtres Statut / Genre (retour page 1), compteur « N projet(s) », **Reprendre** ⇒
-    `/studio/ai?plan={id}` (rouvre le plan puis nettoie l'URL ; plan expiré ⇒ toast « Ce plan n'est plus en
-    attente… »), **Ouvrir le système** ⇒ `/studio/systems/{key}`. **Voir tous** (modèles) ⇒
+    `/studio/ai?plan={id}` (rouvre le plan puis nettoie l'URL ; plan expiré ⇒ bandeau d'erreur en ligne
+    « Ce plan n'est plus en attente… » — `store.error`, pas un toast), **Ouvrir le système** ⇒
+    `/studio/systems/{key}`. **Voir tous** (modèles) ⇒
     `/studio/ai/templates` : cartes groupées par catégorie (« Autres » pour les modèles sans catégorie),
     **Utiliser ce modèle** ⇒ `/studio/ai?template={key}` ⇒ plan ouvert. Avec `templatesEnabled = false`
     ⇒ carte Modèles absente et page `/studio/ai/templates` « La bibliothèque de modèles est désactivée par l’administrateur. » ;

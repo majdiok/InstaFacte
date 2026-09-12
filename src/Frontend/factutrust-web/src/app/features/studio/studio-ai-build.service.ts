@@ -124,7 +124,7 @@ export class StudioAiBuildService {
   private readonly capabilitiesUrl = `${environment.apiUrl}/ai/studio/capabilities`;
 
   getPlan(planId: string): Observable<ApiResponse<StudioAiPlanDto>> {
-    return this.http.get<ApiResponse<StudioAiPlanDto>>(`${this.baseUrl}/${planId}`);
+    return this.http.get<ApiResponse<StudioAiPlanDto>>(`${this.baseUrl}/${encodeURIComponent(planId)}`);
   }
 
   // ---- Workbench (P0) : tous ces appels renvoient 404 quand `EnableStudioAiWorkbench` est faux. -------
@@ -150,7 +150,7 @@ export class StudioAiBuildService {
 
   /** Spec canonique + `rowVersion` d'un plan (nécessaire à l'aperçu détaillé et à l'édition). */
   getPlanSpec(planId: string): Observable<ApiResponse<StudioAiPlanSpecDto>> {
-    return this.http.get<ApiResponse<StudioAiPlanSpecDto>>(`${this.baseUrl}/${planId}/spec`, {
+    return this.http.get<ApiResponse<StudioAiPlanSpecDto>>(`${this.baseUrl}/${encodeURIComponent(planId)}/spec`, {
       context: createHttpContextSkipGlobalErrorUi()
     });
   }
@@ -158,7 +158,7 @@ export class StudioAiBuildService {
   /** Édition d'un plan en attente ; le serveur re-parse, recalcule le résumé et vérifie `rowVersion` (409 sinon). */
   updatePlanSpec(planId: string, specJson: string, rowVersion: string): Observable<ApiResponse<UpdateStudioAiPlanSpecResponse>> {
     return this.http.put<ApiResponse<UpdateStudioAiPlanSpecResponse>>(
-      `${this.baseUrl}/${planId}/spec`,
+      `${this.baseUrl}/${encodeURIComponent(planId)}/spec`,
       { specJson, rowVersion },
       { context: createHttpContextSkipGlobalErrorUi() }
     );
@@ -207,7 +207,7 @@ export class StudioAiBuildService {
   }
 
   cancel(planId: string): Observable<ApiResponse<StudioAiPlanDto>> {
-    return this.http.post<ApiResponse<StudioAiPlanDto>>(`${this.baseUrl}/${planId}/cancel`, {});
+    return this.http.post<ApiResponse<StudioAiPlanDto>>(`${this.baseUrl}/${encodeURIComponent(planId)}/cancel`, {});
   }
 
   /**
@@ -217,7 +217,7 @@ export class StudioAiBuildService {
   confirm(planId: string): Observable<ChatStreamEvent> {
     return new Observable(subscriber => {
       const abort = new AbortController();
-      const url = `${this.baseUrl}/${planId}/confirm`;
+      const url = `${this.baseUrl}/${encodeURIComponent(planId)}/confirm`;
 
       const run = async (): Promise<void> => {
         // Hors pipeline d'intercepteurs Angular (fetch streaming) : on reproduit le

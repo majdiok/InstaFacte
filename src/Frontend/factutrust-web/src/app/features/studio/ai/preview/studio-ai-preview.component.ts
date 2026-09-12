@@ -99,7 +99,7 @@ import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
       @if (store.plan()) {
         <app-studio-ai-duplicates-banner
           [hints]="store.duplicates()"
-          [busy]="store.busy() || store.validation().pending"
+          [busy]="store.busy() || store.validation().pending || store.specLoading()"
           (reuse)="store.reuseExistingTable($event)"
           (createAnyway)="store.renameDuplicate($event)" />
       }

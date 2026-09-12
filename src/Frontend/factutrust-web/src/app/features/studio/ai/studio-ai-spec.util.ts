@@ -29,7 +29,8 @@ import {
  * Tout ce qui se calcule sans réseau vit ici pour être testable directement (convention du dépôt) :
  * clonage, (dé)sérialisation, erreurs HTTP → message FR, bornes/intégrité de la spec, passerelles
  * vers les modèles runtime (`CustomField`, `FormLayout`) pour le sandbox, et les helpers d'édition
- * (`diffSpec`, `summarizeChanges`, `parseCsv`) utilisés par le bandeau doublons et le mode Personnaliser.
+ * (`diffSpec`, `summarizeChanges`, `parseCsv`) prévus pour le mode Personnaliser (PR 3.4) — couverts par
+ * leurs specs, sans consommateur en 1.4.
  */
 
 /** Puces de compteurs (en-tête de l'aperçu, Vue d'ensemble) dans l'ordre canonique. */
