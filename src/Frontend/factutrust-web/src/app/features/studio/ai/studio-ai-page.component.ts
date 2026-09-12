@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
@@ -49,6 +50,7 @@ const INTENT_TO_TAB: Partial<Record<StudioAiIntent, StudioAiPreviewTab>> = {
   selector: 'app-studio-ai-page',
   standalone: true,
   imports: [
+    NgTemplateOutlet,
     ButtonModule,
     TooltipModule,
     StudioPageShellComponent,
@@ -110,7 +112,6 @@ export class StudioAiPageComponent {
   readonly composerDisabled = computed(() => this.store.busy());
 
   /** Bandeau D3 : l'avancé était demandé, le serveur a répondu avec le standard. */
-  readonly showModelFallback = computed(() => this.store.advancedModelFellBack());
   readonly modelFallbackText = computed(() => {
     const reason = this.store.advancedModelFallbackReason();
     const why = (reason && this.labels.model.fallbackReason[reason]) || this.labels.model.fallbackGeneric;
@@ -171,14 +172,17 @@ export class StudioAiPageComponent {
       this.store.send(text, options);
       return;
     }
-    this.confirmation.confirm({
+    this.confirmAction({
       header: this.labels.page.pendingPlanTitle,
       message: this.labels.page.pendingPlanMessage,
       acceptLabel: this.labels.page.pendingPlanAccept,
-      rejectLabel: this.labels.page.pendingPlanReject,
-      size: 'md',
       accept: () => this.store.abandonPlanAndSend(text, options)
     });
+  }
+
+  /** Toutes les modales de l'atelier partagent le libellé d'abandon et la taille (libellés FR longs). */
+  private confirmAction(opts: { header: string; message: string; acceptLabel: string; accept: () => void }): void {
+    this.confirmation.confirm({ ...opts, rejectLabel: this.labels.page.pendingPlanReject, size: 'md' });
   }
 
   // ---- Plan ----------------------------------------------------------------------------------------------
@@ -195,12 +199,10 @@ export class StudioAiPageComponent {
   /** « Nouvelle demande » (en-tête / carte résultat) : confirmation seulement si un plan serait perdu. */
   newRequest(): void {
     if (this.store.hasPlan()) {
-      this.confirmation.confirm({
+      this.confirmAction({
         header: this.labels.rail.resetTitle,
         message: this.labels.rail.resetConfirm,
         acceptLabel: this.labels.page.resetConversation,
-        rejectLabel: this.labels.page.pendingPlanReject,
-        size: 'md',
         accept: () => this.doReset()
       });
       return;
@@ -210,12 +212,10 @@ export class StudioAiPageComponent {
 
   /** « Réinitialiser la conversation » du rail (R20) : toujours confirmée, toast avec le nombre de plans annulés. */
   resetFromRail(): void {
-    this.confirmation.confirm({
+    this.confirmAction({
       header: this.labels.rail.resetTitle,
       message: this.labels.rail.resetConfirm,
       acceptLabel: this.labels.rail.resetConversation,
-      rejectLabel: this.labels.page.pendingPlanReject,
-      size: 'md',
       accept: () => this.doReset(true)
     });
   }
@@ -239,12 +239,10 @@ export class StudioAiPageComponent {
   useTemplate(key: string): void {
     if (this.store.busy()) return;
     if (this.store.hasPlan()) {
-      this.confirmation.confirm({
+      this.confirmAction({
         header: this.labels.rail.templates,
         message: this.labels.rail.replaceCurrent,
         acceptLabel: this.labels.rail.use,
-        rejectLabel: this.labels.page.pendingPlanReject,
-        size: 'md',
         accept: () => this.store.createFromTemplate(key)
       });
       return;
@@ -258,12 +256,10 @@ export class StudioAiPageComponent {
     if (this.store.plan()?.planId === item.id) return;
     const open = () => this.openPlanById(item.id);
     if (this.store.hasPlan()) {
-      this.confirmation.confirm({
+      this.confirmAction({
         header: this.labels.rail.history,
         message: this.labels.rail.replaceCurrent,
         acceptLabel: this.labels.rail.openPlan,
-        rejectLabel: this.labels.page.pendingPlanReject,
-        size: 'md',
         accept: open
       });
       return;

@@ -44,7 +44,7 @@ import { STUDIO_AI_LABELS } from '../studio-ai-labels';
             class="sar-row"
             data-action="export"
             [disabled]="!exportEnabled() || busy()"
-            [pTooltip]="exportEnabled() ? '' : soon"
+            [pTooltip]="soon"
             [tooltipDisabled]="exportEnabled()"
             tooltipPosition="left"
             (click)="exportEnabled() && exportSystem.emit()">

@@ -6,8 +6,22 @@
       [busy]="store.busy()"
       (newRequest)="newRequest()" />
 
+    <!-- Composer partagé par les vues « compose » (héros) et « preview » (suivi) : seule la classe hôte diffère. -->
+    <ng-template #composer let-followupClass="followupClass">
+      <app-studio-ai-composer
+        [class]="followupClass"
+        [disabled]="composerDisabled()"
+        [prefill]="prefill()"
+        [placeholder]="labels.page.composerPlaceholder"
+        [advancedModelAvailable]="capabilities.capabilities().advancedModelAvailable"
+        [advancedModelLabel]="capabilities.capabilities().advancedModelLabel ?? null"
+        [useAdvancedModel]="store.useAdvancedModel()"
+        (advancedModelChange)="setAdvancedModel($event)"
+        (submitted)="submit($event)" />
+    </ng-template>
+
     <section class="studio-ai-page__main" aria-live="polite">
-      @if (showModelFallback()) {
+      @if (store.advancedModelFellBack()) {
         <div class="studio-ai-page__model" role="status" data-testid="model-fallback">
           <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
           <span>{{ modelFallbackText() }}</span>
@@ -26,15 +40,7 @@
             <p class="studio-ai-page__hero-hint">{{ labels.page.heroHint }}</p>
           </div>
 
-          <app-studio-ai-composer
-            [disabled]="composerDisabled()"
-            [prefill]="prefill()"
-            [placeholder]="labels.page.composerPlaceholder"
-            [advancedModelAvailable]="capabilities.capabilities().advancedModelAvailable"
-            [advancedModelLabel]="capabilities.capabilities().advancedModelLabel ?? null"
-            [useAdvancedModel]="store.useAdvancedModel()"
-            (advancedModelChange)="setAdvancedModel($event)"
-            (submitted)="submit($event)" />
+          <ng-container *ngTemplateOutlet="composer" />
 
           @if (store.error(); as error) {
             <div class="studio-ai-page__error" role="alert">
@@ -56,16 +62,7 @@
             [(activeTab)]="previewTab"
             (confirmRequested)="openConfirm()" />
 
-          <app-studio-ai-composer
-            class="studio-ai-page__followup"
-            [disabled]="composerDisabled()"
-            [prefill]="prefill()"
-            [placeholder]="labels.page.composerPlaceholder"
-            [advancedModelAvailable]="capabilities.capabilities().advancedModelAvailable"
-            [advancedModelLabel]="capabilities.capabilities().advancedModelLabel ?? null"
-            [useAdvancedModel]="store.useAdvancedModel()"
-            (advancedModelChange)="setAdvancedModel($event)"
-            (submitted)="submit($event)" />
+          <ng-container *ngTemplateOutlet="composer; context: { followupClass: 'studio-ai-page__followup' }" />
         }
         @case ('progress') {
           <app-studio-ai-progress [steps]="store.buildSteps()" />

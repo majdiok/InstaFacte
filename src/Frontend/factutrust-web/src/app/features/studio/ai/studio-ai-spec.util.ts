@@ -540,9 +540,9 @@ export function summarizeChanges(changes: StudioSpecChange[]): string[] {
     const m = FIELD_PATH.exec(change.path);
     if (!m) { lines.push(change.label); continue; }
     const ref = m[1];
-    const field = (change.after ?? change.before) as StudioSpecField | undefined;
-    const entity = change.label.includes(' — ') ? change.label.split(' — ').pop() ?? ref : ref;
-    const group = fieldGroups.get(ref) ?? { entity: entity || field?.label || ref, added: 0, removed: 0, changed: 0 };
+    // Les chemins de champs ne viennent que de `diffFields`, dont le libellé est « <champ> — <entité> ».
+    const entity = change.label.split(' — ').pop() || ref;
+    const group = fieldGroups.get(ref) ?? { entity, added: 0, removed: 0, changed: 0 };
     group[change.kind] += 1;
     fieldGroups.set(ref, group);
   }

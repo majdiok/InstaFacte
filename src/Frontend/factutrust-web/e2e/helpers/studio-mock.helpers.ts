@@ -284,25 +284,14 @@ export async function installStudioApiMocks(page: Page, options: StudioMockOptio
     await fulfilJson(route, ok({ items: [], page: 1, pageSize: 10, totalCount: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false }));
   });
 
-  await page.route('**/api/studio/nav', async route => {
-    record(route);
-    await fulfilJson(route, ok([]));
-  });
+  /** Route « triviale » : consigne l'appel puis renvoie un JSON fixe. */
+  const mockJson = (url: string, body: unknown) =>
+    page.route(url, route => { record(route); return fulfilJson(route, body); });
 
-  await page.route('**/api/ai/health', async route => {
-    record(route);
-    await fulfilJson(route, ok({ available: true }));
-  });
-
-  await page.route('**/api/ai/warm-up', async route => {
-    record(route);
-    await fulfilJson(route, ok({ warmed: true }));
-  });
-
-  await page.route('**/api/auth/me', async route => {
-    record(route);
-    await fulfilJson(route, ok(STUDIO_E2E_USER));
-  });
+  await mockJson('**/api/studio/nav', ok([]));
+  await mockJson('**/api/ai/health', ok({ available: true }));
+  await mockJson('**/api/ai/warm-up', ok({ warmed: true }));
+  await mockJson('**/api/auth/me', ok(STUDIO_E2E_USER));
 
   await page.route('**/api/ai/studio/capabilities', async route => {
     record(route);
@@ -313,10 +302,7 @@ export async function installStudioApiMocks(page: Page, options: StudioMockOptio
     await fulfilJson(route, ok(capabilities));
   });
 
-  await page.route('**/api/studio/templates', async route => {
-    record(route);
-    await fulfilJson(route, ok(templates));
-  });
+  await mockJson('**/api/studio/templates', ok(templates));
 
   await page.route('**/api/studio/ai/plans?**', async route => {
     record(route);
