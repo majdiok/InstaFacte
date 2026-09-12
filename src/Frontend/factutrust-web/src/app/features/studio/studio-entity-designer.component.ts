@@ -94,7 +94,7 @@ import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
 
         <label>Type *</label>
         <p-select [options]="typeOptions" [(ngModel)]="fType" optionLabel="label" optionValue="value"
-          [disabled]="editing()" appendTo="body" styleClass="ft-w-full"></p-select>
+          [disabled]="editing()" appendTo="body" panelStyleClass="studio-theme" styleClass="ft-w-full"></p-select>
 
         <div class="ft-row">
           <div><p-inputSwitch [(ngModel)]="fRequired"></p-inputSwitch> <span>Obligatoire</span></div>
@@ -110,14 +110,14 @@ import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
         <ng-container *ngIf="isRelationCustom()">
           <label>Table cible *</label>
           <p-select [options]="otherEntities()" [(ngModel)]="fRelationRef" optionLabel="displayName" optionValue="key"
-            appendTo="body" styleClass="ft-w-full" placeholder="Choisir une table"></p-select>
+            appendTo="body" panelStyleClass="studio-theme" styleClass="ft-w-full" placeholder="Choisir une table"></p-select>
           <small class="ft-hint">Le champ référencera un enregistrement de cette table.</small>
         </ng-container>
 
         <ng-container *ngIf="isRelationExisting()">
           <label>Donnée existante cible *</label>
           <p-select [options]="existingRelationSources" [(ngModel)]="fRelationRef" optionLabel="label" optionValue="value"
-            appendTo="body" styleClass="ft-w-full" placeholder="Choisir une source"></p-select>
+            appendTo="body" panelStyleClass="studio-theme" styleClass="ft-w-full" placeholder="Choisir une source"></p-select>
           <small class="ft-hint">Référence en lecture seule vers une fiche existante.</small>
         </ng-container>
 
@@ -161,7 +161,7 @@ import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
         <ng-container *ngIf="isBarcode()">
           <label>Symbologie</label>
           <p-select [options]="barcodeFormats" [(ngModel)]="fCodeFormat" optionLabel="label" optionValue="value"
-            appendTo="body" styleClass="ft-w-full"></p-select>
+            appendTo="body" panelStyleClass="studio-theme" styleClass="ft-w-full"></p-select>
           <small class="ft-hint">EAN-13 attend 12 à 13 chiffres ; CODE128 accepte tout texte.</small>
         </ng-container>
 
@@ -185,7 +185,7 @@ import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
         <ng-container *ngIf="isLookup()">
           <label>Champ relation (via) *</label>
           <p-select [options]="relationFields()" [(ngModel)]="fLookupVia" optionLabel="label" optionValue="value"
-            appendTo="body" styleClass="ft-w-full" placeholder="Choisir un champ relation"></p-select>
+            appendTo="body" panelStyleClass="studio-theme" styleClass="ft-w-full" placeholder="Choisir un champ relation"></p-select>
           <label>Champ cible *</label>
           <input pInputText [(ngModel)]="fLookupTarget" placeholder="clé du champ à afficher" />
           <small class="ft-hint">Affiche un champ de l'enregistrement/fiche liée par le champ relation.</small>
@@ -194,12 +194,12 @@ import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
         <ng-container *ngIf="isRollup()">
           <label>Table enfant *</label>
           <p-select [options]="otherEntities()" [(ngModel)]="fRollupEntity" optionLabel="displayName" optionValue="key"
-            appendTo="body" styleClass="ft-w-full" placeholder="Choisir une table"></p-select>
+            appendTo="body" panelStyleClass="studio-theme" styleClass="ft-w-full" placeholder="Choisir une table"></p-select>
           <label>Champ relation de l'enfant *</label>
           <input pInputText [(ngModel)]="fRollupRelationField" placeholder="clé du champ relation pointant vers cette table" />
           <label>Agrégat *</label>
           <p-select [options]="aggOptions" [(ngModel)]="fRollupAgg" optionLabel="label" optionValue="value"
-            appendTo="body" styleClass="ft-w-full"></p-select>
+            appendTo="body" panelStyleClass="studio-theme" styleClass="ft-w-full"></p-select>
           <ng-container *ngIf="fRollupAgg !== 'count'">
             <label>Champ à agréger *</label>
             <input pInputText [(ngModel)]="fRollupField" placeholder="clé du champ numérique de l'enfant" />
