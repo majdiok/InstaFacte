@@ -20,6 +20,7 @@ export const DOC_CHAPTERS: DocChapter[] = [
   { id: 'paiements', title: 'Trésorerie', file: '07-paiements.md', icon: 'fa-credit-card', description: 'Suivre et enregistrer les paiements' },
   { id: 'rapports', title: 'Rapports', file: '08-rapports.md', icon: 'fa-bar-chart-o', description: 'Statistiques et analyses' },
   { id: 'parametres', title: 'Paramètres', file: '09-parametres.md', icon: 'fa-cog', description: 'Profil, entreprise, abonnement' },
+  { id: 'studio-ia', title: 'Studio IA', file: '13-studio-ia.md', icon: 'fa-wand-magic-sparkles', description: 'Créer tables, formulaires et rapports en décrivant votre besoin' },
   { id: 'glossaire', title: 'Glossaire', file: 'glossaire.md', icon: 'fa-list-alt', description: 'Définitions des termes utilisés' }
 ];
 
