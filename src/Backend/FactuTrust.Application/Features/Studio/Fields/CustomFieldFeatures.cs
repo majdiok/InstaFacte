@@ -1,11 +1,13 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Studio;
 using FactuTrust.Domain.Enums;
 using MediatR;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.Studio.Fields;
 
@@ -51,10 +53,12 @@ public sealed class GetCustomEntitySchemaQueryHandler
     private readonly ICustomRecordRepository _records;
     private readonly IExistingDataSourceProvider _existing;
     private readonly ICurrentUser _currentUser;
+    private readonly OllamaSettings _settings;
 
     public GetCustomEntitySchemaQueryHandler(
         ICustomEntityRepository entities, ICustomFieldRepository fields, ICustomFormRepository forms,
-        ICustomRecordRepository records, IExistingDataSourceProvider existing, ICurrentUser currentUser)
+        ICustomRecordRepository records, IExistingDataSourceProvider existing, ICurrentUser currentUser,
+        IOptions<OllamaSettings> settings)
     {
         _entities = entities;
         _fields = fields;
@@ -62,6 +66,7 @@ public sealed class GetCustomEntitySchemaQueryHandler
         _records = records;
         _existing = existing;
         _currentUser = currentUser;
+        _settings = settings.Value;
     }
 
     public async Task<Result<CustomEntitySchemaDto>> Handle(GetCustomEntitySchemaQuery request, CancellationToken cancellationToken)
@@ -91,7 +96,13 @@ public sealed class GetCustomEntitySchemaQueryHandler
             fieldDtos.Add(dto);
         }
 
-        var dtoResult = new CustomEntitySchemaDto(StudioMappers.ToDto(entity, fields.Count), fieldDtos, layout);
+        // R2 (PR 2.1): relations exposed on the runtime schema so the record page (« Liés » tab) can
+        // discover many-to-many links without studio:design_entities. Empty when the flag is off.
+        IReadOnlyList<EntityRelationDto> relations = _settings.EnableStudioManyToMany
+            ? await Relations.EntityRelationResolver.ResolveAsync(_entities, _fields, tenantId, entity, cancellationToken)
+            : Array.Empty<EntityRelationDto>();
+
+        var dtoResult = new CustomEntitySchemaDto(StudioMappers.ToDto(entity, fields.Count), fieldDtos, layout, relations);
         return Result.Success(dtoResult);
     }
 

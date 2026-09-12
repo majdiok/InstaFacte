@@ -26,7 +26,15 @@ internal static class RecordEntityResolver
 
 // ---- List (paged) ----
 
-public sealed record ListCustomRecordsQuery(string EntityKey, string? Search, int Page = 1, int PageSize = 25)
+/// <summary>
+/// Paged list. <see cref="FilterField"/>/<see cref="FilterValue"/> (PR 2.1) add an exact server-side
+/// filter on one active field of the entity (e.g. the « Liés » tab of a record: junction rows whose
+/// <c>employes</c> field equals the current record id). Independent of any feature flag; cumulative
+/// with <see cref="Search"/>.
+/// </summary>
+public sealed record ListCustomRecordsQuery(
+    string EntityKey, string? Search, int Page = 1, int PageSize = 25,
+    string? FilterField = null, string? FilterValue = null)
     : IRequest<Result<PagedResult<CustomRecordDto>>>;
 
 public sealed class ListCustomRecordsQueryHandler
@@ -61,11 +69,40 @@ public sealed class ListCustomRecordsQueryHandler
         var page = request.Page < 1 ? 1 : request.Page;
         var pageSize = request.PageSize is < 1 or > 200 ? 25 : request.PageSize;
 
-        var (items, total) = await _records.ListAsync(tenantId, entity.Id, request.Search, page, pageSize, cancellationToken);
+        var fields = await _fields.ListByEntityAsync(tenantId, entity.Id, includeInactive: false, cancellationToken);
+
+        // Server-side filter (PR 2.1): the field key must be a sanitized key of an ACTIVE field of this
+        // entity (never concatenated into SQL otherwise) and the value is bounded to the indexed length.
+        string? filterField = null;
+        string? filterValue = null;
+        var hasFilterField = !string.IsNullOrWhiteSpace(request.FilterField);
+        var hasFilterValue = !string.IsNullOrWhiteSpace(request.FilterValue);
+        if (hasFilterField || hasFilterValue)
+        {
+            if (!hasFilterField)
+                return Result.Failure<PagedResult<CustomRecordDto>>(
+                    Error.Validation("filterField", "filterField est requis lorsque filterValue est fourni."));
+            if (!hasFilterValue)
+                return Result.Failure<PagedResult<CustomRecordDto>>(
+                    Error.Validation("filterValue", "filterValue est requis lorsque filterField est fourni."));
+
+            filterField = request.FilterField!.Trim();
+            filterValue = request.FilterValue!.Trim();
+
+            if (!StudioKey.IsValidShape(filterField) || fields.All(f => !string.Equals(f.Key, filterField, StringComparison.Ordinal)))
+                return Result.Failure<PagedResult<CustomRecordDto>>(
+                    Error.Validation("filterField", $"Champ « {request.FilterField} » inconnu ou inactif sur la table « {request.EntityKey} »."));
+
+            if (filterValue.Length > JsonIndexSql.ValueMaxLength)
+                return Result.Failure<PagedResult<CustomRecordDto>>(
+                    Error.Validation("filterValue", $"filterValue dépasse {JsonIndexSql.ValueMaxLength} caractères."));
+        }
+
+        var (items, total) = await _records.ListAsync(
+            tenantId, entity.Id, request.Search, page, pageSize, filterField, filterValue, cancellationToken);
         var dtos = items.Select(StudioMappers.ToDto).ToList();
 
         // Compute-on-read: inject Lookup/Rollup values (fresh, never stored).
-        var fields = await _fields.ListByEntityAsync(tenantId, entity.Id, includeInactive: false, cancellationToken);
         await _computedReader.EnrichAsync(tenantId, fields, dtos, cancellationToken);
 
         return Result.Success(PagedResult<CustomRecordDto>.Create(dtos, page, pageSize, total));
@@ -171,6 +208,11 @@ public sealed class CreateCustomRecordCommandHandler : IRequestHandler<CreateCus
         if (uniqueError is not null)
             return Result.Failure<CustomRecordDto>(uniqueError);
 
+        // PR 2.1: a junction row links one (source, target) pair at most once → 409 record.duplicate_link.
+        var pairError = await JunctionPairChecker.CheckAsync(_records, entity, fields, canonicalJson, excludeId: null, cancellationToken);
+        if (pairError is not null)
+            return Result.Failure<CustomRecordDto>(pairError);
+
         var record = CustomRecord.Create(tenantId, entity.Id, canonicalJson, userId);
         await _records.AddAsync(record, cancellationToken);
 
@@ -231,6 +273,11 @@ public sealed class UpdateCustomRecordCommandHandler : IRequestHandler<UpdateCus
         var uniqueError = await UniqueFieldChecker.CheckAsync(_records, tenantId, entity.Id, fields, canonicalJson, excludeId: command.Id, cancellationToken);
         if (uniqueError is not null)
             return Result.Failure<CustomRecordDto>(uniqueError);
+
+        // PR 2.1: pair uniqueness on junction tables, excluding the record being updated.
+        var pairError = await JunctionPairChecker.CheckAsync(_records, entity, fields, canonicalJson, excludeId: command.Id, cancellationToken);
+        if (pairError is not null)
+            return Result.Failure<CustomRecordDto>(pairError);
 
         record.SetData(canonicalJson, userId);
 

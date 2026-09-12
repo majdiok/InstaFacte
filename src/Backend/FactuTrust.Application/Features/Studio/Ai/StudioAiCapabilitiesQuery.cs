@@ -26,7 +26,15 @@ public sealed record StudioAiCapabilitiesDto(
     bool PagesEnabled,
     bool AdvancedModelAvailable,
     string StandardModelLabel,
-    string? AdvancedModelLabel);
+    string? AdvancedModelLabel,
+    // Programme « Studio IA » (contrat A6, figé dès la PR 2.1) : seul ManyToManyEnabled est câblé ;
+    // les cinq autres restent false tant que leur drapeau n'existe pas (PR 2.3, 2.4, 3.x).
+    bool ManyToManyEnabled = false,
+    bool RecordViewsEnabled = false,
+    bool RecordViewToolsEnabled = false,
+    bool SystemExportEnabled = false,
+    bool WorkflowsEnabled = false,
+    bool WorkflowToolsEnabled = false);
 
 public sealed record StudioAiCapabilitiesQuery() : IRequest<Result<StudioAiCapabilitiesDto>>;
 
@@ -86,7 +94,13 @@ public sealed class StudioAiCapabilitiesQueryHandler
             PagesEnabled: _settings.EnableStudioPages && workbenchEnabled,
             AdvancedModelAvailable: advancedModelAvailable,
             StandardModelLabel: standardModelLabel,
-            AdvancedModelLabel: advancedModelAvailable ? HumanFriendlyModelLabel(advancedModelRef) : null));
+            AdvancedModelLabel: advancedModelAvailable ? HumanFriendlyModelLabel(advancedModelRef) : null,
+            ManyToManyEnabled: _settings.EnableStudioManyToMany,
+            RecordViewsEnabled: false,
+            RecordViewToolsEnabled: false,
+            SystemExportEnabled: false,
+            WorkflowsEnabled: false,
+            WorkflowToolsEnabled: false));
     }
 
     /// <summary>

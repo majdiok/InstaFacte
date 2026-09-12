@@ -29,7 +29,7 @@ public sealed class StudioComputedFieldReaderTests
         public Task<IReadOnlyList<CustomEntityDefinition>> ListAsync(Guid t, bool inc, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<IReadOnlyList<CustomEntityDefinition>> ListBySystemIdAsync(Guid t, Guid systemId, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<CustomEntityDefinition>>(Array.Empty<CustomEntityDefinition>());
-        public Task<bool> KeyExistsAsync(Guid t, string k, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> KeyExistsAsync(Guid t, string k, bool includeDeleted = false, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<int> CountAsync(Guid t, CancellationToken ct = default) => throw new NotImplementedException();
         public Task AddAsync(CustomEntityDefinition e, CancellationToken ct = default) => throw new NotImplementedException();
         public Task UpdateAsync(CustomEntityDefinition e, CancellationToken ct = default) => throw new NotImplementedException();
@@ -42,7 +42,8 @@ public sealed class StudioComputedFieldReaderTests
         public Task<IReadOnlyList<CustomRecord>> GetAllForReportAsync(Guid t, Guid entityId, int max, CancellationToken ct = default)
             => Task.FromResult(_byEntity.GetValueOrDefault(entityId, Array.Empty<CustomRecord>()));
         public Task<CustomRecord?> GetAsync(Guid t, Guid e, Guid id, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task<(IReadOnlyList<CustomRecord> Items, int TotalCount)> ListAsync(Guid t, Guid e, string? s, int p, int ps, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<(IReadOnlyList<CustomRecord> Items, int TotalCount)> ListAsync(Guid t, Guid e, string? s, int p, int ps, string? ff = null, string? fv = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> ExistsWithFieldPairAsync(Guid t, Guid e, string ka, string va, string kb, string vb, Guid? ex, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<int> CountAsync(Guid t, Guid e, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<bool> ExistsWithFieldValueAsync(Guid t, Guid e, string k, string v, Guid? ex, CancellationToken ct = default) => throw new NotImplementedException();
         public Task AddAsync(CustomRecord r, CancellationToken ct = default) => throw new NotImplementedException();

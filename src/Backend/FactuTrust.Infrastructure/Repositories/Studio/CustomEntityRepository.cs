@@ -43,10 +43,13 @@ public sealed class CustomEntityRepository : ICustomEntityRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<bool> KeyExistsAsync(Guid tenantId, string key, CancellationToken cancellationToken = default)
+    public async Task<bool> KeyExistsAsync(Guid tenantId, string key, bool includeDeleted = false, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
-        return await context.CustomEntityDefinitions.AnyAsync(e => e.TenantId == tenantId && e.Key == key, cancellationToken);
+        IQueryable<CustomEntityDefinition> query = context.CustomEntityDefinitions;
+        if (includeDeleted)
+            query = query.IgnoreQueryFilters(); // drops the global !IsDeleted filter only; TenantId stays in the predicate below
+        return await query.AnyAsync(e => e.TenantId == tenantId && e.Key == key, cancellationToken);
     }
 
     public async Task<int> CountAsync(Guid tenantId, CancellationToken cancellationToken = default)

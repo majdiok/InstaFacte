@@ -251,6 +251,9 @@ public sealed class GetStudioNavQueryHandler
                 Error.Validation("Studio.SchemaMissing", "Schéma Studio incomplet. Appliquez les migrations tenant."));
         }
 
+        // PR 2.1: junction tables (many-to-many) are plumbing — never shown as sidebar entries.
+        entities = entities.Where(e => e.Kind != Domain.Enums.CustomEntityKind.Junction).ToList();
+
         var nodes = new List<StudioNavNodeDto>();
 
         foreach (var s in systems)
@@ -280,7 +283,8 @@ public sealed class GetStudioNavQueryHandler
         {
             var message = current.Message;
             if (message.Contains("CustomSystemDefinitions", StringComparison.OrdinalIgnoreCase)
-                || message.Contains("Invalid column name 'SystemId'", StringComparison.OrdinalIgnoreCase))
+                || message.Contains("Invalid column name 'SystemId'", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("Invalid column name 'Kind'", StringComparison.OrdinalIgnoreCase)) // PR 2.1 (AddStudioEntityKind_Tenant)
                 return true;
         }
 

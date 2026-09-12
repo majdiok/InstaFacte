@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Entities.Studio;
+using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,6 +20,20 @@ public sealed class CustomFieldRepository : ICustomFieldRepository
         if (!includeInactive)
             query = query.Where(f => f.IsActive);
         return await query.OrderBy(f => f.SortOrder).ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<CustomFieldDefinition>> ListByTypeAsync(Guid tenantId, CustomFieldType fieldType, bool includeInactive = false, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var query = context.CustomFieldDefinitions
+            .Where(f => f.TenantId == tenantId && f.FieldType == fieldType);
+        if (!includeInactive)
+            query = query.Where(f => f.IsActive);
+        return await query
+            .OrderBy(f => f.EntityDefinitionId)
+            .ThenBy(f => f.SortOrder)
+            .ThenBy(f => f.Key)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<CustomFieldDefinition?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)

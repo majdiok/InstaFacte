@@ -105,6 +105,32 @@ SELECT OBJECT_ID('CustomSystemDefinitions') AS TableExists;
 
 ---
 
+## Erreur « Invalid column name 'Kind' » sur le Studio (relations plusieurs-à-plusieurs)
+
+Si `GET /api/studio/entities`, `GET /api/studio/records/{entityKey}/schema` ou la création d'une table Studio renvoie un **500** :
+
+- **Message :** `Invalid column name 'Kind'.` — `GET /api/studio/nav` renvoie, lui, une navigation **vide** (garde `IsStudioSchemaMissing`).
+- **Cause :** la migration tenant `20260912130000_AddStudioEntityKind_Tenant` (PR 2.1 du programme Studio IA : colonne `CustomEntityDefinitions.Kind`, défaut `0` = Standard, index `(TenantId, Kind)`) n'a pas été appliquée sur la base du tenant alors que le code backend la référence déjà.
+
+### Solution
+
+Appliquer les migrations tenant via l'une des options de la section [Erreur HTTP 503](#erreur-http-503--tenant_migration_failed).
+
+**Script idempotent (production / DBA) :** [`docs/runbooks/sql/AddStudioEntityKind_Tenant.idempotent.sql`](runbooks/sql/AddStudioEntityKind_Tenant.idempotent.sql) — rejouable, ajoute la colonne et l'index s'ils manquent et inscrit la ligne d'historique.
+
+**Vérification SQL :**
+
+```sql
+SELECT MigrationId FROM __EFMigrationsHistory
+WHERE MigrationId LIKE '%AddStudioEntityKind%';
+
+SELECT COL_LENGTH('CustomEntityDefinitions', 'Kind') AS KindColumnLength; -- 4 attendu
+```
+
+Aucune donnée existante n'est modifiée : toutes les tables Studio existantes restent `Kind = 0` (Standard). Le drapeau `Ollama:EnableStudioManyToMany` ne dispense **pas** de la migration : la colonne est lue quel que soit son état.
+
+---
+
 ## Erreur « Invalid column name 'ValidatedAt' / 'ValidatedBy' » sur l'échéancier fiscal
 
 Si la page **Échéancier fiscal** (`/accounting/fiscal-schedule`) affiche **« Chargement impossible »** avec une erreur HTTP **500** dans la console :

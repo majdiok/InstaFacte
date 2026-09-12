@@ -40,7 +40,8 @@ public sealed class StudioAiCapabilitiesQueryTests
             EnableStudioAiReportTools = false,
             EnableStudioAiWorkbench = false,
             EnableStudioTemplates = false,
-            EnableStudioPages = false
+            EnableStudioPages = false,
+            EnableStudioManyToMany = false
         }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -55,6 +56,55 @@ public sealed class StudioAiCapabilitiesQueryTests
         Assert.False(dto.PagesEnabled);
         Assert.False(dto.AdvancedModelAvailable);
         Assert.Null(dto.AdvancedModelLabel);
+        // Programme « Studio IA » (contrat A6) : les six drapeaux ajoutés en PR 2.1 sont tous faux.
+        Assert.False(dto.ManyToManyEnabled);
+        Assert.False(dto.RecordViewsEnabled);
+        Assert.False(dto.RecordViewToolsEnabled);
+        Assert.False(dto.SystemExportEnabled);
+        Assert.False(dto.WorkflowsEnabled);
+        Assert.False(dto.WorkflowToolsEnabled);
+    }
+
+    /// <summary>
+    /// PR 2.1 : <c>ManyToManyEnabled</c> suit <c>Ollama:EnableStudioManyToMany</c> (indépendant du
+    /// workbench) ; les cinq autres drapeaux du programme (vues, export, workflows) restent faux tant que
+    /// leur fonctionnalité n'est pas livrée — même quand tout le reste est levé.
+    /// </summary>
+    [Fact]
+    public async Task ManyToMany_follows_its_flag_and_future_program_flags_stay_false()
+    {
+        var enabled = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioManyToMany = true,
+            EnableStudioAiWorkbench = true,
+            EnableStudioAiPlanPreview = true,
+            EnableStudioTemplates = true,
+            EnableStudioPages = true
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+
+        Assert.True(enabled.Value.ManyToManyEnabled);
+        Assert.False(enabled.Value.RecordViewsEnabled);
+        Assert.False(enabled.Value.RecordViewToolsEnabled);
+        Assert.False(enabled.Value.SystemExportEnabled);
+        Assert.False(enabled.Value.WorkflowsEnabled);
+        Assert.False(enabled.Value.WorkflowToolsEnabled);
+
+        // Le drapeau N‑N ne dépend pas du workbench : coupé ⇒ faux, même workbench actif.
+        var disabled = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioManyToMany = false,
+            EnableStudioAiWorkbench = true,
+            EnableStudioAiPlanPreview = true
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+        Assert.False(disabled.Value.ManyToManyEnabled);
+
+        // Et inversement : N‑N levé sans workbench reste annoncé.
+        var withoutWorkbench = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioManyToMany = true,
+            EnableStudioAiWorkbench = false
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+        Assert.True(withoutWorkbench.Value.ManyToManyEnabled);
     }
 
     [Fact]

@@ -52,10 +52,17 @@ public partial class TenantDbContext
             entity.Property(e => e.Icon).HasMaxLength(64);
             entity.Property(e => e.Description).HasMaxLength(512);
 
+            // PR 2.1 (N‑N) : nature de l'entité (0 = Standard, 1 = Junction). Défaut SQL 0 pour que
+            // les lignes existantes restent des tables standard sans backfill.
+            entity.Property(e => e.Kind)
+                .HasConversion<int>()
+                .HasDefaultValue(Domain.Enums.CustomEntityKind.Standard);
+
             entity.Property(e => e.RowVersion).IsRowVersion();
 
             entity.HasIndex(e => new { e.TenantId, e.Key }).IsUnique();
             entity.HasIndex(e => new { e.TenantId, e.SystemId });
+            entity.HasIndex(e => new { e.TenantId, e.Kind });
 
             // Soft-delete filter on this NEW table only (does not affect existing entities).
             entity.HasQueryFilter(e => !e.IsDeleted);
