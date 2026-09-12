@@ -364,17 +364,19 @@ const KIND_CARD_HINTS: Record<ProjectKindCode, string> = {
 
     <p-menu #rowMenu [popup]="true" [model]="rowMenuItems()" appendTo="body" />
 
-    <p-dialog [(visible)]="createVisible" [modal]="true" header="Nouveau projet" [style]="{ width: '52rem' }">
+    <p-dialog [(visible)]="createVisible" [modal]="true" header="Nouveau projet" [style]="{ width: '52rem' }" styleClass="proj-create-dialog">
       <app-form-section title="Identité" icon="pi-id-card" variant="compact">
-        <div class="flex flex-column gap-3">
-          <label>Nom
-            <input pInputText class="w-full" [(ngModel)]="draft.name" />
-          </label>
-          <label>Client
-            <p-select class="w-full" [options]="clients()" [(ngModel)]="draft.clientId" optionLabel="name" optionValue="id" placeholder="Client" />
-          </label>
-          <div>
-            <span class="block mb-2 font-medium">Type de projet</span>
+        <div class="ft-form-grid">
+          <div class="ft-field">
+            <label for="createName">Nom <span class="ft-required" aria-hidden="true">*</span></label>
+            <input id="createName" pInputText class="w-full" [(ngModel)]="draft.name" />
+          </div>
+          <div class="ft-field">
+            <label for="createClient">Client <span class="ft-required" aria-hidden="true">*</span></label>
+            <p-select inputId="createClient" class="w-full" [options]="clients()" [(ngModel)]="draft.clientId" optionLabel="name" optionValue="id" placeholder="Client" />
+          </div>
+          <div class="ft-field ft-field--full">
+            <span class="block font-medium">Type de projet</span>
             <div class="proj-kind-cards">
               @for (opt of kindOptions; track opt.value) {
                 <div
@@ -387,13 +389,20 @@ const KIND_CARD_HINTS: Record<ProjectKindCode, string> = {
               }
             </div>
           </div>
-          <app-form-section title="Aperçu Kanban" icon="pi-table" variant="compact">
-            <app-project-kanban-template-preview [kind]="draft.kind" />
-          </app-form-section>
-          <label>Facturation
-            <p-select class="w-full" [options]="billingOptionsForKind()" [(ngModel)]="draft.billingMode" optionLabel="label" optionValue="value" />
-          </label>
-          <app-form-section title="Options" icon="pi-sliders-h" variant="compact">
+        </div>
+      </app-form-section>
+
+      <app-form-section title="Aperçu Kanban" icon="pi-table" variant="compact">
+        <app-project-kanban-template-preview [kind]="draft.kind" />
+      </app-form-section>
+
+      <app-form-section title="Facturation" icon="pi-sliders-h" variant="compact">
+        <div class="ft-form-grid">
+          <div class="ft-field ft-field--full">
+            <label for="createBilling">Facturation</label>
+            <p-select inputId="createBilling" class="w-full" [options]="billingOptionsForKind()" [(ngModel)]="draft.billingMode" optionLabel="label" optionValue="value" />
+          </div>
+          <div class="ft-field ft-field--full">
             <div class="proj-create-options">
               <div class="proj-create-options__item">
                 <p-checkbox [(ngModel)]="draft.isBillable" [binary]="true" inputId="createIsBillable" />
@@ -410,43 +419,53 @@ const KIND_CARD_HINTS: Record<ProjectKindCode, string> = {
                 </label>
               </div>
             </div>
-          </app-form-section>
-          <label>Description
-            <textarea pTextarea class="w-full" rows="2" [(ngModel)]="draft.description"></textarea>
-          </label>
-          <div class="flex gap-2">
-            <label class="flex-1">Début
-              <p-datepicker class="w-full" [(ngModel)]="startDate" dateFormat="dd/mm/yy" [showIcon]="true" />
-            </label>
-            <label class="flex-1">Fin
-              <p-datepicker class="w-full" [(ngModel)]="endDate" dateFormat="dd/mm/yy" [showIcon]="true" />
-            </label>
           </div>
-          <label>Chef de projet
-            <p-select class="w-full" [options]="users()" [(ngModel)]="draft.ownerUserId" optionLabel="displayName" optionValue="id" placeholder="Optionnel" [showClear]="true" />
-          </label>
-          <label>Budget HT
-            <p-inputNumber class="w-full" [(ngModel)]="draft.budgetHt" mode="decimal" [minFractionDigits]="3" />
-          </label>
+        </div>
+      </app-form-section>
+
+      <app-form-section title="Détails" icon="pi-file" variant="compact">
+        <div class="ft-form-grid">
+          <div class="ft-field ft-field--full">
+            <label for="createDescription">Description</label>
+            <textarea id="createDescription" pTextarea class="w-full" rows="2" [(ngModel)]="draft.description"></textarea>
+          </div>
+          <div class="ft-field">
+            <label for="createStart">Début</label>
+            <p-datepicker inputId="createStart" class="w-full" [(ngModel)]="startDate" dateFormat="dd/mm/yy" [showIcon]="true" />
+          </div>
+          <div class="ft-field">
+            <label for="createEnd">Fin</label>
+            <p-datepicker inputId="createEnd" class="w-full" [(ngModel)]="endDate" dateFormat="dd/mm/yy" [showIcon]="true" />
+          </div>
+          <div class="ft-field">
+            <label for="createOwner">Chef de projet</label>
+            <p-select inputId="createOwner" class="w-full" [options]="users()" [(ngModel)]="draft.ownerUserId" optionLabel="displayName" optionValue="id" placeholder="Optionnel" [showClear]="true" />
+          </div>
+          <div class="ft-field">
+            <label for="createBudget">Budget HT</label>
+            <p-inputNumber inputId="createBudget" class="w-full" [(ngModel)]="draft.budgetHt" mode="decimal" [minFractionDigits]="3" />
+          </div>
         </div>
       </app-form-section>
 
       @if (isBtp(draft.kind)) {
         <app-form-section title="Chantier BTP" icon="pi-building" variant="compact">
-          <div class="flex flex-column gap-3">
-            <label>Adresse chantier
-              <input pInputText class="w-full" [(ngModel)]="draft.siteAddress" />
-            </label>
-            <label>N° de marché
-              <input pInputText class="w-full" [(ngModel)]="draft.contractNumber" />
-            </label>
-            <p class="text-sm text-color-secondary m-0">Les situations de travaux et la retenue de garantie sont disponibles après activation.</p>
+          <div class="ft-form-grid">
+            <div class="ft-field ft-field--full">
+              <label for="createSiteAddress">Adresse chantier</label>
+              <input id="createSiteAddress" pInputText class="w-full" [(ngModel)]="draft.siteAddress" />
+            </div>
+            <div class="ft-field ft-field--full">
+              <label for="createContractNumber">N° de marché</label>
+              <input id="createContractNumber" pInputText class="w-full" [(ngModel)]="draft.contractNumber" />
+            </div>
+            <p class="ft-hint ft-field--full m-0">Les situations de travaux et la retenue de garantie sont disponibles après activation.</p>
           </div>
         </app-form-section>
       }
       @if (draft.kind === 'Esn') {
         <app-form-section title="Mission ESN" icon="pi-users" variant="compact">
-          <p class="text-sm text-color-secondary m-0">Renseignez le TJM (ou le coût horaire) sur l'équipe avant de facturer en régie.</p>
+          <p class="text-sm text-color-secondary m-0">Renseignez le tarif de vente sur l'équipe avant de facturer en régie.</p>
         </app-form-section>
       }
 
@@ -511,7 +530,10 @@ export class ProjectListComponent implements OnInit {
   createVisible = false;
   startDate: Date | null = null;
   endDate: Date | null = null;
-  draft: UpsertProjectPayload = { clientId: '', name: '', kind: 'Generic', billingMode: 'None', budgetHt: 0, isBillable: true, timesheetsEnabled: true };
+  draft: UpsertProjectPayload = {
+    clientId: '', name: '', kind: 'Generic', billingMode: 'None', budgetHt: 0,
+    isBillable: true, timesheetsEnabled: true, milestonesEnabled: false, allocatedHours: 0, analyticAccountCode: null
+  };
 
   readonly statusOptions = PROJECT_STATUS_OPTIONS;
   readonly kindOptions = PROJECT_KIND_OPTIONS;
@@ -814,7 +836,10 @@ export class ProjectListComponent implements OnInit {
       siteAddress: '',
       contractNumber: '',
       isBillable: false,
-      timesheetsEnabled: false
+      timesheetsEnabled: false,
+      milestonesEnabled: false,
+      allocatedHours: 0,
+      analyticAccountCode: null
     };
     this.startDate = null;
     this.endDate = null;

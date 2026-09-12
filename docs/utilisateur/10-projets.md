@@ -37,7 +37,7 @@ La **liste des projets** reste accessible via **Projets → Liste des projets** 
 2. **Activer** → statut **Actif**.
 3. Saisir du **temps** (projets Actif uniquement).
 4. **Soumettre** puis **Valider** les lignes.
-5. Renseigner un **TJM** ou un **coût horaire** sur l'équipe (régie).
+5. Renseignez un **tarif de vente** (et un **coût horaire interne** pour le suivi des coûts) sur l'équipe (régie).
 6. **Facturer** → facture de vente brouillon (`FAC`).
 
 Un projet **Brouillon** ne peut ni recevoir de temps, ni être facturé. Un projet **Terminé** peut encore être facturé, mais plus recevoir de temps. **Pause**, **Clôture** et **Annulation** demandent une confirmation.
@@ -51,7 +51,7 @@ Le type (Général / ESN / BTP) est **fixé à la création** et ne peut plus ê
 1. Ouvrez **Projets** → **Nouveau projet** (liste ou tableau de bord).
 2. Choisissez le client, le nom, le **type** (cartes Général / ESN / BTP) :
    - **Général** : suivi d'affaire simple (colonnes À faire / En cours / …)
-   - **ESN / Services** : régie, TJM, jalons (colonnes Backlog → Livré)
+   - **ESN / Services** : régie, tarif de vente, jalons (colonnes Backlog → Livré)
    - **BTP / Chantier** : situations, retenue, sous-traitants (colonnes Préparation → Clôturé)
 3. Un **aperçu Kanban** montre les colonnes qui seront créées automatiquement.
 4. Renseignez dates, chef de projet, budget. Pour le BTP : adresse chantier et n° de marché.
@@ -65,9 +65,27 @@ La liste des projets affiche le **chef de projet**, l'**avancement** (%), l'**é
 
 ## Fiche projet
 
-La fiche projet comporte un **résumé latéral** (budget, heures, prochaines échéances, activité) et sept onglets. Les onglets **Temps** et **Facturation** sont mis en avant pour les projets ESN ; **Budget** et **Facturation** pour le BTP.
+La fiche projet comporte un **résumé latéral** (budget, heures, prochaines échéances, activité) et plusieurs onglets. Les onglets **Temps** et **Facturation** sont mis en avant pour les projets ESN ; **Budget** et **Facturation** pour le BTP.
 
 Vous pouvez marquer un projet en **favori** (étoile) : le marquage est enregistré localement sur votre navigateur.
+
+---
+
+## Paramètres
+
+L'onglet **Paramètres** regroupe les options opérationnelles du projet (inspiré d'Odoo Project) :
+
+| Option | Effet |
+|--------|-------|
+| **Facturable** | Autorise la facturation du temps et des prestations. Si désactivé, l'onglet **Rentabilité** disparaît. |
+| **Mode de facturation** | Régie, forfait, jalons ou situations (selon le type de projet). |
+| **Feuilles de temps** | Active la saisie du temps. Si désactivé, l'onglet **Temps** disparaît. |
+| **Jalons** | Active le suivi et la facturation par jalons (ESN, BTP ou mode Jalons). |
+| **Heures allouées** | Budget horaire de référence pour le suivi. |
+
+Le bouton **Modifier le projet** (en-tête) reste réservé aux informations d'identité : nom, description, dates, budget, chef de projet et champs chantier BTP. Les paramètres ci-dessus se modifient uniquement dans cet onglet.
+
+La permission `projects:update` est requise pour enregistrer les changements.
 
 ---
 
@@ -106,13 +124,15 @@ Sur un chantier BTP : sortie de stock (produit, quantité, entrepôt optionnel, 
 Prérequis affichés dans l'onglet **Facturation** (liste complète des blocages) :
 
 1. Projet **Actif** ou **Terminé**.
-2. Pour la régie : temps **validés** non facturés + **TJM** ou coût horaire sur l'équipe.
+2. Pour la régie : temps **validés** non facturés + **tarif de vente** sur l'équipe.
 
 **Par membre** : **Facturer les temps validés** crée une facture brouillon agrégée par **intervenant** (notes optionnelles).
 
 **Par tâche** : choisissez **Forfaitaire** ou **À l'heure**, sélectionnez une ou plusieurs tâches, puis **Facturer les tâches sélectionnées** :
 - **Forfaitaire** : saisissez le montant HT par tâche à la facturation ;
-- **À l'heure** : montant = heures validées non facturées × tarif horaire (TJM / coût h de l'équipe).
+- **À l'heure** : montant = heures validées non facturées × tarif horaire de vente (tarif de vente ÷ 8).
+
+Le **coût horaire interne** sert au suivi des coûts projet (validation des temps) ; le **tarif de vente** sert à la facturation régie.
 
 Une tâche déjà facturée en forfait ou à l'heure (via Par tâche) n'est plus proposée. Les heures déjà facturées (y compris par membre) ne sont jamais reproposées ; seules les heures restantes validées et non facturées comptent pour **Par tâche → À l'heure**.
 
@@ -135,7 +155,7 @@ Les **sous-traitants** se rattachent au chantier (fournisseur, marché, montant,
 
 ## Équipe
 
-Renseignez TJM, coût horaire et capacité hebdomadaire. La **charge** (planifié vs saisi) s'affiche pour les projets ESN ou en régie.
+Renseignez **tarif de vente**, **coût horaire interne** et capacité hebdomadaire. La **charge** (planifié vs saisi) s'affiche pour les projets ESN ou en régie.
 
 ---
 
@@ -150,7 +170,7 @@ Téléversez un document (**max 10 Mo**). Commentaires au niveau projet dans le 
 | Action | Permission |
 |--------|------------|
 | Voir les projets | `projects:read` |
-| Équipe / TJM | `projects:manage_team` |
+| Équipe / tarifs | `projects:manage_team` |
 | Tâches | `project_tasks:*` |
 | Saisir / valider le temps | `project_time:create` / `project_time:validate` |
 | Facturer | `project_billing:create` |

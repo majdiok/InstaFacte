@@ -135,6 +135,7 @@ public static class DependencyInjection
             services.AddScoped<IFirmAssignmentService>(sp => sp.GetRequiredService<FirmAssignmentService>());
             services.AddScoped<IHonorairesBillingService, FactuTrust.Infrastructure.Services.Honoraires.HonorairesBillingService>();
             services.AddScoped<IProjectService, FactuTrust.Infrastructure.Services.Projects.ProjectService>();
+            services.AddScoped<ITimesheetService, FactuTrust.Infrastructure.Services.Projects.TimesheetService>();
             services.AddScoped<IRecurringContractService, FactuTrust.Infrastructure.Services.RecurringContracts.RecurringContractService>();
             services.AddScoped<FactuTrust.Infrastructure.Services.RecurringContracts.RecurringContractBillingService>();
             services.AddScoped<FirmDossierAccessService>();
@@ -369,6 +370,7 @@ public static class DependencyInjection
         services.AddScoped<ICustomSystemRepository, Repositories.Studio.CustomSystemRepository>();
         services.AddScoped<ICustomFieldRepository, Repositories.Studio.CustomFieldRepository>();
         services.AddScoped<ICustomRecordRepository, Repositories.Studio.CustomRecordRepository>();
+        services.AddScoped<ICustomRecordViewRepository, Repositories.Studio.CustomRecordViewRepository>();
         services.AddScoped<ICustomFormRepository, Repositories.Studio.CustomFormRepository>();
         services.AddScoped<ICustomReportRepository, Repositories.Studio.CustomReportRepository>();
         services.AddScoped<ICustomViewRepository, Repositories.Studio.CustomViewRepository>();
@@ -391,6 +393,8 @@ public static class DependencyInjection
         // Studio IA — plans « aperçu → confirmation » (flux EnableStudioAiPlanPreview).
         services.AddScoped<IStudioAiBuildPlanRepository, Repositories.Studio.StudioAiBuildPlanRepository>();
         services.AddScoped<FactuTrust.Application.Features.Studio.Ai.IStudioAiPlanExecutor, Services.Studio.StudioAiPlanExecutor>();
+        // Digest de contexte Studio (schéma du tenant + dernier plan) injecté dans le prompt StudioBuilder.
+        services.AddScoped<IStudioContextDigestService, Services.Studio.StudioContextDigestService>();
         services.AddScoped<IDocumentTemplateResolver, DocumentTemplateResolver>();
         services.AddScoped<ISignatureService, SignatureService>();
         services.AddScoped<IAuditService, AuditService>();

@@ -23,7 +23,7 @@ describe('ProjectBillingTabComponent', () => {
     hourlyRate: 80,
     previewAmountHt: 400,
     isEligible: eligible,
-    blockReason: eligible ? null : 'Pas de TJM ou coût horaire'
+    blockReason: eligible ? null : 'Pas de tarif de vente'
   });
 
   it('canInvoiceTasks requires selected tasks with amounts in fixed mode', () => {

@@ -26,6 +26,7 @@ import {
   PROJECT_TASK_STATUS_OPTIONS,
   ProjectTaskStatusCode,
   canReceiveTime,
+  canCreateTimeEntry as canCreateTimeEntryOnProject,
   formatDaysUntilDue,
   initialsFromName,
   parseProjectTaskPriority,
@@ -565,7 +566,7 @@ export class ProjectTasksTabComponent implements OnInit {
   }
 
   get canLogTime(): boolean {
-    return this.canCreateTime && !!this.project && canReceiveTime(this.project.status);
+    return this.canCreateTime && !!this.project && canCreateTimeEntryOnProject(this.project);
   }
 
   get canSubmitLogTime(): boolean {

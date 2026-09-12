@@ -13,6 +13,11 @@ public sealed record PlatformAiSettingsDto(
     string? InvoiceImportModelRef,
     /// <summary>Modèle dédié à l'Assistant Studio (IA) ; null = modèle Assistant / serveur.</summary>
     string? StudioAiModelRef,
+    /// <summary>
+    /// Modèle Studio « avancé » (GPU distant / cloud) proposé derrière la bascule « Modèle avancé »
+    /// du Studio ; null = aucun modèle avancé configuré. Doit différer de <c>StudioAiModelRef</c>.
+    /// </summary>
+    string? StudioAiAdvancedModelRef,
     /// <summary>Modèle vision serveur (appsettings Ollama:InvoiceImportVisionModel), lecture seule.</summary>
     string? ServerInvoiceImportVisionModel,
     OllamaInferenceDevice InferenceDevice,
@@ -42,6 +47,12 @@ public sealed class UpdatePlatformAiSettingsRequest
 
     /// <summary>Modèle dédié à l'Assistant Studio (ex. ollama:qwen2.5:7b-instruct).</summary>
     public string? StudioAiModelRef { get; init; }
+
+    /// <summary>
+    /// Modèle Studio avancé (GPU distant / cloud, ex. openrouter:qwen/qwen-2.5-72b-instruct).
+    /// Doit différer du modèle Studio standard. Chaîne vide = effacer le réglage.
+    /// </summary>
+    public string? StudioAiAdvancedModelRef { get; init; }
 
     /// <summary>Moteur d'inférence Ollama (GPU auto ou CPU uniquement).</summary>
     public OllamaInferenceDevice? InferenceDevice { get; init; }

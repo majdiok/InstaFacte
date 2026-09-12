@@ -54,7 +54,7 @@ import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-tab
             <span class="studio-toolbar__spacer"></span>
             <button pButton type="button" icon="fa-solid fa-download" label="Exporter" class="p-button-sm p-button-outlined"
               [disabled]="total() === 0" (click)="exportMenu.toggle($event)"></button>
-            <p-menu #exportMenu [popup]="true" [model]="exportItems" appendTo="body"></p-menu>
+            <p-menu #exportMenu [popup]="true" [model]="exportItems" appendTo="body" styleClass="studio-theme"></p-menu>
           </div>
         </div>
 

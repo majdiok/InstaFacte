@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
+import { SKIP_ERROR_TOAST } from '@core/http-context';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { environment } from '@environments/environment';
@@ -84,5 +85,144 @@ describe('StudioAiBuildService', () => {
     });
 
     expect(message).toContain('déjà été traité');
+  });
+});
+
+/**
+ * Endpoints du workbench P0 (aperçu, édition, modèles). Ils suppriment tous le toast global
+ * (`SKIP_ERROR_TOAST`) : l'atelier affiche les erreurs en place.
+ */
+describe('StudioAiBuildService (workbench P0)', () => {
+  let service: StudioAiBuildService;
+  let http: HttpTestingController;
+
+  const plansUrl = `${environment.apiUrl}/studio/ai/plans`;
+  const templatesUrl = `${environment.apiUrl}/studio/templates`;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])]
+    });
+    service = TestBed.inject(StudioAiBuildService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('reads the capabilities and skips the global error toast', () => {
+    service.getCapabilities().subscribe();
+
+    const req = http.expectOne(`${environment.apiUrl}/ai/studio/capabilities`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.context.get(SKIP_ERROR_TOAST)).toBeTrue();
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
+  it('lists plans with default paging', () => {
+    service.listPlans().subscribe();
+
+    const req = http.expectOne(r => r.url === plansUrl);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('page')).toBe('1');
+    expect(req.request.params.get('pageSize')).toBe('20');
+    expect(req.request.params.has('status')).toBeFalse();
+    expect(req.request.params.has('kind')).toBeFalse();
+    expect(req.request.context.get(SKIP_ERROR_TOAST)).toBeTrue();
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
+  it('forwards status / kind filters and clamps pageSize to 50', () => {
+    service.listPlans({ status: 'Pending', kind: 'CreateSystem', page: 3, pageSize: 500 }).subscribe();
+
+    const req = http.expectOne(r => r.url === plansUrl);
+    expect(req.request.params.get('status')).toBe('Pending');
+    expect(req.request.params.get('kind')).toBe('CreateSystem');
+    expect(req.request.params.get('page')).toBe('3');
+    expect(req.request.params.get('pageSize')).toBe('50');
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
+  it('reads a plan spec', () => {
+    service.getPlanSpec('p-9').subscribe();
+
+    const req = http.expectOne(`${plansUrl}/p-9/spec`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.context.get(SKIP_ERROR_TOAST)).toBeTrue();
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
+  it('updates a plan spec with its rowVersion', () => {
+    service.updatePlanSpec('p-9', '{"entities":[]}', 'rv-1').subscribe();
+
+    const req = http.expectOne(`${plansUrl}/p-9/spec`);
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({ specJson: '{"entities":[]}', rowVersion: 'rv-1' });
+    expect(req.request.context.get(SKIP_ERROR_TOAST)).toBeTrue();
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
+  it('validates a spec without creating anything', () => {
+    service.validate('CreateSystem', '{"entities":[]}').subscribe();
+
+    const req = http.expectOne(`${plansUrl}/validate`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ kind: 'CreateSystem', specJson: '{"entities":[]}' });
+    expect(req.request.context.get(SKIP_ERROR_TOAST)).toBeTrue();
+    req.flush({ success: true, data: { valid: true, warnings: [] }, message: null, errors: [] });
+  });
+
+  it('creates a plan from a template (null override when empty)', () => {
+    service.createFromTemplate('gestion-conges').subscribe();
+
+    const req = http.expectOne(`${plansUrl}/from-template`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ templateKey: 'gestion-conges', displayNameOverride: null });
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
+  it('creates a plan from a template with a display name override', () => {
+    service.createFromTemplate('gestion-conges', 'Congés 2026').subscribe();
+
+    const req = http.expectOne(`${plansUrl}/from-template`);
+    expect(req.request.body).toEqual({ templateKey: 'gestion-conges', displayNameOverride: 'Congés 2026' });
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
+  it('creates a plan from a raw spec', () => {
+    service.createFromSpec('CreateApp', '{"entity":{}}').subscribe();
+
+    const req = http.expectOne(`${plansUrl}/from-spec`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ kind: 'CreateApp', specJson: '{"entity":{}}' });
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
+  it('cancels all pending plans', () => {
+    let cancelled: number | undefined;
+    service.cancelPending().subscribe(r => (cancelled = r.data ?? undefined));
+
+    const req = http.expectOne(`${plansUrl}/cancel-pending`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({});
+    req.flush({ success: true, data: 2, message: null, errors: [] });
+
+    expect(cancelled).toBe(2);
+  });
+
+  it('lists the built-in templates', () => {
+    service.listTemplates().subscribe();
+
+    const req = http.expectOne(templatesUrl);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.context.get(SKIP_ERROR_TOAST)).toBeTrue();
+    req.flush({ success: true, data: [], message: null, errors: [] });
+  });
+
+  it('reads one template and encodes its key', () => {
+    service.getTemplate('gestion conges/2').subscribe();
+
+    const req = http.expectOne(`${templatesUrl}/gestion%20conges%2F2`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ success: true, data: null, message: null, errors: [] });
   });
 });

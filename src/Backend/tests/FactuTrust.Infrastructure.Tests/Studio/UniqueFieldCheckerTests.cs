@@ -27,12 +27,14 @@ public sealed class UniqueFieldCheckerTests
         }
 
         public Task<CustomRecord?> GetAsync(Guid t, Guid e, Guid id, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task<(IReadOnlyList<CustomRecord> Items, int TotalCount)> ListAsync(Guid t, Guid e, string? s, int p, int ps, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<(IReadOnlyList<CustomRecord> Items, int TotalCount)> ListAsync(Guid t, Guid e, string? s, int p, int ps, string? ff = null, string? fv = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> ExistsWithFieldPairAsync(Guid t, Guid e, string ka, string va, string kb, string vb, Guid? ex, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<int> CountAsync(Guid t, Guid e, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<IReadOnlyList<CustomRecord>> GetAllForReportAsync(Guid t, Guid e, int max, CancellationToken ct = default) => throw new NotImplementedException();
         public Task AddAsync(CustomRecord r, CancellationToken ct = default) => throw new NotImplementedException();
         public Task UpdateAsync(CustomRecord r, CancellationToken ct = default) => throw new NotImplementedException();
         public Task UpdateWithConcurrencyAsync(CustomRecord r, byte[]? v, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<(IReadOnlyList<CustomRecord> Items, int Total)> QueryAsync(FactuTrust.Application.Features.Studio.RecordViews.RecordQuerySpec spec, IReadOnlyDictionary<string, CustomFieldType> fieldTypes, CancellationToken ct = default) => throw new NotImplementedException();
     }
 
     [Fact]

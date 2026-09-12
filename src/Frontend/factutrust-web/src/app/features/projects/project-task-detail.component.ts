@@ -12,6 +12,7 @@ import { ProgressBarModule } from 'primeng/progressbar';
 import { TableModule } from 'primeng/table';
 import { CheckboxModule } from 'primeng/checkbox';
 import { MessageModule } from 'primeng/message';
+import { TooltipModule } from 'primeng/tooltip';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
@@ -35,14 +36,23 @@ import {
 import {
   PROJECT_PRIORITY_OPTIONS,
   PROJECT_TASK_STATUS_OPTIONS,
-  canReceiveTime,
+  canCreateTimeEntry as canCreateTimeEntryOnProject,
+  canDeleteTimeEntry,
+  canEditTimeEntry,
+  canReopenSubmittedTimeEntry,
+  canReopenValidatedTimeEntry,
+  canSubmitTimeEntry,
+  canValidateTimeEntry,
   daysUntilDue,
   formatFileSize,
   parseProjectTaskPriority,
   parseProjectTaskStatus,
   parseProjectTimeStatus,
+  showTimeTab,
   taskStatusBadge,
-  timeStatusBadge,
+  timeEntryCreationBlockedMessage,
+  timeEntryStatusBadge,
+  timeEntryStatusLabel,
   toIsoDate
 } from './project-enums';
 import {
@@ -69,6 +79,7 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
     TableModule,
     CheckboxModule,
     MessageModule,
+    TooltipModule,
     PageHeaderComponent,
     ButtonComponent,
     BreadcrumbComponent,
@@ -81,7 +92,7 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
       <app-breadcrumb [items]="crumbs(t)"></app-breadcrumb>
       <app-page-header [title]="t.title" [subtitle]="t.phaseName">
         <app-status-badge [status]="taskStatusBadge(t.status)" [label]="t.statusDisplay" />
-        @if (canLogTime) {
+        @if (canCreateTimeEntry) {
           <app-button variant="outline" (click)="goToTimeTab()">Saisir du temps</app-button>
         }
         @if (canUpdate) {
@@ -113,7 +124,9 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
               <p-tab value="overview">Aperçu</p-tab>
               <p-tab value="subtasks">Sous-tâches {{ doneSubtasks() }}/{{ subtasks().length }}</p-tab>
               <p-tab value="files">Fichiers {{ taskFiles().length }}</p-tab>
+              @if (showTimeTab(project())) {
               <p-tab value="time">Temps passé</p-tab>
+              }
               <p-tab value="history">Historique</p-tab>
             </p-tablist>
             <p-tabpanels>
@@ -143,7 +156,7 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
                     <div class="proj-kpi-card flex-1">
                       <span class="proj-kpi-label">Temps passé</span>
                       <strong>{{ t.loggedHours | number:'1.0-1' }} h</strong>
-                      @if (canLogTime) {
+                      @if (canCreateTimeEntry) {
                         <button type="button" class="proj-tasks-link-btn" (click)="goToTimeTab()">Saisir du temps</button>
                       }
                     </div>
@@ -199,14 +212,15 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
                   }
                 </div>
               </p-tabpanel>
+              @if (showTimeTab(project())) {
               <p-tabpanel value="time">
                 <div class="card p-3">
-                  @if (project() && !projectCanReceiveTime) {
+                  @if (project() && !canCreateTimeEntry && !editTimeId) {
                     <p-message severity="warn" styleClass="w-full mb-3"
-                      text="Activez le projet pour saisir du temps. La saisie est réservée aux projets Actif." />
+                      [text]="timeLoggingBlockedMessage()" />
                   }
 
-                  @if (canLogTime || editTimeId) {
+                  @if (canCreateTimeEntry || editTimeId) {
                     <div class="task-create-form mb-3">
                       <p class="task-create-intro">
                         @if (editTimeId) {
@@ -278,13 +292,38 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
                         <td>{{ e.workDate | date:'shortDate' }}</td>
                         <td>{{ e.hours | number:'1.0-1' }} h</td>
                         <td>
-                          <app-status-badge [status]="timeStatusBadge(e.status)" [label]="e.statusDisplay" />
+                          <app-status-badge [status]="timeEntryStatusBadge(e)" [label]="timeEntryStatusLabel(e)" />
                         </td>
                         <td>{{ e.isBillable ? 'Oui' : 'Non' }}</td>
                         <td>{{ e.notes || '—' }}</td>
-                        <td>
-                          @if (isDraftTime(e) && canCreateTime) {
+                        <td class="proj-time-row-actions">
+                          @if (canEditTimeEntry(e) && canCreateTime) {
                             <app-button size="sm" variant="outline" (click)="startEditTime(e)">Modifier</app-button>
+                          }
+                          @if (canDeleteTimeEntry(e) && canCreateTime) {
+                            <app-button size="sm" variant="ghost" icon="pi-trash" [iconOnly]="true"
+                              pTooltip="Supprimer" tooltipPosition="top" ariaLabel="Supprimer"
+                              (click)="deleteTimeEntry(e.id)" />
+                          }
+                          @if (canSubmitTimeEntry(e) && canSubmitTime) {
+                            <app-button size="sm" variant="ghost" icon="pi-send" [iconOnly]="true"
+                              pTooltip="Soumettre" tooltipPosition="top" ariaLabel="Soumettre"
+                              (click)="submitTimeEntry(e.id)" />
+                          }
+                          @if (canValidateTimeEntry(e) && canValidateTime) {
+                            <app-button size="sm" variant="primary" icon="pi-check" [iconOnly]="true"
+                              pTooltip="Valider" tooltipPosition="top" ariaLabel="Valider"
+                              (click)="validateTimeEntry(e.id)" />
+                          }
+                          @if (canReopenSubmittedTimeEntry(e) && canSubmitTime) {
+                            <app-button size="sm" variant="ghost" icon="pi-undo" [iconOnly]="true"
+                              pTooltip="Rouvrir en brouillon" tooltipPosition="top" ariaLabel="Rouvrir en brouillon"
+                              (click)="reopenTimeEntry(e.id)" />
+                          }
+                          @if (canReopenValidatedTimeEntry(e) && canValidateTime) {
+                            <app-button size="sm" variant="ghost" icon="pi-undo" [iconOnly]="true"
+                              pTooltip="Rouvrir en brouillon" tooltipPosition="top" ariaLabel="Rouvrir en brouillon"
+                              (click)="reopenTimeEntry(e.id)" />
                           }
                         </td>
                       </tr>
@@ -293,6 +332,7 @@ type TaskTab = 'overview' | 'subtasks' | 'files' | 'time' | 'history';
                   </p-table>
                 </div>
               </p-tabpanel>
+              }
               <p-tabpanel value="history">
                 <div class="card p-3">
                   <ul class="proj-sidebar-activity">
@@ -379,17 +419,24 @@ export class ProjectTaskDetailComponent implements OnInit {
   readonly priorityOptions = PROJECT_PRIORITY_OPTIONS;
   readonly statusOptions = PROJECT_TASK_STATUS_OPTIONS;
   readonly taskStatusBadge = taskStatusBadge;
-  readonly timeStatusBadge = timeStatusBadge;
+  readonly canEditTimeEntry = canEditTimeEntry;
+  readonly canDeleteTimeEntry = canDeleteTimeEntry;
+  readonly canSubmitTimeEntry = canSubmitTimeEntry;
+  readonly canValidateTimeEntry = canValidateTimeEntry;
+  readonly canReopenSubmittedTimeEntry = canReopenSubmittedTimeEntry;
+  readonly canReopenValidatedTimeEntry = canReopenValidatedTimeEntry;
+  readonly timeEntryStatusBadge = timeEntryStatusBadge;
+  readonly timeEntryStatusLabel = timeEntryStatusLabel;
+  readonly showTimeTab = showTimeTab;
   readonly formatSize = formatFileSize;
 
   get canUpdate(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTasks.update); }
   get canCreateTime(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTime.create); }
-  get projectCanReceiveTime(): boolean {
+  get canSubmitTime(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTime.submit); }
+  get canValidateTime(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTime.validate); }
+  get canCreateTimeEntry(): boolean {
     const p = this.project();
-    return !!p && canReceiveTime(p.status);
-  }
-  get canLogTime(): boolean {
-    return this.canCreateTime && this.projectCanReceiveTime;
+    return this.canCreateTime && !!p && canCreateTimeEntryOnProject(p);
   }
   get canSubmitLogTime(): boolean {
     return typeof this.logHours === 'number' && this.logHours > 0 && this.logHours <= 24;
@@ -449,6 +496,12 @@ export class ProjectTaskDetailComponent implements OnInit {
     this.tab.set('time');
   }
 
+  timeLoggingBlockedMessage(): string {
+    const p = this.project();
+    if (!p) return '';
+    return timeEntryCreationBlockedMessage(p.status);
+  }
+
   isDraftTime(entry: ProjectTimeEntry): boolean {
     return parseProjectTimeStatus(entry.status) === 'Draft';
   }
@@ -497,7 +550,7 @@ export class ProjectTaskDetailComponent implements OnInit {
       });
       return;
     }
-    if (!this.canLogTime) return;
+    if (!this.canCreateTimeEntry) return;
     this.api.createTime(payload).subscribe({
       next: () => {
         this.toast.add({ severity: 'success', summary: 'Temps enregistré' });
@@ -505,6 +558,50 @@ export class ProjectTaskDetailComponent implements OnInit {
         this.reload(t.id);
       },
       error: err => this.toast.add({ severity: 'error', summary: 'Saisie des temps', detail: this.errors.extractErrorMessage(err) })
+    });
+  }
+
+  deleteTimeEntry(id: string): void {
+    const t = this.task();
+    this.api.deleteTime(id).subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Temps supprimé' });
+        if (t) this.reload(t.id);
+      },
+      error: err => this.toast.add({ severity: 'error', summary: 'Suppression impossible', detail: this.errors.extractErrorMessage(err) })
+    });
+  }
+
+  submitTimeEntry(id: string): void {
+    const t = this.task();
+    this.api.submitTime(id).subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Temps soumis' });
+        if (t) this.reload(t.id);
+      },
+      error: err => this.toast.add({ severity: 'error', summary: 'Soumission impossible', detail: this.errors.extractErrorMessage(err) })
+    });
+  }
+
+  validateTimeEntry(id: string): void {
+    const t = this.task();
+    this.api.validateTime(id).subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Temps validé' });
+        if (t) this.reload(t.id);
+      },
+      error: err => this.toast.add({ severity: 'error', summary: 'Validation impossible', detail: this.errors.extractErrorMessage(err) })
+    });
+  }
+
+  reopenTimeEntry(id: string): void {
+    const t = this.task();
+    this.api.reopenTime(id).subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Temps rouvert en brouillon' });
+        if (t) this.reload(t.id);
+      },
+      error: err => this.toast.add({ severity: 'error', summary: 'Réouverture impossible', detail: this.errors.extractErrorMessage(err) })
     });
   }
 

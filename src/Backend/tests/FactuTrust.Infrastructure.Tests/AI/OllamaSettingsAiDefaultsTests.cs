@@ -38,4 +38,15 @@ public sealed class OllamaSettingsAiDefaultsTests
     {
         Assert.True(new OllamaSettings().ComplianceCheckShortcutEnabled);
     }
+
+    /// <summary>
+    /// Bascule « Modèle avancé » du Studio : désactivée par défaut en C#, activée uniquement par
+    /// configuration (appsettings). Un défaut à true exposerait la bascule sur toute installation
+    /// n'ayant pas mis à jour sa configuration.
+    /// </summary>
+    [Fact]
+    public void EnableStudioAiAdvancedModel_DisabledByDefault()
+    {
+        Assert.False(new OllamaSettings().EnableStudioAiAdvancedModel);
+    }
 }

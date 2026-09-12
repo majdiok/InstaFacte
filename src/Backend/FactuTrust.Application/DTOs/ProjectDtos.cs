@@ -38,6 +38,7 @@ public sealed record ProjectListItemDto
     public int ProgressPercent { get; init; }
     public int CompletedTaskCount { get; init; }
     public int TotalTaskCount { get; init; }
+    public bool TimesheetsEnabled { get; init; }
 }
 
 public sealed record ProjectDto
@@ -63,6 +64,10 @@ public sealed record ProjectDto
     public string? ContractNumber { get; init; }
     public bool IsBillable { get; init; }
     public bool TimesheetsEnabled { get; init; }
+    public Guid? SalesOrderId { get; init; }
+    public string? AnalyticAccountCode { get; init; }
+    public bool MilestonesEnabled { get; init; }
+    public decimal AllocatedHours { get; init; }
     public IReadOnlyList<ProjectPhaseDto> Phases { get; init; } = Array.Empty<ProjectPhaseDto>();
 }
 
@@ -81,6 +86,19 @@ public sealed record UpsertProjectDto
     public string? ContractNumber { get; init; }
     public bool IsBillable { get; init; }
     public bool TimesheetsEnabled { get; init; }
+    public bool MilestonesEnabled { get; init; }
+    public decimal AllocatedHours { get; init; }
+    public string? AnalyticAccountCode { get; init; }
+}
+
+public sealed record SalesOrderLineOptionDto
+{
+    public Guid LineId { get; init; }
+    public int LineNumber { get; init; }
+    public string ProductName { get; init; } = null!;
+    public decimal Quantity { get; init; }
+    public decimal DeliveredQuantity { get; init; }
+    public decimal PendingDeliveryQuantity { get; init; }
 }
 
 public sealed record ProjectPhaseDto
@@ -171,7 +189,7 @@ public sealed record ProjectMemberDto
     public string UserName { get; init; } = null!;
     public ProjectMemberRole Role { get; init; }
     public string RoleDisplay { get; init; } = null!;
-    public decimal? DailyRate { get; init; }
+    public decimal? SalesRate { get; init; }
     public decimal? HourlyCost { get; init; }
     public decimal WeeklyCapacityHours { get; init; }
 }
@@ -180,7 +198,7 @@ public sealed record UpsertProjectMemberDto
 {
     public Guid UserId { get; init; }
     public ProjectMemberRole Role { get; init; }
-    public decimal? DailyRate { get; init; }
+    public decimal? SalesRate { get; init; }
     public decimal? HourlyCost { get; init; }
     public decimal WeeklyCapacityHours { get; init; }
 }
@@ -211,6 +229,9 @@ public sealed record ProjectTimeEntryDto
     public ProjectTimeEntryStatus Status { get; init; }
     public string StatusDisplay { get; init; } = null!;
     public Guid? InvoicedInvoiceId { get; init; }
+    public Guid? SalesOrderLineId { get; init; }
+    public TimesheetEntrySource EntrySource { get; init; }
+    public bool IsTimerRunning { get; init; }
 }
 
 public sealed record UpsertProjectTimeEntryDto
@@ -222,6 +243,7 @@ public sealed record UpsertProjectTimeEntryDto
     public decimal Hours { get; init; }
     public bool IsBillable { get; init; }
     public string? Notes { get; init; }
+    public Guid? SalesOrderLineId { get; init; }
 }
 
 public sealed record ProjectCostLineDto
@@ -260,6 +282,9 @@ public sealed record ProjectMilestoneDto
     public decimal AmountHt { get; init; }
     public DateTime? DueDate { get; init; }
     public Guid? InvoicedInvoiceId { get; init; }
+    public Guid? SalesOrderLineId { get; init; }
+    public bool IsReached { get; init; }
+    public DateTime? ReachedAt { get; init; }
 }
 
 public sealed record UpsertProjectMilestoneDto
@@ -268,6 +293,7 @@ public sealed record UpsertProjectMilestoneDto
     public decimal Percent { get; init; }
     public decimal AmountHt { get; init; }
     public DateTime? DueDate { get; init; }
+    public Guid? SalesOrderLineId { get; init; }
 }
 
 public sealed record ProjectSituationDto

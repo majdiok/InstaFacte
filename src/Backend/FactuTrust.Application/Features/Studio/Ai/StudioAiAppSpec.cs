@@ -103,17 +103,34 @@ public static class StudioAiAppSpec
         var fieldsArr = root?["fields"]?.AsArray();
         if (fieldsArr is null || fieldsArr.Count == 0) { error = "Au moins un champ est requis."; return false; }
 
+        // Rejet franc (cohérent avec StudioAiSystemSpec) plutôt que troncature silencieuse.
+        if (fieldsArr.Count > MaxFields) { error = $"Au plus {MaxFields} champs."; return false; }
+
         var fields = new List<ParsedAppField>();
         var usedKeys = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var fn in fieldsArr)
         {
-            if (fields.Count >= MaxFields) break;
             var label = Str(fn?["label"]) ?? Str(fn?["name"]);
             if (string.IsNullOrWhiteSpace(label)) continue;
 
             var fieldType = MapType(Str(fn?["type"]));
-            var key = UniqueFieldKey(label!, usedKeys);
+
+            // Clé explicite (éditeur d'aperçu) prioritaire sur la dérivation du libellé — même
+            // règle que StudioAiSystemSpec : invalide, réservée ou dupliquée ⇒ rejet franc.
+            var explicitKey = Str(fn?["key"]);
+            string key;
+            if (!string.IsNullOrWhiteSpace(explicitKey))
+            {
+                key = StudioKey.Slugify(explicitKey!);
+                if (StudioKey.IsReservedFieldKey(key) || !StudioKey.IsValidShape(key))
+                { error = $"Clé de champ « {key} » invalide ou réservée."; return false; }
+                if (!usedKeys.Add(key)) { error = $"Clé de champ « {key} » dupliquée."; return false; }
+            }
+            else
+            {
+                key = UniqueFieldKey(label!, usedKeys);
+            }
 
             var required = Bool(fn?["required"]) ?? Bool(fn?["isRequired"]) ?? false;
             var unique = Bool(fn?["unique"]) ?? Bool(fn?["isUnique"]) ?? false;
@@ -150,7 +167,8 @@ public static class StudioAiAppSpec
     /// <summary>Accent-folded slug (so « Date de début » → « date_de_debut », not « date_de_d_but »).</summary>
     public static string SlugKey(string input) => StudioKey.Slugify(RemoveDiacritics(input));
 
-    private static string RemoveDiacritics(string text)
+    /// <summary>Repli sans diacritiques (réutilisé par le détecteur de doublons).</summary>
+    internal static string RemoveDiacritics(string text)
     {
         if (string.IsNullOrEmpty(text)) return text;
         var decomposed = text.Normalize(System.Text.NormalizationForm.FormD);

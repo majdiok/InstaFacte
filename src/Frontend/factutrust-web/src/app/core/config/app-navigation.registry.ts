@@ -508,8 +508,8 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         permissionsAll: [PERMISSIONS.projects.read]
       },
       {
-        label: 'Saisie des temps',
-        route: '/projects/time',
+        label: 'Mes feuilles de temps',
+        route: '/timesheets',
         icon: 'fa-solid fa-clock',
         modules: [M.Projects],
         permissionsAll: [PERMISSIONS.projectTime.read]

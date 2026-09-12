@@ -16,7 +16,8 @@ public sealed record CustomEntityDto(
     int FieldCount,
     Guid? SystemId,
     DateTime CreatedAt,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    CustomEntityKind Kind = CustomEntityKind.Standard);
 
 public sealed record CreateCustomEntityRequest(
     string Key,
@@ -24,7 +25,8 @@ public sealed record CreateCustomEntityRequest(
     string? DisplayNamePlural,
     string? Icon,
     string? Description,
-    Guid? SystemId = null);
+    Guid? SystemId = null,
+    CustomEntityKind Kind = CustomEntityKind.Standard);
 
 public sealed record UpdateCustomEntityRequest(
     string DisplayName,
@@ -72,11 +74,66 @@ public sealed record UpdateCustomFieldRequest(
 
 public sealed record ReorderCustomFieldsRequest(IReadOnlyList<Guid> OrderedFieldIds);
 
-/// <summary>The entity, its active fields, and the default form layout — used by the runtime form/table renderer.</summary>
+/// <summary>
+/// The entity, its active fields, the default form layout — used by the runtime form/table renderer —
+/// and (R2, PR 2.1) the relations the entity takes part in (empty when
+/// <c>Ollama:EnableStudioManyToMany</c> is off). <see cref="Relations"/> is the same projection as
+/// <c>GET api/studio/entities/{id}/relations</c>, restricted to active entities/fields.
+/// </summary>
 public sealed record CustomEntitySchemaDto(
     CustomEntityDto Entity,
     IReadOnlyList<CustomFieldDto> Fields,
-    FormLayout Form);
+    FormLayout Form,
+    IReadOnlyList<EntityRelationDto> Relations = null!,
+    IReadOnlyList<RecordViews.CustomRecordViewDto>? Views = null)
+{
+    public IReadOnlyList<EntityRelationDto> Relations { get; init; } = Relations ?? Array.Empty<EntityRelationDto>();
+
+    /// <summary>
+    /// Vues enregistrées actives (PR 2.3, R2), par défaut d'abord ; vide tant que
+    /// <c>Ollama:EnableStudioRecordViews</c> est coupé.
+    /// </summary>
+    public IReadOnlyList<FactuTrust.Application.Features.Studio.RecordViews.CustomRecordViewDto> Views { get; init; } = Views ?? Array.Empty<RecordViews.CustomRecordViewDto>();
+}
+
+// ---- Relations (PR 2.1 — plusieurs-à-plusieurs) ----
+
+/// <summary>
+/// One relation seen from a given entity. <see cref="Kind"/> ∈ <c>many_to_one</c> (a
+/// <c>RelationCustom</c> field carried by the entity itself), <c>one_to_many</c> (a field carried by
+/// another standard entity pointing at it) or <c>many_to_many</c> (a <see cref="CustomEntityKind.Junction"/>
+/// entity carrying one field towards the entity and one towards <see cref="TargetEntityId"/>).
+/// For <c>many_to_many</c>, <see cref="FieldId"/>/<see cref="FieldKey"/> are the junction field pointing at
+/// the SOURCE entity and <see cref="JunctionTargetFieldId"/> the junction field pointing at the target.
+/// </summary>
+public sealed record EntityRelationDto(
+    string Kind,
+    Guid SourceEntityId,
+    string SourceEntityKey,
+    string SourceLabel,
+    Guid TargetEntityId,
+    string TargetEntityKey,
+    string TargetLabel,
+    Guid FieldId,
+    string FieldKey,
+    bool IsRequired,
+    bool IsUnique,
+    Guid? JunctionEntityId,
+    string? JunctionEntityKey,
+    Guid? JunctionTargetFieldId);
+
+/// <summary>Request body of <c>POST api/studio/entities/{id}/relations/many-to-many</c>.</summary>
+public sealed record CreateManyToManyRelationRequest(
+    Guid TargetEntityId,
+    string? Label,
+    string? JunctionKey,
+    string? JunctionDisplayName);
+
+/// <summary>Result of a many-to-many creation: the junction entity and its two relation fields.</summary>
+public sealed record ManyToManyRelationDto(
+    CustomEntityDto Junction,
+    CustomFieldDto SourceField,
+    CustomFieldDto TargetField);
 
 // ---- Records ----
 

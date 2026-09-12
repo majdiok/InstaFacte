@@ -13,6 +13,7 @@
 @use './styles/superieur-tokens';
 @use './styles/superieur-bridge';
 @use './app/core/layout/firm-delegated-layout-tokens';
+@use './app/features/studio/shared/studio-theme'; // D2 : indigo scopé .studio-theme (module Studio)
 
 @tailwind base;
 @tailwind components;

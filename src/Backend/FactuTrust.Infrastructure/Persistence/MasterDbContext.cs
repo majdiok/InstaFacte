@@ -613,6 +613,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(p => p.DefaultModelRef).HasMaxLength(500);
             entity.Property(p => p.InvoiceImportModelRef).HasMaxLength(500);
             entity.Property(p => p.StudioAiModelRef).HasMaxLength(500);
+            entity.Property(p => p.StudioAiAdvancedModelRef).HasMaxLength(500);
             entity.Property(p => p.InferenceDevice).HasConversion<int>().HasDefaultValue(Domain.Enums.OllamaInferenceDevice.Gpu);
             entity.Property(p => p.OpenRouterIsEnabled).HasDefaultValue(false);
             entity.Property(p => p.OpenRouterDisplayName).HasMaxLength(200);

@@ -41,7 +41,7 @@
 
   <!-- Chemin SOURCE du pont, baké dans l'assembly : en DEV (machine de build = machine d'exécution),
        BridgeDirectoryResolver peut réutiliser le node_modules du dossier source (non copié à la
-       sortie). En production ce chemin n'existe pas → repli automatique sur le dossier de sortie. -->
+       sortie). En production ce chemin n'existe pas → repli automatique sur le dossier 6de sortie. -->
   <ItemGroup>
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>WhatsAppBridgeSourceDirectory</_Parameter1>

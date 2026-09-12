@@ -79,6 +79,8 @@ public static class SubscriptionLimits
         public const int MaxCustomEntities = 50;
         public const int MaxCustomFieldsPerEntity = 30;
         public const int MaxCustomRecordsPerEntity = 1000;
+        /// <summary>Vues enregistrées par table Studio (PR 2.3).</summary>
+        public const int MaxCustomRecordViewsPerEntity = 20;
     }
 
     public static class Monthly

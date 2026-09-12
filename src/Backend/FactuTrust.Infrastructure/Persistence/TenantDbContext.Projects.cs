@@ -22,6 +22,9 @@ public partial class TenantDbContext
             entity.Property(p => p.ContractNumber).HasMaxLength(100);
             entity.Property(p => p.IsBillable).IsRequired();
             entity.Property(p => p.TimesheetsEnabled).IsRequired();
+            entity.Property(p => p.AnalyticAccountCode).HasMaxLength(50);
+            entity.Property(p => p.AllocatedHours).HasPrecision(18, 2);
+            entity.HasIndex(p => p.SalesOrderId);
             entity.HasIndex(p => p.ClientId);
             entity.HasIndex(p => p.Status);
             entity.HasIndex(p => p.Kind);
@@ -87,7 +90,7 @@ public partial class TenantDbContext
             entity.ToTable("ProjectMembers");
             entity.HasKey(m => m.Id);
             entity.Property(m => m.Role).HasConversion<int>().IsRequired();
-            entity.Property(m => m.DailyRate).HasPrecision(18, 3);
+            entity.Property(m => m.SalesRate).HasPrecision(18, 3);
             entity.Property(m => m.HourlyCost).HasPrecision(18, 3);
             entity.Property(m => m.WeeklyCapacityHours).HasPrecision(18, 2);
             entity.HasIndex(m => new { m.ProjectId, m.UserId }).IsUnique();
@@ -100,8 +103,11 @@ public partial class TenantDbContext
             entity.Property(t => t.Hours).HasPrecision(18, 2);
             entity.Property(t => t.Notes).HasMaxLength(2000);
             entity.Property(t => t.Status).HasConversion<int>().IsRequired();
+            entity.Property(t => t.EntrySource).HasConversion<int>().IsRequired();
             entity.Ignore(t => t.IsOpen);
+            entity.Ignore(t => t.IsTimerRunning);
             entity.HasIndex(t => new { t.ProjectId, t.WorkDate });
+            entity.HasIndex(t => t.SalesOrderLineId);
             entity.HasIndex(t => t.UserId);
             entity.HasIndex(t => t.Status);
             entity.HasIndex(t => t.InvoicedInvoiceId)
@@ -138,6 +144,7 @@ public partial class TenantDbContext
             entity.HasIndex(m => m.ProjectId);
             entity.HasIndex(m => m.InvoicedInvoiceId)
                 .HasFilter("[InvoicedInvoiceId] IS NOT NULL");
+            entity.HasIndex(m => m.SalesOrderLineId);
         });
 
         builder.Entity<ProjectSituation>(entity =>
@@ -176,6 +183,49 @@ public partial class TenantDbContext
             entity.Property(b => b.AmountHt).HasPrecision(18, 3);
             entity.HasIndex(b => b.ProjectId);
             entity.HasIndex(b => b.InvoiceId);
+        });
+
+        builder.Entity<TenantTimesheetSettings>(entity =>
+        {
+            entity.ToTable("TenantTimesheetSettings");
+            entity.HasKey(s => s.Id);
+            entity.Property(s => s.EncodingMethod).HasConversion<int>().IsRequired();
+            entity.Property(s => s.DefaultDailyWorkingHours).HasPrecision(18, 2);
+            entity.Property(s => s.Version).IsConcurrencyToken();
+        });
+
+        builder.Entity<EmployeeBillingTimeTarget>(entity =>
+        {
+            entity.ToTable("EmployeeBillingTimeTargets");
+            entity.HasKey(t => t.Id);
+            entity.Property(t => t.TargetHours).HasPrecision(18, 2);
+            entity.HasIndex(t => new { t.UserId, t.Year, t.Month }).IsUnique();
+        });
+
+        builder.Entity<TimesheetTip>(entity =>
+        {
+            entity.ToTable("TimesheetTips");
+            entity.HasKey(t => t.Id);
+            entity.Property(t => t.Text).HasMaxLength(500).IsRequired();
+        });
+
+        builder.Entity<ProjectUpdate>(entity =>
+        {
+            entity.ToTable("ProjectUpdates");
+            entity.HasKey(u => u.Id);
+            entity.Property(u => u.Status).HasConversion<int>().IsRequired();
+            entity.Property(u => u.Description).HasMaxLength(8000);
+            entity.HasIndex(u => u.ProjectId);
+        });
+
+        builder.Entity<TimeOffRequest>(entity =>
+        {
+            entity.ToTable("TimeOffRequests");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.TypeName).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.HoursPerDay).HasPrecision(18, 2);
+            entity.Property(r => r.Status).HasConversion<int>().IsRequired();
+            entity.HasIndex(r => r.UserId);
         });
     }
 }

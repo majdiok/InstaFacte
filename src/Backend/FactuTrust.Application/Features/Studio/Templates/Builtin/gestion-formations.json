@@ -1,0 +1,113 @@
+{
+  "system": {
+    "displayName": "Gestion des formations",
+    "icon": "graduation-cap",
+    "description": "Organisation des formations : catalogue, sessions planifiées et inscriptions des participants.",
+    "onboarding": [
+      "Vérifiez le catalogue de formations préchargé",
+      "Planifiez une session",
+      "Inscrivez un participant"
+    ],
+    "menu": { "label": "Formations", "icon": "graduation-cap" }
+  },
+  "entities": [
+    {
+      "ref": "formations",
+      "displayName": "Formation",
+      "displayNamePlural": "Formations",
+      "icon": "graduation-cap",
+      "isReferenceData": true,
+      "fields": [
+        { "key": "intitule", "label": "Intitulé", "type": "text", "required": true, "unique": true },
+        { "key": "theme", "label": "Thème", "type": "select",
+          "options": [
+            { "value": "management", "label": "Management" },
+            { "value": "technique", "label": "Technique" },
+            { "value": "securite", "label": "Sécurité" },
+            { "value": "langues", "label": "Langues" }
+          ]
+        },
+        { "key": "duree_jours", "label": "Durée (jours)", "type": "number" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Formation", "fields": [ "intitule", "theme", "duree_jours" ] }
+        ]
+      }
+    },
+    {
+      "ref": "sessions",
+      "displayName": "Session",
+      "displayNamePlural": "Sessions",
+      "icon": "calendar",
+      "fields": [
+        { "key": "formation", "label": "Formation", "type": "relation", "relationTo": "formations", "required": true },
+        { "key": "formateur", "label": "Formateur", "type": "text" },
+        { "key": "date_debut", "label": "Date de début", "type": "date", "required": true },
+        { "key": "date_fin", "label": "Date de fin", "type": "date" },
+        { "key": "lieu", "label": "Lieu", "type": "text" },
+        { "key": "capacite", "label": "Capacité", "type": "number" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Session", "fields": [
+            "formation",
+            "formateur",
+            { "field": "date_debut", "width": "half" },
+            { "field": "date_fin", "width": "half" },
+            { "field": "lieu", "width": "half" },
+            { "field": "capacite", "width": "half" }
+          ] }
+        ]
+      },
+      "report": {
+        "displayName": "Sessions planifiées",
+        "fields": [ "formation", "formateur", "date_debut", "lieu", "capacite" ],
+        "sort": [ { "field": "date_debut", "dir": "asc" } ]
+      }
+    },
+    {
+      "ref": "inscriptions",
+      "displayName": "Inscription",
+      "displayNamePlural": "Inscriptions",
+      "icon": "user-plus",
+      "workflow": {
+        "statusFieldKey": "statut",
+        "states": [
+          { "key": "inscrit", "label": "Inscrit", "color": "blue" },
+          { "key": "present", "label": "Présent", "color": "orange" },
+          { "key": "certifie", "label": "Certifié", "color": "green" }
+        ],
+        "initialState": "inscrit",
+        "transitions": [
+          { "from": "inscrit", "to": "present", "label": "Marquer présent" },
+          { "from": "present", "to": "certifie", "label": "Certifier" }
+        ]
+      },
+      "fields": [
+        { "key": "session", "label": "Session", "type": "relation", "relationTo": "sessions", "required": true },
+        { "key": "participant", "label": "Participant", "type": "text", "required": true },
+        { "key": "e_mail", "label": "E-mail", "type": "text" },
+        { "key": "statut", "label": "Statut", "type": "select", "required": true,
+          "options": [
+            { "value": "inscrit", "label": "Inscrit" },
+            { "value": "present", "label": "Présent" },
+            { "value": "certifie", "label": "Certifié" }
+          ]
+        }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Inscription", "fields": [ "session", "participant", "e_mail", "statut" ] }
+        ]
+      }
+    }
+  ],
+  "seed": [
+    { "entityRef": "formations", "records": [
+      { "intitule": "Gestion de projet", "theme": "management", "duree_jours": 3 },
+      { "intitule": "Sécurité au travail", "theme": "securite", "duree_jours": 1 },
+      { "intitule": "Anglais professionnel", "theme": "langues", "duree_jours": 10 }
+    ] }
+  ]
+}

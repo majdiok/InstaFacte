@@ -61,6 +61,7 @@ public sealed class SendChatMessageHandlerCursorTests
                 It.IsAny<AssistantMode>(),
                 It.IsAny<string?>(),
                 It.IsAny<AssistantAgentScope>(),
+                It.IsAny<StudioPromptOptions?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync("Tu es l'assistant InstaFact.");
 
@@ -148,6 +149,7 @@ public sealed class SendChatMessageHandlerCursorTests
                 It.IsAny<AssistantMode>(),
                 It.IsAny<string?>(),
                 It.IsAny<AssistantAgentScope>(),
+                It.IsAny<StudioPromptOptions?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync("Tu es l'assistant InstaFact.");
 
@@ -237,6 +239,7 @@ public sealed class SendChatMessageHandlerCursorTests
                 It.IsAny<AssistantMode>(),
                 It.IsAny<string?>(),
                 It.IsAny<AssistantAgentScope>(),
+                It.IsAny<StudioPromptOptions?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync("Tu es l'assistant InstaFact.");
 

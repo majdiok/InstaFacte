@@ -202,7 +202,7 @@ const TASK_BILLING_METHOD_OPTIONS = [
 
           <li>Temps validés non facturés : {{ readiness.validatedUninvoicedHours | number:'1.0-1' }} h</li>
 
-          <li>Équipe sans TJM / coût h :
+          <li>Équipe sans tarif de vente :
 
             @if (readiness.membersWithoutRate.length) {
 
@@ -264,7 +264,7 @@ const TASK_BILLING_METHOD_OPTIONS = [
 
                 {{ selectedTimeSummary.hours | number:'1.0-2' }} h sélectionnées ·
 
-                {{ selectedTimeSummary.amountHt | number:'1.3-3' }} {{ project?.currency || 'TND' }} HT
+                {{ selectedTimeSummary.amountHt | number:'1.3-3' }} {{ project.currency || 'TND' }} HT
 
               </p>
 

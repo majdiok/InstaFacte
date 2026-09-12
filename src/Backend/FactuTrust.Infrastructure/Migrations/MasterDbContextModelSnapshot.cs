@@ -1456,6 +1456,10 @@ namespace FactuTrust.Infrastructure.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<string>("StudioAiAdvancedModelRef")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<string>("StudioAiModelRef")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");

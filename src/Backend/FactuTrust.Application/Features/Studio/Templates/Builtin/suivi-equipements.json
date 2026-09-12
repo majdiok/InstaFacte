@@ -1,0 +1,95 @@
+{
+  "system": {
+    "displayName": "Suivi des équipements",
+    "icon": "wrench",
+    "description": "Inventaire des équipements : catégories, fiches équipements et maintenances.",
+    "onboarding": [
+      "Vérifiez les catégories préchargées",
+      "Enregistrez vos équipements",
+      "Planifiez une première maintenance"
+    ],
+    "menu": { "label": "Équipements", "icon": "wrench" }
+  },
+  "entities": [
+    {
+      "ref": "categories_equipements",
+      "displayName": "Catégorie d'équipement",
+      "displayNamePlural": "Catégories d'équipements",
+      "icon": "tags",
+      "isReferenceData": true,
+      "fields": [
+        { "key": "libelle", "label": "Libellé", "type": "text", "required": true, "unique": true },
+        { "key": "description", "label": "Description", "type": "multilinetext" }
+      ]
+    },
+    {
+      "ref": "equipements",
+      "displayName": "Équipement",
+      "displayNamePlural": "Équipements",
+      "icon": "wrench",
+      "fields": [
+        { "key": "designation", "label": "Désignation", "type": "text", "required": true },
+        { "key": "categorie", "label": "Catégorie", "type": "relation", "relationTo": "categories_equipements", "required": true },
+        { "key": "numero_de_serie", "label": "Numéro de série", "type": "text", "unique": true },
+        { "key": "qr_code", "label": "QR code", "type": "qrcode" },
+        { "key": "date_d_acquisition", "label": "Date d'acquisition", "type": "date" },
+        { "key": "prix_d_achat", "label": "Prix d'achat", "type": "money", "config": { "currency": "TND" } },
+        { "key": "statut", "label": "Statut", "type": "select", "required": true,
+          "options": [
+            { "value": "en_service", "label": "En service" },
+            { "value": "en_maintenance", "label": "En maintenance" },
+            { "value": "hors_service", "label": "Hors service" }
+          ]
+        }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Identification", "fields": [
+            "designation",
+            "categorie",
+            { "field": "numero_de_serie", "width": "half" },
+            { "field": "qr_code", "width": "half" }
+          ] },
+          { "title": "Cycle de vie", "fields": [ "date_d_acquisition", "prix_d_achat", "statut" ] }
+        ]
+      },
+      "report": {
+        "displayName": "Équipements en maintenance",
+        "fields": [ "designation", "categorie", "numero_de_serie", "statut" ],
+        "filters": [ { "field": "statut", "op": "eq", "value": "en_maintenance" } ],
+        "sort": [ { "field": "designation", "dir": "asc" } ]
+      }
+    },
+    {
+      "ref": "maintenances",
+      "displayName": "Maintenance",
+      "displayNamePlural": "Maintenances",
+      "icon": "tool",
+      "fields": [
+        { "key": "equipement", "label": "Équipement", "type": "relation", "relationTo": "equipements", "required": true },
+        { "key": "type", "label": "Type", "type": "select",
+          "options": [
+            { "value": "preventive", "label": "Préventive" },
+            { "value": "curative", "label": "Curative" }
+          ]
+        },
+        { "key": "date_prevue", "label": "Date prévue", "type": "date", "required": true },
+        { "key": "cout", "label": "Coût", "type": "money", "config": { "currency": "TND" } },
+        { "key": "commentaire", "label": "Commentaire", "type": "multilinetext" }
+      ],
+      "form": {
+        "sections": [
+          { "title": "Maintenance", "fields": [ "equipement", "type", "date_prevue", "cout", "commentaire" ] }
+        ]
+      }
+    }
+  ],
+  "seed": [
+    { "entityRef": "categories_equipements", "records": [
+      { "libelle": "Informatique" },
+      { "libelle": "Véhicules" },
+      { "libelle": "Mobilier" },
+      { "libelle": "Outillage" }
+    ] }
+  ]
+}

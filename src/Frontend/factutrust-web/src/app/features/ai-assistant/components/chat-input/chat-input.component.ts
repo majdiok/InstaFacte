@@ -18,6 +18,10 @@ import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 import { ChatSpeechTranscriptionService } from '../../services/chat-speech-transcription.service';
 import { AiChatService } from '../../services/ai-chat.service';
 import { ChatAttachmentCardComponent } from '../chat-attachment-card/chat-attachment-card.component';
+import {
+  buildDefaultPromptForAttachments,
+  toChatAttachment
+} from '../../utils/chat-attachment-payload.util';
 import type { ChatAttachment } from '../../models/ai-chat.models';
 
 export interface ChatInputSubmission {
@@ -451,17 +455,10 @@ export class ChatInputComponent implements OnDestroy, OnChanges, AfterViewChecke
     if (this.disabled) return;
     if (!trimmed && attachments.length === 0) return;
     this.speech.stop();
-    const text = trimmed || this.buildDefaultPromptForAttachments(attachments);
+    const text = trimmed || buildDefaultPromptForAttachments(attachments);
     this.messageSent.emit({ text, attachments });
     this.text = '';
     this.pendingAttachments.set([]);
-  }
-
-  private buildDefaultPromptForAttachments(attachments: ChatAttachment[]): string {
-    if (attachments.length === 1) {
-      return `Analyse cette pièce jointe : ${attachments[0].fileName}`;
-    }
-    return `Analyse ces ${attachments.length} pièces jointes.`;
   }
 
   removeAttachment(id: string): void {
@@ -487,25 +484,7 @@ export class ChatInputComponent implements OnDestroy, OnChanges, AfterViewChecke
     this.chatService.extractDocument(file, { renderImages }).subscribe({
       next: res => {
         this.extractingFileName.set(null);
-        const attachment: ChatAttachment = {
-          id: createClientUuid(),
-          fileName: res.fileName,
-          format: (res.format ?? this.inferFormat(file)) as ChatAttachment['format'],
-          sizeBytes: res.sizeBytes ?? file.size,
-          pageCount: res.pageCount ?? 1,
-          ocrApplied: res.ocrApplied ?? false,
-          truncated: res.truncated ?? false,
-          fullText: res.text ?? '',
-          pages: (res.pages ?? []).map(p => ({
-            pageIndex: p.pageIndex,
-            text: p.text,
-            imageBase64: p.imageBase64,
-            width: p.width,
-            height: p.height,
-            ocrApplied: p.ocrApplied
-          })),
-          warnings: res.warnings ?? []
-        };
+        const attachment = toChatAttachment(res, file, createClientUuid());
         this.pendingAttachments.update(list => [...list, attachment]);
       },
       error: () => {
@@ -513,20 +492,6 @@ export class ChatInputComponent implements OnDestroy, OnChanges, AfterViewChecke
         this.extractError.set("Impossible d'extraire le document. Formats acceptés : .txt, .csv, .pdf, .png, .jpg, .jpeg, .webp, .docx, .xlsx (max 10 Mo).");
       }
     });
-  }
-
-  private inferFormat(file: File): ChatAttachment['format'] {
-    const ext = file.name.toLowerCase().split('.').pop() ?? '';
-    switch (ext) {
-      case 'pdf': return 'pdf';
-      case 'docx': return 'docx';
-      case 'xlsx': case 'xlsm': return 'xlsx';
-      case 'csv': return 'csv';
-      case 'txt': return 'txt';
-      case 'png': case 'jpg': case 'jpeg': case 'webp': case 'bmp': case 'tif': case 'tiff':
-        return 'image';
-      default: return 'txt';
-    }
   }
 
   toggleDictation(): void {

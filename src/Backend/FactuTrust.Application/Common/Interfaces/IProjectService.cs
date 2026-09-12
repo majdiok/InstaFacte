@@ -48,6 +48,8 @@ public interface IProjectService
     Task<Result> UpdateTimeEntryAsync(Guid id, UpsertProjectTimeEntryDto dto, CancellationToken cancellationToken = default);
     Task<Result> SubmitTimeEntryAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Result> ValidateTimeEntryAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<Result> DeleteTimeEntryAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<Result> ReopenTimeEntryAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ProjectCostLineDto>> ListCostLinesAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<Result<Guid>> AddManualCostAsync(Guid projectId, AddProjectCostLineDto dto, CancellationToken cancellationToken = default);
@@ -80,4 +82,13 @@ public interface IProjectService
     Task<Result<Guid>> RecordStockExitAsync(Guid projectId, RecordProjectStockExitDto dto, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ProjectPurchaseOrderDto>> ListPurchaseOrdersAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<Result> AssignPurchaseOrderAsync(Guid projectId, AssignPurchaseOrderDto dto, CancellationToken cancellationToken = default);
+
+    Task<ProjectProfitabilityDto?> GetProfitabilityAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<Result> LinkSalesOrderAsync(Guid projectId, LinkProjectSalesOrderDto dto, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ProjectUpdateDto>> ListProjectUpdatesAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<Result<Guid>> CreateProjectUpdateAsync(Guid projectId, CreateProjectUpdateDto dto, CancellationToken cancellationToken = default);
+    Task<Result> MarkMilestoneReachedAsync(Guid milestoneId, bool reached, CancellationToken cancellationToken = default);
+    Task<Result> SyncMilestoneProgressAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<Result> SetProductServiceBillingPolicyAsync(ServiceProductBillingPolicyDto dto, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SalesOrderLineOptionDto>> ListProjectSalesOrderLinesAsync(Guid projectId, CancellationToken cancellationToken = default);
 }

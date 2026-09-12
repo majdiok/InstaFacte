@@ -152,6 +152,9 @@ public static class ProjectEnumExtensions
         _ => status.ToString()
     };
 
+    public static string ToDisplayString(this ProjectTimeEntryStatus status, bool isInvoiced) =>
+        isInvoiced ? "Facturé" : status.ToDisplayString();
+
     public static string ToDisplayString(this ProjectCostSource source) => source switch
     {
         ProjectCostSource.Manual => "Manuel",
@@ -168,11 +171,30 @@ public static class ProjectEnumExtensions
     public static bool CanReceiveTime(this ProjectStatus status) =>
         status is ProjectStatus.Active;
 
+    public static bool CanProcessExistingTime(this ProjectStatus status) =>
+        status is ProjectStatus.Active or ProjectStatus.OnHold or ProjectStatus.Completed;
+
     public static bool CanBeBilled(this ProjectStatus status) =>
         status is ProjectStatus.Active or ProjectStatus.Completed;
 
-    public static string CannotReceiveTimeMessage(this ProjectStatus status) =>
-        "Activez le projet pour saisir du temps. La saisie est réservée aux projets Actif.";
+    public static string CannotReceiveTimeMessage(this ProjectStatus status) => status switch
+    {
+        ProjectStatus.Draft => "Activez le projet pour saisir du temps. La saisie est interdite en statut Brouillon.",
+        ProjectStatus.OnHold => "La saisie de temps est interdite pour un projet en pause.",
+        ProjectStatus.Completed => "Aucune nouvelle saisie de temps n'est autorisée sur un projet terminé.",
+        ProjectStatus.Cancelled => "Aucune nouvelle saisie de temps n'est autorisée sur un projet annulé.",
+        _ => "Activez le projet pour saisir du temps. La saisie est réservée aux projets Actif."
+    };
+
+    public const string TimesheetsDisabledMessage =
+        "La saisie des temps est désactivée pour ce projet.";
+
+    public static string CannotProcessExistingTimeMessage(this ProjectStatus status) => status switch
+    {
+        ProjectStatus.Draft => "Activez le projet pour traiter les temps. Le traitement est interdit en statut Brouillon.",
+        ProjectStatus.Cancelled => "Le traitement des temps est interdit pour un projet annulé.",
+        _ => "Ce projet ne permet pas le traitement des temps dans son statut actuel."
+    };
 
     public static string CannotBeBilledMessage(this ProjectStatus status) =>
         status is ProjectStatus.Draft

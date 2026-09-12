@@ -59,7 +59,7 @@ interface DesignColumn {
 
           <label class="studio-lbl">Table SQL existante *</label>
           <p-select [options]="tables()" [(ngModel)]="sourceTable" (ngModelChange)="onTableChange()"
-            optionLabel="name" optionValue="name" [filter]="true" appendTo="body" styleClass="studio-w-full"
+            optionLabel="name" optionValue="name" [filter]="true" appendTo="body" panelStyleClass="studio-theme" styleClass="studio-w-full"
             placeholder="Choisir une table"></p-select>
           <small class="studio-hint">Lecture seule : aucune donnée n'est modifiée par une vue.</small>
 
@@ -79,7 +79,7 @@ interface DesignColumn {
                   <input pInputText [(ngModel)]="c.label" [placeholder]="c.name" class="studio-grow"
                     [disabled]="!c.included" (ngModelChange)="schedulePreview()" />
                   <p-select [options]="formatOptions" [(ngModel)]="c.format" optionLabel="label" optionValue="value"
-                    appendTo="body" [disabled]="!c.included" (ngModelChange)="schedulePreview()"></p-select>
+                    appendTo="body" panelStyleClass="studio-theme" [disabled]="!c.included" (ngModelChange)="schedulePreview()"></p-select>
                   @if (c.included && c.format === 'status') {
                     <input pInputText [(ngModel)]="c.statusMapText" placeholder="1=Brouillon,3=Validé"
                       class="studio-grow" (ngModelChange)="schedulePreview()" />

@@ -339,6 +339,71 @@ public sealed class OllamaSettings
     /// </summary>
     public bool EnableStudioReportShortcut { get; set; }
 
+    /// <summary>Active le « workbench » Studio IA : liste/lecture/édition de plans, création déterministe (from-spec/from-template), capacités détaillées.</summary>
+    public bool EnableStudioAiWorkbench { get; set; }
+
+    /// <summary>Active la bibliothèque de modèles tenant, l'import/export ZIP et la duplication de systèmes.</summary>
+    public bool EnableStudioTemplates { get; set; }
+
+    /// <summary>Active le constructeur de pages Studio (CRUD pages, rendu serveur des blocs, entrées de navigation).</summary>
+    public bool EnableStudioPages { get; set; }
+
+    /// <summary>
+    /// Bascule « Modèle avancé » du Studio : expose le modèle plateforme
+    /// <c>PlatformAiSettings.StudioAiAdvancedModelRef</c> (GPU distant / cloud) aux utilisateurs du
+    /// Studio. False (défaut) = <c>AdvancedModelAvailable</c> reste false et l'option de requête
+    /// <c>useAdvancedModel</c> est ignorée : la chaîne de résolution du modèle Studio est inchangée.
+    /// Sans effet si aucun modèle avancé n'est configuré en back-office.
+    /// </summary>
+    public bool EnableStudioAiAdvancedModel { get; set; }
+
+    /// <summary>
+    /// Digest de contexte du Studio : injecte dans le prompt StudioBuilder la liste des tables Studio
+    /// du tenant (vraies clés + champs) et le dernier plan de l'utilisateur. False (défaut) = prompt
+    /// identique à la révision précédente (aucune section « SCHÉMA EXISTANT » / « DERNIER PLAN »).
+    /// </summary>
+    public bool EnableStudioAiSchemaDigest { get; set; }
+
+    /// <summary>
+    /// PR 2.1 — relations plusieurs‑à‑plusieurs du Studio (table de jonction <c>Kind = Junction</c>).
+    /// False (défaut) = <c>GET/POST api/studio/entities/{id}/relations[/many-to-many]</c> répondent 404
+    /// et <c>CustomEntitySchemaDto.Relations</c> est vide ; la colonne <c>Kind</c> et le filtre serveur
+    /// <c>filterField/filterValue</c> des enregistrements restent actifs quoi qu'il arrive.
+    /// </summary>
+    public bool EnableStudioManyToMany { get; set; }
+
+    /// <summary>
+    /// PR 2.3 — vues enregistrées du Studio (Liste / Kanban / Calendrier exécutées côté serveur) et
+    /// PATCH partiel d'enregistrement. False (défaut) = <c>api/studio/records/{entityKey}/views[…]</c>
+    /// et <c>PATCH api/studio/records/{entityKey}/{id}</c> répondent 404 et
+    /// <c>CustomEntitySchemaDto.Views</c> est vide ; la table <c>CustomRecordViewDefinitions</c> reste inerte.
+    /// </summary>
+    public bool EnableStudioRecordViews { get; set; }
+
+    /// <summary>Cartes maximales chargées par une vue Kanban (au-delà, <c>truncated = true</c>). Défaut 500.</summary>
+    public int StudioRecordViewMaxKanbanCards { get; set; } = 500;
+
+    /// <summary>Événements maximaux chargés par une vue Calendrier (au-delà, <c>truncated = true</c>). Défaut 1000.</summary>
+    public int StudioRecordViewMaxCalendarEvents { get; set; } = 1000;
+
+    /// <summary>
+    /// Budget de tours d'outils quand la requête Studio utilise le modèle avancé (GPU / cloud) :
+    /// remplace le plafond CPU (<see cref="CpuMaxToolCallRounds"/>) pour ce seul tour. Borné 1..20.
+    /// </summary>
+    public int StudioAdvancedMaxToolCallRounds { get; set; } = 4;
+
+    /// <summary>Température des générations StudioBuilder (specs JSON déterministes). Défaut 0.1.</summary>
+    public double StudioTemperature { get; set; } = 0.1;
+
+    /// <summary>Taille maximale (caractères) du digest de schéma sur le modèle standard / CPU.</summary>
+    public int StudioSchemaDigestMaxCharsCpu { get; set; } = 1200;
+
+    /// <summary>Taille maximale (caractères) du digest de schéma quand le modèle avancé sert la requête.</summary>
+    public int StudioSchemaDigestMaxCharsAdvanced { get; set; } = 4000;
+
+    /// <summary>Taille maximale (caractères) du digest « DERNIER PLAN ».</summary>
+    public int StudioLastPlanDigestMaxChars { get; set; } = 600;
+
     /// <summary>Lignes de DÉTAIL renvoyées par un état SQL. Les agrégats restent exacts au-delà.</summary>
     public int StudioReportMaxRows { get; set; } = 5000;
 

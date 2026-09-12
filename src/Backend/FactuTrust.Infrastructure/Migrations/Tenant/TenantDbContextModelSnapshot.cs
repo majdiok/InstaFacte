@@ -7410,6 +7410,11 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<int>("Kind")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -7432,6 +7437,8 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("TenantId", "Key")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "Kind");
 
                     b.HasIndex("TenantId", "SystemId");
 
@@ -7657,6 +7664,78 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.HasIndex("TenantId", "EntityDefinitionId", "IsDeleted");
 
                     b.ToTable("CustomRecords", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Studio.CustomRecordViewDefinition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DefinitionJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("EntityDefinitionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("Mode")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "EntityDefinitionId", "IsDefault")
+                        .HasDatabaseName("IX_CustomRecordViewDefinitions_Tenant_Entity_Default");
+
+                    b.HasIndex("TenantId", "EntityDefinitionId", "Key")
+                        .IsUnique()
+                        .HasDatabaseName("UX_CustomRecordViewDefinitions_Tenant_Entity_Key")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("CustomRecordViewDefinitions", (string)null);
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Studio.CustomReportDefinition", b =>
@@ -10471,6 +10550,15 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Studio.CustomRecordViewDefinition", b =>
+                {
+                    b.HasOne("FactuTrust.Domain.Entities.Studio.CustomEntityDefinition", null)
+                        .WithMany()
+                        .HasForeignKey("EntityDefinitionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_CustomRecordViewDefinitions_CustomEntityDefinitions");
+                });
             modelBuilder.Entity("FactuTrust.Domain.Entities.PhysicalInventory", b =>
                 {
                     b.HasOne("FactuTrust.Domain.Entities.Warehouse", "Warehouse")

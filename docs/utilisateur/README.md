@@ -26,6 +26,7 @@ Ce guide est conçu pour les **utilisateurs novices** et les **personnes non-inf
 | [10 - Projets](10-projets.md) | Affaires, tâches, temps, régie ESN, situations BTP |
 | [11 - Contrats récurrents](11-contrats-recurrents.md) | Abonnements B2B, facturation périodique, usage, prorata |
 | [12 - Point de vente](12-pos.md) | Caisse POS, à terme, avoir, clôture Z, multi-caisse |
+| [13 - Studio IA](13-studio-ia.md) | Créer tables, formulaires, données et rapports en décrivant votre besoin |
 | [Glossaire](glossaire.md) | Définitions des termes utilisés |
 
 ---

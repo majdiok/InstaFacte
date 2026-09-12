@@ -29,7 +29,7 @@ public sealed class StudioAiPlanFeaturesTests
         _currentUser.Setup(x => x.TenantId).Returns(TenantId);
         _currentUser.Setup(x => x.UserId).Returns(UserId);
         _currentUser.Setup(x => x.HasPermission(It.IsAny<string>())).Returns(true);
-        _plans.Setup(p => p.TryUpdateAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>()))
+        _plans.Setup(p => p.TryUpdateAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>(), It.IsAny<byte[]?>()))
             .ReturnsAsync(true);
     }
 
@@ -101,7 +101,7 @@ public sealed class StudioAiPlanFeaturesTests
         var plan = PendingPlan();
         SetupGet(plan);
         // Une autre requête a déjà fait passer le plan en Executing : la mise à jour échoue.
-        _plans.Setup(p => p.TryUpdateAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>()))
+        _plans.Setup(p => p.TryUpdateAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>(), It.IsAny<byte[]?>()))
             .ReturnsAsync(false);
 
         var result = await ConfirmHandler().Handle(new ConfirmStudioAiPlanCommand(plan.Id), CancellationToken.None);
@@ -166,7 +166,7 @@ public sealed class StudioAiPlanFeaturesTests
         Assert.True(result.IsSuccess);
         Assert.Equal(StudioAiPlanStatus.Expired.ToString(), result.Value.Status);
         Assert.Equal(StudioAiPlanStatus.Pending, plan.Status); // état persistant intact
-        _plans.Verify(p => p.TryUpdateAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>()), Times.Never);
+        _plans.Verify(p => p.TryUpdateAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>(), It.IsAny<byte[]?>()), Times.Never);
     }
 
     [Fact]

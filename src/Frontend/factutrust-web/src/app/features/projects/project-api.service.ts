@@ -47,6 +47,7 @@ export interface ProjectListItem {
   progressPercent: number;
   completedTaskCount: number;
   totalTaskCount: number;
+  timesheetsEnabled: boolean;
 }
 
 export interface ProjectPhase {
@@ -78,6 +79,9 @@ export interface ProjectDetail {
   contractNumber?: string | null;
   isBillable: boolean;
   timesheetsEnabled: boolean;
+  milestonesEnabled: boolean;
+  allocatedHours: number;
+  analyticAccountCode?: string | null;
   phases: ProjectPhase[];
 }
 
@@ -134,7 +138,7 @@ export interface ProjectMember {
   userName: string;
   role: ProjectMemberRoleCode | number;
   roleDisplay: string;
-  dailyRate?: number | null;
+  salesRate?: number | null;
   hourlyCost?: number | null;
   weeklyCapacityHours: number;
 }
@@ -406,6 +410,17 @@ export interface UpsertProjectPayload {
   contractNumber?: string | null;
   isBillable: boolean;
   timesheetsEnabled: boolean;
+  milestonesEnabled: boolean;
+  allocatedHours: number;
+  analyticAccountCode?: string | null;
+}
+
+export interface ProjectSettingsPayload {
+  billingMode: ProjectBillingModeCode | number;
+  isBillable: boolean;
+  timesheetsEnabled: boolean;
+  milestonesEnabled: boolean;
+  allocatedHours: number;
 }
 
 export interface UpsertTaskPayload {
@@ -424,7 +439,7 @@ export interface UpsertTaskPayload {
 export interface UpsertMemberPayload {
   userId: string;
   role: ProjectMemberRoleCode | number;
-  dailyRate?: number | null;
+  salesRate?: number | null;
   hourlyCost?: number | null;
   weeklyCapacityHours: number;
 }
@@ -664,6 +679,14 @@ export class ProjectApiService {
     notes?: string;
   }): Observable<ApiResponse<boolean>> {
     return this.http.put<ApiResponse<boolean>>(`${this.base}/time/${id}`, payload);
+  }
+
+  deleteTime(id: string): Observable<ApiResponse<boolean>> {
+    return this.http.delete<ApiResponse<boolean>>(`${this.base}/time/${id}`);
+  }
+
+  reopenTime(id: string): Observable<ApiResponse<boolean>> {
+    return this.http.post<ApiResponse<boolean>>(`${this.base}/time/${id}/reopen`, {});
   }
 
   costs(projectId: string): Observable<ApiResponse<ProjectCostLine[]>> {

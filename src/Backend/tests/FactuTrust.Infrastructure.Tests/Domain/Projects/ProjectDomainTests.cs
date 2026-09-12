@@ -88,6 +88,77 @@ public sealed class ProjectTimeEntryTests
         Assert.True(entry.MarkInvoiced(Guid.NewGuid()).IsSuccess);
         Assert.True(entry.ReopenToDraft().IsFailure);
     }
+
+    [Fact]
+    public void DraftEntry_CanBeUpdatedDeletedAndSubmitted()
+    {
+        var entry = ProjectTimeEntry.Create(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 8, 1), 8m, true, null, null).Value;
+        Assert.True(entry.CanBeDeleted());
+        Assert.True(entry.Update(new DateTime(2026, 8, 2), 6m, false, "note", null).IsSuccess);
+        Assert.True(entry.Submit().IsSuccess);
+        Assert.Equal(ProjectTimeEntryStatus.Submitted, entry.Status);
+    }
+
+    [Fact]
+    public void SubmittedEntry_CannotBeUpdatedOrDeleted_ButCanReopen()
+    {
+        var entry = ProjectTimeEntry.Create(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 8, 1), 8m, true, null, null).Value;
+        Assert.True(entry.Submit().IsSuccess);
+        Assert.False(entry.CanBeDeleted());
+        Assert.True(entry.Update(new DateTime(2026, 8, 2), 6m, false, null, null).IsFailure);
+        Assert.True(entry.ReopenToDraft().IsSuccess);
+        Assert.Equal(ProjectTimeEntryStatus.Draft, entry.Status);
+    }
+
+    [Fact]
+    public void ValidatedEntry_CannotBeUpdatedOrDeleted_ButCanReopen()
+    {
+        var entry = ProjectTimeEntry.Create(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 8, 1), 8m, true, null, null).Value;
+        Assert.True(entry.Submit().IsSuccess);
+        Assert.True(entry.Validate().IsSuccess);
+        Assert.False(entry.CanBeDeleted());
+        Assert.True(entry.Update(new DateTime(2026, 8, 2), 6m, false, null, null).IsFailure);
+        Assert.True(entry.ReopenToDraft().IsSuccess);
+        Assert.Equal(ProjectTimeEntryStatus.Draft, entry.Status);
+    }
+
+    [Fact]
+    public void InvoicedEntry_IsImmutable()
+    {
+        var entry = ProjectTimeEntry.Create(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 8, 1), 8m, true, null, null).Value;
+        Assert.True(entry.Submit().IsSuccess);
+        Assert.True(entry.Validate().IsSuccess);
+        Assert.True(entry.MarkInvoiced(Guid.NewGuid()).IsSuccess);
+        Assert.True(entry.IsInvoiced);
+        Assert.True(entry.Update(new DateTime(2026, 8, 2), 6m, false, null, null).IsFailure);
+        Assert.False(entry.CanBeDeleted());
+        Assert.True(entry.Submit().IsFailure);
+        Assert.True(entry.Validate().IsFailure);
+    }
+
+    [Fact]
+    public void NonBillableValidatedEntry_CannotBeInvoiced()
+    {
+        var entry = ProjectTimeEntry.Create(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 8, 1), 8m, false, null, null).Value;
+        Assert.True(entry.Submit().IsSuccess);
+        Assert.True(entry.Validate().IsSuccess);
+        Assert.True(entry.MarkInvoiced(Guid.NewGuid()).IsFailure);
+        Assert.Equal(ProjectTimeEntryStatus.Validated, entry.Status);
+    }
+
+    [Fact]
+    public void DraftEntry_CannotReopenToDraft()
+    {
+        var entry = ProjectTimeEntry.Create(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 8, 1), 8m, true, null, null).Value;
+        Assert.True(entry.ReopenToDraft().IsFailure);
+    }
+
+    [Fact]
+    public void InvoicedStatusDisplay_UsesFactureLabel()
+    {
+        Assert.Equal("Facturé", ProjectTimeEntryStatus.Validated.ToDisplayString(isInvoiced: true));
+        Assert.Equal("Validé", ProjectTimeEntryStatus.Validated.ToDisplayString(isInvoiced: false));
+    }
 }
 
 public sealed class ProjectTaskMoveTests
@@ -253,14 +324,21 @@ public sealed class ProjectClosureTests
     public void Draft_CannotReceiveTime_NorBeBilled()
     {
         Assert.False(ProjectStatus.Draft.CanReceiveTime());
+        Assert.False(ProjectStatus.Draft.CanProcessExistingTime());
         Assert.False(ProjectStatus.Draft.CanBeBilled());
         Assert.Contains("Brouillon", ProjectStatus.Draft.CannotBeBilledMessage(), StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Actif", ProjectStatus.Draft.CannotReceiveTimeMessage(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Brouillon", ProjectStatus.Draft.CannotReceiveTimeMessage(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Brouillon", ProjectStatus.Draft.CannotProcessExistingTimeMessage(), StringComparison.OrdinalIgnoreCase);
         Assert.True(ProjectStatus.Active.CanReceiveTime());
+        Assert.True(ProjectStatus.Active.CanProcessExistingTime());
         Assert.True(ProjectStatus.Active.CanBeBilled());
         Assert.True(ProjectStatus.Completed.CanBeBilled());
+        Assert.True(ProjectStatus.Completed.CanProcessExistingTime());
+        Assert.False(ProjectStatus.Completed.CanReceiveTime());
+        Assert.True(ProjectStatus.OnHold.CanProcessExistingTime());
         Assert.False(ProjectStatus.OnHold.CanReceiveTime());
         Assert.False(ProjectStatus.OnHold.CanBeBilled());
+        Assert.False(ProjectStatus.Cancelled.CanProcessExistingTime());
     }
 
     [Fact]
@@ -313,5 +391,51 @@ public sealed class ProjectBillableTimesheetsFlagsTests
         Assert.True(project.Update("Renommé", null, ProjectBillingMode.TimeAndMaterials, null, null, null, 100m, null, null).IsSuccess);
         Assert.False(project.IsBillable);
         Assert.False(project.TimesheetsEnabled);
+    }
+
+    [Fact]
+    public void SetBillable_UpdatesProjectFlag()
+    {
+        var project = Project.Create(Guid.NewGuid(), "P", ProjectKind.Esn, ProjectBillingMode.TimeAndMaterials, null, null, null, 0m).Value;
+        Assert.True(project.SetBillable(false).IsSuccess);
+        Assert.False(project.IsBillable);
+    }
+}
+
+public sealed class OdooTimesheetAlignmentDomainTests
+{
+    [Fact]
+    public void Milestone_MarkReached_SetsTimestamp()
+    {
+        var m = ProjectMilestone.Create(Guid.NewGuid(), "Phase 1", 25m, 1000m, null).Value;
+        Assert.True(m.MarkReached().IsSuccess);
+        Assert.True(m.IsReached);
+        Assert.NotNull(m.ReachedAt);
+    }
+
+    [Fact]
+    public void TimeEntry_TimerLifecycle()
+    {
+        var entry = ProjectTimeEntry.Create(Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow.Date, 0m, true, null, null).Value;
+        Assert.True(entry.StartTimer().IsSuccess);
+        Assert.True(entry.IsTimerRunning);
+        Assert.True(entry.StartTimer().IsFailure);
+        Assert.True(entry.StopTimer().IsSuccess);
+        Assert.False(entry.IsTimerRunning);
+    }
+
+    [Fact]
+    public void TimeEntry_WithSalesOrderLine_PersistsLink()
+    {
+        var lineId = Guid.NewGuid();
+        var entry = ProjectTimeEntry.Create(Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow.Date, 2m, true, null, null, lineId).Value;
+        Assert.Equal(lineId, entry.SalesOrderLineId);
+    }
+
+    [Fact]
+    public void ServiceInvoicingPolicy_MapsToProjectBillingMode()
+    {
+        Assert.Equal(ProjectBillingMode.TimeAndMaterials, ServiceInvoicingPolicy.BasedOnTimesheets.ToProjectBillingMode());
+        Assert.Equal(ProjectBillingMode.Milestone, ServiceInvoicingPolicy.BasedOnMilestones.ToProjectBillingMode());
     }
 }

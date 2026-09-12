@@ -115,4 +115,136 @@ public sealed class ResolveMaxToolCallRoundsTests
 
         Assert.Equal(2, rounds);
     }
+
+    // ── PR 1.2 : budget dédié au modèle avancé Studio ──
+    // Un tour Studio sur le modèle standard garde le comportement historique (intent Fallback ⇒
+    // defaultMaxRounds, même sur CPU). Quand le modèle AVANCÉ a été retenu pour ce tour, le budget
+    // StudioAdvancedMaxToolCallRounds (4 par défaut) s'applique dès que le modèle avancé tourne hors du
+    // CPU de la plateforme : fournisseur cloud (aucun profil d'inférence) ou moteur Ollama sur GPU.
+    [Fact]
+    public void StudioBuilder_CloudAdvancedModel_UsesAdvancedBudget()
+    {
+        var rounds = SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 2,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.StudioBuilder,
+            AiToolIntentRouter.AiToolIntent.Fallback,
+            inferenceProfile: null,
+            studioAdvanced: true,
+            studioAdvancedMaxToolCallRounds: 4);
+
+        Assert.Equal(4, rounds);
+    }
+
+    [Fact]
+    public void StudioBuilder_GpuAdvancedModel_UsesAdvancedBudget()
+    {
+        var rounds = SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 2,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.StudioBuilder,
+            AiToolIntentRouter.AiToolIntent.Fallback,
+            new OllamaInferenceProfile(OllamaInferenceDevice.Gpu, null, null, 256, false),
+            studioAdvanced: true,
+            studioAdvancedMaxToolCallRounds: 4);
+
+        Assert.Equal(4, rounds);
+    }
+
+    // Un modèle Ollama désigné « avancé » mais exécuté sur un hôte CPU seul ne doit pas contourner le
+    // plafond CPU : le budget avancé est réservé au GPU / cloud, le tour garde le comportement standard.
+    [Fact]
+    public void StudioBuilder_CpuOnlyAdvancedModel_KeepsCpuBehavior()
+    {
+        var rounds = SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 2,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.StudioBuilder,
+            AiToolIntentRouter.AiToolIntent.Fallback,
+            CpuProfile,
+            studioAdvanced: true,
+            studioAdvancedMaxToolCallRounds: 4);
+
+        Assert.Equal(SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 2,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.StudioBuilder,
+            AiToolIntentRouter.AiToolIntent.Fallback,
+            CpuProfile), rounds);
+        Assert.NotEqual(4, rounds);
+    }
+
+    [Fact]
+    public void StudioBuilder_Cpu_StandardModel_KeepsHistoricalDefaultRounds()
+    {
+        var rounds = SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 2,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.StudioBuilder,
+            AiToolIntentRouter.AiToolIntent.Fallback,
+            CpuProfile,
+            studioAdvanced: false,
+            studioAdvancedMaxToolCallRounds: 4);
+
+        // Identique à l'appel sans les nouveaux paramètres : le budget avancé n'intervient pas.
+        Assert.Equal(2, rounds);
+        Assert.Equal(rounds, SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 2,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.StudioBuilder,
+            AiToolIntentRouter.AiToolIntent.Fallback,
+            CpuProfile));
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(-3, 1)]
+    [InlineData(7, 7)]
+    [InlineData(20, 20)]
+    [InlineData(99, 20)]
+    public void StudioBuilder_AdvancedBudget_IsClampedBetween1And20(int configured, int expected)
+    {
+        var rounds = SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 2,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.StudioBuilder,
+            AiToolIntentRouter.AiToolIntent.Fallback,
+            inferenceProfile: null,
+            studioAdvanced: true,
+            studioAdvancedMaxToolCallRounds: configured);
+
+        Assert.Equal(expected, rounds);
+    }
+
+    [Fact]
+    public void NonStudio_Cpu_IgnoresAdvancedFlag()
+    {
+        // Le drapeau n'a de sens qu'en StudioBuilder : un tour Default sur CPU garde son plafond.
+        var rounds = SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 2,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.Default,
+            AiToolIntentRouter.AiToolIntent.Sales,
+            CpuProfile,
+            studioAdvanced: true,
+            studioAdvancedMaxToolCallRounds: 4);
+
+        Assert.Equal(1, rounds);
+    }
 }

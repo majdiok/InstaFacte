@@ -9,6 +9,8 @@ using FactuTrust.Application.Features.Studio.Common.SqlReport;
 using FactuTrust.Domain.Constants;
 using FactuTrust.Domain.Enums;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 // AI Forecasting hints are appended in BuildForecastingHints() below.
 
@@ -20,7 +22,7 @@ public sealed class AiContextBuilder : IAiContextBuilder
     /// Révision de la clé de cache du prompt statique. À incrémenter quand le texte du prompt change
     /// (la clé historique ne hashe pas le contenu — sans ça l'ancien prompt resterait jusqu'au TTL).
     /// </summary>
-    private const string SystemPromptCacheRevision = "v3";
+    private const string SystemPromptCacheRevision = "v5";
     private readonly ICompanyRepository _companyRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IMemoryCache _memoryCache;
@@ -30,6 +32,8 @@ public sealed class AiContextBuilder : IAiContextBuilder
     private readonly TimeProvider _timeProvider;
     private readonly ForecastingOptions _forecastingOptions;
     private readonly ICurrentUser? _currentUser;
+    private readonly IStudioContextDigestService? _studioDigest;
+    private readonly ILogger<AiContextBuilder> _logger;
 
     public AiContextBuilder(
         ICompanyRepository companyRepository,
@@ -42,9 +46,15 @@ public sealed class AiContextBuilder : IAiContextBuilder
         IOptions<ForecastingOptions>? forecastingOptions = null,
         // Permissions de l'utilisateur courant : l'index des états injecté dans le prompt ne doit
         // citer que ce qu'il a le droit de lire. Optionnel pour ne pas casser les constructions de test.
-        ICurrentUser? currentUser = null)
+        ICurrentUser? currentUser = null,
+        // Digests de contexte Studio (schéma du tenant + dernier plan). Optionnel : sans lui, le prompt
+        // StudioBuilder reste celui d'avant le digest (constructions de test inchangées).
+        IStudioContextDigestService? studioDigest = null,
+        ILogger<AiContextBuilder>? logger = null)
     {
         _currentUser = currentUser;
+        _studioDigest = studioDigest;
+        _logger = logger ?? NullLogger<AiContextBuilder>.Instance;
         _companyRepository = companyRepository;
         _tenantContext = tenantContext;
         _memoryCache = memoryCache;
@@ -59,6 +69,7 @@ public sealed class AiContextBuilder : IAiContextBuilder
         AssistantMode assistantMode = AssistantMode.Default,
         string? screenId = null,
         AssistantAgentScope agentScope = AssistantAgentScope.None,
+        StudioPromptOptions? studioOptions = null,
         CancellationToken cancellationToken = default)
     {
         if (assistantMode == AssistantMode.ScreenAnalysis)
@@ -73,12 +84,48 @@ public sealed class AiContextBuilder : IAiContextBuilder
         if (assistantMode == AssistantMode.StudioBuilder)
         {
             var reportTools = _ollamaSettings.EnableStudioAiReportTools && _ollamaSettings.EnableStudioSqlReportEngine;
+            // Digests de contexte (PR 1.2) : lectures tenant SÉQUENTIELLES, jamais mises en cache avec le
+            // prompt (le prompt StudioBuilder est reconstruit à chaque appel). Flag off ⇒ null ⇒ aucune
+            // section ajoutée : le prompt est celui de la révision précédente. Sans tenant résolu
+            // (Guid.Empty), pas de digest non plus : affirmer « Aucune table Studio » serait faux.
+            string? schemaDigest = null;
+            string? lastPlanDigest = null;
+            if (_ollamaSettings.EnableStudioAiSchemaDigest
+                && studioOptions is { TenantId: var digestTenantId } && digestTenantId != Guid.Empty
+                && _studioDigest is not null)
+            {
+                var schemaBudget = studioOptions.UseAdvancedModel
+                    ? _ollamaSettings.StudioSchemaDigestMaxCharsAdvanced
+                    : _ollamaSettings.StudioSchemaDigestMaxCharsCpu;
+                try
+                {
+                    schemaDigest = await _studioDigest.BuildSchemaDigestAsync(
+                        studioOptions.TenantId, Math.Max(0, schemaBudget), cancellationToken) ?? string.Empty;
+                    lastPlanDigest = await _studioDigest.BuildLastPlanDigestAsync(
+                        studioOptions.TenantId, studioOptions.UserId,
+                        Math.Max(0, _ollamaSettings.StudioLastPlanDigestMaxChars), cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Dégradation plutôt que refus : un digest indisponible (SQL, dépôt…) ne doit jamais
+                    // faire échouer le tour Studio. Le prompt repart sans les sections de contexte.
+                    _logger.LogWarning(ex,
+                        "Studio context digest unavailable for tenant {TenantId}; building the StudioBuilder prompt without it",
+                        studioOptions.TenantId);
+                    schemaDigest = null;
+                    lastPlanDigest = null;
+                }
+            }
+
             return BuildStudioBuilderSystemPrompt(
                 _ollamaSettings.EnableStudioAiPlanPreview,
                 _ollamaSettings.EnableStudioAiPlanPreview && _ollamaSettings.EnableStudioAiModifyTools,
                 _ollamaSettings.EnableStudioAiPlanPreview && _ollamaSettings.EnableStudioAiViewTools,
                 reportTools,
-                reportTools ? BuildReportSourceDigest() : null)
+                reportTools ? BuildReportSourceDigest() : null,
+                studioOptions?.NormalizedIntent,
+                schemaDigest,
+                lastPlanDigest)
                 + BuildTemporalContextSuffix();
         }
 
@@ -96,9 +143,16 @@ public sealed class AiContextBuilder : IAiContextBuilder
     /// Focused prompt for the Studio "AI builder" surface. The model has only the studio_* tools; it must
     /// emit ONE structured tool call per request and never invent data or expose tool names.
     /// </summary>
+    /// <param name="studioIntent">Intention normalisée de l'atelier (préambule court) ; null = aucun préambule.</param>
+    /// <param name="schemaDigest">
+    /// Digest des tables Studio du tenant. <c>null</c> = fonctionnalité désactivée (aucune section) ;
+    /// chaîne vide = activée mais aucune table (ligne « Aucune table Studio pour l'instant. »).
+    /// </param>
+    /// <param name="lastPlanDigest">Digest du dernier plan de l'utilisateur ; null/vide = section omise.</param>
     private static string BuildStudioBuilderSystemPrompt(
         bool planPreview = false, bool modifyTools = false, bool viewTools = false,
-        bool reportTools = false, string? reportSourceDigest = null)
+        bool reportTools = false, string? reportSourceDigest = null,
+        string? studioIntent = null, string? schemaDigest = null, string? lastPlanDigest = null)
     {
         // Flux plan → aperçu → confirmation : mêmes règles, mais les outils deviennent studio_plan_*
         // et le modèle ne doit JAMAIS prétendre que la création a déjà eu lieu.
@@ -107,6 +161,9 @@ public sealed class AiContextBuilder : IAiContextBuilder
 
         var sb = new StringBuilder();
         sb.AppendLine($"Tu es l'assistant « concepteur » du Studio low-code de {BrandConstants.Name}. Tu aides l'utilisateur à CONSTRUIRE des tables, des rapports et à saisir des données par langage naturel.");
+        var intentLabel = StudioIntentPreamble(studioIntent);
+        if (intentLabel is not null)
+            sb.AppendLine($"INTENTION DE L'UTILISATEUR : {intentLabel}.");
         sb.AppendLine();
         sb.AppendLine("RÈGLES CRITIQUES :");
         sb.AppendLine($"1. Si l'utilisateur demande un SYSTÈME, plusieurs tables LIÉES, ou des relations → appelle UNE SEULE FOIS `{systemTool}` avec un `spec_json` complet.");
@@ -153,10 +210,48 @@ public sealed class AiContextBuilder : IAiContextBuilder
             if (!string.IsNullOrEmpty(reportSourceDigest))
                 sb.AppendLine("ÉTATS PRÊTS À L'EMPLOI : " + reportSourceDigest);
         }
+        if (schemaDigest is not null)
+        {
+            sb.AppendLine("11. Le SCHÉMA EXISTANT liste les tables déjà présentes avec leurs VRAIES clés. Pour modifier ou compléter l'une d'elles, "
+                + "utilise sa clé telle quelle (jamais un nouveau nom) et passe par `studio_plan_changes`. Ne recrée JAMAIS une table qui existe déjà : "
+                + "si l'utilisateur en redemande une équivalente, propose de la réutiliser. Pour t'appuyer sur une table existante dans un système, "
+                + "déclare l'entité avec `\"existingKey\": \"<clé>\"` au lieu de ses champs.");
+            if (!string.IsNullOrEmpty(lastPlanDigest))
+            {
+                sb.AppendLine("12. Le DERNIER PLAN décrit ce qui vient d'être préparé ou créé. « Ajoute / complète / continue » se rapporte à ce plan : "
+                    + "garde les mêmes clés de tables et de champs.");
+            }
+            sb.AppendLine();
+            sb.AppendLine("SCHÉMA EXISTANT (tables Studio de ce client) :");
+            sb.AppendLine(schemaDigest.Length > 0 ? schemaDigest.TrimEnd() : "Aucune table Studio pour l'instant.");
+            if (!string.IsNullOrEmpty(lastPlanDigest))
+            {
+                sb.AppendLine();
+                sb.AppendLine("DERNIER PLAN :");
+                sb.AppendLine(lastPlanDigest.TrimEnd());
+            }
+        }
         sb.AppendLine();
         sb.AppendLine("EXEMPLE système congés : system + entities employes/types_conges/demandes/soldes avec relations relationTo, seed sur types_conges.");
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Libellé du préambule d'intention (≤ 120 caractères). Les intentions « bientôt » (workflow, page)
+    /// sont annoncées comme telles pour que le modèle n'invente pas d'outil.
+    /// </summary>
+    internal static string? StudioIntentPreamble(string? normalizedIntent) => normalizedIntent switch
+    {
+        "system" => "créer un système de plusieurs tables liées",
+        "table" => "créer une table simple",
+        "relations" => "relier des tables existantes",
+        "form" => "améliorer un formulaire",
+        "reference_data" => "saisir des données de référence",
+        "report" => "obtenir un état / rapport",
+        "workflow" => "automatiser un enchaînement d'étapes (bientôt disponible : explique-le sans inventer d'outil)",
+        "page" => "composer une page (bientôt disponible : explique-le sans inventer d'outil)",
+        _ => null
+    };
 
     /// <summary>
     /// Index compact des états prêts à l'emploi que l'utilisateur courant peut lire. Injecté dans le

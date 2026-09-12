@@ -10,6 +10,9 @@ public sealed class ProjectMilestone : Entity
     public decimal AmountHt { get; private set; }
     public DateTime? DueDate { get; private set; }
     public Guid? InvoicedInvoiceId { get; private set; }
+    public Guid? SalesOrderLineId { get; private set; }
+    public bool IsReached { get; private set; }
+    public DateTime? ReachedAt { get; private set; }
 
     private ProjectMilestone() { }
 
@@ -18,7 +21,8 @@ public sealed class ProjectMilestone : Entity
         string name,
         decimal percent,
         decimal amountHt,
-        DateTime? dueDate)
+        DateTime? dueDate,
+        Guid? salesOrderLineId = null)
     {
         name = name?.Trim() ?? string.Empty;
         if (projectId == Guid.Empty)
@@ -36,8 +40,29 @@ public sealed class ProjectMilestone : Entity
             Name = name.Length > 200 ? name[..200] : name,
             Percent = decimal.Round(percent, 2),
             AmountHt = decimal.Round(amountHt, 3),
-            DueDate = dueDate?.Date
+            DueDate = dueDate?.Date,
+            SalesOrderLineId = salesOrderLineId == Guid.Empty ? null : salesOrderLineId
         });
+    }
+
+    public Result MarkReached(bool manual = false)
+    {
+        if (IsReached)
+            return Result.Success();
+        if (InvoicedInvoiceId.HasValue)
+            return Result.Failure(Error.Validation("Status", "Un jalon déjà facturé ne peut pas être modifié"));
+        IsReached = true;
+        ReachedAt = DateTime.UtcNow;
+        return Result.Success();
+    }
+
+    public Result MarkUnreached()
+    {
+        if (InvoicedInvoiceId.HasValue)
+            return Result.Failure(Error.Validation("Status", "Un jalon déjà facturé ne peut pas être modifié"));
+        IsReached = false;
+        ReachedAt = null;
+        return Result.Success();
     }
 
     public Result Update(string name, decimal percent, decimal amountHt, DateTime? dueDate)

@@ -40,13 +40,13 @@ import {
   ProjectTimeEntry,
   ProjectWorkloadRow,
   ProjectPurchaseOrder,
+  ProjectSettingsPayload,
   UpsertMemberPayload,
   UpsertProjectPayload,
   UpsertTaskPayload
 } from './project-api.service';
 import {
   ProjectTaskStatusCode,
-  billingOptionsForKind,
   canActivate,
   canCancel,
   canComplete,
@@ -57,6 +57,8 @@ import {
   parseProjectKind,
   projectStatusBadge,
   projectUiProfile,
+  showTimeTab,
+  TabKey,
   toIsoDate
 } from './project-enums';
 import { ProjectOverviewTabComponent } from './tabs/project-overview.tab';
@@ -66,13 +68,13 @@ import { ProductOption, ProjectBudgetTabComponent } from './tabs/project-budget.
 import { ProjectTeamTabComponent } from './tabs/project-team.tab';
 import { ProjectFilesTabComponent } from './tabs/project-files.tab';
 import { ProjectBillingTabComponent, SupplierOption } from './tabs/project-billing.tab';
+import { ProjectProfitabilityTabComponent } from './tabs/project-profitability.tab';
 import { ProjectSummarySidebarComponent } from './components/project-summary-sidebar.component';
 import { ProjectDetailHeroComponent } from './components/project-detail-hero.component';
 import { ProjectDetailKpiStripComponent } from './components/project-detail-kpi-strip.component';
 import { ProjectActivityTabComponent } from './tabs/project-activity.tab';
+import { ProjectSettingsTabComponent } from './tabs/project-settings.tab';
 import { ProjectFavoritesService } from './project-favorites.service';
-
-type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'billing' | 'activity';
 
 @Component({
   selector: 'app-project-detail',
@@ -97,10 +99,12 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
     ProjectTeamTabComponent,
     ProjectFilesTabComponent,
     ProjectBillingTabComponent,
+    ProjectProfitabilityTabComponent,
     ProjectSummarySidebarComponent,
     ProjectDetailHeroComponent,
     ProjectDetailKpiStripComponent,
-    ProjectActivityTabComponent
+    ProjectActivityTabComponent,
+    ProjectSettingsTabComponent
   ],
   template: `
     @if (project(); as p) {
@@ -135,12 +139,19 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
           <p-tab value="tasks" [class.proj-tab-emphasis]="isEmphasizedTab('tasks')">
             <i class="pi pi-check-square"></i> Tâches
           </p-tab>
+          @if (showTimeTab(p)) {
           <p-tab value="time" [class.proj-tab-emphasis]="isEmphasizedTab('time')">
             <i class="pi pi-clock"></i> Temps
           </p-tab>
+          }
           <p-tab value="budget" [class.proj-tab-emphasis]="isEmphasizedTab('budget')">
             <i class="pi pi-wallet"></i> Budget
           </p-tab>
+          @if (p.isBillable) {
+          <p-tab value="profitability" [class.proj-tab-emphasis]="isEmphasizedTab('profitability')">
+            <i class="pi pi-chart-line"></i> Rentabilité
+          </p-tab>
+          }
           <p-tab value="team" [class.proj-tab-emphasis]="isEmphasizedTab('team')">
             <i class="pi pi-users"></i> Équipe
           </p-tab>
@@ -152,6 +163,9 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
           </p-tab>
           <p-tab value="activity" [class.proj-tab-emphasis]="isEmphasizedTab('activity')">
             <i class="pi pi-history"></i> Activité
+          </p-tab>
+          <p-tab value="settings">
+            <i class="pi pi-cog"></i> Paramètres
           </p-tab>
         </p-tablist>
         <p-tabpanels>
@@ -180,19 +194,27 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
               (refresh)="reloadTasks()"
               (logTime)="logTimeFromTasks($event)" />
           </p-tabpanel>
+          @if (showTimeTab(p)) {
           <p-tabpanel value="time">
             <app-project-time-tab [project]="p" [entries]="timeEntries()" [tasks]="tasks()"
               [canCreate]="canCreateTime" [canSubmit]="canSubmitTime" [canValidate]="canValidateTime"
               [canActivate]="canUpdate" (create)="createTime($event)" (updateEntry)="updateTime($event)"
               (filterChange)="onTimeFilter($event)" (submitEntry)="submitTime($event)"
-              (validateEntry)="validateTime($event)" (activate)="activate()" />
+              (validateEntry)="validateTime($event)" (deleteEntry)="deleteTime($event)"
+              (reopenEntry)="reopenTime($event)" (activate)="activate()" />
           </p-tabpanel>
+          }
           <p-tabpanel value="budget">
             <app-project-budget-tab [project]="p" [budget]="budget()" [costs]="costs()" [products]="products()"
               [purchaseOrders]="purchaseOrders()" [linkedPurchaseOrders]="linkedPurchaseOrders()"
               [canUpdate]="canUpdate" (cost)="addCost($event)"
               (stockExit)="stockExit($event)" (assignPurchaseOrder)="assignPurchaseOrder($event)" />
           </p-tabpanel>
+          @if (p.isBillable) {
+          <p-tabpanel value="profitability">
+            <app-project-profitability-tab [project]="p" />
+          </p-tabpanel>
+          }
           <p-tabpanel value="team">
             <app-project-team-tab [project]="p" [members]="members()" [users]="users()" [workload]="workload()"
               [canManage]="canManageTeam" (addMember)="addMember($event)" (updateMember)="updateMember($event)"
@@ -221,6 +243,12 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
           <p-tabpanel value="activity">
             <app-project-activity-tab [activities]="activities()" [users]="users()" />
           </p-tabpanel>
+          <p-tabpanel value="settings">
+            <app-project-settings-tab
+              [project]="p"
+              [canUpdate]="canUpdate"
+              (save)="saveSettings($event)" />
+          </p-tabpanel>
         </p-tabpanels>
       </p-tabs>
         </div>
@@ -242,9 +270,6 @@ type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'bil
             <input pInputText class="w-full" [value]="project()?.kindDisplay" readonly />
           </label>
           <label>Description <textarea pTextarea class="w-full" rows="2" [(ngModel)]="editDraft.description"></textarea></label>
-          <label>Facturation
-            <p-select class="w-full" [options]="editBillingOptions()" [(ngModel)]="editDraft.billingMode" optionLabel="label" optionValue="value" />
-          </label>
           <label>Chef de projet
             <p-select class="w-full" [options]="users()" [(ngModel)]="editDraft.ownerUserId" optionLabel="displayName" optionValue="id" [showClear]="true" />
           </label>
@@ -310,7 +335,10 @@ export class ProjectDetailComponent implements OnInit {
   editVisible = false;
   editStart: Date | null = null;
   editEnd: Date | null = null;
-  editDraft: UpsertProjectPayload = { clientId: '', name: '', kind: 'Generic', billingMode: 'None', budgetHt: 0, isBillable: true, timesheetsEnabled: true };
+  editDraft: UpsertProjectPayload = {
+    clientId: '', name: '', kind: 'Generic', billingMode: 'None', budgetHt: 0,
+    isBillable: true, timesheetsEnabled: true, milestonesEnabled: false, allocatedHours: 0, analyticAccountCode: null
+  };
   timeFrom?: string;
   timeTo?: string;
   timeStatus?: string;
@@ -340,10 +368,6 @@ export class ProjectDetailComponent implements OnInit {
     this.favorites.toggle(id);
   }
 
-  editBillingOptions() {
-    return billingOptionsForKind(this.editDraft.kind);
-  }
-
   get canUpdate(): boolean { return this.auth.hasPermission(PERMISSIONS.projects.update); }
   get canCreateTask(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTasks.create); }
   get canUpdateTask(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTasks.update); }
@@ -352,6 +376,8 @@ export class ProjectDetailComponent implements OnInit {
   get canValidateTime(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTime.validate); }
   get canManageTeam(): boolean { return this.auth.hasPermission(PERMISSIONS.projects.manageTeam); }
   get canCreateBilling(): boolean { return this.auth.hasPermission(PERMISSIONS.projectBilling.create); }
+
+  readonly showTimeTab = showTimeTab;
 
   breadcrumbItems(): BreadcrumbItem[] {
     return [
@@ -369,7 +395,7 @@ export class ProjectDetailComponent implements OnInit {
   ngOnInit(): void {
     this.id = this.route.snapshot.paramMap.get('id') ?? '';
     const initialTab = this.route.snapshot.queryParamMap.get('tab') as TabKey | null;
-    if (initialTab && ['overview', 'tasks', 'time', 'budget', 'team', 'files', 'billing', 'activity'].includes(initialTab)) {
+    if (initialTab && ['overview', 'tasks', 'time', 'budget', 'profitability', 'team', 'files', 'billing', 'activity', 'settings'].includes(initialTab)) {
       this.tab.set(initialTab);
     }
     this.api.users().subscribe(r => { if (r.success && r.data) this.users.set(r.data); });
@@ -401,7 +427,17 @@ export class ProjectDetailComponent implements OnInit {
 
   private reloadProject(): void {
     this.api.get(this.id).subscribe({
-      next: r => { if (r.success && r.data) this.project.set(r.data); },
+      next: r => {
+        if (r.success && r.data) {
+          this.project.set(r.data);
+          if (this.tab() === 'time' && !showTimeTab(r.data)) {
+            this.goTab('overview');
+          }
+          if (this.tab() === 'profitability' && !r.data.isBillable) {
+            this.goTab('overview');
+          }
+        }
+      },
       error: err => this.fail(err, 'Chargement du projet')
     });
     this.api.budget(this.id).subscribe({
@@ -480,6 +516,8 @@ export class ProjectDetailComponent implements OnInit {
             });
           }
         });
+        break;
+      case 'profitability':
         break;
       case 'team':
         this.api.members(this.id).subscribe(r => { if (r.success && r.data) this.members.set(r.data); });
@@ -562,7 +600,10 @@ export class ProjectDetailComponent implements OnInit {
       siteAddress: p.siteAddress,
       contractNumber: p.contractNumber,
       isBillable: p.isBillable,
-      timesheetsEnabled: p.timesheetsEnabled
+      timesheetsEnabled: p.timesheetsEnabled,
+      milestonesEnabled: p.milestonesEnabled ?? false,
+      allocatedHours: p.allocatedHours ?? 0,
+      analyticAccountCode: p.analyticAccountCode ?? null
     };
     this.editStart = p.startDate ? new Date(p.startDate) : null;
     this.editEnd = p.endDate ? new Date(p.endDate) : null;
@@ -570,18 +611,64 @@ export class ProjectDetailComponent implements OnInit {
   }
 
   saveEdit(): void {
-    this.api.update(this.id, {
-      ...this.editDraft,
+    this.api.update(this.id, this.buildUpdatePayload(this.editDraft, {
       startDate: toIsoDate(this.editStart),
       endDate: toIsoDate(this.editEnd),
       ownerUserId: this.editDraft.ownerUserId || null
-    }).subscribe({
+    })).subscribe({
       next: r => {
         if (r.success) { this.editVisible = false; this.ok('Projet mis à jour'); this.reloadProject(); }
         else this.toast.add({ severity: 'error', summary: 'Mise à jour impossible', detail: r.message || '' });
       },
       error: err => this.fail(err, 'Mise à jour impossible')
     });
+  }
+
+  saveSettings(settings: ProjectSettingsPayload): void {
+    const p = this.project();
+    if (!p) return;
+    const payload = this.buildUpdatePayload({
+      clientId: p.clientId,
+      name: p.name,
+      description: p.description,
+      kind: parseProjectKind(p.kind) ?? 'Generic',
+      billingMode: settings.billingMode,
+      budgetHt: p.budgetHt,
+      ownerUserId: p.ownerUserId,
+      siteAddress: p.siteAddress,
+      contractNumber: p.contractNumber,
+      isBillable: settings.isBillable,
+      timesheetsEnabled: settings.timesheetsEnabled,
+      milestonesEnabled: settings.milestonesEnabled,
+      allocatedHours: settings.allocatedHours,
+      analyticAccountCode: p.analyticAccountCode ?? null,
+      startDate: p.startDate,
+      endDate: p.endDate
+    });
+    this.api.update(this.id, payload).subscribe({
+      next: r => {
+        if (r.success) {
+          this.ok('Paramètres enregistrés');
+          this.reloadProject();
+          this.loadTab('settings');
+        } else {
+          this.toast.add({ severity: 'error', summary: 'Enregistrement impossible', detail: r.message || '' });
+        }
+      },
+      error: err => this.fail(err, 'Enregistrement impossible')
+    });
+  }
+
+  private buildUpdatePayload(
+    draft: UpsertProjectPayload,
+    overrides: Partial<UpsertProjectPayload> = {}
+  ): UpsertProjectPayload {
+    const merged = { ...draft, ...overrides };
+    return {
+      ...merged,
+      ownerUserId: merged.ownerUserId || null,
+      analyticAccountCode: merged.analyticAccountCode?.trim() || null
+    };
   }
 
   createTask(payload: UpsertTaskPayload): void {
@@ -656,6 +743,20 @@ export class ProjectDetailComponent implements OnInit {
     this.api.validateTime(id).subscribe({
       next: () => { this.ok('Temps validé'); this.loadTab('time'); this.reloadProject(); },
       error: err => this.fail(err, 'Validation impossible')
+    });
+  }
+
+  deleteTime(id: string): void {
+    this.api.deleteTime(id).subscribe({
+      next: () => { this.ok('Temps supprimé'); this.loadTab('time'); },
+      error: err => this.fail(err, 'Suppression impossible')
+    });
+  }
+
+  reopenTime(id: string): void {
+    this.api.reopenTime(id).subscribe({
+      next: () => { this.ok('Temps rouvert en brouillon'); this.loadTab('time'); this.reloadProject(); },
+      error: err => this.fail(err, 'Réouverture impossible')
     });
   }
 

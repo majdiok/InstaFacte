@@ -40,18 +40,18 @@ import { ToastModule } from 'primeng/toast';
 
           <label class="ft-lbl">Source de données *</label>
           <p-select [options]="sources()" [(ngModel)]="sourceId" (ngModelChange)="onSourceChange()"
-            optionLabel="displayName" optionValue="id" [group]="true" appendTo="body" styleClass="ft-w-full"
+            optionLabel="displayName" optionValue="id" [group]="true" appendTo="body" panelStyleClass="studio-theme" styleClass="ft-w-full"
             placeholder="Choisir une table ou source"></p-select>
 
           <ng-container *ngIf="selectedSource() as src">
             <label class="ft-lbl">Regrouper par</label>
             <p-multiSelect [options]="fieldOptions()" [(ngModel)]="grouping" optionLabel="label" optionValue="value"
-              appendTo="body" styleClass="ft-w-full" placeholder="Aucun (rapport détaillé)"></p-multiSelect>
+              appendTo="body" panelStyleClass="studio-theme" styleClass="ft-w-full" placeholder="Aucun (rapport détaillé)"></p-multiSelect>
 
             <ng-container *ngIf="grouping.length === 0">
               <label class="ft-lbl">Colonnes affichées</label>
               <p-multiSelect [options]="fieldOptions()" [(ngModel)]="detailFields" optionLabel="label" optionValue="value"
-                appendTo="body" styleClass="ft-w-full" placeholder="Toutes les colonnes"></p-multiSelect>
+                appendTo="body" panelStyleClass="studio-theme" styleClass="ft-w-full" placeholder="Toutes les colonnes"></p-multiSelect>
             </ng-container>
 
             <ng-container *ngIf="grouping.length > 0">
@@ -60,9 +60,9 @@ import { ToastModule } from 'primeng/toast';
                 <button pButton type="button" icon="fa-solid fa-plus" class="p-button-text p-button-sm" label="Ajouter" (click)="addAgg()"></button>
               </div>
               <div class="ft-line" *ngFor="let a of aggregations; let i = index">
-                <p-select [options]="fnOptions" [(ngModel)]="a.fn" optionLabel="label" optionValue="value" appendTo="body"></p-select>
+                <p-select [options]="fnOptions" [(ngModel)]="a.fn" optionLabel="label" optionValue="value" appendTo="body" panelStyleClass="studio-theme"></p-select>
                 <p-select *ngIf="a.fn !== 'count'" [options]="numericFieldOptions()" [(ngModel)]="a.field" optionLabel="label" optionValue="value"
-                  appendTo="body" styleClass="ft-grow" placeholder="Champ"></p-select>
+                  appendTo="body" panelStyleClass="studio-theme" styleClass="ft-grow" placeholder="Champ"></p-select>
                 <span *ngIf="a.fn === 'count'" class="ft-grow ft-muted">tous les enregistrements</span>
                 <button pButton type="button" icon="fa-solid fa-xmark" class="p-button-text p-button-sm p-button-danger" (click)="removeAgg(i)"></button>
               </div>
@@ -73,8 +73,8 @@ import { ToastModule } from 'primeng/toast';
               <button pButton type="button" icon="fa-solid fa-plus" class="p-button-text p-button-sm" label="Ajouter" (click)="addFilter()"></button>
             </div>
             <div class="ft-line" *ngFor="let f of filters; let i = index">
-              <p-select [options]="fieldOptions()" [(ngModel)]="f.field" optionLabel="label" optionValue="value" appendTo="body" styleClass="ft-grow"></p-select>
-              <p-select [options]="opOptions" [(ngModel)]="f.op" optionLabel="label" optionValue="value" appendTo="body"></p-select>
+              <p-select [options]="fieldOptions()" [(ngModel)]="f.field" optionLabel="label" optionValue="value" appendTo="body" panelStyleClass="studio-theme" styleClass="ft-grow"></p-select>
+              <p-select [options]="opOptions" [(ngModel)]="f.op" optionLabel="label" optionValue="value" appendTo="body" panelStyleClass="studio-theme"></p-select>
               <input pInputText [ngModel]="$any(f).value" (ngModelChange)="f.value = $event" placeholder="Valeur" class="ft-grow" />
               <button pButton type="button" icon="fa-solid fa-xmark" class="p-button-text p-button-sm p-button-danger" (click)="removeFilter(i)"></button>
             </div>
@@ -84,8 +84,8 @@ import { ToastModule } from 'primeng/toast';
               <button pButton type="button" icon="fa-solid fa-plus" class="p-button-text p-button-sm" label="Ajouter" (click)="addSort()"></button>
             </div>
             <div class="ft-line" *ngFor="let s of sort; let i = index">
-              <p-select [options]="sortFieldOptions()" [(ngModel)]="s.field" optionLabel="label" optionValue="value" appendTo="body" styleClass="ft-grow"></p-select>
-              <p-select [options]="dirOptions" [(ngModel)]="s.dir" optionLabel="label" optionValue="value" appendTo="body"></p-select>
+              <p-select [options]="sortFieldOptions()" [(ngModel)]="s.field" optionLabel="label" optionValue="value" appendTo="body" panelStyleClass="studio-theme" styleClass="ft-grow"></p-select>
+              <p-select [options]="dirOptions" [(ngModel)]="s.dir" optionLabel="label" optionValue="value" appendTo="body" panelStyleClass="studio-theme"></p-select>
               <button pButton type="button" icon="fa-solid fa-xmark" class="p-button-text p-button-sm p-button-danger" (click)="removeSort(i)"></button>
             </div>
           </ng-container>

@@ -1,8 +1,13 @@
 import { Routes } from '@angular/router';
 import { permissionGuard } from '@core/guards/permission.guard';
 import { PERMISSIONS } from '@core/config/permission-keys';
+import { StudioShellComponent } from './shared/studio-shell.component';
 
-export const STUDIO_ROUTES: Routes = [
+/**
+ * Routes enfants du module Studio. Elles sont enveloppées par `StudioShellComponent`
+ * (classe `studio-theme`, décision D2) : toute page sous `/studio/**` hérite du thème indigo.
+ */
+export const STUDIO_CHILD_ROUTES: Routes = [
   {
     path: '',
     canActivate: [permissionGuard],
@@ -11,12 +16,28 @@ export const STUDIO_ROUTES: Routes = [
     title: 'Studio — Tables - InstaFact'
   },
   // ---- AI builder (natural-language app generation) ----
+  // L'entrée aiguille vers l'atelier (workbench activé) ou la page legacy (`StudioAiBuilderComponent`).
   {
     path: 'ai',
     canActivate: [permissionGuard],
     data: { permissions: [PERMISSIONS.studio.designEntities] },
-    loadComponent: () => import('./studio-ai-builder.component').then(m => m.StudioAiBuilderComponent),
+    loadComponent: () => import('./ai/studio-ai-entry.component').then(m => m.StudioAiEntryComponent),
     title: 'Assistant Studio (IA) - InstaFact'
+  },
+  // Pages « Voir tout » du rail de l'atelier (déclarées avant `systems/:key`).
+  {
+    path: 'ai/projects',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designEntities] },
+    loadComponent: () => import('./ai/projects/studio-ai-projects-page.component').then(m => m.StudioAiProjectsPageComponent),
+    title: 'Mes projets - InstaFact'
+  },
+  {
+    path: 'ai/templates',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designEntities] },
+    loadComponent: () => import('./ai/templates/studio-ai-templates-page.component').then(m => m.StudioAiTemplatesPageComponent),
+    title: 'Bibliothèque de modèles - InstaFact'
   },
   {
     path: 'systems/:key',
@@ -128,4 +149,8 @@ export const STUDIO_ROUTES: Routes = [
     loadComponent: () => import('./studio-entity-designer.component').then(m => m.StudioEntityDesignerComponent),
     title: 'Concepteur de table - InstaFact'
   }
+];
+
+export const STUDIO_ROUTES: Routes = [
+  { path: '', component: StudioShellComponent, children: STUDIO_CHILD_ROUTES }
 ];

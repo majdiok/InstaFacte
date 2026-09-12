@@ -587,6 +587,7 @@ public sealed class SendChatMessageHandlerFirmGroundingGateTests
                 It.IsAny<AssistantMode>(),
                 It.IsAny<string?>(),
                 It.IsAny<AssistantAgentScope>(),
+                It.IsAny<StudioPromptOptions?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync("Tu es l'assistant Chef de mission.");
 
@@ -646,6 +647,7 @@ public sealed class SendChatMessageHandlerFirmGroundingGateTests
                 It.IsAny<AssistantMode>(),
                 It.IsAny<string?>(),
                 It.IsAny<AssistantAgentScope>(),
+                It.IsAny<StudioPromptOptions?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync("Tu es l'assistant Chef de mission.");
 

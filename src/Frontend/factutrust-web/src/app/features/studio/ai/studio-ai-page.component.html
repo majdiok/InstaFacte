@@ -1,0 +1,123 @@
+<app-studio-page-shell [breadcrumbs]="breadcrumbs">
+  <div class="studio-ai-page">
+    <app-studio-ai-header
+      class="studio-ai-page__header"
+      [showNewRequest]="showConversation()"
+      [busy]="store.busy()"
+      (newRequest)="newRequest()" />
+
+    <!-- Composer partagé par les vues « compose » (héros) et « preview » (suivi) : seule la classe hôte diffère. -->
+    <ng-template #composer let-followupClass="followupClass">
+      <app-studio-ai-composer
+        [class]="followupClass"
+        [disabled]="composerDisabled()"
+        [prefill]="prefill()"
+        [placeholder]="labels.page.composerPlaceholder"
+        [advancedModelAvailable]="capabilities.capabilities().advancedModelAvailable"
+        [advancedModelLabel]="capabilities.capabilities().advancedModelLabel ?? null"
+        [useAdvancedModel]="store.useAdvancedModel()"
+        (advancedModelChange)="setAdvancedModel($event)"
+        (submitted)="submit($event)" />
+    </ng-template>
+
+    <section class="studio-ai-page__main" aria-live="polite">
+      @if (store.advancedModelFellBack()) {
+        <div class="studio-ai-page__model" role="status" data-testid="model-fallback">
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          <span>{{ modelFallbackText() }}</span>
+        </div>
+      } @else if (store.usedAdvancedModel() === true) {
+        <div class="studio-ai-page__model studio-ai-page__model--advanced" role="status" data-testid="model-advanced">
+          <i class="fa-solid fa-bolt" aria-hidden="true"></i>
+          <span>{{ labels.model.usedAdvanced }}</span>
+        </div>
+      }
+
+      @switch (mainView()) {
+        @case ('compose') {
+          <div class="studio-ai-page__hero">
+            <h2 class="studio-ai-page__hero-title">{{ labels.page.heroTitle }}</h2>
+            <p class="studio-ai-page__hero-hint">{{ labels.page.heroHint }}</p>
+          </div>
+
+          <ng-container *ngTemplateOutlet="composer" />
+
+          @if (store.error(); as error) {
+            <div class="studio-ai-page__error" role="alert">
+              <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              <span>{{ error }}</span>
+              @if (store.lastPrompt()) {
+                <p-button [label]="labels.conversation.retry" [link]="true" size="small" (onClick)="store.retry()" />
+              }
+            </div>
+          }
+
+          <app-studio-ai-intent-cards
+            [capabilities]="capabilities.capabilities()"
+            [disabled]="composerDisabled()"
+            (pick)="pickIntent($event)" />
+        }
+        @case ('preview') {
+          <app-studio-ai-preview
+            [(activeTab)]="previewTab"
+            (confirmRequested)="openConfirm()" />
+
+          <ng-container *ngTemplateOutlet="composer; context: { followupClass: 'studio-ai-page__followup' }" />
+        }
+        @case ('progress') {
+          <app-studio-ai-progress [steps]="store.buildSteps()" />
+        }
+        @case ('result') {
+          <app-studio-ai-result-card
+            [result]="store.result()!"
+            [actions]="store.actions()"
+            (open)="store.openCreated($event)"
+            (navigate)="store.go($event)"
+            (newRequest)="newRequest()" />
+        }
+      }
+
+      @if (showConversation()) {
+        <app-studio-ai-conversation
+          class="studio-ai-page__conversation"
+          [items]="store.timeline()"
+          [suggestions]="store.suggestions()"
+          [status]="store.status()"
+          [busy]="store.busy()"
+          [error]="mainView() === 'compose' ? null : store.error()"
+          [lastPrompt]="store.lastPrompt()"
+          [(collapsed)]="conversationCollapsed"
+          (retry)="store.retry()"
+          (usePrompt)="usePrompt($event)"
+          (useSuggestion)="usePrompt($event)" />
+      }
+    </section>
+
+    <app-studio-ai-rail
+      class="studio-ai-page__rail"
+      [capabilities]="capabilities.capabilities()"
+      [templates]="templates()"
+      [templatesLoading]="templatesLoading()"
+      [templatesError]="templatesError()"
+      [history]="store.history()"
+      [historyLoading]="store.historyLoading()"
+      [historyError]="store.historyError()"
+      [busy]="store.busy()"
+      (useTemplate)="useTemplate($event)"
+      (reset)="resetFromRail()"
+      (importTemplate)="comingSoon()"
+      (duplicate)="comingSoon()"
+      (exportSystem)="comingSoon()"
+      (openPlan)="openHistoryPlan($event)"
+      (tryPrompt)="tryPrompt($event)" />
+  </div>
+</app-studio-page-shell>
+
+<app-studio-ai-confirm-dialog
+  [(visible)]="confirmVisible"
+  [plan]="store.plan()"
+  [counters]="store.counters()"
+  [warnings]="store.warnings()"
+  [busy]="store.busy()"
+  (confirmed)="confirm()"
+  (cancelled)="confirmVisible.set(false)" />

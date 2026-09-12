@@ -45,15 +45,18 @@ import { PERMISSIONS } from '@core/config/permission-keys';
 import { ProjectApiService, ProjectListItem, ProjectTask, ProjectTimeEntry } from './project-api.service';
 
 import {
-
-  canReceiveTime,
-
+  canCreateTimeEntry,
+  canDeleteTimeEntry,
+  canEditTimeEntry,
+  canReopenSubmittedTimeEntry,
+  canReopenValidatedTimeEntry,
+  canSubmitTimeEntry,
+  canValidateTimeEntry,
   parseProjectTimeStatus,
-
-  timeStatusBadge,
-
+  timeEntryCreationBlockedMessage,
+  timeEntryStatusBadge,
+  timeEntryStatusLabel,
   toIsoDate
-
 } from './project-enums';
 
 
@@ -148,15 +151,12 @@ const TIME_STATUS_FILTER_OPTIONS = [
 
     </div>
 
-    @if (selectedProject() && !canReceiveTime(selectedProject()!.status)) {
-
+    @if (selectedProject() && !canCreateTimeEntry(selectedProject()!)) {
       <p-message severity="warn" styleClass="w-full mb-3"
-
-        text="Activez le projet pour saisir du temps. La saisie est réservée aux projets Actif." />
-
+        [text]="timeLoggingBlockedMessage(selectedProject()!)" />
     }
 
-    @if (selectedProject() && canReceiveTime(selectedProject()!.status) && canCreate) {
+    @if (selectedProject() && canCreateTimeEntry(selectedProject()!) && canCreate) {
 
       <div class="card p-3 mb-3">
 
@@ -229,35 +229,45 @@ const TIME_STATUS_FILTER_OPTIONS = [
           <td>{{ e.isBillable ? 'Oui' : 'Non' }}</td>
 
           <td>
-
-            <app-status-badge [status]="timeStatusBadge(e.status)" [label]="e.statusDisplay" />
-
+            <app-status-badge [status]="timeEntryStatusBadge(e)" [label]="timeEntryStatusLabel(e)" />
           </td>
 
           <td class="proj-time-row-actions">
 
-            @if (parseProjectTimeStatus(e.status) === 'Draft' && canCreate) {
-
+            @if (canEditTimeEntry(e) && canCreate) {
               <app-button size="sm" variant="ghost" icon="pi-pencil" [iconOnly]="true"
                 [iconAlwaysVisible]="true" pTooltip="Modifier" tooltipPosition="top"
                 ariaLabel="Modifier" (click)="openEdit(e)" />
-
             }
 
-            @if (parseProjectTimeStatus(e.status) === 'Draft' && canSubmit) {
+            @if (canDeleteTimeEntry(e) && canCreate) {
+              <app-button size="sm" variant="ghost" icon="pi-trash" [iconOnly]="true"
+                [iconAlwaysVisible]="true" pTooltip="Supprimer" tooltipPosition="top"
+                ariaLabel="Supprimer" (click)="deleteEntry(e.id)" />
+            }
 
+            @if (canSubmitTimeEntry(e) && canSubmit) {
               <app-button size="sm" variant="ghost" icon="pi-send" [iconOnly]="true"
                 [iconAlwaysVisible]="true" pTooltip="Soumettre" tooltipPosition="top"
                 ariaLabel="Soumettre" (click)="submit(e.id)" />
-
             }
 
-            @if (parseProjectTimeStatus(e.status) === 'Submitted' && canValidate) {
-
+            @if (canValidateTimeEntry(e) && canValidate) {
               <app-button size="sm" variant="primary" icon="pi-check" [iconOnly]="true"
                 [iconAlwaysVisible]="true" pTooltip="Valider" tooltipPosition="top"
                 ariaLabel="Valider" (click)="validate(e.id)" />
+            }
 
+            @if (canReopenSubmittedTimeEntry(e) && canSubmit) {
+              <app-button size="sm" variant="ghost" icon="pi-undo" [iconOnly]="true"
+                [iconAlwaysVisible]="true" pTooltip="Rouvrir en brouillon" tooltipPosition="top"
+                ariaLabel="Rouvrir en brouillon" (click)="reopen(e.id)" />
+            }
+
+            @if (canReopenValidatedTimeEntry(e) && canValidate) {
+              <app-button size="sm" variant="ghost" icon="pi-undo" [iconOnly]="true"
+                [iconAlwaysVisible]="true" pTooltip="Rouvrir en brouillon" tooltipPosition="top"
+                ariaLabel="Rouvrir en brouillon" (click)="reopen(e.id)" />
             }
 
             @if (e.invoicedInvoiceId) {
@@ -400,11 +410,16 @@ export class ProjectTimeComponent implements OnInit {
 
 
 
-  readonly canReceiveTime = canReceiveTime;
-
+  readonly canCreateTimeEntry = canCreateTimeEntry;
   readonly parseProjectTimeStatus = parseProjectTimeStatus;
-
-  readonly timeStatusBadge = timeStatusBadge;
+  readonly canEditTimeEntry = canEditTimeEntry;
+  readonly canDeleteTimeEntry = canDeleteTimeEntry;
+  readonly canSubmitTimeEntry = canSubmitTimeEntry;
+  readonly canValidateTimeEntry = canValidateTimeEntry;
+  readonly canReopenSubmittedTimeEntry = canReopenSubmittedTimeEntry;
+  readonly canReopenValidatedTimeEntry = canReopenValidatedTimeEntry;
+  readonly timeEntryStatusBadge = timeEntryStatusBadge;
+  readonly timeEntryStatusLabel = timeEntryStatusLabel;
 
 
 
@@ -422,13 +437,21 @@ export class ProjectTimeComponent implements OnInit {
 
   }
 
+  timeLoggingBlockedMessage(project: ProjectListItem): string {
+    return timeEntryCreationBlockedMessage(project.status);
+  }
+
 
 
   ngOnInit(): void {
 
     this.api.list({ page: 1, pageSize: 100 }).subscribe({
 
-      next: r => { if (r.success && r.data) this.projects.set(r.data.items); },
+      next: r => {
+        if (r.success && r.data) {
+          this.projects.set(r.data.items.filter(p => canCreateTimeEntry(p)));
+        }
+      },
 
       error: err => this.error.set(this.errors.extractErrorMessage(err))
 
@@ -634,6 +657,26 @@ export class ProjectTimeComponent implements OnInit {
 
     });
 
+  }
+
+  deleteEntry(id: string): void {
+    this.api.deleteTime(id).subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Temps supprimé' });
+        this.load();
+      },
+      error: err => this.error.set(this.errors.extractErrorMessage(err))
+    });
+  }
+
+  reopen(id: string): void {
+    this.api.reopenTime(id).subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Temps rouvert en brouillon' });
+        this.load();
+      },
+      error: err => this.error.set(this.errors.extractErrorMessage(err))
+    });
   }
 
 }

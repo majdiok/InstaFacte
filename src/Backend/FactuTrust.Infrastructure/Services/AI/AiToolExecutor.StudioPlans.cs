@@ -24,7 +24,9 @@ public sealed partial class AiToolExecutor
         if (!StudioAiAppSpec.TryParse(specJson, out var spec, out var parseError) || spec is null)
             return AiToolResult.Error(parseError ?? "Spécification d'application invalide.");
 
-        return await CreatePlanAsync(StudioAiPlanKind.CreateApp, specJson!, StudioAiPlanSummary.ForApp(spec), ct);
+        var duplicates = await StudioAiPlanCreation.DetectDuplicatesAsync(
+            StudioAiPlanKind.CreateApp, specJson!, _customEntities, _currentUser, ct);
+        return await CreatePlanAsync(StudioAiPlanKind.CreateApp, specJson!, StudioAiPlanSummary.ForApp(spec, duplicates), ct);
     }
 
     private async Task<AiToolResult> HandleStudioPlanSystem(Dictionary<string, object?> args, CancellationToken ct)
@@ -38,7 +40,9 @@ public sealed partial class AiToolExecutor
         if (!StudioAiSystemSpec.TryParse(specJson, out var spec, out var parseError) || spec is null)
             return AiToolResult.Error(parseError ?? "Spécification système invalide.");
 
-        return await CreatePlanAsync(StudioAiPlanKind.CreateSystem, specJson!, StudioAiPlanSummary.ForSystem(spec), ct);
+        var duplicates = await StudioAiPlanCreation.DetectDuplicatesAsync(
+            StudioAiPlanKind.CreateSystem, specJson!, _customEntities, _currentUser, ct);
+        return await CreatePlanAsync(StudioAiPlanKind.CreateSystem, specJson!, StudioAiPlanSummary.ForSystem(spec, duplicates), ct);
     }
 
     private async Task<AiToolResult> HandleStudioPlanChanges(Dictionary<string, object?> args, CancellationToken ct)

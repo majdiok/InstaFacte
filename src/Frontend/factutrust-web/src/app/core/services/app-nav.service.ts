@@ -339,6 +339,13 @@ export class AppNavService {
         modules: [AppModule.Studio],
         permissionsAll: [PERMISSIONS.studio.designReports]
       },
+      {
+        label: 'Assistant IA',
+        route: '/studio/ai',
+        icon: 'fa-solid fa-wand-magic-sparkles',
+        modules: [AppModule.Studio],
+        permissionsAll: [PERMISSIONS.studio.designEntities]
+      },
       ...this.studioNav.items().map<NavSubItem>(e => ({
         label: e.label,
         route: e.route.startsWith('/') ? e.route : `/studio/d/${e.key}`,

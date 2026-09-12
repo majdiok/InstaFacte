@@ -4,6 +4,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Studio;
+using FactuTrust.Domain.Enums;
 using MediatR;
 
 namespace FactuTrust.Application.Features.Studio.Entities;
@@ -77,7 +78,13 @@ public sealed class GetCustomEntityByIdQueryHandler
 
 // ---- Create ----
 
-public sealed record CreateCustomEntityCommand(CreateCustomEntityRequest Request) : IRequest<Result<CustomEntityDto>>;
+/// <param name="AllowJunction">
+/// Réservé à la commande N‑N (<c>Studio.Relation</c>) : une table de jonction (deux <c>RelationCustom</c>
+/// requis, unicité de paire) ne se crée que là. Tout autre appel (API publique, IA) reçoit
+/// <c>Validation.kind</c> s'il demande <c>CustomEntityKind.Junction</c> — une jonction dégénérée ne
+/// serait ni dans la nav ni protégée par le contrôle de paire.
+/// </param>
+public sealed record CreateCustomEntityCommand(CreateCustomEntityRequest Request, bool AllowJunction = false) : IRequest<Result<CustomEntityDto>>;
 
 public sealed class CreateCustomEntityCommandHandler
     : IRequestHandler<CreateCustomEntityCommand, Result<CustomEntityDto>>
@@ -108,7 +115,10 @@ public sealed class CreateCustomEntityCommandHandler
                 "La clé doit commencer par une lettre et ne contenir que minuscules, chiffres et « _ » (2 à 64 caractères)."));
         if (string.IsNullOrWhiteSpace(req.DisplayName))
             return Result.Failure<CustomEntityDto>(Error.Validation("displayName", "Le nom est obligatoire."));
-        if (await _entities.KeyExistsAsync(tenantId, key, cancellationToken))
+        if (req.Kind == CustomEntityKind.Junction && !command.AllowJunction)
+            return Result.Failure<CustomEntityDto>(Error.Validation("kind",
+                "Les tables de jonction se créent via une relation plusieurs-à-plusieurs."));
+        if (await _entities.KeyExistsAsync(tenantId, key, cancellationToken: cancellationToken))
             return Result.Failure<CustomEntityDto>(Error.Conflict($"Une table avec la clé « {key} » existe déjà."));
 
         var count = await _entities.CountAsync(tenantId, cancellationToken);
@@ -118,11 +128,11 @@ public sealed class CreateCustomEntityCommandHandler
 
         var plural = string.IsNullOrWhiteSpace(req.DisplayNamePlural) ? req.DisplayName.Trim() : req.DisplayNamePlural.Trim();
         var entity = CustomEntityDefinition.Create(tenantId, key, req.DisplayName.Trim(), plural,
-            req.Icon?.Trim(), req.Description?.Trim(), userId, req.SystemId);
+            req.Icon?.Trim(), req.Description?.Trim(), userId, req.SystemId, req.Kind);
 
         await _entities.AddAsync(entity, cancellationToken);
         await StudioAudit.SafeLogAsync(_audit, "Studio.Entity.Created", "CustomEntity", entity.Id,
-            null, new { entity.Key, entity.DisplayName }, cancellationToken);
+            null, new { entity.Key, entity.DisplayName, Kind = entity.Kind.ToString() }, cancellationToken);
         return Result.Success(StudioMappers.ToDto(entity, 0));
     }
 }
