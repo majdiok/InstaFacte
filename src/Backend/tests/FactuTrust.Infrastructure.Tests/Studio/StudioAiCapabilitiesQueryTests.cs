@@ -67,8 +67,9 @@ public sealed class StudioAiCapabilitiesQueryTests
 
     /// <summary>
     /// PR 2.1 : <c>ManyToManyEnabled</c> suit <c>Ollama:EnableStudioManyToMany</c> (indépendant du
-    /// workbench) ; les cinq autres drapeaux du programme (vues, export, workflows) restent faux tant que
-    /// leur fonctionnalité n'est pas livrée — même quand tout le reste est levé.
+    /// workbench) ; les autres drapeaux non livrés (outils de vues, export, workflows) restent faux tant
+    /// que leur fonctionnalité n'existe pas — même quand tout le reste est levé. PR 2.3 :
+    /// <c>RecordViewsEnabled</c> suit désormais <c>Ollama:EnableStudioRecordViews</c>.
     /// </summary>
     [Fact]
     public async Task ManyToMany_follows_its_flag_and_future_program_flags_stay_false()
@@ -83,7 +84,7 @@ public sealed class StudioAiCapabilitiesQueryTests
         }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
 
         Assert.True(enabled.Value.ManyToManyEnabled);
-        Assert.False(enabled.Value.RecordViewsEnabled);
+        Assert.False(enabled.Value.RecordViewsEnabled); // pas de EnableStudioRecordViews ⇒ faux
         Assert.False(enabled.Value.RecordViewToolsEnabled);
         Assert.False(enabled.Value.SystemExportEnabled);
         Assert.False(enabled.Value.WorkflowsEnabled);
@@ -105,6 +106,28 @@ public sealed class StudioAiCapabilitiesQueryTests
             EnableStudioAiWorkbench = false
         }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
         Assert.True(withoutWorkbench.Value.ManyToManyEnabled);
+    }
+
+    /// <summary>
+    /// PR 2.3 : <c>RecordViewsEnabled</c> suit <c>Ollama:EnableStudioRecordViews</c> (indépendant du
+    /// workbench) ; <c>RecordViewToolsEnabled</c> (outils IA, PR 2.4) reste faux.
+    /// </summary>
+    [Fact]
+    public async Task RecordViews_follows_its_flag_and_view_tools_stay_false()
+    {
+        var enabled = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioRecordViews = true
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+
+        Assert.True(enabled.Value.RecordViewsEnabled);
+        Assert.False(enabled.Value.RecordViewToolsEnabled);
+
+        var disabled = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioRecordViews = false
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+        Assert.False(disabled.Value.RecordViewsEnabled);
     }
 
     [Fact]

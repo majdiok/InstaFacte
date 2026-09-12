@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using FactuTrust.API.Authorization;
 using FactuTrust.API.Controllers.Studio;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Records;
@@ -52,7 +53,7 @@ public sealed class StudioRecordsControllerContractTests
         mediator.Setup(m => m.Send(It.IsAny<ListCustomRecordsQuery>(), It.IsAny<CancellationToken>()))
             .Callback((IRequest<Result<PagedResult<CustomRecordDto>>> q, CancellationToken _) => captured = (ListCustomRecordsQuery)q)
             .ReturnsAsync(Result.Success(PagedResult<CustomRecordDto>.Create(Array.Empty<CustomRecordDto>(), 1, 50, 0)));
-        var controller = new StudioRecordsController(mediator.Object);
+        var controller = CreateController(mediator);
 
         var result = await controller.List(EntityKey, "dupont", 2, 50, "employes", "0f8fad5b-d9cb-469f-a165-70867728950e", CancellationToken.None);
 
@@ -76,7 +77,7 @@ public sealed class StudioRecordsControllerContractTests
             .Callback((IRequest<Result<PagedResult<CustomRecordDto>>> q, CancellationToken _) => captured = (ListCustomRecordsQuery)q)
             .ReturnsAsync(Result.Success(PagedResult<CustomRecordDto>.Create(Array.Empty<CustomRecordDto>(), 1, 25, 0)));
 
-        await new StudioRecordsController(mediator.Object).List(EntityKey, null, 1, 25, null, null, CancellationToken.None);
+        await CreateController(mediator).List(EntityKey, null, 1, 25, null, null, CancellationToken.None);
 
         Assert.NotNull(captured);
         Assert.Null(captured!.FilterField);
@@ -99,7 +100,7 @@ public sealed class StudioRecordsControllerContractTests
             .Callback((IRequest<Result<PagedResult<CustomRecordDto>>> q, CancellationToken _) => captured = (ListCustomRecordsQuery)q)
             .ReturnsAsync(Result.Success(PagedResult<CustomRecordDto>.Create(Array.Empty<CustomRecordDto>(), 1, expected, 0)));
 
-        await new StudioRecordsController(mediator.Object).List(EntityKey, null, 1, requested, null, null, CancellationToken.None);
+        await CreateController(mediator).List(EntityKey, null, 1, requested, null, null, CancellationToken.None);
 
         Assert.Equal(expected, captured!.PageSize);
     }
@@ -111,7 +112,7 @@ public sealed class StudioRecordsControllerContractTests
         mediator.Setup(m => m.Send(It.IsAny<ListCustomRecordsQuery>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure<PagedResult<CustomRecordDto>>(Error.Validation("filterField", "Champ de filtre inconnu : « nope ».")));
 
-        var result = await new StudioRecordsController(mediator.Object)
+        var result = await CreateController(mediator)
             .List(EntityKey, null, 1, 25, "nope", "x", CancellationToken.None);
 
         var bad = Assert.IsType<BadRequestObjectResult>(result);
@@ -127,7 +128,7 @@ public sealed class StudioRecordsControllerContractTests
         mediator.Setup(m => m.Send(It.IsAny<CreateCustomRecordCommand>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure<CustomRecordDto>(new Error(StudioErrorCodes.RecordDuplicateLink, "Ce lien existe déjà entre ces deux enregistrements.")));
 
-        var result = await new StudioRecordsController(mediator.Object).Create(EntityKey, Payload(), CancellationToken.None);
+        var result = await CreateController(mediator).Create(EntityKey, Payload(), CancellationToken.None);
 
         var conflict = Assert.IsType<ConflictObjectResult>(result);
         Assert.Equal(409, conflict.StatusCode);
@@ -143,7 +144,7 @@ public sealed class StudioRecordsControllerContractTests
         mediator.Setup(m => m.Send(It.IsAny<UpdateCustomRecordCommand>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure<CustomRecordDto>(new Error(StudioErrorCodes.RecordDuplicateLink, "Ce lien existe déjà entre ces deux enregistrements.")));
 
-        var result = await new StudioRecordsController(mediator.Object).Update(EntityKey, Guid.NewGuid(), Payload(), CancellationToken.None);
+        var result = await CreateController(mediator).Update(EntityKey, Guid.NewGuid(), Payload(), CancellationToken.None);
 
         Assert.IsType<ConflictObjectResult>(result);
     }
@@ -161,7 +162,7 @@ public sealed class StudioRecordsControllerContractTests
             .ReturnsAsync(Result.Failure<CustomRecordDto>(new Error(code, message)));
         mediator.Setup(m => m.Send(It.IsAny<UpdateCustomRecordCommand>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure<CustomRecordDto>(new Error(code, message)));
-        var controller = new StudioRecordsController(mediator.Object);
+        var controller = CreateController(mediator);
 
         var created = Assert.IsType<BadRequestObjectResult>(await controller.Create(EntityKey, Payload(), CancellationToken.None));
         var updated = Assert.IsType<BadRequestObjectResult>(await controller.Update(EntityKey, Guid.NewGuid(), Payload(), CancellationToken.None));
@@ -182,13 +183,16 @@ public sealed class StudioRecordsControllerContractTests
         mediator.Setup(m => m.Send(It.IsAny<CreateCustomRecordCommand>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(dto));
 
-        var result = await new StudioRecordsController(mediator.Object).Create(EntityKey, Payload(), CancellationToken.None);
+        var result = await CreateController(mediator).Create(EntityKey, Payload(), CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<CustomRecordDto>>(ok.Value);
         Assert.True(body.Success);
         Assert.Equal(dto.Id, body.Data!.Id);
     }
+
+    private static StudioRecordsController CreateController(Mock<IMediator> mediator, bool recordViewsEnabled = false) =>
+        new(mediator.Object, Microsoft.Extensions.Options.Options.Create(new OllamaSettings { EnableStudioRecordViews = recordViewsEnabled }));
 
     private static SaveCustomRecordRequest Payload() => new(new Dictionary<string, JsonNode?>
     {
