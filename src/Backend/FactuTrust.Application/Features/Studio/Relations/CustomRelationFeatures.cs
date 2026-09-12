@@ -114,28 +114,43 @@ public sealed class CreateManyToManyRelationCommandHandler
                 ? $"Table de jonction {source.Key} ↔ {target.Key} (relation plusieurs-à-plusieurs)."
                 : $"{label} — table de jonction {source.Key} ↔ {target.Key}.",
             source.SystemId,
-            CustomEntityKind.Junction)), cancellationToken);
+            CustomEntityKind.Junction),
+            AllowJunction: true), cancellationToken);
         if (entityResult.IsFailure)
             return Result.Failure<ManyToManyRelationDto>(entityResult.Error);
 
         var junction = entityResult.Value;
 
-        // (5) Two required RelationCustom fields, strictly sequential; compensate on failure (7).
+        // (5) Two required RelationCustom fields, strictly sequential; compensate on failure (7) —
+        // on a failed Result AND on an exception (timeout SQL, DbUpdateException, cancellation):
+        // otherwise the junction would stay active with 0 or 1 field (hidden from the nav, unprotected
+        // by the pair check).
         var (sourceFieldKey, targetFieldKey) = ResolveFieldKeys(source.Key, target.Key);
 
-        var sourceFieldResult = await _mediator.Send(new CreateCustomFieldCommand(junction.Id, new CreateCustomFieldRequest(
-            sourceFieldKey, source.DisplayName, CustomFieldType.RelationCustom,
-            IsRequired: true, IsUnique: false, Rules: null, Options: null,
-            Relation: new RelationRefDto("custom", source.Key))), cancellationToken);
-        if (sourceFieldResult.IsFailure)
-            return await CompensateAsync(junction.Id, sourceFieldResult.Error, cancellationToken);
+        Result<CustomFieldDto> sourceFieldResult;
+        Result<CustomFieldDto> targetFieldResult;
+        try
+        {
+            sourceFieldResult = await _mediator.Send(new CreateCustomFieldCommand(junction.Id, new CreateCustomFieldRequest(
+                sourceFieldKey, source.DisplayName, CustomFieldType.RelationCustom,
+                IsRequired: true, IsUnique: false, Rules: null, Options: null,
+                Relation: new RelationRefDto("custom", source.Key))), cancellationToken);
+            if (sourceFieldResult.IsFailure)
+                return await CompensateAsync(junction.Id, sourceFieldResult.Error, cancellationToken);
 
-        var targetFieldResult = await _mediator.Send(new CreateCustomFieldCommand(junction.Id, new CreateCustomFieldRequest(
-            targetFieldKey, target.DisplayName, CustomFieldType.RelationCustom,
-            IsRequired: true, IsUnique: false, Rules: null, Options: null,
-            Relation: new RelationRefDto("custom", target.Key))), cancellationToken);
-        if (targetFieldResult.IsFailure)
-            return await CompensateAsync(junction.Id, targetFieldResult.Error, cancellationToken);
+            targetFieldResult = await _mediator.Send(new CreateCustomFieldCommand(junction.Id, new CreateCustomFieldRequest(
+                targetFieldKey, target.DisplayName, CustomFieldType.RelationCustom,
+                IsRequired: true, IsUnique: false, Rules: null, Options: null,
+                Relation: new RelationRefDto("custom", target.Key))), cancellationToken);
+            if (targetFieldResult.IsFailure)
+                return await CompensateAsync(junction.Id, targetFieldResult.Error, cancellationToken);
+        }
+        catch
+        {
+            // Compensate with CancellationToken.None so an aborted request still cleans up, then rethrow.
+            await CompensateSafelyAsync(junction.Id);
+            throw;
+        }
 
         // R10: non-unique jx_ indexes so the « Liés » filter and the pair check seek instead of scan (best-effort).
         await _jsonIndex.EnsureFieldIndexAsync(tenantId, sourceFieldKey, cancellationToken);
@@ -162,7 +177,10 @@ public sealed class CreateManyToManyRelationCommandHandler
             if (!StudioKey.IsValidShape(key))
                 return Result.Failure<string>(Error.Validation("junctionKey",
                     "La clé doit commencer par une lettre et ne contenir que minuscules, chiffres et « _ » (2 à 64 caractères)."));
-            if (await _entities.KeyExistsAsync(tenantId, key, ct))
+            // includeDeleted: the unique index IX_CustomEntityDefinitions_TenantId_Key is NOT filtered on
+            // IsDeleted — a soft-deleted key can never be re-inserted (designer deleted a junction, or a
+            // compensated retry), so it must count as taken.
+            if (await _entities.KeyExistsAsync(tenantId, key, includeDeleted: true, ct))
                 return Result.Failure<string>(Error.Conflict($"Une table avec la clé « {key} » existe déjà."));
             return Result.Success(key);
         }
@@ -171,14 +189,14 @@ public sealed class CreateManyToManyRelationCommandHandler
         if (!StudioKey.IsValidShape(baseKey))
             return Result.Failure<string>(Error.Validation("junctionKey", "Impossible de dériver une clé de jonction valide ; fournissez junctionKey."));
 
-        if (!await _entities.KeyExistsAsync(tenantId, baseKey, ct))
+        if (!await _entities.KeyExistsAsync(tenantId, baseKey, includeDeleted: true, ct))
             return Result.Success(baseKey);
 
         for (var i = 2; i <= MaxDefaultKeySuffix; i++)
         {
             var suffix = "_" + i;
             var candidate = Truncate(baseKey, StudioKey.MaxLength - suffix.Length) + suffix;
-            if (!await _entities.KeyExistsAsync(tenantId, candidate, ct))
+            if (!await _entities.KeyExistsAsync(tenantId, candidate, includeDeleted: true, ct))
                 return Result.Success(candidate);
         }
 
@@ -214,6 +232,19 @@ public sealed class CreateManyToManyRelationCommandHandler
             // Best-effort compensation: the original error is what the caller needs to see.
         }
         return Result.Failure<ManyToManyRelationDto>(error);
+    }
+
+    /// <summary>Compensation après une exception : jamais annulée, jamais masquante pour l'exception d'origine.</summary>
+    private async Task CompensateSafelyAsync(Guid junctionId)
+    {
+        try
+        {
+            await _mediator.Send(new DeleteCustomEntityCommand(junctionId), CancellationToken.None);
+        }
+        catch
+        {
+            // Best-effort compensation: the original exception is what the caller needs to see.
+        }
     }
 }
 
@@ -274,14 +305,18 @@ public static class EntityRelationResolver
 
         var result = new List<EntityRelationDto>();
 
-        // Sequential reads (one DbContext at a time — never Task.WhenAll over the same repository).
+        // One read for every RelationCustom field of the tenant (N+1 avoided: the schema endpoint is
+        // called at each runtime form/table open, and there are up to MaxEntities entities). The
+        // repository returns them ordered by (entity, SortOrder, key); active only.
+        var relationFields = await fields.ListByTypeAsync(tenantId, CustomFieldType.RelationCustom, includeInactive: false, cancellationToken);
+        var fieldsByOwner = relationFields.GroupBy(f => f.EntityDefinitionId);
+
         foreach (var owner in all)
         {
-            var ownerFields = await fields.ListByEntityAsync(tenantId, owner.Id, includeInactive: false, cancellationToken);
-            var links = ownerFields
-                .Where(f => f.IsActive && f.FieldType == CustomFieldType.RelationCustom)
-                .OrderBy(f => f.SortOrder)
-                .ThenBy(f => f.Key, StringComparer.Ordinal)
+            var links = fieldsByOwner
+                .Where(g => g.Key == owner.Id)
+                .SelectMany(g => g)
+                .Where(f => f.IsActive)
                 .Select(f => (Field: f, Target: ResolveTarget(f, byKey)))
                 .Where(x => x.Target is not null)
                 .Select(x => (x.Field, Target: x.Target!))

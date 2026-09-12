@@ -29,7 +29,7 @@ public sealed class StudioComputedFieldReaderTests
         public Task<IReadOnlyList<CustomEntityDefinition>> ListAsync(Guid t, bool inc, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<IReadOnlyList<CustomEntityDefinition>> ListBySystemIdAsync(Guid t, Guid systemId, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<CustomEntityDefinition>>(Array.Empty<CustomEntityDefinition>());
-        public Task<bool> KeyExistsAsync(Guid t, string k, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> KeyExistsAsync(Guid t, string k, bool includeDeleted = false, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<int> CountAsync(Guid t, CancellationToken ct = default) => throw new NotImplementedException();
         public Task AddAsync(CustomEntityDefinition e, CancellationToken ct = default) => throw new NotImplementedException();
         public Task UpdateAsync(CustomEntityDefinition e, CancellationToken ct = default) => throw new NotImplementedException();

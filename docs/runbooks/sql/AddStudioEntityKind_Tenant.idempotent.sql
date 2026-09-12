@@ -3,6 +3,10 @@
 -- Studio IA — PR 2.1 (relations plusieurs-à-plusieurs) : ajoute la colonne
 -- CustomEntityDefinitions.Kind (int NOT NULL, défaut 0 = Standard ; 1 = Junction) et l'index
 -- (TenantId, Kind). Aucune ligne existante n'est modifiée (défaut SQL), aucune table créée.
+--
+-- Note : `RETURN` ne sort que du batch courant (jusqu'au prochain `GO`) — les batches suivants
+-- s'exécutent toujours. Le script reste rejouable parce que CHAQUE batch est gardé
+-- (COL_LENGTH / sys.indexes / __EFMigrationsHistory), pas grâce au court-circuit d'en-tête.
 
 IF EXISTS (
     SELECT * FROM [__EFMigrationsHistory]

@@ -82,8 +82,8 @@ public sealed class ListEntityRelationsQueryTests
         Assert.Equal("employes_projets", manyToMany.JunctionEntityKey);
         Assert.Equal("employes", manyToMany.FieldKey); // the junction field pointing at the requested entity
         Assert.True(manyToMany.IsRequired);
-        var junctionFields = await _fields.ListByEntityAsync(Tid, _junction.Id, false);
-        Assert.Equal(junctionFields.Single(f => f.Key == "employes").Id, manyToMany.FieldId);
+        var junctionFields = await _fields.ListByTypeAsync(Tid, CustomFieldType.RelationCustom, includeInactive: false);
+        Assert.Equal(junctionFields.Single(f => f.EntityDefinitionId == _junction.Id && f.Key == "employes").Id, manyToMany.FieldId);
         Assert.Equal(junctionFields.Single(f => f.Key == "projets").Id, manyToMany.JunctionTargetFieldId);
     }
 
@@ -129,14 +129,18 @@ public sealed class ListEntityRelationsQueryTests
         Assert.Equal(0, _fields.TotalCalls);
     }
 
+    /// <summary>
+    /// Revue PR 2.1 (N+1) : le résolveur ne lit plus les champs table par table (jusqu'à 50 requêtes
+    /// par ouverture de formulaire) mais UNE requête <c>ListByTypeAsync(RelationCustom)</c>.
+    /// </summary>
     [Fact]
-    public async Task Field_reads_are_strictly_sequential_one_call_per_active_entity()
+    public async Task Field_reads_are_a_single_tenant_wide_relation_query()
     {
         var result = await Handler().Handle(new ListEntityRelationsQuery(_employes.Id), CancellationToken.None);
 
         Assert.True(result.IsSuccess, result.Error.Description);
-        Assert.Equal(4, _fields.TotalCalls);       // employes, projets, services, junction
-        Assert.Equal(1, _fields.MaxConcurrency);   // never two ListByEntityAsync in flight
+        Assert.Equal(1, _fields.TotalCalls);       // one ListByTypeAsync for the whole tenant
+        Assert.Equal(1, _fields.MaxConcurrency);
     }
 
     [Fact]
@@ -176,7 +180,7 @@ public sealed class ListEntityRelationsQueryTests
             list.Add(field);
         }
 
-        public async Task<IReadOnlyList<CustomFieldDefinition>> ListByEntityAsync(Guid tenantId, Guid entityDefinitionId, bool includeInactive, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<CustomFieldDefinition>> ListByTypeAsync(Guid tenantId, CustomFieldType fieldType, bool includeInactive = false, CancellationToken cancellationToken = default)
         {
             var now = Interlocked.Increment(ref _inFlight);
             Interlocked.Increment(ref TotalCalls);
@@ -185,8 +189,13 @@ public sealed class ListEntityRelationsQueryTests
             {
                 await Task.Yield();
                 await Task.Delay(1, cancellationToken);
-                var list = _byEntity.GetValueOrDefault(entityDefinitionId) ?? new List<CustomFieldDefinition>();
-                return includeInactive ? list : list.Where(f => f.IsActive).ToList();
+                return _byEntity
+                    .SelectMany(kv => kv.Value)
+                    .Where(f => f.FieldType == fieldType && (includeInactive || f.IsActive))
+                    .OrderBy(f => f.EntityDefinitionId)
+                    .ThenBy(f => f.SortOrder)
+                    .ThenBy(f => f.Key, StringComparer.Ordinal)
+                    .ToList();
             }
             finally
             {
@@ -194,6 +203,7 @@ public sealed class ListEntityRelationsQueryTests
             }
         }
 
+        public Task<IReadOnlyList<CustomFieldDefinition>> ListByEntityAsync(Guid tenantId, Guid entityDefinitionId, bool includeInactive, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<CustomFieldDefinition?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<bool> KeyExistsAsync(Guid tenantId, Guid entityDefinitionId, string key, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<int> CountByEntityAsync(Guid tenantId, Guid entityDefinitionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();

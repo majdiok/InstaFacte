@@ -58,9 +58,14 @@ public sealed class AddStudioEntityKindMigrationTests
             .ToList();
 
         Assert.Contains(MigrationId, ids);
-        // EF applique les migrations par ordre lexicographique de l'id : la nôtre doit rester la dernière
-        // de sa série (une renumérotation silencieuse casserait les bases déjà migrées).
-        Assert.Equal(MigrationId, ids.Last());
+        // EF applique les migrations par ordre lexicographique de l'id : la nôtre doit être postérieure
+        // à la dernière migration existante au moment de la PR 2.1 (une renumérotation silencieuse
+        // casserait les bases déjà migrées). Les PR suivantes ajoutent des migrations plus récentes
+        // (2.3 ⇒ 20260912140000…) : pas d'assertion « est la plus récente ».
+        const string previousMigrationId = "20260911120000_AddOdooTimesheetsAlignment_Tenant";
+        Assert.Contains(previousMigrationId, ids);
+        Assert.True(string.CompareOrdinal(MigrationId, previousMigrationId) > 0,
+            $"{MigrationId} doit suivre {previousMigrationId}.");
     }
 
     [Fact]

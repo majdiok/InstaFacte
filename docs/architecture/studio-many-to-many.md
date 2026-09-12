@@ -76,8 +76,19 @@ est off), pour que l'écran d'enregistrement n'ait qu'un appel à faire.
 | `one_to_many` | une autre entité **standard** porte un champ qui pointe vers l'entité | le champ de l'autre entité |
 | `many_to_many` | une jonction porte un champ vers l'entité et un vers `target` | le champ de la jonction qui pointe vers l'entité ; `junctionTargetFieldId` = celui qui pointe vers `target` |
 
-Le résolveur lit les entités actives du tenant puis les champs de chaque entité **séquentiellement**
-(un `DbContext` = une requête à la fois) ; les champs inactifs et les cibles inconnues sont ignorés.
+Le résolveur lit les entités actives du tenant puis **tous** les champs `RelationCustom` du tenant en
+**une seule** requête (`ICustomFieldRepository.ListByTypeAsync`) — le schéma est chargé à chaque
+ouverture de formulaire/table, un N+1 par entité y serait intenable. Les champs inactifs et les cibles
+inconnues sont ignorés. `GET api/studio/entities/{id}/relations` sur une **jonction** ne renvoie rien :
+ses deux `many_to_one` ne sont pas exposés (la relation se lit depuis une extrémité standard).
+
+La création d'une jonction est **réservée** à la commande N‑N : `CreateCustomEntityCommand` porte un
+sceau interne `AllowJunction` (non exposé par le DTO) ; toute requête `{"kind":"Junction"}` directe sur
+`POST api/studio/entities` reçoit `400 Validation.kind`. La compensation couvre aussi les **exceptions**
+levées entre la création de la jonction et celle du second champ (soft delete avec un jeton neutre,
+puis relance). La clé de jonction est résolue contre les définitions **soft-deleted** (`KeyExistsAsync
+…, includeDeleted: true`) : l'index unique `(TenantId, Key)` n'étant pas filtré, une clé supprimée
+reste verrouillée — d'où le repli `_2…_9`.
 
 ---
 
@@ -99,6 +110,12 @@ Pourquoi pas un index unique SQL ? Les valeurs vivent dans `DataJson` ; un index
 deux colonnes calculées serait fragile (nullabilité, longueur, tenants sans index). Le contrôle
 applicatif est **best‑effort face à la concurrence** (deux écritures simultanées peuvent passer) :
 acceptable pour un lien métier, documenté comme tel.
+
+> **La « paire » = les deux premiers `RelationCustom` actifs par `SortOrder`.** Une jonction reste
+> éditable via son URL dans le concepteur de formulaires : ajouter un champ relation avant les deux
+> premiers, ou les réordonner, **déplace silencieusement** la contrainte d'unicité (et l'onglet
+> « Liés » lit les mêmes deux champs). Le designer N‑N devra masquer/verrouiller ces champs
+> (suivi produit, pas de garde technique en v1).
 
 > **Contrat client.** Le type `FactuTrust.API.Controllers.ApiResponse<T>` n'expose pas de propriété
 > `code` : le **statut 409** est le seul discriminant de `record.duplicate_link` côté frontend ; le
