@@ -368,6 +368,7 @@ public static class DependencyInjection
         services.AddScoped<ICustomSystemRepository, Repositories.Studio.CustomSystemRepository>();
         services.AddScoped<ICustomFieldRepository, Repositories.Studio.CustomFieldRepository>();
         services.AddScoped<ICustomRecordRepository, Repositories.Studio.CustomRecordRepository>();
+        services.AddScoped<ICustomRecordViewRepository, Repositories.Studio.CustomRecordViewRepository>();
         services.AddScoped<ICustomFormRepository, Repositories.Studio.CustomFormRepository>();
         services.AddScoped<ICustomReportRepository, Repositories.Studio.CustomReportRepository>();
         services.AddScoped<ICustomViewRepository, Repositories.Studio.CustomViewRepository>();

@@ -2,7 +2,9 @@ using System.Data;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.RecordViews;
 using FactuTrust.Domain.Entities.Studio;
+using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 
@@ -184,6 +186,120 @@ public sealed class CustomRecordRepository : ICustomRecordRepository
         p.ParameterName = name;
         p.Value = value ?? DBNull.Value;
         cmd.Parameters.Add(p);
+    }
+
+    /// <summary>
+    /// Exécute le SQL paramétré de <see cref="RecordQuerySql"/> (PR 2.3 — vues enregistrées) :
+    /// page OFFSET/FETCH + <c>COUNT(*) OVER()</c>, matérialisation <c>AsNoTracking</c> en
+    /// <see cref="CustomRecord"/>. Aucune valeur utilisateur n'est concaténée (paramètres typés) ;
+    /// les clés ont été revalidées par <c>RecordQuerySql.Build</c>.
+    /// </summary>
+    public async Task<(IReadOnlyList<CustomRecord> Items, int Total)> QueryAsync(
+        RecordQuerySpec spec, IReadOnlyDictionary<string, CustomFieldType> fieldTypes, CancellationToken cancellationToken = default)
+    {
+        // Résout les colonnes jx_<clé> réellement présentes (égalité uniquement) et complète le spec
+        // avant de construire le SQL — best-effort, jamais bloquant.
+        var resolved = spec;
+        if (resolved.Filters.Any(f => string.Equals(f.Op, "eq", StringComparison.OrdinalIgnoreCase)))
+        {
+            var indexed = new HashSet<string>(resolved.IndexedFieldKeys, StringComparer.Ordinal);
+            foreach (var key in resolved.Filters
+                .Where(f => string.Equals(f.Op, "eq", StringComparison.OrdinalIgnoreCase))
+                .Select(f => f.FieldKey)
+                .Distinct(StringComparer.Ordinal))
+            {
+                if (!indexed.Contains(key) && StudioKey.IsValidShape(key)
+                    && await _jsonIndex.IndexedColumnExistsAsync(spec.TenantId, key, cancellationToken))
+                    indexed.Add(key);
+            }
+            resolved = resolved with { IndexedFieldKeys = indexed };
+        }
+
+        var built = RecordQuerySql.Build(resolved, fieldTypes);
+        var skip = Math.Max(0, resolved.Skip);
+        var take = Math.Max(1, resolved.Take);
+
+        var sql =
+            "SELECT r.*, COUNT(*) OVER() AS [__total] FROM [dbo].[CustomRecords] r WHERE "
+            + built.WhereSql
+            + " ORDER BY " + built.OrderBySql
+            + $" OFFSET {skip} ROWS FETCH NEXT {take} ROWS ONLY;";
+
+        await using var context = _contextFactory.CreateContext();
+        var conn = context.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open)
+            await conn.OpenAsync(cancellationToken);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var (name, value, type) in built.Parameters)
+        {
+            // Paramètre SQL typé (SqlDbType) : la valeur n'est jamais concaténée au texte SQL.
+            var p = new Microsoft.Data.SqlClient.SqlParameter(name, type) { Value = value ?? DBNull.Value };
+            if (type == SqlDbType.Decimal) { p.Precision = 18; p.Scale = 6; }
+            cmd.Parameters.Add(p);
+        }
+
+        var items = new List<CustomRecord>();
+        var total = 0;
+        await using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                total = reader.GetInt32(reader.GetOrdinal("__total"));
+                items.Add(ReadRecord(reader));
+            }
+        }
+
+        // Page hors plage : COUNT(*) OVER() est porté par chaque ligne — zéro ligne ne peut pas le
+        // ramener. On exécute alors un COUNT(*) séparé (mêmes WHERE et paramètres) pour que « total »
+        // reste exact (cas banal : page demandée au-delà de la dernière après des suppressions).
+        if (items.Count == 0 && skip > 0)
+        {
+            var countSql = "SELECT COUNT(*) FROM [dbo].[CustomRecords] r WHERE " + built.WhereSql + ";";
+            await using var countCmd = conn.CreateCommand();
+            countCmd.CommandText = countSql;
+            foreach (var (name, value, type) in built.Parameters)
+            {
+                var p = new Microsoft.Data.SqlClient.SqlParameter(name, type) { Value = value ?? DBNull.Value };
+                if (type == SqlDbType.Decimal) { p.Precision = 18; p.Scale = 6; }
+                countCmd.Parameters.Add(p);
+            }
+            var counted = await countCmd.ExecuteScalarAsync(cancellationToken);
+            total = counted is int n ? n : Convert.ToInt32(counted);
+        }
+        return (items, total);
+    }
+
+    /// <summary>Matérialise une ligne <c>SELECT r.*</c> en <see cref="CustomRecord"/> via sa fabrique interne.</summary>
+    private static CustomRecord ReadRecord(System.Data.Common.DbDataReader reader)
+    {
+        var record = CustomRecord.Create(
+            reader.GetGuid(reader.GetOrdinal("TenantId")),
+            reader.GetGuid(reader.GetOrdinal("EntityDefinitionId")),
+            reader.GetString(reader.GetOrdinal("DataJson")),
+            null);
+        // Create() génère Id/dates : on réécrit les valeurs persistantes via le change tracker — ici on
+        // préfère une réflexion minimale et bornée aux propriétés lues (entité sealed à setters privés).
+        SetPrivate(record, nameof(CustomRecord.Id), reader.GetGuid(reader.GetOrdinal("Id")));
+        SetPrivate(record, nameof(CustomRecord.CreatedAt), reader.GetDateTime(reader.GetOrdinal("CreatedAt")));
+        SetPrivate(record, nameof(CustomRecord.UpdatedAt), reader.GetDateTime(reader.GetOrdinal("UpdatedAt")));
+        SetPrivate(record, nameof(CustomRecord.IsDeleted), reader.GetBoolean(reader.GetOrdinal("IsDeleted")));
+        if (!reader.IsDBNull(reader.GetOrdinal("DeletedAt")))
+            SetPrivate(record, nameof(CustomRecord.DeletedAt), reader.GetDateTime(reader.GetOrdinal("DeletedAt")));
+        if (!reader.IsDBNull(reader.GetOrdinal("CreatedBy")))
+            SetPrivate(record, nameof(CustomRecord.CreatedBy), reader.GetGuid(reader.GetOrdinal("CreatedBy")));
+        if (!reader.IsDBNull(reader.GetOrdinal("UpdatedBy")))
+            SetPrivate(record, nameof(CustomRecord.UpdatedBy), reader.GetGuid(reader.GetOrdinal("UpdatedBy")));
+        SetPrivate(record, nameof(CustomRecord.RowVersion), (byte[])reader.GetValue(reader.GetOrdinal("RowVersion")));
+        return record;
+    }
+
+    private static void SetPrivate<T>(CustomRecord record, string propertyName, T value)
+    {
+        var property = typeof(CustomRecord).GetProperty(propertyName)
+            ?? throw new InvalidOperationException($"CustomRecord.{propertyName} introuvable.");
+        property.SetValue(record, value);
     }
 
     public async Task AddAsync(CustomRecord record, CancellationToken cancellationToken = default)

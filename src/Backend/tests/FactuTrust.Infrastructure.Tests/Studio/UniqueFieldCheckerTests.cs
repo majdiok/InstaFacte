@@ -34,6 +34,7 @@ public sealed class UniqueFieldCheckerTests
         public Task AddAsync(CustomRecord r, CancellationToken ct = default) => throw new NotImplementedException();
         public Task UpdateAsync(CustomRecord r, CancellationToken ct = default) => throw new NotImplementedException();
         public Task UpdateWithConcurrencyAsync(CustomRecord r, byte[]? v, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<(IReadOnlyList<CustomRecord> Items, int Total)> QueryAsync(FactuTrust.Application.Features.Studio.RecordViews.RecordQuerySpec spec, IReadOnlyDictionary<string, CustomFieldType> fieldTypes, CancellationToken ct = default) => throw new NotImplementedException();
     }
 
     [Fact]

@@ -16,6 +16,7 @@ public partial class TenantDbContext
     public DbSet<CustomFormDefinition> CustomFormDefinitions => Set<CustomFormDefinition>();
     public DbSet<CustomReportDefinition> CustomReportDefinitions => Set<CustomReportDefinition>();
     public DbSet<CustomViewDefinition> CustomViewDefinitions => Set<CustomViewDefinition>();
+    public DbSet<CustomRecordViewDefinition> CustomRecordViewDefinitions => Set<CustomRecordViewDefinition>();
     public DbSet<CustomFieldSequence> CustomFieldSequences => Set<CustomFieldSequence>();
     public DbSet<CustomSystemDefinition> CustomSystemDefinitions => Set<CustomSystemDefinition>();
     public DbSet<CustomEntityAutomation> CustomEntityAutomations => Set<CustomEntityAutomation>();
@@ -145,6 +146,37 @@ public partial class TenantDbContext
             entity.Property(e => e.RowVersion).IsRowVersion();
 
             entity.HasIndex(e => new { e.TenantId, e.Key }).IsUnique();
+        });
+
+        // PR 2.3 (vues enregistrées) : vues Liste / Kanban / Calendrier d'une table Studio. Table NOUVELLE,
+        // FK cascade vers CustomEntityDefinitions, clé unique par (tenant, table) parmi les vues non supprimées.
+        builder.Entity<CustomRecordViewDefinition>(entity =>
+        {
+            entity.ToTable("CustomRecordViewDefinitions");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Key).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.DisplayName).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.Mode).HasConversion<int>();
+            entity.Property(e => e.DefinitionJson).HasColumnType("nvarchar(max)").IsRequired();
+
+            entity.Property(e => e.RowVersion).IsRowVersion();
+
+            entity.HasOne<CustomEntityDefinition>()
+                .WithMany()
+                .HasForeignKey(e => e.EntityDefinitionId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_CustomRecordViewDefinitions_CustomEntityDefinitions");
+
+            entity.HasIndex(e => new { e.TenantId, e.EntityDefinitionId, e.Key })
+                .IsUnique()
+                .HasDatabaseName("UX_CustomRecordViewDefinitions_Tenant_Entity_Key")
+                .HasFilter("[IsDeleted] = 0");
+            entity.HasIndex(e => new { e.TenantId, e.EntityDefinitionId, e.IsDefault })
+                .HasDatabaseName("IX_CustomRecordViewDefinitions_Tenant_Entity_Default");
+
+            // Soft-delete filter on this NEW table only.
+            entity.HasQueryFilter(e => !e.IsDeleted);
         });
 
         builder.Entity<CustomFieldSequence>(entity =>

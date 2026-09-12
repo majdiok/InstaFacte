@@ -163,7 +163,8 @@ public static class PlanSeeder
             ("MaxUsers", SubscriptionLimits.Free.MaxUsers.ToString()),
             ("MaxCustomEntities", SubscriptionLimits.Free.MaxCustomEntities.ToString()),
             ("MaxCustomFieldsPerEntity", SubscriptionLimits.Free.MaxCustomFieldsPerEntity.ToString()),
-            ("MaxCustomRecordsPerEntity", SubscriptionLimits.Free.MaxCustomRecordsPerEntity.ToString())
+            ("MaxCustomRecordsPerEntity", SubscriptionLimits.Free.MaxCustomRecordsPerEntity.ToString()),
+            ("MaxCustomRecordViewsPerEntity", SubscriptionLimits.Free.MaxCustomRecordViewsPerEntity.ToString())
         });
 
         plan.ReplaceFeatures(new[]
@@ -204,7 +205,8 @@ public static class PlanSeeder
             ("MaxUsers", "∞"),
             ("MaxCustomEntities", "∞"),
             ("MaxCustomFieldsPerEntity", "∞"),
-            ("MaxCustomRecordsPerEntity", "∞")
+            ("MaxCustomRecordsPerEntity", "∞"),
+            ("MaxCustomRecordViewsPerEntity", "∞")
         });
 
         plan.ReplaceFeatures(new[]
@@ -242,7 +244,8 @@ public static class PlanSeeder
             ("MaxUsers", "∞"),
             ("MaxCustomEntities", "∞"),
             ("MaxCustomFieldsPerEntity", "∞"),
-            ("MaxCustomRecordsPerEntity", "∞")
+            ("MaxCustomRecordsPerEntity", "∞"),
+            ("MaxCustomRecordViewsPerEntity", "∞")
         });
 
         plan.ReplaceFeatures(new[]

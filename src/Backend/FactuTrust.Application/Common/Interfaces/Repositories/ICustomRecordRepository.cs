@@ -1,4 +1,6 @@
 using FactuTrust.Domain.Entities.Studio;
+using FactuTrust.Domain.Enums;
+using FactuTrust.Application.Features.Studio.RecordViews;
 
 namespace FactuTrust.Application.Common.Interfaces.Repositories;
 
@@ -45,6 +47,14 @@ public interface ICustomRecordRepository
         string valueB,
         Guid? excludeId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Exécute une requête de vue enregistrée (PR 2.3) : SQL paramétré bâti par
+    /// <see cref="RecordQuerySql"/> (filtres/tri/recherche typés, pagination OFFSET/FETCH,
+    /// <c>COUNT(*) OVER()</c>). Retourne la page demandée et le total des lignes correspondantes.
+    /// </summary>
+    Task<(IReadOnlyList<CustomRecord> Items, int Total)> QueryAsync(
+        RecordQuerySpec spec, IReadOnlyDictionary<string, CustomFieldType> fieldTypes, CancellationToken cancellationToken = default);
 
     Task AddAsync(CustomRecord record, CancellationToken cancellationToken = default);
     Task UpdateAsync(CustomRecord record, CancellationToken cancellationToken = default);

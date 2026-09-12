@@ -27,8 +27,9 @@ public sealed record StudioAiCapabilitiesDto(
     bool AdvancedModelAvailable,
     string StandardModelLabel,
     string? AdvancedModelLabel,
-    // Programme « Studio IA » (contrat A6, figé dès la PR 2.1) : seul ManyToManyEnabled est câblé ;
-    // les cinq autres restent false tant que leur drapeau n'existe pas (PR 2.3, 2.4, 3.x).
+    // Programme « Studio IA » (contrat A6, figé dès la PR 2.1) : ManyToManyEnabled (PR 2.1) et
+    // RecordViewsEnabled (PR 2.3) sont câblés ; les quatre autres restent false tant que leur
+    // drapeau n'existe pas (PR 2.4, 3.x).
     bool ManyToManyEnabled = false,
     bool RecordViewsEnabled = false,
     bool RecordViewToolsEnabled = false,
@@ -96,7 +97,7 @@ public sealed class StudioAiCapabilitiesQueryHandler
             StandardModelLabel: standardModelLabel,
             AdvancedModelLabel: advancedModelAvailable ? HumanFriendlyModelLabel(advancedModelRef) : null,
             ManyToManyEnabled: _settings.EnableStudioManyToMany,
-            RecordViewsEnabled: false,
+            RecordViewsEnabled: _settings.EnableStudioRecordViews,
             RecordViewToolsEnabled: false,
             SystemExportEnabled: false,
             WorkflowsEnabled: false,
