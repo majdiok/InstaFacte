@@ -78,3 +78,4 @@ trunk-analytics-cli
 trunk-analytics-cli.exe
 trunk-analytics-cli*.zip
 trunk-analytics-cli*.tar.gz
+src/Backend/FactuTrust.API/logs/
