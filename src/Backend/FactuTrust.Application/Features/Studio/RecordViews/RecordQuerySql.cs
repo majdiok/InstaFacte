@@ -126,7 +126,11 @@ public static class RecordQuerySql
             case "contains":
             {
                 var p = AddParameter(parameters, "%" + EscapeLike(ScalarText(filter.Value)) + "%");
-                return $"{jsonValue} LIKE {p.Name} ESCAPE '\\'";
+                // MultiSelect stocke un TABLEAU JSON : JSON_VALUE y renvoie NULL (LIKE muet, faux négatifs).
+                // On cherche dans les éléments via OPENJSON — même patron que `in` sur MultiSelect.
+                return type == CustomFieldType.MultiSelect
+                    ? $"EXISTS (SELECT 1 FROM OPENJSON({TableAlias}.[DataJson], '{jsonPath}') WHERE [value] LIKE {p.Name} ESCAPE '\\')"
+                    : $"{jsonValue} LIKE {p.Name} ESCAPE '\\'";
             }
 
             case "gt" or "gte" or "lt" or "lte":

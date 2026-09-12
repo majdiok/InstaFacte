@@ -155,8 +155,66 @@ public static class RecordViewDefinitionValidator
 
             var typeError = ValidateOperatorForType(filter, op, field.FieldType);
             if (typeError is not null) return typeError;
+
+            var valueError = ValidateFilterValue(filter, op, field.FieldType);
+            if (valueError is not null) return valueError;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Forme de la valeur d'un filtre (écriture ET exécution — <c>extraFilters</c> inclus) : sans elle,
+    /// une valeur mal formée lèverait <c>ArgumentException</c>/<c>SqlException</c> au run (500 au lieu de 400)
+    /// ou casserait la vue pour tous ses utilisateurs.
+    /// </summary>
+    private static Error? ValidateFilterValue(RecordViewFilter filter, string op, CustomFieldType type)
+    {
+        switch (op)
+        {
+            case "in":
+                // Tableau borné (la limite SQL Server des 2 100 paramètres est loin : 100 valeurs max).
+                if (filter.Value is not JsonArray arr)
+                    return Error.Validation("filters", $"Le filtre « in » de « {filter.FieldKey} » attend un tableau de valeurs.");
+                if (arr.Count > 100)
+                    return Error.Validation("filters", $"Le filtre « in » de « {filter.FieldKey} » accepte au plus 100 valeurs.");
+                return null;
+
+            case "between":
+                if (filter.Value is not JsonArray bounds || bounds.Count != 2)
+                    return Error.Validation("filters", $"Le filtre « between » de « {filter.FieldKey} » attend un tableau de 2 bornes.");
+                return ValidateTypedScalar(bounds[0], type, filter.FieldKey)
+                       ?? ValidateTypedScalar(bounds[1], type, filter.FieldKey);
+
+            case "gt" or "gte" or "lt" or "lte":
+                if (filter.Value is JsonObject or JsonArray)
+                    return Error.Validation("filters", $"Le filtre « {op} » de « {filter.FieldKey} » attend une valeur scalaire.");
+                return ValidateTypedScalar(filter.Value, type, filter.FieldKey);
+
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>Exige une valeur convertible en decimal/DateTime pour les comparaisons typées (sinon la requête échouerait en SQL).</summary>
+    private static Error? ValidateTypedScalar(JsonNode? value, CustomFieldType type, string fieldKey)
+    {
+        if (value is null)
+            return null; // borne ouverte autorisée.
+        var raw = value is JsonValue v && v.TryGetValue<string>(out var s) ? s : value.ToJsonString();
+        var convertible = type switch
+        {
+            CustomFieldType.Number or CustomFieldType.Decimal or CustomFieldType.Money
+                or CustomFieldType.Percentage or CustomFieldType.Rating or CustomFieldType.AutoNumber
+                => decimal.TryParse(raw, System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out _),
+            CustomFieldType.Date or CustomFieldType.DateTime
+                => DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out _),
+            _ => true
+        };
+        return convertible
+            ? null
+            : Error.Validation("filters", $"Valeur de filtre non convertible pour « {fieldKey} » ({type}) : « {raw} ».");
     }
 
     private static Error? ValidateOperatorForType(RecordViewFilter filter, string op, CustomFieldType type)

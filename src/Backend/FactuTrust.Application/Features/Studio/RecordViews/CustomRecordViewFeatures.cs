@@ -550,10 +550,19 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
         var options = StudioFieldJson.ParseOptions(groupField.OptionsJson) ?? Array.Empty<SelectOptionDto>();
 
         // Ordre des colonnes : ColumnOrder si fourni (filtré aux options connues), sinon ordre des options.
+        // Un ColumnOrder PARTIEL est complété par les options manquantes — sinon leurs fiches
+        // tomberaient à tort dans « Sans valeur » (option ajoutée au champ après l'enregistrement de la vue).
         var optionValues = options.Select(o => o.Value).ToList();
-        var columnOrder = kanban.ColumnOrder is { Count: > 0 }
-            ? kanban.ColumnOrder.Where(v => optionValues.Contains(v, StringComparer.Ordinal)).ToList()
-            : optionValues;
+        List<string> columnOrder;
+        if (kanban.ColumnOrder is { Count: > 0 })
+        {
+            columnOrder = kanban.ColumnOrder.Where(v => optionValues.Contains(v, StringComparer.Ordinal)).ToList();
+            columnOrder.AddRange(optionValues.Where(v => !columnOrder.Contains(v, StringComparer.Ordinal)));
+        }
+        else
+        {
+            columnOrder = optionValues;
+        }
         var labelByValue = options.ToDictionary(o => o.Value, o => o.Label, StringComparer.Ordinal);
 
         // Tri : groupe d'abord (pour un regroupement stable), puis les tris de la vue.
@@ -617,13 +626,14 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
             return Result.Failure<RecordViewRunResultDto>(
                 Error.Validation("range", "La fenêtre d'une vue Calendrier ne peut dépasser 92 jours."));
 
-        // Filtre `between` ajouté sur le champ de début (bornes DateOnly → ISO).
+        // Fenêtre ajoutée sur le champ de début : gte rangeStart + lt rangeEnd+1 jour (borne haute
+        // EXCLUSIVE — un `between 'yyyy-MM-dd' AND 'yyyy-MM-dd'` coupe à minuit et perdrait les
+        // enregistrements DateTime du dernier jour).
         var rangeFilters = filters.ToList();
         rangeFilters.Add(new RecordViewFilter(
-            calendar.StartFieldKey, "between",
-            new JsonArray(
-                JsonValue.Create(request.RangeStart.Value.ToString("yyyy-MM-dd")),
-                JsonValue.Create(request.RangeEnd.Value.ToString("yyyy-MM-dd")))));
+            calendar.StartFieldKey, "gte", JsonValue.Create(request.RangeStart.Value.ToString("yyyy-MM-dd"))));
+        rangeFilters.Add(new RecordViewFilter(
+            calendar.StartFieldKey, "lt", JsonValue.Create(request.RangeEnd.Value.AddDays(1).ToString("yyyy-MM-dd"))));
 
         var (items, total) = await QueryRecordsAsync(
             tenantId, entityId, rangeFilters, new List<RecordViewSort> { new(calendar.StartFieldKey) },

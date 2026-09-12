@@ -250,6 +250,24 @@ public sealed class CustomRecordRepository : ICustomRecordRepository
                 items.Add(ReadRecord(reader));
             }
         }
+
+        // Page hors plage : COUNT(*) OVER() est porté par chaque ligne — zéro ligne ne peut pas le
+        // ramener. On exécute alors un COUNT(*) séparé (mêmes WHERE et paramètres) pour que « total »
+        // reste exact (cas banal : page demandée au-delà de la dernière après des suppressions).
+        if (items.Count == 0 && skip > 0)
+        {
+            var countSql = "SELECT COUNT(*) FROM [dbo].[CustomRecords] r WHERE " + built.WhereSql + ";";
+            await using var countCmd = conn.CreateCommand();
+            countCmd.CommandText = countSql;
+            foreach (var (name, value, type) in built.Parameters)
+            {
+                var p = new Microsoft.Data.SqlClient.SqlParameter(name, type) { Value = value ?? DBNull.Value };
+                if (type == SqlDbType.Decimal) { p.Precision = 18; p.Scale = 6; }
+                countCmd.Parameters.Add(p);
+            }
+            var counted = await countCmd.ExecuteScalarAsync(cancellationToken);
+            total = counted is int n ? n : Convert.ToInt32(counted);
+        }
         return (items, total);
     }
 
