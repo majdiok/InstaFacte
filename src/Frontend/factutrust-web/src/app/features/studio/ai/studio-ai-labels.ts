@@ -51,7 +51,50 @@ export const STUDIO_AI_LABELS = {
     whatToCreate: 'Que voulez-vous créer ?',
     seeDocumentation: 'Voir la documentation',
     resetConversation: 'Réinitialiser la conversation',
-    resetConversationHint: 'Annule le plan en attente et repart d’une conversation vide.'
+    resetConversationHint: 'Annule le plan en attente et repart d’une conversation vide.',
+    newRequest: 'Nouvelle demande',
+    badge: 'Créer sans coder',
+    docLink: '/documentation/studio-ia',
+    advancedModelOn: 'Modèle avancé activé',
+    advancedModelOff: 'Modèle standard',
+    micSoon: 'La dictée arrive dans une prochaine version.',
+    // A19 : un message envoyé alors qu'une proposition attend la validation
+    pendingPlanTitle: 'Une proposition est en attente',
+    pendingPlanMessage: 'Envoyer un nouveau message abandonne la proposition en cours (rien n’est créé). Continuer ?',
+    pendingPlanAccept: 'Abandonner le plan et envoyer',
+    pendingPlanReject: 'Garder la proposition',
+    templateLoading: 'Préparation du modèle…',
+    templateFailed: 'Impossible de préparer ce modèle.'
+  },
+
+  /** Repli du modèle avancé (D3) : le serveur décide, le client informe. */
+  model: {
+    fallbackTitle: 'Modèle standard utilisé',
+    fallbackReason: {
+      disabled: 'le modèle avancé est désactivé par l’administrateur.',
+      not_configured: 'le modèle avancé n’est pas configuré.',
+      unavailable: 'le modèle avancé est indisponible pour le moment.'
+    } as Record<string, string>,
+    fallbackGeneric: 'le modèle avancé n’a pas pu être utilisé.',
+    usedAdvanced: 'Généré avec le modèle avancé'
+  },
+
+  /** Bandeau doublons (PR 1.3 côté serveur, R21 côté atelier). */
+  duplicates: {
+    title: 'La table « {specDisplayName} » existe déjà',
+    item: 'Une table existante « {existingDisplayName} » (clé {existingKey}) semble équivalente.',
+    question: 'Voulez-vous la réutiliser ou créer une nouvelle table « {suggestedName} » ?',
+    reuse: 'Réutiliser la table existante',
+    createAnyway: 'Créer quand même',
+    reuseHint: 'Le plan réutilisera cette table sans la modifier.',
+    reused: 'Table existante « {existingDisplayName} » réutilisée.',
+    renamed: 'Nouvelle table renommée « {displayName} ».',
+    reasons: {
+      same_key: 'même clé',
+      same_name: 'même nom',
+      singular_plural: 'singulier / pluriel'
+    } as Record<string, string>,
+    suffix: '(2)'
   },
 
   intents: [
@@ -123,6 +166,9 @@ export const STUDIO_AI_LABELS = {
     }
   ] as readonly StudioAiIntentCardDef[],
 
+  /** Prompt de la carte Workflow quand le serveur l'active (`workflowToolsEnabled`). */
+  workflowPrompt: 'Ajouter un workflow de statut à la table … : états, transitions autorisées et règles de validation.',
+
   intentTitles: {
     system: 'Système complet',
     table: 'Table',
@@ -161,6 +207,22 @@ export const STUDIO_AI_LABELS = {
   soon: 'Bientôt',
   soonTeam: 'Disponible avec la bibliothèque d’équipe.',
   disabledByAdmin: 'Fonction désactivée par l’administrateur.',
+
+  /** Résumés de modifications (`summarizeChanges`, FR). */
+  changes: {
+    fieldsAdded: '{count} champ(s) ajouté(s) à {entity}',
+    fieldsRemoved: '{count} champ(s) supprimé(s) de {entity}',
+    fieldsChanged: '{count} champ(s) modifié(s) dans {entity}',
+    entityAdded: 'Table « {entity} » ajoutée',
+    entityRemoved: 'Table « {entity} » supprimée',
+    entityRenamed: 'Table « {before} » renommée « {after} »',
+    entityReused: 'Table « {entity} » : réutilise la table existante {existingKey}',
+    entityChanged: 'Table « {entity} » modifiée',
+    systemChanged: 'Paramètres du système modifiés',
+    seedChanged: 'Données de référence de « {entity} » modifiées',
+    formChanged: 'Formulaire de « {entity} » modifié',
+    reportChanged: 'Rapport de « {entity} » modifié'
+  },
 
   /** Zone de saisie : pièces jointes et raccourcis clavier. */
   composer: {
@@ -312,7 +374,8 @@ export const STUDIO_AI_LABELS = {
     quickActions: 'Actions rapides',
     importTemplate: 'Importer un modèle existant',
     duplicateSystem: 'Dupliquer un système',
-    exportSystem: 'Exporter le système (ZIP)',
+    exportSystem: 'Exporter le système (JSON)',
+    importTemplateJson: 'Importer un modèle (JSON)',
     shareTeam: 'Partager avec l’équipe',
     resetConversation: 'Réinitialiser la conversation',
     resetConfirm: 'Les propositions en attente seront annulées (rien n’est supprimé). Continuer ?',
@@ -322,7 +385,63 @@ export const STUDIO_AI_LABELS = {
     seeAllHistory: 'Voir tout',
     promoTitle: 'Une idée ? Laissez l’IA la réaliser !',
     promoText: 'Décrivez un besoin métier en une phrase : l’assistant propose tables, formulaires et rapports.',
-    promoCta: 'Découvrir les possibilités'
+    promoCta: 'Découvrir les possibilités',
+    promoPrompt: 'Créer un système de gestion de … avec les tables, relations, formulaires, données de référence et rapports nécessaires.',
+    resetTitle: 'Réinitialiser la conversation ?',
+    resetNoPlan: 'Conversation réinitialisée.',
+    templatesEmpty: 'Aucun modèle disponible.',
+    templatesLoadFailed: 'Bibliothèque de modèles indisponible.',
+    historyLoadFailed: 'Historique indisponible.',
+    openPlan: 'Reprendre',
+    justNow: 'à l’instant',
+    minutesAgo: 'il y a {count} min',
+    hoursAgo: 'il y a {count} h',
+    daysAgo: 'il y a {count} j',
+    panelLabel: 'Panneau latéral',
+    comingSoon: 'Cette action arrive dans une prochaine version.'
+  },
+
+  /** Page « Mes projets » (`/studio/ai/projects`). */
+  history: {
+    title: 'Mes projets',
+    subtitle: 'Toutes les générations Studio IA de votre espace : propositions à valider, systèmes créés, échecs.',
+    columns: {
+      title: 'Titre',
+      kind: 'Genre',
+      status: 'Statut',
+      createdAt: 'Créé',
+      expiresAt: 'Expire',
+      system: 'Système',
+      actions: 'Actions'
+    },
+    filters: {
+      status: 'Statut',
+      kind: 'Genre',
+      allStatuses: 'Tous les statuts',
+      allKinds: 'Tous les genres'
+    },
+    resume: 'Reprendre',
+    openSystem: 'Ouvrir le système',
+    empty: 'Aucun projet pour le moment. Décrivez un besoin dans l’atelier pour démarrer.',
+    loadFailed: 'Impossible de charger vos projets.',
+    backToStudio: 'Retour à l’atelier',
+    count: '{count} projet(s)'
+  },
+
+  /** Page « Bibliothèque de modèles » (`/studio/ai/templates`). */
+  templates: {
+    title: 'Bibliothèque de modèles',
+    subtitle: 'Des systèmes prêts à l’emploi à adapter à votre activité : l’atelier prépare une proposition que vous validez.',
+    use: 'Utiliser ce modèle',
+    empty: 'Aucun modèle disponible pour le moment.',
+    loadFailed: 'Impossible de charger la bibliothèque de modèles.',
+    disabled: 'La bibliothèque de modèles est désactivée par l’administrateur.',
+    entities: '{count} table(s)',
+    uncategorized: 'Autres',
+    sourceBuiltin: 'Intégré',
+    sourceTenant: 'Votre espace',
+    backToStudio: 'Retour à l’atelier',
+    opened: 'Proposition préparée depuis un modèle du catalogue : vérifiez-la puis validez.'
   },
 
   planStatus: {
@@ -339,7 +458,9 @@ export const STUDIO_AI_LABELS = {
     CreateSystem: 'Système',
     Amendment: 'Modification',
     View: 'Fenêtre',
-    Report: 'État'
+    Report: 'État',
+    RecordView: 'Vue',
+    Workflow: 'Workflow'
   } as Record<string, string>,
 
   fieldTypes: {
@@ -371,6 +492,7 @@ export const STUDIO_AI_LABELS = {
     unauthorized: 'Session expirée. Reconnectez-vous.',
     forbidden: 'Vous n’avez pas la permission de concevoir des tables Studio.',
     planNotFound: 'Ce plan est introuvable ou a expiré.',
+    planNotPending: 'Ce plan n’est plus en attente : il a déjà été exécuté, annulé ou a expiré.',
     workbenchDisabled: 'Le workbench Studio IA n’est pas activé.',
     conflict: 'Ce plan a été modifié entre-temps. Rechargez l’aperçu.',
     tooLarge: 'Fichier trop volumineux.',

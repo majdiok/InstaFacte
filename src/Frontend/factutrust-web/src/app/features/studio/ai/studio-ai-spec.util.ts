@@ -11,6 +11,7 @@ import { STUDIO_AI_LABELS, formatLabel } from './studio-ai-labels';
 import {
   STUDIO_SPEC_LIMITS,
   StudioAppSpec,
+  StudioSpecChange,
   StudioSpecCounters,
   StudioSpecEntity,
   StudioSpecField,
@@ -18,16 +19,17 @@ import {
   StudioSystemSpec,
   isAppSpec,
   isErpRelationTarget,
-  isSystemSpec
+  isSystemSpec,
+  toSystemSpecView
 } from './studio-ai.models';
 
 /**
- * Fonctions pures autour de la spec canonique Studio IA (P1a : socle lecture).
+ * Fonctions pures autour de la spec canonique Studio IA.
  *
  * Tout ce qui se calcule sans réseau vit ici pour être testable directement (convention du dépôt) :
  * clonage, (dé)sérialisation, erreurs HTTP → message FR, bornes/intégrité de la spec, passerelles
- * vers les modèles runtime (`CustomField`, `FormLayout`) pour le sandbox. Les helpers d'édition
- * (`diffSpec`, `summarizeChanges`, `parseCsv`) arrivent en P1b.
+ * vers les modèles runtime (`CustomField`, `FormLayout`) pour le sandbox, et les helpers d'édition
+ * (`diffSpec`, `summarizeChanges`, `parseCsv`) utilisés par le bandeau doublons et le mode Personnaliser.
  */
 
 /** Puces de compteurs (en-tête de l'aperçu, Vue d'ensemble) dans l'ordre canonique. */
@@ -405,4 +407,225 @@ export function specFormToLayout(entity: StudioSpecEntity): FormLayout | null {
 /** Tous les champs d'une entité de spec en `CustomField[]` (ordre de la spec). */
 export function specEntityToCustomFields(entity: StudioSpecEntity, spec: StudioSystemSpec): CustomField[] {
   return (entity.fields ?? []).map((field, i) => specFieldToCustomField(field, entity.ref, i, spec));
+}
+
+// ---- Édition : différences, résumé FR, collage CSV --------------------------------------------------
+
+/** Aplatissement stable d'une valeur pour comparer deux nœuds de spec sans dépendre de l'ordre des clés. */
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value ?? null);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  const obj = value as Record<string, unknown>;
+  return `{${Object.keys(obj).sort().map(k => `${JSON.stringify(k)}:${stableJson(obj[k])}`).join(',')}}`;
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  return stableJson(a) === stableJson(b);
+}
+
+function entityLabel(entity: StudioSpecEntity | undefined, ref: string): string {
+  return entity?.displayName || ref;
+}
+
+/**
+ * Compare la spec serveur (`base`) et le brouillon (`draft`) et renvoie la liste des changements,
+ * entité par entité : tables ajoutées/supprimées/renommées/réutilisées, champs ajoutés/supprimés/modifiés,
+ * formulaire, rapport, données de référence et paramètres du système. Pur, sans DOM.
+ */
+export function diffSpec(base: StudioSystemSpec | StudioAppSpec, draft: StudioSystemSpec | StudioAppSpec): StudioSpecChange[] {
+  const before = toSystemSpecView(base);
+  const after = toSystemSpecView(draft);
+  const changes: StudioSpecChange[] = [];
+  const labels = STUDIO_AI_LABELS.changes;
+
+  if (!sameValue(before.system, after.system)) {
+    changes.push({ path: 'system', kind: 'changed', label: labels.systemChanged, before: before.system, after: after.system });
+  }
+
+  const beforeByRef = new Map((before.entities ?? []).map(e => [e.ref, e] as const));
+  const afterByRef = new Map((after.entities ?? []).map(e => [e.ref, e] as const));
+
+  for (const [ref, entity] of beforeByRef) {
+    if (!afterByRef.has(ref)) {
+      changes.push({
+        path: `entities.${ref}`, kind: 'removed',
+        label: formatLabel(labels.entityRemoved, { entity: entityLabel(entity, ref) }), before: entity
+      });
+    }
+  }
+
+  for (const [ref, next] of afterByRef) {
+    const prev = beforeByRef.get(ref);
+    if (!prev) {
+      changes.push({
+        path: `entities.${ref}`, kind: 'added',
+        label: formatLabel(labels.entityAdded, { entity: entityLabel(next, ref) }), after: next
+      });
+      continue;
+    }
+    if (prev.displayName !== next.displayName || prev.displayNamePlural !== next.displayNamePlural) {
+      changes.push({
+        path: `entities.${ref}.displayName`, kind: 'changed',
+        label: formatLabel(labels.entityRenamed, { before: prev.displayName, after: next.displayName }),
+        before: prev.displayName, after: next.displayName
+      });
+    }
+    if ((prev.existingKey ?? null) !== (next.existingKey ?? null) && next.existingKey) {
+      changes.push({
+        path: `entities.${ref}.existingKey`, kind: 'changed',
+        label: formatLabel(labels.entityReused, { entity: entityLabel(next, ref), existingKey: next.existingKey }),
+        before: prev.existingKey ?? null, after: next.existingKey
+      });
+    }
+    diffFields(ref, prev, next, changes);
+    if (!sameValue(prev.form ?? null, next.form ?? null)) {
+      changes.push({
+        path: `entities.${ref}.form`, kind: 'changed',
+        label: formatLabel(labels.formChanged, { entity: entityLabel(next, ref) }), before: prev.form, after: next.form
+      });
+    }
+    if (!sameValue(prev.report ?? null, next.report ?? null)) {
+      changes.push({
+        path: `entities.${ref}.report`, kind: 'changed',
+        label: formatLabel(labels.reportChanged, { entity: entityLabel(next, ref) }), before: prev.report, after: next.report
+      });
+    }
+  }
+
+  const seedBefore = new Map((before.seed ?? []).map(s => [s.entityRef, s.records] as const));
+  const seedAfter = new Map((after.seed ?? []).map(s => [s.entityRef, s.records] as const));
+  for (const ref of new Set([...seedBefore.keys(), ...seedAfter.keys()])) {
+    if (!sameValue(seedBefore.get(ref) ?? [], seedAfter.get(ref) ?? [])) {
+      changes.push({
+        path: `seed.${ref}`, kind: 'changed',
+        label: formatLabel(labels.seedChanged, { entity: entityLabel(afterByRef.get(ref) ?? beforeByRef.get(ref), ref) }),
+        before: seedBefore.get(ref), after: seedAfter.get(ref)
+      });
+    }
+  }
+  return changes;
+}
+
+function diffFields(ref: string, prev: StudioSpecEntity, next: StudioSpecEntity, out: StudioSpecChange[]): void {
+  const prevByKey = new Map((prev.fields ?? []).map(f => [f.key, f] as const));
+  const nextByKey = new Map((next.fields ?? []).map(f => [f.key, f] as const));
+  const entity = entityLabel(next, ref);
+  for (const [key, field] of prevByKey) {
+    if (!nextByKey.has(key)) {
+      out.push({ path: `entities.${ref}.fields.${key}`, kind: 'removed', label: `${field.label} — ${entity}`, before: field });
+    }
+  }
+  for (const [key, field] of nextByKey) {
+    const old = prevByKey.get(key);
+    if (!old) {
+      out.push({ path: `entities.${ref}.fields.${key}`, kind: 'added', label: `${field.label} — ${entity}`, after: field });
+    } else if (!sameValue(old, field)) {
+      out.push({ path: `entities.${ref}.fields.${key}`, kind: 'changed', label: `${field.label} — ${entity}`, before: old, after: field });
+    }
+  }
+}
+
+const FIELD_PATH = /^entities\.([^.]+)\.fields\.[^.]+$/;
+
+/**
+ * Résume les changements en phrases FR groupées par table : « 2 champ(s) ajouté(s) à Projets »,
+ * « Table « Clients » renommée « Clients (2) » »… (utilisé par « Régénérer avec ces modifications »).
+ */
+export function summarizeChanges(changes: StudioSpecChange[]): string[] {
+  const labels = STUDIO_AI_LABELS.changes;
+  const lines: string[] = [];
+  const fieldGroups = new Map<string, { entity: string; added: number; removed: number; changed: number }>();
+
+  for (const change of changes) {
+    const m = FIELD_PATH.exec(change.path);
+    if (!m) { lines.push(change.label); continue; }
+    const ref = m[1];
+    const field = (change.after ?? change.before) as StudioSpecField | undefined;
+    const entity = change.label.includes(' — ') ? change.label.split(' — ').pop() ?? ref : ref;
+    const group = fieldGroups.get(ref) ?? { entity: entity || field?.label || ref, added: 0, removed: 0, changed: 0 };
+    group[change.kind] += 1;
+    fieldGroups.set(ref, group);
+  }
+
+  for (const group of fieldGroups.values()) {
+    if (group.added) lines.push(formatLabel(labels.fieldsAdded, { count: group.added, entity: group.entity }));
+    if (group.removed) lines.push(formatLabel(labels.fieldsRemoved, { count: group.removed, entity: group.entity }));
+    if (group.changed) lines.push(formatLabel(labels.fieldsChanged, { count: group.changed, entity: group.entity }));
+  }
+  return lines;
+}
+
+/** Bornes du collage CSV : au-delà, `truncated` passe à `true` et le reste est ignoré. */
+export const CSV_MAX_ROWS = 500;
+export const CSV_MAX_CHARS = 64 * 1024;
+
+export interface ParsedCsv {
+  headers: string[];
+  rows: string[][];
+  truncated: boolean;
+}
+
+/**
+ * Analyse un texte CSV collé (première ligne = en-têtes). Délimiteur détecté (`;`, tabulation, `,`)
+ * sauf s'il est imposé ; guillemets doubles gérés (`""` = guillemet échappé, retours à la ligne
+ * autorisés dans une cellule) ; lignes vides ignorées ; borné à `maxRows` lignes et 64 Ko de texte.
+ */
+export function parseCsv(text: string, opts: { delimiter?: ',' | ';' | '\t'; maxRows?: number } = {}): ParsedCsv {
+  const maxRows = Math.max(1, opts.maxRows ?? CSV_MAX_ROWS);
+  let truncated = false;
+  let input = text ?? '';
+  if (input.length > CSV_MAX_CHARS) { input = input.slice(0, CSV_MAX_CHARS); truncated = true; }
+  input = input.replace(/^\uFEFF/, '');
+  const delimiter = opts.delimiter ?? detectDelimiter(input);
+
+  const records: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  let cellStarted = false;
+
+  const endRow = () => {
+    if (cellStarted || row.length) row.push(cell);
+    if (row.some(c => c.trim() !== '')) records.push(row);
+    row = []; cell = ''; cellStarted = false;
+  };
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (input[i + 1] === '"') { cell += '"'; i++; } else { quoted = false; }
+      } else {
+        cell += ch;
+      }
+      continue;
+    }
+    if (ch === '"') { quoted = true; cellStarted = true; continue; }
+    if (ch === delimiter) { row.push(cell); cell = ''; cellStarted = true; continue; }
+    if (ch === '\r') continue;
+    if (ch === '\n') { endRow(); continue; }
+    cell += ch; cellStarted = true;
+  }
+  endRow();
+
+  if (!records.length) return { headers: [], rows: [], truncated };
+  const headers = records[0].map(h => h.trim());
+  let rows = records.slice(1).map(r => {
+    const cells = r.map(c => c.trim());
+    while (cells.length < headers.length) cells.push('');
+    return cells.slice(0, headers.length);
+  });
+  if (rows.length > maxRows) { rows = rows.slice(0, maxRows); truncated = true; }
+  return { headers, rows, truncated };
+}
+
+function detectDelimiter(text: string): ',' | ';' | '\t' {
+  const firstLine = text.split(/\r?\n/, 1)[0] ?? '';
+  const counts: [',' | ';' | '\t', number][] = [
+    [';', (firstLine.match(/;/g) ?? []).length],
+    ['\t', (firstLine.match(/\t/g) ?? []).length],
+    [',', (firstLine.match(/,/g) ?? []).length]
+  ];
+  counts.sort((a, b) => b[1] - a[1]);
+  return counts[0][1] > 0 ? counts[0][0] : ',';
 }

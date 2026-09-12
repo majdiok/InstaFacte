@@ -20,7 +20,12 @@ export interface ChatStreamEvent {
     /** Résultat d'un état calculé en lecture seule, à afficher dans la conversation (rien n'est enregistré). */
     | 'studio_report_result'
     /** Échec d'un état : ce qui a été tenté, pourquoi, et des reformulations qui fonctionnent. */
-    | 'studio_report_error';
+    | 'studio_report_error'
+    /**
+     * Métadonnées d'exécution (mode StudioBuilder uniquement) : émis une fois, avant le premier token.
+     * `content` porte un JSON `ChatStreamMeta` (modèle réellement utilisé, raison d'un repli éventuel).
+     */
+    | 'meta';
   content?: string;
   toolName?: string;
   toolCallId?: string;
@@ -99,6 +104,21 @@ export interface ChatRequestOptions {
   conversationalFollowUp?: boolean;
   /** Expert de module (assistants par module). Omis/None = assistant global (comportement historique). */
   agentScope?: AssistantAgentScope;
+  /** Atelier Studio : demande explicite du modèle avancé (le serveur peut replier, voir `ChatStreamMeta`). */
+  useAdvancedModel?: boolean;
+  /** Atelier Studio : intention choisie par l'utilisateur (carte « Que voulez-vous créer ? »). */
+  studioIntent?: string;
+}
+
+/** Raison d'un repli du modèle avancé vers le modèle standard (constantes `SendChatMessageCommand`). */
+export type ChatStreamMetaFallbackReason = 'disabled' | 'not_configured' | 'unavailable';
+
+/** Payload JSON de l'événement SSE `meta` (mode StudioBuilder). */
+export interface ChatStreamMeta {
+  usedAdvancedModel: boolean;
+  advancedModelFallbackReason?: ChatStreamMetaFallbackReason | string | null;
+  /** Identifiant du modèle effectivement utilisé (informatif). */
+  model?: string | null;
 }
 
 export interface ChatRequest {

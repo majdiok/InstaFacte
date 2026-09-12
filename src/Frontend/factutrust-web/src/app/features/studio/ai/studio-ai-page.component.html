@@ -1,21 +1,24 @@
-<app-studio-page-shell [title]="labels.page.title" [subtitle]="labels.page.subtitle" [breadcrumbs]="breadcrumbs">
-  <ng-container studioActions>
-    @if (showConversation()) {
-      <p-button
-        [label]="labels.page.resetConversation"
-        icon="fa-solid fa-rotate-left"
-        severity="secondary"
-        [outlined]="true"
-        size="small"
-        [disabled]="store.busy()"
-        [pTooltip]="labels.page.resetConversationHint"
-        tooltipPosition="bottom"
-        (onClick)="newRequest()" />
-    }
-  </ng-container>
+<app-studio-page-shell [breadcrumbs]="breadcrumbs">
+  <div class="studio-ai-page">
+    <app-studio-ai-header
+      class="studio-ai-page__header"
+      [showNewRequest]="showConversation()"
+      [busy]="store.busy()"
+      (newRequest)="newRequest()" />
 
-  <div class="studio-ai-page" [class.studio-ai-page--with-rail]="showConversation()">
     <section class="studio-ai-page__main" aria-live="polite">
+      @if (showModelFallback()) {
+        <div class="studio-ai-page__model" role="status" data-testid="model-fallback">
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          <span>{{ modelFallbackText() }}</span>
+        </div>
+      } @else if (store.usedAdvancedModel() === true) {
+        <div class="studio-ai-page__model studio-ai-page__model--advanced" role="status" data-testid="model-advanced">
+          <i class="fa-solid fa-bolt" aria-hidden="true"></i>
+          <span>{{ labels.model.usedAdvanced }}</span>
+        </div>
+      }
+
       @switch (mainView()) {
         @case ('compose') {
           <div class="studio-ai-page__hero">
@@ -27,6 +30,10 @@
             [disabled]="composerDisabled()"
             [prefill]="prefill()"
             [placeholder]="labels.page.composerPlaceholder"
+            [advancedModelAvailable]="capabilities.capabilities().advancedModelAvailable"
+            [advancedModelLabel]="capabilities.capabilities().advancedModelLabel ?? null"
+            [useAdvancedModel]="store.useAdvancedModel()"
+            (advancedModelChange)="setAdvancedModel($event)"
             (submitted)="submit($event)" />
 
           @if (store.error(); as error) {
@@ -48,6 +55,17 @@
           <app-studio-ai-preview
             [(activeTab)]="previewTab"
             (confirmRequested)="openConfirm()" />
+
+          <app-studio-ai-composer
+            class="studio-ai-page__followup"
+            [disabled]="composerDisabled()"
+            [prefill]="prefill()"
+            [placeholder]="labels.page.composerPlaceholder"
+            [advancedModelAvailable]="capabilities.capabilities().advancedModelAvailable"
+            [advancedModelLabel]="capabilities.capabilities().advancedModelLabel ?? null"
+            [useAdvancedModel]="store.useAdvancedModel()"
+            (advancedModelChange)="setAdvancedModel($event)"
+            (submitted)="submit($event)" />
         }
         @case ('progress') {
           <app-studio-ai-progress [steps]="store.buildSteps()" />
@@ -61,11 +79,10 @@
             (newRequest)="newRequest()" />
         }
       }
-    </section>
 
-    @if (showConversation()) {
-      <aside class="studio-ai-page__rail">
+      @if (showConversation()) {
         <app-studio-ai-conversation
+          class="studio-ai-page__conversation"
           [items]="store.timeline()"
           [suggestions]="store.suggestions()"
           [status]="store.status()"
@@ -76,8 +93,26 @@
           (retry)="store.retry()"
           (usePrompt)="usePrompt($event)"
           (useSuggestion)="usePrompt($event)" />
-      </aside>
-    }
+      }
+    </section>
+
+    <app-studio-ai-rail
+      class="studio-ai-page__rail"
+      [capabilities]="capabilities.capabilities()"
+      [templates]="templates()"
+      [templatesLoading]="templatesLoading()"
+      [templatesError]="templatesError()"
+      [history]="store.history()"
+      [historyLoading]="store.historyLoading()"
+      [historyError]="store.historyError()"
+      [busy]="store.busy()"
+      (useTemplate)="useTemplate($event)"
+      (reset)="resetFromRail()"
+      (importTemplate)="comingSoon()"
+      (duplicate)="comingSoon()"
+      (exportSystem)="comingSoon()"
+      (openPlan)="openHistoryPlan($event)"
+      (tryPrompt)="tryPrompt($event)" />
   </div>
 </app-studio-page-shell>
 

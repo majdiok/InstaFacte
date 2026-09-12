@@ -2,8 +2,9 @@ import { Injectable, OnDestroy, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { AiStreamService } from '@features/ai-assistant/services/ai-stream.service';
+import { AiChatService } from '@features/ai-assistant/services/ai-chat.service';
 import {
-  AssistantMode, ChatAttachment, ChatRequest, ChatStreamEvent
+  AssistantMode, ChatAttachment, ChatRequest, ChatStreamEvent, ChatStreamMeta
 } from '@features/ai-assistant/models/ai-chat.models';
 import {
   buildAttachmentRequests,
@@ -15,20 +16,28 @@ import {
   StudioReportFailureEvent, StudioReportResultEvent
 } from '../studio-ai-build.service';
 import { stripStudioAssistantText } from '../studio-ai-builder.component';
-import { STUDIO_AI_LABELS } from './studio-ai-labels';
+import { STUDIO_AI_LABELS, formatLabel } from './studio-ai-labels';
 import { cloneSpec, parseSpecPayload, serializeSpec, studioAiHttpError } from './studio-ai-spec.util';
 import {
   StudioAiIntent,
+  StudioAiPlanListItemDto,
   StudioAiSessionPhase,
   StudioBuildResult,
   StudioBuildStep,
+  StudioDuplicateHint,
   StudioSpecCounters,
+  StudioSpecEntity,
   StudioSystemSpec,
   countSpec,
   isSystemBuildResult,
   specPayloadForKind,
   toSystemSpecView
 } from './studio-ai.models';
+
+/** Clé `localStorage` du choix « Modèle avancé » (persisté par navigateur, pas par utilisateur). */
+export const STUDIO_AI_ADVANCED_MODEL_STORAGE_KEY = 'studio.ai.advancedModel';
+/** Nombre d'entrées de la carte « Historique des générations » du rail. */
+export const STUDIO_AI_HISTORY_PAGE_SIZE = 5;
 
 /** Action de navigation proposée par le backend (`client_actions`). */
 export interface StudioAiNavAction { label: string; route: string; }
@@ -87,6 +96,7 @@ export interface StudioAiSendOptions {
 @Injectable()
 export class StudioAiSessionStore implements OnDestroy {
   private readonly stream = inject(AiStreamService);
+  private readonly chat = inject(AiChatService);
   private readonly builds = inject(StudioAiBuildService);
   private readonly studioNav = inject(StudioNavService);
   private readonly router = inject(Router);
@@ -98,6 +108,8 @@ export class StudioAiSessionStore implements OnDestroy {
   private confirmSub: Subscription | null = null;
   /** Pièces jointes de la dernière demande, pour que « Réessayer » les renvoie aussi. */
   private lastAttachments: ChatAttachment[] = [];
+  /** `true` dès que la page a demandé un premier `loadHistory()` (workbench actif) : les rafraîchissements internes en dépendent. */
+  private historyEnabled = false;
 
   // ---- État ---------------------------------------------------------------------------------------
   readonly phase = signal<StudioAiSessionPhase>('idle');
@@ -118,6 +130,25 @@ export class StudioAiSessionStore implements OnDestroy {
   readonly buildSteps = signal<StudioBuildStep[]>([]);
   readonly result = signal<StudioBuildResult | null>(null);
   readonly error = signal<string | null>(null);
+
+  // ---- Modèle avancé (PR 1.4) ----------------------------------------------------------------------
+  /** Choix de l'utilisateur (toggle du compositeur), persisté dans `localStorage`. */
+  readonly useAdvancedModel = signal<boolean>(readAdvancedModelPreference());
+  /** Ce que le serveur a réellement utilisé pour le dernier tour (`meta`) ; `null` tant qu'aucun tour n'a répondu. */
+  readonly usedAdvancedModel = signal<boolean | null>(null);
+  /** Raison du repli (`disabled`, `not_configured`, `unavailable`) quand le modèle avancé était demandé mais pas utilisé. */
+  readonly advancedModelFallbackReason = signal<string | null>(null);
+
+  // ---- Historique (rail) ----------------------------------------------------------------------------
+  readonly history = signal<StudioAiPlanListItemDto[]>([]);
+  readonly historyLoading = signal(false);
+  readonly historyError = signal<string | null>(null);
+
+  // ---- Doublons (R21) -------------------------------------------------------------------------------
+  /** Références d'entités pour lesquelles l'utilisateur a tranché « Créer quand même » : l'indice ne revient plus. */
+  private readonly dismissedDuplicateRefs = signal<ReadonlySet<string>>(new Set());
+  /** Entité renommée « (2) » à mettre en évidence dans l'aperçu jusqu'au prochain plan. */
+  readonly highlightedEntityRef = signal<string | null>(null);
 
   // ---- Dérivés ------------------------------------------------------------------------------------
   readonly busy = computed(() => {
@@ -146,6 +177,14 @@ export class StudioAiSessionStore implements OnDestroy {
     const fromValidation = this.validation().warnings;
     return Array.from(new Set([...fromPlan, ...fromValidation]));
   });
+  /** Doublons probables du plan courant, hors ceux déjà tranchés « Créer quand même ». */
+  readonly duplicates = computed<StudioDuplicateHint[]>(() => {
+    const dismissed = this.dismissedDuplicateRefs();
+    return (this.plan()?.summary.duplicates ?? []).filter(d => !dismissed.has(d.specRef));
+  });
+  /** Le serveur a répondu avec le modèle standard alors que l'avancé était demandé (bandeau info). */
+  readonly advancedModelFellBack = computed(() =>
+    this.useAdvancedModel() && this.usedAdvancedModel() === false);
 
   // ---- Conversation -------------------------------------------------------------------------------
 
@@ -166,15 +205,22 @@ export class StudioAiSessionStore implements OnDestroy {
     this.buildSteps.set([]);
     this.result.set(null);
     this.suggestions.set([]);
+    this.usedAdvancedModel.set(null);
+    this.advancedModelFallbackReason.set(null);
     this.clearPlanState();
     this.assistantBuffer = '';
     this.failureReported = false;
 
+    const intent = options.intent !== undefined ? options.intent : this.intent();
     const attachmentRequests = buildAttachmentRequests(attachments, false);
     const request: ChatRequest = {
       message: composeBackendMessage(text, attachments),
       conversationId: this.conversationId(),
-      options: { assistantMode: AssistantMode.StudioBuilder },
+      options: {
+        assistantMode: AssistantMode.StudioBuilder,
+        useAdvancedModel: this.useAdvancedModel(),
+        studioIntent: intent ?? undefined
+      },
       attachments: attachmentRequests.length ? attachmentRequests : undefined
     };
 
@@ -184,6 +230,22 @@ export class StudioAiSessionStore implements OnDestroy {
       error: e => this.failPlanning(e?.message ?? STUDIO_AI_LABELS.errors.generationFailed),
       complete: () => this.settleAfterChat()
     });
+  }
+
+  /**
+   * A19 : l'utilisateur envoie un nouveau message alors qu'une proposition attend sa validation. Le
+   * plan est annulé côté serveur (sans attendre la réponse : la nouvelle génération ne doit pas être
+   * écrasée par le retour de l'annulation), l'aperçu se ferme, puis la demande part normalement.
+   */
+  abandonPlanAndSend(prompt: string, options: StudioAiSendOptions = {}): void {
+    const current = this.plan();
+    if (current && !this.busy()) {
+      this.builds.cancel(current.planId).subscribe({ next: () => this.refreshHistory(), error: () => undefined });
+      this.clearPlanState();
+      this.phase.set('idle');
+      this.timeline.update(l => [...l, { kind: 'system', text: STUDIO_AI_LABELS.status.planCancelled }]);
+    }
+    this.send(prompt, options);
   }
 
   /** Rejoue la dernière demande à l'identique (bouton « Réessayer »). */
@@ -202,13 +264,16 @@ export class StudioAiSessionStore implements OnDestroy {
   }
 
   /**
-   * « Réinitialiser la conversation » : annule côté serveur les plans en attente (jamais supprimés :
-   * ils restent visibles dans l'historique en `Annulé`), puis repart d'une conversation neuve.
+   * « Réinitialiser la conversation » (R20) : annule côté serveur TOUS les plans en attente du
+   * propriétaire (`POST cancel-pending` — jamais supprimés : ils restent dans l'historique en `Annulé`),
+   * supprime la conversation courante si elle existe (un 404 est ignoré), puis repart à vide.
+   * `done` reçoit le nombre de plans annulés (toast de la page).
    */
-  resetConversation(): void {
+  resetConversation(done?: (cancelledCount: number) => void): void {
     this.streamSub?.unsubscribe();
     this.streamSub = null;
-    const finish = () => {
+    const conversationId = this.conversationId();
+    const finish = (count: number) => {
       this.conversationId.set(undefined);
       this.lastPrompt.set('');
       this.lastAttachments = [];
@@ -220,14 +285,155 @@ export class StudioAiSessionStore implements OnDestroy {
       this.result.set(null);
       this.error.set(null);
       this.status.set('');
+      this.usedAdvancedModel.set(null);
+      this.advancedModelFallbackReason.set(null);
       this.clearPlanState();
       this.phase.set('idle');
+      if (count > 0) this.refreshHistory();
+      done?.(count);
     };
-    if (this.plan()) {
-      this.builds.cancelPending().subscribe({ next: finish, error: finish });
-    } else {
-      finish();
+    const deleteConversation = (count: number) => {
+      if (!conversationId) { finish(count); return; }
+      this.chat.deleteConversation(conversationId).subscribe({ next: () => finish(count), error: () => finish(count) });
+    };
+    this.builds.cancelPending().subscribe({
+      next: res => deleteConversation(typeof res?.data === 'number' ? res.data : 0),
+      error: () => deleteConversation(0)
+    });
+  }
+
+  // ---- Modèle avancé --------------------------------------------------------------------------------
+
+  /** Toggle « Modèle avancé » du compositeur ; le choix survit au rechargement (`localStorage`). */
+  setAdvancedModel(on: boolean): void {
+    this.useAdvancedModel.set(on);
+    try {
+      if (on) localStorage.setItem(STUDIO_AI_ADVANCED_MODEL_STORAGE_KEY, '1');
+      else localStorage.removeItem(STUDIO_AI_ADVANCED_MODEL_STORAGE_KEY);
+    } catch { /* stockage indisponible (navigation privée stricte) : le choix vaut pour la session */ }
+  }
+
+  // ---- Historique -----------------------------------------------------------------------------------
+
+  /**
+   * Charge les dernières générations du propriétaire (carte du rail). Appelé par la page quand le
+   * workbench est actif ; ensuite rafraîchi après chaque création, annulation ou réinitialisation.
+   * Les erreurs HTTP (404 workbench coupé, réseau) laissent la liste telle quelle.
+   */
+  loadHistory(pageSize: number = STUDIO_AI_HISTORY_PAGE_SIZE): void {
+    this.historyEnabled = true;
+    this.historyLoading.set(true);
+    this.historyError.set(null);
+    this.builds.listPlans({ page: 1, pageSize }).subscribe({
+      next: res => {
+        this.historyLoading.set(false);
+        if (res?.success && res.data) this.history.set(res.data.items ?? []);
+      },
+      error: () => {
+        this.historyLoading.set(false);
+        this.historyError.set(STUDIO_AI_LABELS.rail.historyLoadFailed);
+      }
+    });
+  }
+
+  private refreshHistory(): void {
+    if (this.historyEnabled) this.loadHistory();
+  }
+
+  // ---- Modèles du catalogue -------------------------------------------------------------------------
+
+  /**
+   * « Utiliser ce modèle » : le serveur crée un plan `Pending` depuis le catalogue sans passer par le
+   * LLM ; l'atelier l'ouvre directement en attente de validation (`?template=<key>`, rail, bibliothèque).
+   */
+  createFromTemplate(templateKey: string): void {
+    if (!templateKey || this.busy()) return;
+    this.error.set(null);
+    this.result.set(null);
+    this.buildSteps.set([]);
+    this.clearPlanState();
+    this.phase.set('planning');
+    this.status.set(STUDIO_AI_LABELS.page.templateLoading);
+    this.builds.createFromTemplate(templateKey).subscribe({
+      next: res => {
+        const plan = res?.success ? res.data?.plan : null;
+        const parsed = plan ? parseSpecPayload(res.data?.spec?.spec) : null;
+        if (!plan || !parsed) {
+          this.phase.set('idle');
+          this.status.set('');
+          this.error.set(STUDIO_AI_LABELS.page.templateFailed);
+          return;
+        }
+        const view = toSystemSpecView(parsed);
+        const summary = parsePlanSummary(plan.summaryJson) ?? normalizeSummary({ kind: plan.kind, title: view.system.displayName } as StudioPlanSummary);
+        this.plan.set({
+          planId: plan.id,
+          kind: res.data.spec?.kind || plan.kind,
+          expiresAt: res.data.spec?.expiresAt ?? plan.expiresAt ?? null,
+          rowVersion: res.data.spec?.rowVersion ?? null,
+          summary
+        });
+        this.spec.set(view);
+        this.draft.set(cloneSpec(view));
+        this.validation.set({ warnings: summary.warnings ?? [], errors: [], pending: false });
+        this.phase.set('awaiting_confirmation');
+        this.status.set(STUDIO_AI_LABELS.status.awaitingValidation);
+        this.timeline.update(l => [...l, { kind: 'system', text: STUDIO_AI_LABELS.templates.opened }]);
+        this.refreshHistory();
+      },
+      error: err => {
+        this.phase.set('idle');
+        this.status.set('');
+        this.error.set(studioAiHttpError(err, 'workbench'));
+      }
+    });
+  }
+
+  // ---- Doublons (R21) -------------------------------------------------------------------------------
+
+  /**
+   * « Réutiliser la table existante » : pose `existingKey` sur l'entité du brouillon et enregistre
+   * (`PUT {id}/spec`). Le serveur ignore alors champs/formulaire/état de cette entité et ne signale
+   * plus le doublon dans le nouveau résumé.
+   */
+  reuseExistingTable(hint: StudioDuplicateHint): void {
+    this.applyDuplicateDecision(hint, entity => ({ ...entity, existingKey: hint.existingKey }));
+    this.timeline.update(l => [...l, {
+      kind: 'system',
+      text: formatLabel(STUDIO_AI_LABELS.duplicates.reused, { existingDisplayName: hint.existingDisplayName })
+    }]);
+  }
+
+  /**
+   * « Créer quand même » : suffixe « (2) » le libellé (et le pluriel) de l'entité, enregistre, et met
+   * l'entité en évidence dans l'aperçu ; l'indice est écarté localement (le serveur peut encore
+   * signaler `same_key` puisque la référence ne change pas — la clé réelle sera suffixée à l'exécution).
+   */
+  renameDuplicate(hint: StudioDuplicateHint): void {
+    const suffix = STUDIO_AI_LABELS.duplicates.suffix;
+    let renamed = '';
+    this.applyDuplicateDecision(hint, entity => {
+      renamed = withSuffix(entity.displayName, suffix);
+      return { ...entity, displayName: renamed, displayNamePlural: withSuffix(entity.displayNamePlural, suffix) };
+    });
+    this.dismissedDuplicateRefs.update(set => new Set([...set, hint.specRef]));
+    this.highlightedEntityRef.set(hint.specRef);
+    if (renamed) {
+      this.timeline.update(l => [...l, {
+        kind: 'system', text: formatLabel(STUDIO_AI_LABELS.duplicates.renamed, { displayName: renamed })
+      }]);
     }
+  }
+
+  private applyDuplicateDecision(hint: StudioDuplicateHint, mutate: (entity: StudioSpecEntity) => StudioSpecEntity): void {
+    const draft = this.draft();
+    if (!draft || this.busy() || this.validation().pending) return;
+    const index = draft.entities.findIndex(e => e.ref === hint.specRef);
+    if (index < 0) return;
+    const entities = [...draft.entities];
+    entities[index] = mutate(entities[index]);
+    this.draft.set({ ...draft, entities });
+    this.saveDraft();
   }
 
   // ---- Plan : aperçu, édition, validation ---------------------------------------------------------
@@ -381,6 +587,7 @@ export class StudioAiSessionStore implements OnDestroy {
       this.phase.set('idle');
       this.status.set('');
       this.timeline.update(l => [...l, { kind: 'system', text: STUDIO_AI_LABELS.status.planCancelled }]);
+      this.refreshHistory();
     };
     this.builds.cancel(current.planId).subscribe({ next: close, error: close });
   }
@@ -411,6 +618,9 @@ export class StudioAiSessionStore implements OnDestroy {
     switch (ev.type) {
       case 'tool_call_start':
         this.status.set(STUDIO_AI_LABELS.status.preparing);
+        break;
+      case 'meta':
+        this.applyMeta(ev.content);
         break;
       case 'content':
         if (ev.content) this.assistantBuffer += ev.content;
@@ -465,6 +675,14 @@ export class StudioAiSessionStore implements OnDestroy {
     }
   }
 
+  /** Événement `meta` (StudioBuilder, avant le premier token) : quel modèle a réellement servi. */
+  private applyMeta(json: string | undefined): void {
+    const meta = parseStreamMeta(json);
+    if (!meta) return;
+    this.usedAdvancedModel.set(meta.usedAdvancedModel);
+    this.advancedModelFallbackReason.set(meta.advancedModelFallbackReason ?? null);
+  }
+
   private applyPlan(json: string | undefined): void {
     if (!json) return;
     try {
@@ -473,7 +691,8 @@ export class StudioAiSessionStore implements OnDestroy {
       const summary = normalizeSummary(
         typeof payload.summary === 'string' ? JSON.parse(payload.summary as unknown as string) : payload.summary
       );
-      this.plan.set({ planId: payload.planId, kind: summary.kind, expiresAt: null, rowVersion: null, summary });
+      this.plan.set({ planId: payload.planId, kind: summary.kind, expiresAt: payload.expiresAt ?? null, rowVersion: null, summary });
+      this.refreshHistory();
       this.validation.set({ warnings: [], errors: [], pending: false });
       this.phase.set('awaiting_confirmation');
       this.status.set(STUDIO_AI_LABELS.status.awaitingValidation);
@@ -494,6 +713,7 @@ export class StudioAiSessionStore implements OnDestroy {
       // Résultat illisible : le plan est bien exécuté côté serveur, la nav est rafraîchie au `done`.
       this.timeline.update(l => [...l, { kind: 'system', text: STUDIO_AI_LABELS.status.created }]);
     }
+    this.refreshHistory();
   }
 
   private applyReportResult(json: string | undefined): void {
@@ -572,6 +792,8 @@ export class StudioAiSessionStore implements OnDestroy {
     this.draft.set(null);
     this.specLoading.set(false);
     this.validation.set({ warnings: [], errors: [], pending: false });
+    this.dismissedDuplicateRefs.set(new Set());
+    this.highlightedEntityRef.set(null);
   }
 
 }
@@ -585,8 +807,35 @@ export function normalizeSummary(summary: StudioPlanSummary): StudioPlanSummary 
     title: summary.title ?? '',
     steps: summary.steps ?? [],
     entities: summary.entities ?? [],
-    warnings: summary.warnings ?? []
+    warnings: summary.warnings ?? [],
+    duplicates: Array.isArray(summary.duplicates) ? summary.duplicates : []
   };
+}
+
+/** Contenu JSON de l'événement SSE `meta` ; `null` si absent ou illisible (le tour continue normalement). */
+export function parseStreamMeta(json: string | undefined): ChatStreamMeta | null {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json) as Partial<ChatStreamMeta> | null;
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.usedAdvancedModel !== 'boolean') return null;
+    return {
+      usedAdvancedModel: parsed.usedAdvancedModel,
+      advancedModelFallbackReason: typeof parsed.advancedModelFallbackReason === 'string' ? parsed.advancedModelFallbackReason : null,
+      model: typeof parsed.model === 'string' ? parsed.model : null
+    };
+  } catch { return null; }
+}
+
+/** Préférence « Modèle avancé » lue au démarrage ; `false` si le stockage est indisponible. */
+export function readAdvancedModelPreference(): boolean {
+  try { return localStorage.getItem(STUDIO_AI_ADVANCED_MODEL_STORAGE_KEY) === '1'; } catch { return false; }
+}
+
+/** « Clients » → « Clients (2) » ; idempotent si le suffixe est déjà là. */
+export function withSuffix(label: string | undefined, suffix: string): string {
+  const base = (label ?? '').trim();
+  if (!base) return base;
+  return base.endsWith(suffix) ? base : `${base} ${suffix}`;
 }
 
 export function parsePlanSummary(summaryJson: string | null | undefined): StudioPlanSummary | null {

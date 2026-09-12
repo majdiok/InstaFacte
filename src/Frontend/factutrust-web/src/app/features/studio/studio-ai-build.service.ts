@@ -14,6 +14,7 @@ import {
   StudioAiPlanListQuery,
   StudioAiPlanSpecDto,
   StudioAiSpecValidationDto,
+  StudioDuplicateHint,
   StudioPagedResult,
   StudioTemplateDetailDto,
   StudioTemplateListItemDto,
@@ -31,6 +32,8 @@ export interface StudioPlanEntity {
   displayName: string;
   fieldCount: number;
   relationCount: number;
+  /** Clé de la table existante réutilisée (omise par le serveur si null). */
+  existingKey?: string | null;
 }
 
 /** Contenu de `summaryJson` — miroir de `StudioAiPlanSummary.PlanSummary` côté backend. */
@@ -42,6 +45,8 @@ export interface StudioPlanSummary {
   warnings: string[];
   /** Présent pour un plan d'ÉTAT : quelques lignes réelles, pour valider sur des chiffres. */
   sample?: ReportResult | null;
+  /** Doublons probables avec des tables existantes (PR 1.3) ; toujours émis, vide par défaut. */
+  duplicates?: StudioDuplicateHint[];
 }
 
 /** Payload de l'événement SSE `studio_report_result` (retour de l'outil studio_run_report). */

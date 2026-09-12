@@ -9,6 +9,7 @@ import { STUDIO_AI_LABELS } from '../studio-ai-labels';
 import { StudioAiSessionStore } from '../studio-ai-session.store';
 import { StudioAiPreviewTab } from '../studio-ai.models';
 import { counterChips } from '../studio-ai-spec.util';
+import { StudioAiDuplicatesBannerComponent } from './studio-ai-duplicates-banner.component';
 import { StudioAiFormsTabComponent } from './studio-ai-forms-tab.component';
 import { StudioAiMenuTabComponent } from './studio-ai-menu-tab.component';
 import { StudioAiOverviewTabComponent } from './studio-ai-overview-tab.component';
@@ -32,7 +33,7 @@ import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
     ButtonModule, SkeletonModule, TabsModule, TagModule, TooltipModule,
     StudioAiOverviewTabComponent, StudioAiTablesTabComponent, StudioAiRelationsTabComponent,
     StudioAiFormsTabComponent, StudioAiSeedTabComponent, StudioAiReportsTabComponent,
-    StudioAiMenuTabComponent
+    StudioAiMenuTabComponent, StudioAiDuplicatesBannerComponent
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './studio-ai-preview.scss',
@@ -95,6 +96,14 @@ import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
         </div>
       }
 
+      @if (store.plan()) {
+        <app-studio-ai-duplicates-banner
+          [hints]="store.duplicates()"
+          [busy]="store.busy() || store.validation().pending"
+          (reuse)="store.reuseExistingTable($event)"
+          (createAnyway)="store.renameDuplicate($event)" />
+      }
+
       @if (!store.plan()) {
         <div class="sai-empty">
           <span class="sai-empty__icon" aria-hidden="true"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
@@ -147,7 +156,7 @@ import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
                 (openEntity)="selectEntity($event)" />
             </p-tabpanel>
             <p-tabpanel value="tables">
-              <app-studio-ai-tables-tab [spec]="spec()!" [selectedRef]="selectedRef()" />
+              <app-studio-ai-tables-tab [spec]="spec()!" [selectedRef]="selectedRef()" [highlightedRef]="store.highlightedEntityRef()" />
             </p-tabpanel>
             <p-tabpanel value="relations">
               <app-studio-ai-relations-tab [spec]="spec()!" />

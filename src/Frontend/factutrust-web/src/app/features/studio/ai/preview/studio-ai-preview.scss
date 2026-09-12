@@ -168,3 +168,16 @@
   .sai-form-grid { grid-template-columns: minmax(0, 1fr); }
   .sai-form-grid__cell, .sai-form-grid__cell--half { grid-column: span 1; }
 }
+
+/* R21 : entité renommée « (2) » après « Créer quand même ». */
+.sai-highlight {
+  background: #fef3c7;
+  border-radius: 0.25rem;
+  padding: 0 0.25rem;
+  box-decoration-break: clone;
+}
+
+.sai-list__item--highlight { border-color: #f59e0b; }
+
+/* Entité qui réutilise une table existante (`existingKey`). */
+.sai-existing { color: var(--color-primary-700, #4338ca); }

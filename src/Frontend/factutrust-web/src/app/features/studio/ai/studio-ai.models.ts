@@ -116,6 +116,11 @@ export interface StudioSpecEntity {
   fields: StudioSpecField[];
   form?: StudioSpecForm;
   report?: StudioSpecReport;
+  /**
+   * Clé d'une table EXISTANTE à réutiliser telle quelle (alias serveur `existing` / `useExisting` /
+   * `reuse`) : champs, formulaire et état de cette entité sont alors ignorés à l'exécution (R21).
+   */
+  existingKey?: string | null;
   [k: string]: unknown;
 }
 
@@ -182,7 +187,7 @@ export function relationTargetName(
 // ---------------------------------------------------------------------------------------------
 
 /** Noms d'enum `StudioAiPlanKind` sérialisés par le serveur. */
-export type StudioAiPlanKind = 'CreateApp' | 'CreateSystem' | 'Amendment' | 'View' | 'Report';
+export type StudioAiPlanKind = 'CreateApp' | 'CreateSystem' | 'Amendment' | 'View' | 'Report' | 'RecordView' | 'Workflow';
 
 /** Noms d'enum `StudioAiPlanStatus` ; la liste renvoie `Expired` quand le plan a dépassé sa durée de vie. */
 export type StudioAiPlanStatus = 'Pending' | 'Executing' | 'Completed' | 'Failed' | 'Cancelled' | 'Expired';
@@ -200,6 +205,18 @@ export interface StudioAiCapabilitiesDto {
   advancedModelAvailable: boolean;
   standardModelLabel: string;
   advancedModelLabel?: string | null;
+  /** Relations plusieurs-à-plusieurs (PR 2.1, `Ollama:EnableStudioManyToMany`). */
+  manyToManyEnabled: boolean;
+  /** Vues d'enregistrements (kanban, calendrier…) côté runtime (PR 2.x). */
+  recordViewsEnabled: boolean;
+  /** Outils IA de création de vues d'enregistrements (PR 2.x). */
+  recordViewToolsEnabled: boolean;
+  /** Export / import / duplication d'un système au format JSON (PR 3.x). */
+  systemExportEnabled: boolean;
+  /** Moteur de workflows côté runtime (PR 4.x). */
+  workflowsEnabled: boolean;
+  /** Outils IA de génération de workflows (PR 4.x) ; pilote la carte « Workflow » de l'atelier. */
+  workflowToolsEnabled: boolean;
 }
 
 /** Capacités « tout désactivé » utilisées en repli (backend sans P0, erreur réseau…). */
@@ -214,7 +231,13 @@ export const STUDIO_AI_CAPABILITIES_FALLBACK: StudioAiCapabilitiesDto = {
   pagesEnabled: false,
   advancedModelAvailable: false,
   standardModelLabel: '',
-  advancedModelLabel: null
+  advancedModelLabel: null,
+  manyToManyEnabled: false,
+  recordViewsEnabled: false,
+  recordViewToolsEnabled: false,
+  systemExportEnabled: false,
+  workflowsEnabled: false,
+  workflowToolsEnabled: false
 };
 
 /** Forme paginée renvoyée par le backend (identique à `PagedResult<T>` des autres modules). */
@@ -266,13 +289,44 @@ export interface StudioAiSpecValidationDto {
   warnings: string[];
 }
 
+/** Raison d'un doublon détecté par le serveur (`StudioAiDuplicateDetector`, par priorité décroissante). */
+export type StudioDuplicateReason = 'same_key' | 'same_name' | 'singular_plural';
+
+/**
+ * Miroir de `DuplicateHint` (`summary.duplicates[]`, PR 1.3) : une entité de la spec ressemble à une
+ * table déjà présente dans le tenant. Le bandeau de l'aperçu propose « Réutiliser » / « Créer quand même ».
+ */
+export interface StudioDuplicateHint {
+  /** `ref` de l'entité dans la spec. */
+  specRef: string;
+  specDisplayName: string;
+  /** Clé de la table existante (`CustomEntityDefinition.Key`). */
+  existingKey: string;
+  existingDisplayName: string;
+  reason: StudioDuplicateReason | string;
+}
+
+/**
+ * Différence entre la spec serveur et le brouillon local (`diffSpec`). `path` est un chemin lisible
+ * (`entities.clients.fields.email`, `system.displayName`…) ; `label` un libellé FR prêt à afficher.
+ */
+export interface StudioSpecChange {
+  path: string;
+  kind: 'added' | 'removed' | 'changed';
+  label: string;
+  before?: unknown;
+  after?: unknown;
+}
+
 /** Forme minimale du `summary` (miroir de `StudioPlanSummary` du service de build, redéclarée pour éviter un import circulaire). */
 export interface StudioPlanSummaryLike {
   kind: string;
   title: string;
   steps: { key: string; label: string; detail: string }[];
-  entities: { displayName: string; fieldCount: number; relationCount: number }[];
+  entities: { displayName: string; fieldCount: number; relationCount: number; existingKey?: string | null }[];
   warnings: string[];
+  /** Toujours émis par le serveur depuis la PR 1.3 (tableau vide par défaut). */
+  duplicates?: StudioDuplicateHint[];
 }
 
 /** Miroir de `StudioAiPlanDto` (redéclaré ici pour les nouveaux endpoints ; identique à celui du service de build). */

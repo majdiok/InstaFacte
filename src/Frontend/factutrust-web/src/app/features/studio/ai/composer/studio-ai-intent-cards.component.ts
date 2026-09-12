@@ -30,9 +30,9 @@ export interface StudioAiIntentCardView {
  * Grille « Que voulez-vous créer ? » : les 8 intentions de `STUDIO_AI_LABELS.intents`.
  *
  * Le composant est purement présentiel : cliquer une carte n'envoie RIEN, il émet `pick` pour que
- * la page préremplisse le composer et y place le focus (§4.2). Les cartes Workflow et Page sont
- * livrées désactivées avec un badge « Bientôt » plutôt qu'absentes, pour que la feuille de route
- * soit lisible sans documentation.
+ * la page préremplisse le composer et y place le focus (§4.2). La carte Workflow s'active quand le
+ * serveur expose `workflowToolsEnabled` (PR 4.x) ; Page reste « Bientôt ». Une carte non livrée est
+ * désactivée avec un badge plutôt qu'absente, pour que la feuille de route soit lisible sans documentation.
  */
 @Component({
   selector: 'app-studio-ai-intent-cards',
@@ -147,7 +147,11 @@ export class StudioAiIntentCardsComponent {
     return STUDIO_AI_LABELS.intents.map(def => this.toView(def, caps));
   });
 
-  private toView(def: StudioAiIntentCardDef, caps: StudioAiCapabilitiesDto | null): StudioAiIntentCardView {
+  private toView(base: StudioAiIntentCardDef, caps: StudioAiCapabilitiesDto | null): StudioAiIntentCardView {
+    // Workflow : livrée par le serveur (capability), pas par une version du client.
+    const def: StudioAiIntentCardDef = base.intent === 'workflow' && caps?.workflowToolsEnabled
+      ? { ...base, available: true, prompt: base.prompt || STUDIO_AI_LABELS.workflowPrompt }
+      : base;
     if (!def.available) {
       return { def, disabled: true, soon: true, tooltip: def.soonTooltip ?? STUDIO_AI_LABELS.soon };
     }
