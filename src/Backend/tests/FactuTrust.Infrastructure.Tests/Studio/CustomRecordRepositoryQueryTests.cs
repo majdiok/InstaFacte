@@ -186,6 +186,49 @@ public sealed class CustomRecordRepositoryQueryTests : IClassFixture<CustomRecor
         // ici la requête est exécutée en ADO brut, non capturée par le logger EF CommandExecuted.)
     }
 
+    [SkippableFact]
+    public async Task Out_of_range_page_returns_no_items_but_keeps_the_exact_total()
+    {
+        Skip.If(!_sql.CanRun, "SQL Server/LocalDB indisponible dans ce bac à sable.");
+
+        var entityId = Guid.NewGuid();
+        await _sql.SeedAsync(entityId, """{"nom":"r1","statut":"encours"}""");
+        await _sql.SeedAsync(entityId, """{"nom":"r2","statut":"encours"}""");
+        await _sql.SeedAsync(entityId, """{"nom":"r3","statut":"encours"}""");
+
+        var repo = new CustomRecordRepository(_sql.Factory, _sql.JsonIndex);
+
+        // Page au-delà de la dernière (cas banal après suppressions) : COUNT(*) OVER() ne peut pas être
+        // porté par zéro ligne — un COUNT(*) de secours garde « Total » exact (revue PR 2.3).
+        var page = await repo.QueryAsync(Spec(entityId, skip: 90, take: 25), Types);
+        Assert.Empty(page.Items);
+        Assert.Equal(3, page.Total);
+
+        var filtered = await repo.QueryAsync(Spec(entityId,
+            filters: new[] { new RecordViewFilter("statut", "eq", JsonValue.Create("encours")) },
+            skip: 50, take: 25), Types);
+        Assert.Empty(filtered.Items);
+        Assert.Equal(3, filtered.Total);
+    }
+
+    [SkippableFact]
+    public async Task Contains_on_multiselect_matches_array_elements()
+    {
+        Skip.If(!_sql.CanRun, "SQL Server/LocalDB indisponible dans ce bac à sable.");
+
+        var entityId = Guid.NewGuid();
+        await _sql.SeedAsync(entityId, """{"tags":["urgent","client"]}""");
+        await _sql.SeedAsync(entityId, """{"tags":["devis"]}""");
+        await _sql.SeedAsync(entityId, """{"nom":"sans-tags"}"""); // tableau absent
+
+        var repo = new CustomRecordRepository(_sql.Factory, _sql.JsonIndex);
+
+        var result = await repo.QueryAsync(Spec(entityId,
+            filters: new[] { new RecordViewFilter("tags", "contains", JsonValue.Create("urg")) }), Types);
+        Assert.Equal(1, result.Total);
+        Assert.Contains("urgent", Assert.Single(result.Items).DataJson);
+    }
+
     // ---- fixture ----
 
     /// <summary>Base SQL dédiée à la classe ; capture le texte des commandes EF exécutées.</summary>

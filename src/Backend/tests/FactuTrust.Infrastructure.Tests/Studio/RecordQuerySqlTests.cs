@@ -132,6 +132,23 @@ public sealed class RecordQuerySqlTests
     }
 
     [Fact]
+    public void Contains_on_multiselect_searches_array_elements_via_openjson()
+    {
+        // JSON_VALUE renvoie NULL sur un tableau JSON : un LIKE direct serait un filtre muet.
+        var result = RecordQuerySql.Build(Spec(
+            filters: new[] { new RecordViewFilter("tags", "contains", JsonValue.Create("urg")) }), Types);
+
+        Assert.Contains("EXISTS (SELECT 1 FROM OPENJSON(r.[DataJson], '$.tags') WHERE [value] LIKE @p0 ESCAPE '\\')", result.WhereSql);
+        Assert.Equal("%urg%", result.Parameters.Single(p => p.Name == "@p0").Value);
+
+        // Texte : LIKE simple inchangé.
+        var text = RecordQuerySql.Build(Spec(
+            filters: new[] { new RecordViewFilter("nom", "contains", JsonValue.Create("urg")) }), Types);
+        Assert.Contains("JSON_VALUE(r.[DataJson], '$.nom') LIKE @p0 ESCAPE '\\'", text.WhereSql);
+        Assert.DoesNotContain("OPENJSON", text.WhereSql);
+    }
+
+    [Fact]
     public void In_on_multiselect_uses_openjson_exists()
     {
         var values = new JsonArray(JsonValue.Create("a"), JsonValue.Create("b"));

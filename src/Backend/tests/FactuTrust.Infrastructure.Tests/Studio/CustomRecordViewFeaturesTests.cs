@@ -198,6 +198,38 @@ public sealed class CustomRecordViewFeaturesTests
         Assert.Equal("t3", run.Groups[^1].Items.Single().Data!["nom"]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task Run_kanban_completes_a_partial_column_order_with_missing_options()
+    {
+        // ColumnOrder partiel (option ajoutée au champ après l'enregistrement de la vue) : les fiches
+        // des options omises gardent leur propre colonne — jamais reléguées dans « Sans valeur ».
+        var def = KanbanDef() with
+        {
+            Kanban = new RecordViewKanban("statut", "nom", new[] { "nom" },
+                new List<string> { "termine" }, ShowEmptyGroup: true)
+        };
+        var view = View(CustomRecordViewMode.Kanban, def);
+        _views.Setup(v => v.GetByIdAsync(Tid, EntityId, view.Id, It.IsAny<CancellationToken>())).ReturnsAsync(view);
+
+        var rows = new List<CustomRecord>
+        {
+            Rec("""{"nom":"t1","statut":"encours"}"""), // option absente du ColumnOrder
+            Rec("""{"nom":"t2","statut":"termine"}""")
+        };
+        _records.Setup(r => r.QueryAsync(It.IsAny<RecordQuerySpec>(), It.IsAny<IReadOnlyDictionary<string, CustomFieldType>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((rows, Total: 2));
+
+        var handler = RunHandler();
+        var result = await handler.Handle(
+            new RunCustomRecordViewQuery("chantiers", view.Id, new RunRecordViewRequest()), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var run = result.Value;
+        // « termine » d'abord (ordre demandé), « encours » complété ensuite, aucun « Sans valeur ».
+        Assert.Equal(new[] { "termine", "encours" }, run.Groups!.Select(g => g.Value).ToArray());
+        Assert.Equal("t1", run.Groups[1].Items.Single().Data!["nom"]!.GetValue<string>());
+    }
+
     // ---- Run calendrier ----
 
     [Fact]
@@ -253,6 +285,32 @@ public sealed class CustomRecordViewFeaturesTests
         Assert.Equal("Intervention A", run.Events[0].Title);
         Assert.Equal("encours", run.Events[0].ColorValue);
         Assert.Null(run.Events[1].ColorValue);
+    }
+
+    [Fact]
+    public async Task Run_calendar_uses_an_exclusive_upper_bound_so_the_last_day_is_included_for_datetime()
+    {
+        var view = View(CustomRecordViewMode.Calendar, CalendarDef());
+        _views.Setup(v => v.GetByIdAsync(Tid, EntityId, view.Id, It.IsAny<CancellationToken>())).ReturnsAsync(view);
+        _records.Setup(r => r.QueryAsync(It.IsAny<RecordQuerySpec>(), It.IsAny<IReadOnlyDictionary<string, CustomFieldType>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new List<CustomRecord>(), 0));
+
+        var handler = RunHandler();
+        var result = await handler.Handle(
+            new RunCustomRecordViewQuery("chantiers", view.Id,
+                new RunRecordViewRequest(RangeStart: new DateOnly(2026, 2, 1), RangeEnd: new DateOnly(2026, 2, 28))),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        // Pas de `between '2026-02-01' AND '2026-02-28'` (couperait à minuit) : gte + lt exclusif.
+        _records.Verify(r => r.QueryAsync(
+            It.Is<RecordQuerySpec>(s =>
+                s.Filters.Any(f => f.FieldKey == "debut" && f.Op == "gte"
+                    && f.Value!.GetValue<string>() == "2026-02-01")
+                && s.Filters.Any(f => f.FieldKey == "debut" && f.Op == "lt"
+                    && f.Value!.GetValue<string>() == "2026-03-01")
+                && !s.Filters.Any(f => f.Op == "between")),
+            It.IsAny<IReadOnlyDictionary<string, CustomFieldType>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static CustomRecord Rec(string json) => CustomRecord.Create(Tid, EntityId, json, UserId);

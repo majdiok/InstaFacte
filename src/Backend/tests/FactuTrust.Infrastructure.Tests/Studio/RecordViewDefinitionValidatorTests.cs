@@ -189,4 +189,76 @@ public sealed class RecordViewDefinitionValidatorTests
             CustomRecordViewMode.List, Fields());
         Assert.True(asFilter.IsFailure);
     }
+
+    // ---- forme des valeurs de filtres (sans elle : 500 au run au lieu de 400) ----
+
+    [Fact]
+    public void In_requires_a_bounded_array_value()
+    {
+        var notAnArray = RecordViewDefinitionValidator.Validate(
+            ListDef(filters: new[] { new RecordViewFilter("statut", "in", JsonValue.Create("x")) }),
+            CustomRecordViewMode.List, Fields());
+        Assert.True(notAnArray.IsFailure);
+        Assert.Equal("Validation.filters", notAnArray.Error.Code);
+
+        var oversized = RecordViewDefinitionValidator.Validate(
+            ListDef(filters: new[] { new RecordViewFilter("statut", "in",
+                new JsonArray(Enumerable.Range(0, 101).Select(i => (JsonNode)JsonValue.Create($"v{i}")).ToArray())) }),
+            CustomRecordViewMode.List, Fields());
+        Assert.True(oversized.IsFailure);
+
+        var ok = RecordViewDefinitionValidator.Validate(
+            ListDef(filters: new[] { new RecordViewFilter("statut", "in",
+                new JsonArray(JsonValue.Create("encours"), JsonValue.Create("termine"))) }),
+            CustomRecordViewMode.List, Fields());
+        Assert.True(ok.IsSuccess);
+    }
+
+    [Fact]
+    public void Between_requires_two_convertible_bounds()
+    {
+        var notTwo = RecordViewDefinitionValidator.Validate(
+            ListDef(filters: new[] { new RecordViewFilter("debut", "between",
+                new JsonArray(JsonValue.Create("2026-01-01"))) }),
+            CustomRecordViewMode.List, Fields());
+        Assert.True(notTwo.IsFailure);
+        Assert.Equal("Validation.filters", notTwo.Error.Code);
+
+        var notConvertible = RecordViewDefinitionValidator.Validate(
+            ListDef(filters: new[] { new RecordViewFilter("debut", "between",
+                new JsonArray(JsonValue.Create("abc"), JsonValue.Create("2026-03-31"))) }),
+            CustomRecordViewMode.List, Fields());
+        Assert.True(notConvertible.IsFailure);
+        Assert.Contains("abc", notConvertible.Error.Description);
+    }
+
+    [Fact]
+    public void Typed_comparisons_reject_non_convertible_scalars()
+    {
+        var money = RecordViewDefinitionValidator.Validate(
+            ListDef(filters: new[] { new RecordViewFilter("montant", "gt", JsonValue.Create("abc")) }),
+            CustomRecordViewMode.List, Fields());
+        Assert.True(money.IsFailure);
+        Assert.Contains("montant", money.Error.Description);
+
+        var date = RecordViewDefinitionValidator.Validate(
+            ListDef(filters: new[] { new RecordViewFilter("debut", "lte", JsonValue.Create("pas-une-date")) }),
+            CustomRecordViewMode.List, Fields());
+        Assert.True(date.IsFailure);
+
+        var objectValue = RecordViewDefinitionValidator.Validate(
+            ListDef(filters: new[] { new RecordViewFilter("montant", "gte", new JsonObject()) }),
+            CustomRecordViewMode.List, Fields());
+        Assert.True(objectValue.IsFailure);
+
+        var okMoney = RecordViewDefinitionValidator.Validate(
+            ListDef(filters: new[] { new RecordViewFilter("montant", "gt", JsonValue.Create("100.5")) }),
+            CustomRecordViewMode.List, Fields());
+        Assert.True(okMoney.IsSuccess);
+
+        var okDate = RecordViewDefinitionValidator.Validate(
+            ListDef(filters: new[] { new RecordViewFilter("debut", "gte", JsonValue.Create("2026-01-15")) }),
+            CustomRecordViewMode.List, Fields());
+        Assert.True(okDate.IsSuccess);
+    }
 }
