@@ -43,13 +43,7 @@ public sealed class PatchCustomRecordCommandTests
         _entities.Setup(e => e.GetByKeyAsync(Tid, "chantiers", It.IsAny<CancellationToken>())).ReturnsAsync(entity);
 
         _fields.Setup(f => f.ListByEntityAsync(Tid, EntityId, false, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[]
-            {
-                CustomFieldDefinition.Create(Tid, EntityId, "nom", "Nom", CustomFieldType.Text, true, false, 0, null, null, null, null),
-                CustomFieldDefinition.Create(Tid, EntityId, "statut", "Statut", CustomFieldType.Select, false, false, 1, null,
-                    """{"options":[{"value":"encours","label":"En cours"},{"value":"termine","label":"Terminé"}]}""", null, null),
-                CustomFieldDefinition.Create(Tid, EntityId, "reference", "Réf", CustomFieldType.AutoNumber, false, false, 2, null, null, null, null)
-            });
+            .ReturnsAsync(Fields());
 
         _record = CustomRecord.Create(Tid, EntityId, """{"nom":"Alpha","statut":"encours","reference":"CH-0001"}""", UserId);
         typeof(CustomRecord).GetProperty(nameof(CustomRecord.RowVersion))!.SetValue(_record, _rowVersion);
@@ -74,6 +68,14 @@ public sealed class PatchCustomRecordCommandTests
         new(_entities.Object, _fields.Object, _records.Object, _computedWriter.Object, _publisher.Object, _currentUser.Object);
 
     private string Rv() => Convert.ToBase64String(_rowVersion);
+
+    private static CustomFieldDefinition[] Fields(bool nomUnique = false) => new[]
+    {
+        CustomFieldDefinition.Create(Tid, EntityId, "nom", "Nom", CustomFieldType.Text, true, nomUnique, 0, null, null, null, null),
+        CustomFieldDefinition.Create(Tid, EntityId, "statut", "Statut", CustomFieldType.Select, false, false, 1, null,
+            """{"options":[{"value":"encours","label":"En cours"},{"value":"termine","label":"Terminé"}]}""", null, null),
+        CustomFieldDefinition.Create(Tid, EntityId, "reference", "Réf", CustomFieldType.AutoNumber, false, false, 2, null, null, null, null)
+    };
 
     [Fact]
     public async Task Patch_merges_only_the_provided_keys_and_publishes_on_update()
@@ -158,13 +160,7 @@ public sealed class PatchCustomRecordCommandTests
     {
         // nom devient unique pour ce test (mêmes 3 champs que le record, pour que la fusion reste valide)
         _fields.Setup(f => f.ListByEntityAsync(Tid, EntityId, false, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[]
-            {
-                CustomFieldDefinition.Create(Tid, EntityId, "nom", "Nom", CustomFieldType.Text, true, isUnique: true, 0, null, null, null, null),
-                CustomFieldDefinition.Create(Tid, EntityId, "statut", "Statut", CustomFieldType.Select, false, false, 1, null,
-                    """{"options":[{"value":"encours","label":"En cours"},{"value":"termine","label":"Terminé"}]}""", null, null),
-                CustomFieldDefinition.Create(Tid, EntityId, "reference", "Réf", CustomFieldType.AutoNumber, false, false, 2, null, null, null, null)
-            });
+            .ReturnsAsync(Fields(nomUnique: true));
         _records.Setup(r => r.ExistsWithFieldValueAsync(Tid, EntityId, "nom", "Doublon", _record.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 

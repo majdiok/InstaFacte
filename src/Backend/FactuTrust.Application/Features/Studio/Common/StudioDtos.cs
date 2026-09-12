@@ -85,7 +85,7 @@ public sealed record CustomEntitySchemaDto(
     IReadOnlyList<CustomFieldDto> Fields,
     FormLayout Form,
     IReadOnlyList<EntityRelationDto> Relations = null!,
-    IReadOnlyList<FactuTrust.Application.Features.Studio.RecordViews.CustomRecordViewDto>? Views = null)
+    IReadOnlyList<RecordViews.CustomRecordViewDto>? Views = null)
 {
     public IReadOnlyList<EntityRelationDto> Relations { get; init; } = Relations ?? Array.Empty<EntityRelationDto>();
 

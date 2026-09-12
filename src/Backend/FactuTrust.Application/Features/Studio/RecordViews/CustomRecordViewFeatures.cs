@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
@@ -418,7 +421,6 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
     private readonly ICustomFieldRepository _fields;
     private readonly ICustomRecordViewRepository _views;
     private readonly ICustomRecordRepository _records;
-    private readonly IJsonIndexManager _jsonIndex;
     private readonly ICurrentUser _currentUser;
     private readonly OllamaSettings _settings;
 
@@ -427,7 +429,6 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
         ICustomFieldRepository fields,
         ICustomRecordViewRepository views,
         ICustomRecordRepository records,
-        IJsonIndexManager jsonIndex,
         ICurrentUser currentUser,
         IOptions<OllamaSettings> settings)
     {
@@ -435,7 +436,6 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
         _fields = fields;
         _views = views;
         _records = records;
-        _jsonIndex = jsonIndex;
         _currentUser = currentUser;
         _settings = settings.Value;
     }
@@ -473,15 +473,16 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
         if (pageSize is < 1 or > MaxPageSize)
             return Result.Failure<RecordViewRunResultDto>(Error.Validation("pageSize", "La taille de page doit être comprise entre 1 et 200."));
 
-        // Filtres additionnels : ≤ 5, validés comme les filtres de la vue.
+        // Filtres additionnels : ≤ 5, validés contre les champs actifs (ceux de la définition
+        // viennent d'être revalidés par RecordViewDefinitionValidator.Validate ci-dessus).
         var extraFilters = request.ExtraFilters ?? Array.Empty<RecordViewFilter>();
         if (extraFilters.Count > MaxExtraFilters)
             return Result.Failure<RecordViewRunResultDto>(
                 Error.Validation("extraFilters", $"Au plus {MaxExtraFilters} filtres additionnels."));
-        var filters = definition.Filters.Concat(extraFilters).ToList();
-        var filtersError = RecordViewDefinitionValidator.ValidateFilters(filters, fieldsByKey);
+        var filtersError = RecordViewDefinitionValidator.ValidateFilters(extraFilters, fieldsByKey);
         if (filtersError is not null)
             return Result.Failure<RecordViewRunResultDto>(filtersError);
+        var filters = definition.Filters.Concat(extraFilters).ToList();
 
         // Champs recherchables (texte / multi-texte / select), ≤ 6, validés ; vide ⇒ recherche brute sur DataJson.
         var searchableKeys = definition.SearchEnabled
@@ -493,37 +494,42 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
 
         var search = string.IsNullOrWhiteSpace(request.Search) ? null : request.Search;
 
-        // Clés disposant d'une colonne indexée jx_<clé> (égalité uniquement) — résolues en amont, best-effort.
-        var indexed = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var key in filters.Select(f => f.FieldKey).Distinct(StringComparer.Ordinal))
-        {
-            if (!RecordViewDefinitionValidator.IsPersistedKey(key)
-                && await _jsonIndex.IndexedColumnExistsAsync(tenantId, key, cancellationToken))
-                indexed.Add(key);
-        }
+        // Types par clé pour les expressions SQL. Les colonnes indexées jx_<clé> ne sont PAS résolues
+        // ici : CustomRecordRepository.QueryAsync le fait côté Infrastructure, au plus près du SQL.
+        var fieldTypes = fieldsByKey.ToDictionary(kv => kv.Key, kv => kv.Value.FieldType, StringComparer.Ordinal);
 
         return view.Mode switch
         {
-            CustomRecordViewMode.Kanban => await RunKanban(tenantId, entity, definition, filters, search, searchableKeys, indexed, fieldsByKey, cancellationToken),
-            CustomRecordViewMode.Calendar => await RunCalendar(tenantId, entity, definition, request, filters, search, searchableKeys, indexed, fieldsByKey, cancellationToken),
-            _ => await RunList(tenantId, entity, definition, page, pageSize, filters, search, searchableKeys, indexed, fieldsByKey, cancellationToken)
+            CustomRecordViewMode.Kanban => await RunKanban(tenantId, entity.Id, definition, filters, search, searchableKeys, fieldTypes, fieldsByKey[definition.Kanban!.GroupByFieldKey], cancellationToken),
+            CustomRecordViewMode.Calendar => await RunCalendar(tenantId, entity.Id, definition, request, filters, search, searchableKeys, fieldTypes, cancellationToken),
+            _ => await RunList(tenantId, entity.Id, definition, page, pageSize, filters, search, searchableKeys, fieldTypes, cancellationToken)
         };
     }
+
+    /// <summary>
+    /// Construit le <see cref="RecordQuerySpec"/> et exécute la requête. L'ensemble des clés indexées
+    /// part vide : il est résolu par le dépôt (Infrastructure), seul endroit où le seek jx_ est décidé.
+    /// </summary>
+    private Task<(IReadOnlyList<CustomRecord> Items, int Total)> QueryRecordsAsync(
+        Guid tenantId, Guid entityId, IReadOnlyList<RecordViewFilter> filters, IReadOnlyList<RecordViewSort> sort,
+        string? search, IReadOnlyList<string> searchableKeys, int skip, int take,
+        IReadOnlyDictionary<string, CustomFieldType> fieldTypes, CancellationToken cancellationToken) =>
+        _records.QueryAsync(
+            new RecordQuerySpec(tenantId, entityId, filters, sort, search, searchableKeys, skip, take,
+                new HashSet<string>(StringComparer.Ordinal)),
+            fieldTypes, cancellationToken);
 
     // ---- Liste paginée ----
 
     private async Task<Result<RecordViewRunResultDto>> RunList(
-        Guid tenantId, CustomEntityDefinition entity, RecordViewDefinition definition,
+        Guid tenantId, Guid entityId, RecordViewDefinition definition,
         int page, int pageSize, IReadOnlyList<RecordViewFilter> filters, string? search,
-        IReadOnlyList<string> searchableKeys, IReadOnlySet<string> indexed,
-        IReadOnlyDictionary<string, CustomFieldDefinition> fieldsByKey, CancellationToken cancellationToken)
+        IReadOnlyList<string> searchableKeys,
+        IReadOnlyDictionary<string, CustomFieldType> fieldTypes, CancellationToken cancellationToken)
     {
-        var fieldTypes = fieldsByKey.ToDictionary(kv => kv.Key, kv => kv.Value.FieldType, StringComparer.Ordinal);
-        var spec = new RecordQuerySpec(
-            tenantId, entity.Id, filters, definition.Sort, search, searchableKeys,
-            (page - 1) * pageSize, pageSize, indexed);
-
-        var (items, total) = await _records.QueryAsync(spec, fieldTypes, cancellationToken);
+        var (items, total) = await QueryRecordsAsync(
+            tenantId, entityId, filters, definition.Sort, search, searchableKeys,
+            (page - 1) * pageSize, pageSize, fieldTypes, cancellationToken);
         var dtos = items.Select(StudioMappers.ToDto).ToList();
 
         return Result.Success(new RecordViewRunResultDto(
@@ -533,14 +539,14 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
     // ---- Kanban (groupé en mémoire) ----
 
     private async Task<Result<RecordViewRunResultDto>> RunKanban(
-        Guid tenantId, CustomEntityDefinition entity, RecordViewDefinition definition,
+        Guid tenantId, Guid entityId, RecordViewDefinition definition,
         IReadOnlyList<RecordViewFilter> filters, string? search,
-        IReadOnlyList<string> searchableKeys, IReadOnlySet<string> indexed,
-        IReadOnlyDictionary<string, CustomFieldDefinition> fieldsByKey, CancellationToken cancellationToken)
+        IReadOnlyList<string> searchableKeys,
+        IReadOnlyDictionary<string, CustomFieldType> fieldTypes, CustomFieldDefinition groupField,
+        CancellationToken cancellationToken)
     {
         var kanban = definition.Kanban!;
         var maxCards = _settings.StudioRecordViewMaxKanbanCards;
-        var groupField = fieldsByKey[kanban.GroupByFieldKey];
         var options = StudioFieldJson.ParseOptions(groupField.OptionsJson) ?? Array.Empty<SelectOptionDto>();
 
         // Ordre des colonnes : ColumnOrder si fourni (filtré aux options connues), sinon ordre des options.
@@ -554,12 +560,8 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
         var sort = new List<RecordViewSort> { new(kanban.GroupByFieldKey) };
         sort.AddRange(definition.Sort.Where(s => !string.Equals(s.FieldKey, kanban.GroupByFieldKey, StringComparison.Ordinal)));
 
-        var fieldTypes = fieldsByKey.ToDictionary(kv => kv.Key, kv => kv.Value.FieldType, StringComparer.Ordinal);
-        var spec = new RecordQuerySpec(
-            tenantId, entity.Id, filters, sort, search, searchableKeys,
-            Skip: 0, Take: maxCards, indexed);
-
-        var (items, total) = await _records.QueryAsync(spec, fieldTypes, cancellationToken);
+        var (items, total) = await QueryRecordsAsync(
+            tenantId, entityId, filters, sort, search, searchableKeys, 0, maxCards, fieldTypes, cancellationToken);
         var truncated = total > maxCards;
 
         // Regroupement en mémoire, dans l'ordre des colonnes décidé.
@@ -570,15 +572,11 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
 
         foreach (var record in items)
         {
-            var value = ReadScalar(record.DataJson, kanban.GroupByFieldKey);
+            var value = ReadScalar(ParseJson(record.DataJson), kanban.GroupByFieldKey);
             if (value is not null && buckets.TryGetValue(value, out var bucket))
                 bucket.Add(StudioMappers.ToDto(record));
-            else if (value is not null && !buckets.ContainsKey(value))
-            {
-                // Valeur hors options (donnée orpheline) : basculée en « Sans valeur » si le groupe est prévu.
-                if (kanban.ShowEmptyGroup) sansValeur.Add(StudioMappers.ToDto(record));
-            }
             else if (kanban.ShowEmptyGroup)
+                // Valeur absente ou hors options (donnée orpheline) : « Sans valeur » si le groupe est prévu.
                 sansValeur.Add(StudioMappers.ToDto(record));
         }
 
@@ -600,10 +598,10 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
     // ---- Calendrier (fenêtre bornée) ----
 
     private async Task<Result<RecordViewRunResultDto>> RunCalendar(
-        Guid tenantId, CustomEntityDefinition entity, RecordViewDefinition definition,
+        Guid tenantId, Guid entityId, RecordViewDefinition definition,
         RunRecordViewRequest request, IReadOnlyList<RecordViewFilter> filters, string? search,
-        IReadOnlyList<string> searchableKeys, IReadOnlySet<string> indexed,
-        IReadOnlyDictionary<string, CustomFieldDefinition> fieldsByKey, CancellationToken cancellationToken)
+        IReadOnlyList<string> searchableKeys,
+        IReadOnlyDictionary<string, CustomFieldType> fieldTypes, CancellationToken cancellationToken)
     {
         var calendar = definition.Calendar!;
         var maxEvents = _settings.StudioRecordViewMaxCalendarEvents;
@@ -623,41 +621,37 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
         var rangeFilters = filters.ToList();
         rangeFilters.Add(new RecordViewFilter(
             calendar.StartFieldKey, "between",
-            new System.Text.Json.Nodes.JsonArray(
-                System.Text.Json.Nodes.JsonValue.Create(request.RangeStart.Value.ToString("yyyy-MM-dd")),
-                System.Text.Json.Nodes.JsonValue.Create(request.RangeEnd.Value.ToString("yyyy-MM-dd")))));
+            new JsonArray(
+                JsonValue.Create(request.RangeStart.Value.ToString("yyyy-MM-dd")),
+                JsonValue.Create(request.RangeEnd.Value.ToString("yyyy-MM-dd")))));
 
-        var fieldTypes = fieldsByKey.ToDictionary(kv => kv.Key, kv => kv.Value.FieldType, StringComparer.Ordinal);
-        var sort = new List<RecordViewSort> { new(calendar.StartFieldKey) };
-        var spec = new RecordQuerySpec(
-            tenantId, entity.Id, rangeFilters, sort, search, searchableKeys,
-            Skip: 0, Take: maxEvents, indexed);
-
-        var (items, total) = await _records.QueryAsync(spec, fieldTypes, cancellationToken);
+        var (items, total) = await QueryRecordsAsync(
+            tenantId, entityId, rangeFilters, new List<RecordViewSort> { new(calendar.StartFieldKey) },
+            search, searchableKeys, 0, maxEvents, fieldTypes, cancellationToken);
         var truncated = total > maxEvents;
 
         var events = new List<RecordViewCalendarEventDto>(items.Count);
         foreach (var record in items)
         {
-            var startText = ReadScalar(record.DataJson, calendar.StartFieldKey);
-            if (!DateTime.TryParse(startText, System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.RoundtripKind, out var start))
+            var json = ParseJson(record.DataJson); // un seul parse par enregistrement
+            if (!DateTime.TryParse(ReadScalar(json, calendar.StartFieldKey), CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var start))
                 continue; // ligne sans date exploitable : ignorée (le filtre between l'a normalement écartée).
 
             DateTime? end = null;
             if (!string.IsNullOrWhiteSpace(calendar.EndFieldKey)
-                && DateTime.TryParse(ReadScalar(record.DataJson, calendar.EndFieldKey), System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.RoundtripKind, out var endValue))
+                && DateTime.TryParse(ReadScalar(json, calendar.EndFieldKey), CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var endValue))
                 end = endValue;
 
             var title = !string.IsNullOrWhiteSpace(calendar.TitleFieldKey)
-                ? ReadScalar(record.DataJson, calendar.TitleFieldKey)
+                ? ReadScalar(json, calendar.TitleFieldKey)
                 : null;
             if (string.IsNullOrWhiteSpace(title))
                 title = $"#{record.Id.ToString()[..8]}";
 
             var color = !string.IsNullOrWhiteSpace(calendar.ColorFieldKey)
-                ? ReadScalar(record.DataJson, calendar.ColorFieldKey)
+                ? ReadScalar(json, calendar.ColorFieldKey)
                 : null;
 
             events.Add(new RecordViewCalendarEventDto(record.Id, title, start, end, color));
@@ -667,24 +661,25 @@ public sealed class RunCustomRecordViewQueryHandler : IRequestHandler<RunCustomR
             CustomRecordViewMode.Calendar, Array.Empty<CustomRecordDto>(), total, 1, maxEvents, null, events, truncated));
     }
 
-    /// <summary>Lit une valeur scalaire (string) d'un champ dans le JSON d'un enregistrement ; null si absente.</summary>
-    private static string? ReadScalar(string dataJson, string fieldKey)
+    /// <summary>Parse le JSON d'un enregistrement en objet ; null s'il est absent ou corrompu.</summary>
+    private static JsonObject? ParseJson(string dataJson)
     {
-        try
+        try { return JsonNode.Parse(dataJson) as JsonObject; }
+        catch (JsonException) { return null; }
+    }
+
+    /// <summary>Lit une valeur scalaire (string) d'un champ dans le JSON d'un enregistrement ; null si absente.</summary>
+    private static string? ReadScalar(JsonObject? json, string fieldKey)
+    {
+        if (json is null || !json.TryGetPropertyValue(fieldKey, out var node) || node is null)
+            return null;
+        if (node is JsonValue v)
         {
-            if (System.Text.Json.Nodes.JsonNode.Parse(dataJson) is not System.Text.Json.Nodes.JsonObject obj)
-                return null;
-            if (!obj.TryGetPropertyValue(fieldKey, out var node) || node is null)
-                return null;
-            if (node is System.Text.Json.Nodes.JsonValue v)
-            {
-                if (v.TryGetValue<string>(out var s)) return s;
-                if (v.TryGetValue<bool>(out var b)) return b ? "true" : "false";
-                if (v.TryGetValue<decimal>(out var d)) return d.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            }
-            return node.ToJsonString();
+            if (v.TryGetValue<string>(out var s)) return s;
+            if (v.TryGetValue<bool>(out var b)) return b ? "true" : "false";
+            if (v.TryGetValue<decimal>(out var d)) return d.ToString(CultureInfo.InvariantCulture);
         }
-        catch (System.Text.Json.JsonException) { return null; }
+        return node.ToJsonString();
     }
 }
 

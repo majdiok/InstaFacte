@@ -30,7 +30,6 @@ public sealed class CustomRecordViewFeaturesTests
     private readonly Mock<ICustomRecordRepository> _records = new();
     private readonly Mock<IStudioQuotaService> _quota = new();
     private readonly Mock<IAuditService> _audit = new();
-    private readonly Mock<IJsonIndexManager> _jsonIndex = new();
     private readonly Mock<ICurrentUser> _currentUser = new();
 
     public CustomRecordViewFeaturesTests()
@@ -48,8 +47,6 @@ public sealed class CustomRecordViewFeaturesTests
         _quota.Setup(q => q.EnsureUnderLimitAsync(
                 It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
-        _jsonIndex.Setup(j => j.IndexedColumnExistsAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
     }
 
     private static readonly string SelectOptions = """{"options":[{"value":"encours","label":"En cours"},{"value":"termine","label":"Terminé"}]}""";
@@ -91,6 +88,13 @@ public sealed class CustomRecordViewFeaturesTests
     private OllamaSettings Settings(int kanban = 500, int calendar = 1000) =>
         new() { EnableStudioRecordViews = true, StudioRecordViewMaxKanbanCards = kanban, StudioRecordViewMaxCalendarEvents = calendar };
 
+    private CreateCustomRecordViewCommandHandler CreateHandler() =>
+        new(_entities.Object, _fields.Object, _views.Object, _quota.Object, _audit.Object, _currentUser.Object);
+
+    private RunCustomRecordViewQueryHandler RunHandler(OllamaSettings? settings = null) =>
+        new(_entities.Object, _fields.Object, _views.Object, _records.Object, _currentUser.Object,
+            Options.Create(settings ?? Settings()));
+
     // ---- CRUD ----
 
     [Fact]
@@ -100,8 +104,7 @@ public sealed class CustomRecordViewFeaturesTests
         _views.Setup(v => v.CountByEntityAsync(Tid, EntityId, It.IsAny<CancellationToken>())).ReturnsAsync(0);
         _views.Setup(v => v.AddAsync(It.IsAny<CustomRecordViewDefinition>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
-        var handler = new CreateCustomRecordViewCommandHandler(
-            _entities.Object, _fields.Object, _views.Object, _quota.Object, _audit.Object, _currentUser.Object);
+        var handler = CreateHandler();
         var result = await handler.Handle(
             new CreateCustomRecordViewCommand("chantiers", new SaveCustomRecordViewRequest("encours", "En cours", CustomRecordViewMode.List, ListDef())),
             CancellationToken.None);
@@ -118,8 +121,7 @@ public sealed class CustomRecordViewFeaturesTests
     {
         _views.Setup(v => v.KeyExistsAsync(Tid, EntityId, "encours", null, It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
-        var handler = new CreateCustomRecordViewCommandHandler(
-            _entities.Object, _fields.Object, _views.Object, _quota.Object, _audit.Object, _currentUser.Object);
+        var handler = CreateHandler();
         var result = await handler.Handle(
             new CreateCustomRecordViewCommand("chantiers", new SaveCustomRecordViewRequest("encours", "En cours", CustomRecordViewMode.List, ListDef())),
             CancellationToken.None);
@@ -138,8 +140,7 @@ public sealed class CustomRecordViewFeaturesTests
                 It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure(Error.Validation("Plan", "Limite du plan atteinte : 20 vues par table maximum.")));
 
-        var handler = new CreateCustomRecordViewCommandHandler(
-            _entities.Object, _fields.Object, _views.Object, _quota.Object, _audit.Object, _currentUser.Object);
+        var handler = CreateHandler();
         var result = await handler.Handle(
             new CreateCustomRecordViewCommand("chantiers", new SaveCustomRecordViewRequest("vue_quota", "Vue quota", CustomRecordViewMode.List, ListDef())),
             CancellationToken.None);
@@ -181,9 +182,7 @@ public sealed class CustomRecordViewFeaturesTests
         _records.Setup(r => r.QueryAsync(It.IsAny<RecordQuerySpec>(), It.IsAny<IReadOnlyDictionary<string, CustomFieldType>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((rows, Total: 501));
 
-        var handler = new RunCustomRecordViewQueryHandler(
-            _entities.Object, _fields.Object, _views.Object, _records.Object, _jsonIndex.Object, _currentUser.Object,
-            Options.Create(Settings(kanban: 500)));
+        var handler = RunHandler(Settings(kanban: 500));
         var result = await handler.Handle(
             new RunCustomRecordViewQuery("chantiers", view.Id, new RunRecordViewRequest()), CancellationToken.None);
 
@@ -207,9 +206,7 @@ public sealed class CustomRecordViewFeaturesTests
         var view = View(CustomRecordViewMode.Calendar, CalendarDef());
         _views.Setup(v => v.GetByIdAsync(Tid, EntityId, view.Id, It.IsAny<CancellationToken>())).ReturnsAsync(view);
 
-        var handler = new RunCustomRecordViewQueryHandler(
-            _entities.Object, _fields.Object, _views.Object, _records.Object, _jsonIndex.Object, _currentUser.Object,
-            Options.Create(Settings()));
+        var handler = RunHandler();
 
         // Fenêtre absente ⇒ 400 Validation.range
         var missing = await handler.Handle(
@@ -242,9 +239,7 @@ public sealed class CustomRecordViewFeaturesTests
         _records.Setup(r => r.QueryAsync(It.IsAny<RecordQuerySpec>(), It.IsAny<IReadOnlyDictionary<string, CustomFieldType>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((rows, Total: 2));
 
-        var handler = new RunCustomRecordViewQueryHandler(
-            _entities.Object, _fields.Object, _views.Object, _records.Object, _jsonIndex.Object, _currentUser.Object,
-            Options.Create(Settings()));
+        var handler = RunHandler();
         var result = await handler.Handle(
             new RunCustomRecordViewQuery("chantiers", view.Id,
                 new RunRecordViewRequest(RangeStart: new DateOnly(2026, 2, 1), RangeEnd: new DateOnly(2026, 2, 28))),
