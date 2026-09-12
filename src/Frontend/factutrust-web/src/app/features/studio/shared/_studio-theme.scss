@@ -23,8 +23,8 @@
 //   docs/developer/studio-ai-assistant-qa.md, smoke test 91).
 //
 // Interdits : toute modification de `:root`, de `definePreset` ou de
-// `tailwind.config.js` ; les utilitaires `tw-*-primary-*` (bleu littéral) ne
-// doivent pas être utilisés dans `src/app/features/studio`.
+// `tailwind.config.js` ; les utilitaires Tailwind de la palette « primary » (bleu
+// littéral) ne doivent pas être utilisés dans `src/app/features/studio`.
 // ============================================================================
 
 .studio-theme {
@@ -42,6 +42,12 @@
   --color-background-hover: var(--color-primary-50);
   --focus-ring: 0 0 0 3px var(--color-primary-200);
   --studio-promo-gradient: linear-gradient(135deg, #4f46e5, #7c3aed);
+  // Bridge « supérieur » : styles/_primeng-bridge.scss impose
+  // `.theme-superieur .p-button { background: var(--superieur-primary) }` à TOUTE l'application ;
+  // sans cette re-déclaration, les boutons PrimeNG du Studio resteraient bleu #3862f5.
+  --superieur-primary: #4f46e5;
+  --superieur-primary-dark: #4338ca;
+  --superieur-primary-light: #818cf8;
 
   // --- 2. Tokens sémantiques PrimeNG (palette + dérivés) --------------------
   --p-primary-50: #eef2ff;
@@ -298,6 +304,10 @@
 // Mode sombre (sélecteur `.dark-mode` déclaré dans app.config.ts) : mêmes
 // décalages de nuances que le preset Aura, restreints au module Studio.
 .dark-mode .studio-theme {
+  // Boutons bridge : en sombre, le fond suit le primaire éclairci (cf. --p-primary-color).
+  --superieur-primary: #818cf8;
+  --superieur-primary-dark: #6366f1;
+  --superieur-primary-light: #a5b4fc;
   --p-primary-color: var(--p-primary-400);
   --p-primary-hover-color: var(--p-primary-300);
   --p-primary-active-color: var(--p-primary-200);
