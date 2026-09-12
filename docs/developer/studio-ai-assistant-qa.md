@@ -17,6 +17,7 @@
 | `EnableStudioSqlSourceGuard` | **`false`** | `false` | Étend le classement par domaine aux FENÊTRES. Passer le runbook d'impact d'abord. |
 | `EnableStudioAiAdvancedModel` | **`false`** | `true` | Bascule « Modèle avancé » par requête (`options.useAdvancedModel`). Sans effet tant qu'aucun modèle Studio avancé n'est configuré en back-office. |
 | `EnableStudioAiSchemaDigest` | **`false`** | `true` | Digest du schéma existant + dernier plan dans le prompt StudioBuilder (vraies clés). Budgets : `StudioSchemaDigestMaxCharsCpu` 1200 / `StudioSchemaDigestMaxCharsAdvanced` 4000 / `StudioLastPlanDigestMaxChars` 600. |
+| `EnableStudioManyToMany` | **`false`** | `true` | Relations plusieurs-à-plusieurs (entités de jonction `kind: "Junction"`) : `GET/POST api/studio/entities/{id}/relations[/many-to-many]`, `schema.relations[]`, unicité de la paire (`409 record.duplicate_link`), filtre serveur `filterField`/`filterValue`. Off ⇒ 404 sur les deux endpoints, `relations: []`, aucun autre changement. |
 
 > Les drapeaux en gras sont **off par défaut** : sans eux, le comportement du Studio IA est
 > strictement celui d'avant (gardes couvertes par `StudioAiPlanCatalogTests` et
@@ -209,11 +210,48 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     sur chaque base tenant. `FenetresActivesCassees = 0` ⇒ activation sans impact ; sinon, reclasser
     la table ou retirer la fenêtre avant de basculer.
 
+## Relations plusieurs-à-plusieurs (`Ollama:EnableStudioManyToMany`)
+
+> Architecture : [`docs/architecture/studio-many-to-many.md`](../architecture/studio-many-to-many.md).
+> Prérequis : migration tenant `20260912130000_AddStudioEntityKind_Tenant` appliquée ; deux tables Studio
+> existantes (ex. `employes` « Employés » et `projets` « Projets »), un compte avec la permission de
+> conception (`StudioDesignEntities`). Tant qu'aucun écran n'existe (PR 2.5), les appels se font avec
+> Swagger / `curl` (jeton porteur du compte).
+
+51. **Création manuelle d'une relation N-N** — `POST api/studio/entities/{idEmployes}/relations/many-to-many`
+    corps `{ "targetEntityId": "<idProjets>" }` ⇒ `200` avec `data.junction.key = "employes_projets"`,
+    `data.junction.kind = "Junction"` (enum sérialisé en chaîne, stocké `1` en base), `data.sourceField.key = "employes"`, `data.targetField.key = "projets"`,
+    les deux champs `isRequired: true`, `isUnique: false`, `relation.kind = "custom"`. Puis
+    `GET api/studio/entities/{idEmployes}/relations` ⇒ une entrée `kind: "many_to_many"` dont
+    `targetEntityKey = "projets"`, `junctionEntityKey = "employes_projets"` ; `GET api/studio/records/employes/schema`
+    ⇒ la même entrée dans `data.relations[]` ; `GET api/studio/entities` liste la jonction avec `kind: "Junction"`.
+    Table d'audit : une ligne `Studio.Relation.ManyToManyCreated`. Rejouer le même `POST` ⇒ `200` avec
+    `employes_projets_2` ; le rejouer avec `"junctionKey": "employes_projets"` ⇒ `409`. Cas d'erreur :
+    `targetEntityId` = source ⇒ `400` ; cible = une jonction ⇒ `400` ; drapeau `false` ⇒ `404` sur les deux
+    endpoints et `data.relations = []` sur le schéma, sans autre effet.
+52. **Doublon de paire** — `POST api/studio/records/employes_projets` avec
+    `{ "data": { "employes": "<idEmp1>", "projets": "<idProj1>" } }` ⇒ `200` ; le **même** corps une seconde
+    fois ⇒ **`409`** avec `error = "Ce lien existe déjà."` (code interne `record.duplicate_link` : le statut 409 est
+    le discriminant côté client). Paire croisée (`<idEmp1>`, `<idProj2>`) ⇒ créée. `PUT` du second lien vers la
+    paire du premier ⇒ `409` ; `PUT` du premier lien sur lui-même (mêmes valeurs) ⇒ `200` (auto-exclusion).
+    Corps incomplet (`employes` seul) ⇒ `400` **du validateur** (`isRequired`), pas 409. Supprimer le premier lien
+    puis rejouer sa paire ⇒ créée (les lignes supprimées ne comptent pas). Sur une table standard, aucun contrôle
+    de paire.
+53. **Filtre serveur et navigation** — `GET api/studio/records/employes_projets?filterField=employes&filterValue=<idEmp1>`
+    ⇒ seuls les liens d'`<idEmp1>` (`totalCount` exact, cumulable avec `search` et `page`/`pageSize`) ;
+    `pageSize=500` ⇒ 200 lignes au plus ; `filterField` seul ou `filterValue` seul ⇒ `400` ; `filterField=inexistant`
+    ⇒ `400` ; `filterValue` de 451 caractères ⇒ `400`. Trace SQL (profiler ou log EF `CommandExecuted`) : le
+    prédicat est `JSON_VALUE(DataJson, '$.employes') = @p0` — précédé de `[jx_employes] = @p0` si la colonne
+    indexée existe — jamais la valeur en clair. `GET api/studio/nav` ⇒ `employes` et `projets` sont présents,
+    `employes_projets` **absent** (dans un système comme à la racine) ; la sidebar Studio ne change pas.
+
 ## Migrations
 
 - `20260624181553_AddStudioSystems_Tenant` (systèmes multi-tables).
 - `20260728001141_AddStudioAiBuildPlans_Tenant` (plans « aperçu → confirmation »).
   Jumeau idempotent : `docs/runbooks/sql/AddStudioAiBuildPlans_Tenant.idempotent.sql`.
+- `20260912130000_AddStudioEntityKind_Tenant` (colonne `CustomEntityDefinitions.Kind`, défaut 0 = Standard,
+  index `(TenantId, Kind)` — relations N-N). Jumeau idempotent : `docs/runbooks/sql/AddStudioEntityKind_Tenant.idempotent.sql`.
 
 ## Portée automatisée
 
@@ -226,5 +264,10 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   et `dotnet test src\Backend\tests\FactuTrust.API.Tests --filter "FullyQualifiedName~FactuTrust.API.Tests.Studio"`
   (`AiChatOptionsContractTests` + contrats des contrôleurs Studio ; c'est ce filtre qu'exécute `azure-pipelines.yml`
   sous Linux — le projet complet, qui exige LocalDB, tourne dans le workflow GitHub `CI` sous Windows).
+- Backend (relations N-N) : `--filter "FullyQualifiedName~CreateManyToManyRelation|FullyQualifiedName~ListEntityRelations|FullyQualifiedName~CustomRecordJunctionUniqueness|FullyQualifiedName~CustomRecordRepositoryFilterSql|FullyQualifiedName~GetStudioNavQuery|FullyQualifiedName~AddStudioEntityKind"`
+  (composition de la jonction, résolution des relations, unicité de paire, filtre SQL paramétré — nécessite
+  `FACTUTRUST_TEST_SQL_CONNECTION` ou LocalDB, sinon `Skipped` —, nav sans jonction, migration `Kind`) ;
+  contrats API : `StudioEntityRelationsControllerContractTests` et `StudioRecordsControllerContractTests`
+  dans le filtre `FactuTrust.API.Tests.Studio`.
 - Frontend : `ng test --watch=false --browsers=ChromeHeadless` (service de plans + flux SSE de confirmation).
 - Gate complet : `powershell -File scripts\verify-all.ps1`.
