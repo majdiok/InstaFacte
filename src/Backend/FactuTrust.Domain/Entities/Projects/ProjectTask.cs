@@ -19,6 +19,7 @@ public sealed class ProjectTask : Entity
     public decimal EstimatedHours { get; private set; }
     public Guid? InvoicedInvoiceId { get; private set; }
     public ProjectTaskBillingMethod? InvoicedBillingMethod { get; private set; }
+    public Guid? MilestoneId { get; private set; }
 
     private ProjectTask() { }
 
@@ -133,6 +134,16 @@ public sealed class ProjectTask : Entity
         else if (previous == ProjectTaskStatus.Done)
             ProgressPercent = 0;
     }
+
+    public Result SetMilestone(Guid? milestoneId)
+    {
+        if (InvoicedInvoiceId.HasValue)
+            return Result.Failure(Error.Validation("Status", "Une tâche déjà facturée ne peut pas être modifiée"));
+        MilestoneId = milestoneId == Guid.Empty ? null : milestoneId;
+        return Result.Success();
+    }
+
+    public bool IsTerminal => Status is ProjectTaskStatus.Done or ProjectTaskStatus.Cancelled;
 
     public Result MarkInvoiced(Guid invoiceId, ProjectTaskBillingMethod method)
     {

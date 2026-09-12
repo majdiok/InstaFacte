@@ -712,7 +712,10 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             dto.ClientId, dto.Name, dto.Kind, dto.BillingMode, dto.OwnerUserId,
             dto.StartDate, dto.EndDate, dto.BudgetHt, dto.Description, dto.SiteAddress, dto.ContractNumber,
             isBillable: dto.IsBillable,
-            timesheetsEnabled: dto.TimesheetsEnabled);
+            timesheetsEnabled: dto.TimesheetsEnabled,
+            milestonesEnabled: dto.MilestonesEnabled,
+            allocatedHours: dto.AllocatedHours,
+            analyticAccountCode: dto.AnalyticAccountCode);
         if (created.IsFailure)
             return Result.Failure<Guid>(created.Error);
 
@@ -736,6 +739,9 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         if (project is null) return Result.Failure(Error.NotFound("Project", id));
         var updated = project.Update(dto.Name, dto.Description, dto.BillingMode, dto.OwnerUserId, dto.StartDate, dto.EndDate, dto.BudgetHt, dto.SiteAddress, dto.ContractNumber);
         if (updated.IsFailure) return updated;
+        project.SetBillable(dto.IsBillable);
+        project.ConfigureTimesheets(dto.TimesheetsEnabled, dto.MilestonesEnabled, dto.AllocatedHours);
+        project.SetAnalyticAccountCode(dto.AnalyticAccountCode);
         Audit(project, true);
         AddActivity(project.Id, "updated", "Projet mis à jour");
         await _db.SaveChangesAsync(cancellationToken);
@@ -825,6 +831,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         }
         Audit(task, true);
         await _db.SaveChangesAsync(cancellationToken);
+        await SyncMilestoneProgressAsync(task.ProjectId, cancellationToken);
         return Result.Success();
     }
 
@@ -839,6 +846,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         Audit(task, true);
         AddActivity(task.ProjectId, "task_moved", $"Tâche « {task.Title} » déplacée", task.Id);
         await _db.SaveChangesAsync(cancellationToken);
+        await SyncMilestoneProgressAsync(task.ProjectId, cancellationToken);
         return Result.Success();
     }
 
@@ -1118,7 +1126,10 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             Notes = t.Notes,
             Status = t.Status,
             StatusDisplay = t.Status.ToDisplayString(t.InvoicedInvoiceId.HasValue),
-            InvoicedInvoiceId = t.InvoicedInvoiceId
+            InvoicedInvoiceId = t.InvoicedInvoiceId,
+            SalesOrderLineId = t.SalesOrderLineId,
+            EntrySource = t.EntrySource,
+            IsTimerRunning = t.IsTimerRunning
         }).ToList();
     }
 
@@ -1131,7 +1142,13 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         var userId = dto.UserId ?? _currentUser.UserId;
         if (userId is null || userId == Guid.Empty)
             return Result.Failure<Guid>(Error.Validation("UserId", "L'utilisateur est obligatoire"));
-        var created = ProjectTimeEntry.Create(dto.ProjectId, userId.Value, dto.WorkDate, dto.Hours, dto.IsBillable, dto.Notes, dto.TaskId);
+
+        var isBillable = ResolveEntryBillable(project, dto.IsBillable, dto.SalesOrderLineId);
+        if (isBillable && project.SalesOrderId.HasValue && !dto.SalesOrderLineId.HasValue)
+            return Result.Failure<Guid>(Error.Validation("SalesOrderLineId", "Une ligne de commande est requise pour le temps facturable"));
+
+        var created = ProjectTimeEntry.Create(
+            dto.ProjectId, userId.Value, dto.WorkDate, dto.Hours, isBillable, dto.Notes, dto.TaskId, dto.SalesOrderLineId);
         if (created.IsFailure) return Result.Failure<Guid>(created.Error);
         _db.ProjectTimeEntries.Add(created.Value);
         await _db.SaveChangesAsync(cancellationToken);
@@ -1178,6 +1195,12 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         if (guard is not null) return Result.Failure(guard);
         var validated = entry.Validate();
         if (validated.IsFailure) return validated;
+
+        if (entry.IsBillable && entry.SalesOrderLineId.HasValue)
+        {
+            var delivery = await RecordTimesheetDeliveryOnSalesOrderAsync(project, entry.SalesOrderLineId.Value, entry.Hours, cancellationToken);
+            if (delivery.IsFailure) return delivery;
+        }
 
         var member = await _db.ProjectMembers.FirstOrDefaultAsync(m => m.ProjectId == entry.ProjectId && m.UserId == entry.UserId, cancellationToken);
         var rate = member?.HourlyCost is > 0 ? member.HourlyCost : null;
@@ -1298,7 +1321,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
     {
         var project = await RequireKindAsync(projectId, ProjectKind.Esn, cancellationToken);
         if (project.IsFailure) return Result.Failure<Guid>(project.Error);
-        var created = ProjectMilestone.Create(projectId, dto.Name, dto.Percent, dto.AmountHt, dto.DueDate);
+        var created = ProjectMilestone.Create(projectId, dto.Name, dto.Percent, dto.AmountHt, dto.DueDate, dto.SalesOrderLineId);
         if (created.IsFailure) return Result.Failure<Guid>(created.Error);
         _db.ProjectMilestones.Add(created.Value);
         await _db.SaveChangesAsync(cancellationToken);
@@ -1335,6 +1358,8 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             .ToList();
 
         var blockers = new List<string>();
+        if (!project.IsBillable)
+            blockers.Add("Ce projet n'est pas facturable.");
         if (!project.Status.CanBeBilled())
             blockers.Add(project.Status.CannotBeBilledMessage());
         if (hours <= 0)
@@ -1344,8 +1369,8 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
 
         return new ProjectBillingReadinessDto
         {
-            CanBill = project.Status.CanBeBilled(),
-            CanInvoiceTime = project.Status.CanBeBilled() && hours > 0 && withoutRate.Count == 0,
+            CanBill = project.IsBillable && project.Status.CanBeBilled(),
+            CanInvoiceTime = project.IsBillable && project.Status.CanBeBilled() && hours > 0 && withoutRate.Count == 0,
             CanReceiveTime = project.Status.CanReceiveTime() && project.TimesheetsEnabled,
             Status = project.Status,
             StatusDisplay = project.Status.ToDisplayString(),
@@ -1362,6 +1387,8 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
 
         var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
         if (project is null) return Result.Failure<ProjectInvoiceResultDto>(Error.NotFound("Project", projectId));
+        if (!project.IsBillable)
+            return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("IsBillable", "Ce projet n'est pas facturable"));
         if (!project.Status.CanBeBilled())
             return Result.Failure<ProjectInvoiceResultDto>(Error.Validation("Status", project.Status.CannotBeBilledMessage()));
 
@@ -1400,7 +1427,7 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             lines.Add(($"Régie — {names.GetValueOrDefault(group.Key, "Intervenant")}", hours, rate));
         }
 
-        return await EmitProjectInvoiceAsync(
+        var emitted = await EmitProjectInvoiceAsync(
             project,
             ProjectBillingKind.TimeAndMaterials,
             lines.Select(l => (l.Designation, l.Hours, l.UnitPrice, "h")).ToList(),
@@ -1415,6 +1442,12 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
                 return Result.Success();
             },
             cancellationToken);
+        if (emitted.IsFailure) return emitted;
+
+        var soInvoiced = await RecordTimesheetInvoicingOnSalesOrderAsync(project, entries, cancellationToken);
+        if (soInvoiced.IsFailure) return Result.Failure<ProjectInvoiceResultDto>(soInvoiced.Error);
+        await _db.SaveChangesAsync(cancellationToken);
+        return emitted;
     }
 
     public async Task<IReadOnlyList<BillableProjectTimeEntryDto>> GetBillableTimeEntriesAsync(
@@ -1686,6 +1719,183 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             dto.Notes,
             _ => Result.Success(),
             cancellationToken);
+    }
+
+    public async Task<ProjectProfitabilityDto?> GetProfitabilityAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
+        if (project is null) return null;
+
+        var budget = await GetBudgetAsync(projectId, cancellationToken);
+        var invoicedRevenue = await _db.ProjectBillings.AsNoTracking()
+            .Where(b => b.ProjectId == projectId)
+            .SumAsync(b => (decimal?)b.AmountHt, cancellationToken) ?? 0m;
+
+        var members = await _db.ProjectMembers.AsNoTracking().Where(m => m.ProjectId == projectId).ToListAsync(cancellationToken);
+        var validatedBillable = await _db.ProjectTimeEntries.AsNoTracking()
+            .Where(t => t.ProjectId == projectId && t.IsBillable && t.Status == ProjectTimeEntryStatus.Validated && t.InvoicedInvoiceId == null)
+            .ToListAsync(cancellationToken);
+
+        decimal toInvoiceRevenue = 0m;
+        foreach (var group in validatedBillable.GroupBy(e => e.UserId))
+        {
+            var rate = SalesHourlyRate(members.FirstOrDefault(m => m.UserId == group.Key));
+            toInvoiceRevenue += group.Sum(e => e.Hours) * rate;
+        }
+
+        var reachedMilestones = await _db.ProjectMilestones.AsNoTracking()
+            .Where(m => m.ProjectId == projectId && m.IsReached && m.InvoicedInvoiceId == null)
+            .SumAsync(m => (decimal?)m.AmountHt, cancellationToken) ?? 0m;
+        toInvoiceRevenue += reachedMilestones;
+
+        var revenues = new List<ProjectProfitabilityLineDto>
+        {
+            new() { Category = "Feuilles de temps", Expected = project.BudgetHt, ToInvoiceOrBill = toInvoiceRevenue, InvoicedOrBilled = invoicedRevenue },
+            new() { Category = "Jalons", Expected = 0m, ToInvoiceOrBill = reachedMilestones, InvoicedOrBilled = 0m }
+        };
+
+        var costs = new List<ProjectProfitabilityLineDto>
+        {
+            new() { Category = "Feuilles de temps (coût)", Expected = budget.TimeCostHt, ToInvoiceOrBill = budget.TimeCostHt, InvoicedOrBilled = budget.TimeCostHt },
+            new() { Category = "Autres coûts", Expected = budget.ActualCostHt - budget.TimeCostHt, ToInvoiceOrBill = budget.ActualCostHt - budget.TimeCostHt, InvoicedOrBilled = budget.ActualCostHt - budget.TimeCostHt }
+        };
+
+        return new ProjectProfitabilityDto
+        {
+            ProjectId = projectId,
+            Revenues = revenues,
+            Costs = costs,
+            TotalRevenueExpected = project.BudgetHt,
+            TotalRevenueToInvoice = toInvoiceRevenue + reachedMilestones,
+            TotalRevenueInvoiced = invoicedRevenue,
+            TotalCostExpected = budget.ActualCostHt,
+            TotalCostToBill = budget.ActualCostHt,
+            TotalCostBilled = budget.ActualCostHt,
+            MarginInvoiced = invoicedRevenue - budget.ActualCostHt
+        };
+    }
+
+    public async Task<Result> LinkSalesOrderAsync(Guid projectId, LinkProjectSalesOrderDto dto, CancellationToken cancellationToken = default)
+    {
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
+        if (project is null) return Result.Failure(Error.NotFound("Project", projectId));
+        var order = await _db.SalesOrders.FirstOrDefaultAsync(o => o.Id == dto.SalesOrderId, cancellationToken);
+        if (order is null) return Result.Failure(Error.NotFound("SalesOrder", dto.SalesOrderId));
+
+        var linked = project.LinkSalesOrder(dto.SalesOrderId);
+        if (linked.IsFailure) return linked;
+        order.LinkProject(projectId);
+        Audit(project, true);
+        await _db.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<IReadOnlyList<ProjectUpdateDto>> ListProjectUpdatesAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var items = await _db.ProjectUpdates.AsNoTracking()
+            .Where(u => u.ProjectId == projectId)
+            .OrderByDescending(u => u.UpdateDate)
+            .ToListAsync(cancellationToken);
+        var names = await LoadUserNamesAsync(items.Select(i => i.AuthorUserId), cancellationToken);
+        return items.Select(u => new ProjectUpdateDto
+        {
+            Id = u.Id,
+            ProjectId = u.ProjectId,
+            Status = u.Status,
+            StatusDisplay = u.Status.ToDisplayString(),
+            ProgressPercent = u.ProgressPercent,
+            AuthorUserId = u.AuthorUserId,
+            AuthorUserName = names.GetValueOrDefault(u.AuthorUserId, "—"),
+            UpdateDate = u.UpdateDate,
+            Description = u.Description
+        }).ToList();
+    }
+
+    public async Task<Result<Guid>> CreateProjectUpdateAsync(Guid projectId, CreateProjectUpdateDto dto, CancellationToken cancellationToken = default)
+    {
+        var userId = RequireUser();
+        if (userId.IsFailure) return Result.Failure<Guid>(userId.Error);
+        if (!await _db.Projects.AnyAsync(p => p.Id == projectId, cancellationToken))
+            return Result.Failure<Guid>(Error.NotFound("Project", projectId));
+
+        var created = ProjectUpdate.Create(projectId, userId.Value, dto.Status, dto.ProgressPercent, dto.Description);
+        if (created.IsFailure) return Result.Failure<Guid>(created.Error);
+        _db.ProjectUpdates.Add(created.Value);
+        await _db.SaveChangesAsync(cancellationToken);
+        return Result.Success(created.Value.Id);
+    }
+
+    public async Task<Result> MarkMilestoneReachedAsync(Guid milestoneId, bool reached, CancellationToken cancellationToken = default)
+    {
+        var milestone = await _db.ProjectMilestones.FirstOrDefaultAsync(m => m.Id == milestoneId, cancellationToken);
+        if (milestone is null) return Result.Failure(Error.NotFound("ProjectMilestone", milestoneId));
+
+        var result = reached ? milestone.MarkReached(true) : milestone.MarkUnreached();
+        if (result.IsFailure) return result;
+
+        if (reached && milestone.SalesOrderLineId.HasValue)
+        {
+            var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == milestone.ProjectId, cancellationToken);
+            if (project?.SalesOrderId is { } soId)
+            {
+                var order = await _db.SalesOrders.Include(o => o.Lines).FirstOrDefaultAsync(o => o.Id == soId, cancellationToken);
+                if (order is not null)
+                {
+                    var deliverQty = milestone.Percent / 100m;
+                    var delivery = order.RecordDeliveries(new[] { (milestone.SalesOrderLineId.Value, deliverQty) });
+                    if (delivery.IsFailure) return delivery;
+                }
+            }
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> SyncMilestoneProgressAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var milestones = await _db.ProjectMilestones.Where(m => m.ProjectId == projectId && m.InvoicedInvoiceId == null).ToListAsync(cancellationToken);
+        foreach (var milestone in milestones)
+        {
+            var tasks = await _db.ProjectTasks.Where(t => t.MilestoneId == milestone.Id).ToListAsync(cancellationToken);
+            if (tasks.Count == 0) continue;
+            if (tasks.All(t => t.IsTerminal))
+                milestone.MarkReached();
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> SetProductServiceBillingPolicyAsync(ServiceProductBillingPolicyDto dto, CancellationToken cancellationToken = default)
+    {
+        var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == dto.ProductId, cancellationToken);
+        if (product is null) return Result.Failure(Error.NotFound("Product", dto.ProductId));
+        var updated = product.SetServiceBillingPolicy(dto.ServiceInvoicingPolicy, dto.ServiceCreateOnOrder);
+        if (updated.IsFailure) return updated;
+        await _db.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<IReadOnlyList<SalesOrderLineOptionDto>> ListProjectSalesOrderLinesAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
+        if (project?.SalesOrderId is null) return Array.Empty<SalesOrderLineOptionDto>();
+
+        var order = await _db.SalesOrders.AsNoTracking()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.Id == project.SalesOrderId, cancellationToken);
+        if (order is null) return Array.Empty<SalesOrderLineOptionDto>();
+
+        return order.Lines.Select(l => new SalesOrderLineOptionDto
+        {
+            LineId = l.Id,
+            LineNumber = l.LineNumber,
+            ProductName = l.ProductName,
+            Quantity = l.Quantity,
+            DeliveredQuantity = l.DeliveredQuantity,
+            PendingDeliveryQuantity = l.PendingDeliveryQuantity
+        }).OrderBy(l => l.LineNumber).ToList();
     }
 
     public async Task<IReadOnlyList<ProjectWorkloadRowDto>> GetWorkloadAsync(Guid projectId, CancellationToken cancellationToken = default)
@@ -2116,6 +2326,10 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         ContractNumber = p.ContractNumber,
         IsBillable = p.IsBillable,
         TimesheetsEnabled = p.TimesheetsEnabled,
+        SalesOrderId = p.SalesOrderId,
+        AnalyticAccountCode = p.AnalyticAccountCode,
+        MilestonesEnabled = p.MilestonesEnabled,
+        AllocatedHours = p.AllocatedHours,
         Phases = phases.Select(x => new ProjectPhaseDto { Id = x.Id, Name = x.Name, SortOrder = x.SortOrder, Color = x.Color }).ToList()
     };
 
@@ -2138,7 +2352,10 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         Percent = m.Percent,
         AmountHt = m.AmountHt,
         DueDate = m.DueDate,
-        InvoicedInvoiceId = m.InvoicedInvoiceId
+        InvoicedInvoiceId = m.InvoicedInvoiceId,
+        SalesOrderLineId = m.SalesOrderLineId,
+        IsReached = m.IsReached,
+        ReachedAt = m.ReachedAt
     };
 
     private static ProjectSituationDto MapSituation(ProjectSituation s) => new()
@@ -2222,6 +2439,36 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         return Result.Success(id);
     }
 
+    private static bool ResolveEntryBillable(Project project, bool requestedBillable, Guid? salesOrderLineId)
+    {
+        if (!project.IsBillable) return false;
+        if (!requestedBillable) return false;
+        if (project.SalesOrderId.HasValue && !salesOrderLineId.HasValue) return false;
+        return true;
+    }
+
+    private async Task<Result> RecordTimesheetDeliveryOnSalesOrderAsync(
+        Project project, Guid salesOrderLineId, decimal hours, CancellationToken cancellationToken)
+    {
+        if (!project.SalesOrderId.HasValue) return Result.Success();
+        var order = await _db.SalesOrders.Include(o => o.Lines).FirstOrDefaultAsync(o => o.Id == project.SalesOrderId, cancellationToken);
+        if (order is null) return Result.Failure(Error.NotFound("SalesOrder", project.SalesOrderId.Value));
+        return order.RecordDeliveries(new[] { (salesOrderLineId, hours) });
+    }
+
+    private async Task<Result> RecordTimesheetInvoicingOnSalesOrderAsync(
+        Project project, IReadOnlyList<ProjectTimeEntry> entries, CancellationToken cancellationToken)
+    {
+        if (!project.SalesOrderId.HasValue) return Result.Success();
+        var groups = entries.Where(e => e.SalesOrderLineId.HasValue).GroupBy(e => e.SalesOrderLineId!.Value)
+            .Select(g => (LineId: g.Key, Quantity: g.Sum(x => x.Hours))).ToList();
+        if (groups.Count == 0) return Result.Success();
+
+        var order = await _db.SalesOrders.Include(o => o.Lines).FirstOrDefaultAsync(o => o.Id == project.SalesOrderId, cancellationToken);
+        if (order is null) return Result.Failure(Error.NotFound("SalesOrder", project.SalesOrderId.Value));
+        return order.RecordInvoiced(groups);
+    }
+
     private static decimal SalesHourlyRate(ProjectMember? member)
     {
         if (member?.SalesRate is > 0)
@@ -2232,6 +2479,10 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
     private async Task<List<ProjectTimeEntry>> LoadEligibleMemberBillingEntriesAsync(
         Guid projectId, CancellationToken cancellationToken)
     {
+        var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
+        if (project is null || !project.IsBillable)
+            return new List<ProjectTimeEntry>();
+
         var entries = await _db.ProjectTimeEntries
             .Where(t => t.ProjectId == projectId
                 && t.IsBillable

@@ -42,6 +42,9 @@ public sealed class SalesOrder : AggregateRoot
     /// <summary>Devis à l'origine de la commande. Complète la chaîne Devis → Commande → BL → Facture.</summary>
     public Guid? SourceQuoteId { get; private set; }
 
+    /// <summary>Projet lié (Odoo: commande service → projet).</summary>
+    public Guid? ProjectId { get; private set; }
+
     private readonly List<SalesOrderLine> _lines = new();
     public IReadOnlyCollection<SalesOrderLine> Lines => _lines.AsReadOnly();
 
@@ -209,6 +212,14 @@ public sealed class SalesOrder : AggregateRoot
     /// La réservation de stock est déclenchée par la couche applicative, qui appelle ensuite
     /// <see cref="MarkStockReserved"/> — le domaine ne connaît pas les entrepôts.
     /// </summary>
+    public Result LinkProject(Guid projectId)
+    {
+        if (projectId == Guid.Empty)
+            return Result.Failure(Error.Validation("ProjectId", "Le projet est obligatoire"));
+        ProjectId = projectId;
+        return Result.Success();
+    }
+
     public Result Confirm()
     {
         if (!Status.CanBeConfirmed())

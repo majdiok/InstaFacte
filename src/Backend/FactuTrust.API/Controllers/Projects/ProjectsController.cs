@@ -707,6 +707,83 @@ public sealed class ProjectsController : ControllerBase
         if (result.IsFailure) return BadRequest(ApiResponse<bool>.Fail(result.Error.Description));
         return Ok(ApiResponse<bool>.Ok(true));
     }
+
+    [HttpGet("{id:guid}/profitability")]
+    [Authorize(Policy = PermissionPolicies.ProjectsRead)]
+    public async Task<ActionResult<ApiResponse<ProjectProfitabilityDto>>> Profitability(Guid id, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var dto = await _service.GetProfitabilityAsync(id, cancellationToken);
+        if (dto is null) return NotFound(ApiResponse<ProjectProfitabilityDto>.Fail("Projet introuvable"));
+        return Ok(ApiResponse<ProjectProfitabilityDto>.Ok(dto));
+    }
+
+    [HttpPost("{id:guid}/link-sales-order")]
+    [Authorize(Policy = PermissionPolicies.ProjectsUpdate)]
+    public async Task<IActionResult> LinkSalesOrder(Guid id, [FromBody] LinkProjectSalesOrderDto dto, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.LinkSalesOrderAsync(id, dto, cancellationToken);
+        if (result.IsFailure) return BadRequest(ApiResponse<bool>.Fail(result.Error.Description));
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    [HttpGet("{id:guid}/sales-order-lines")]
+    [Authorize(Policy = PermissionPolicies.ProjectsRead)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<SalesOrderLineOptionDto>>>> SalesOrderLines(Guid id, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        return Ok(ApiResponse<IReadOnlyList<SalesOrderLineOptionDto>>.Ok(await _service.ListProjectSalesOrderLinesAsync(id, cancellationToken)));
+    }
+
+    [HttpGet("{id:guid}/updates")]
+    [Authorize(Policy = PermissionPolicies.ProjectsRead)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<ProjectUpdateDto>>>> ProjectUpdates(Guid id, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        return Ok(ApiResponse<IReadOnlyList<ProjectUpdateDto>>.Ok(await _service.ListProjectUpdatesAsync(id, cancellationToken)));
+    }
+
+    [HttpPost("{id:guid}/updates")]
+    [Authorize(Policy = PermissionPolicies.ProjectsUpdate)]
+    public async Task<ActionResult<ApiResponse<Guid>>> CreateProjectUpdate(Guid id, [FromBody] CreateProjectUpdateDto dto, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.CreateProjectUpdateAsync(id, dto, cancellationToken);
+        if (result.IsFailure) return BadRequest(ApiResponse<Guid>.Fail(result.Error.Description));
+        return Ok(ApiResponse<Guid>.Ok(result.Value));
+    }
+
+    [HttpPost("milestones/{milestoneId:guid}/reached")]
+    [Authorize(Policy = PermissionPolicies.ProjectsUpdate)]
+    public async Task<IActionResult> MarkMilestoneReached(Guid milestoneId, [FromQuery] bool reached = true, CancellationToken cancellationToken = default)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.MarkMilestoneReachedAsync(milestoneId, reached, cancellationToken);
+        if (result.IsFailure) return BadRequest(ApiResponse<bool>.Fail(result.Error.Description));
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    [HttpPost("{id:guid}/milestones/sync")]
+    [Authorize(Policy = PermissionPolicies.ProjectsUpdate)]
+    public async Task<IActionResult> SyncMilestones(Guid id, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.SyncMilestoneProgressAsync(id, cancellationToken);
+        if (result.IsFailure) return BadRequest(ApiResponse<bool>.Fail(result.Error.Description));
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    [HttpPut("products/{productId:guid}/service-billing-policy")]
+    [Authorize(Policy = PermissionPolicies.ProjectsUpdate)]
+    public async Task<IActionResult> SetServiceBillingPolicy(Guid productId, [FromBody] ServiceProductBillingPolicyDto dto, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var body = dto with { ProductId = productId };
+        var result = await _service.SetProductServiceBillingPolicyAsync(body, cancellationToken);
+        if (result.IsFailure) return BadRequest(ApiResponse<bool>.Fail(result.Error.Description));
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
 }
 
 public sealed record ProjectCommentBodyDto(string Body, Guid? TaskId);

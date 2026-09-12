@@ -65,9 +65,27 @@ La liste des projets affiche le **chef de projet**, l'**avancement** (%), l'**é
 
 ## Fiche projet
 
-La fiche projet comporte un **résumé latéral** (budget, heures, prochaines échéances, activité) et sept onglets. Les onglets **Temps** et **Facturation** sont mis en avant pour les projets ESN ; **Budget** et **Facturation** pour le BTP.
+La fiche projet comporte un **résumé latéral** (budget, heures, prochaines échéances, activité) et plusieurs onglets. Les onglets **Temps** et **Facturation** sont mis en avant pour les projets ESN ; **Budget** et **Facturation** pour le BTP.
 
 Vous pouvez marquer un projet en **favori** (étoile) : le marquage est enregistré localement sur votre navigateur.
+
+---
+
+## Paramètres
+
+L'onglet **Paramètres** regroupe les options opérationnelles du projet (inspiré d'Odoo Project) :
+
+| Option | Effet |
+|--------|-------|
+| **Facturable** | Autorise la facturation du temps et des prestations. Si désactivé, l'onglet **Rentabilité** disparaît. |
+| **Mode de facturation** | Régie, forfait, jalons ou situations (selon le type de projet). |
+| **Feuilles de temps** | Active la saisie du temps. Si désactivé, l'onglet **Temps** disparaît. |
+| **Jalons** | Active le suivi et la facturation par jalons (ESN, BTP ou mode Jalons). |
+| **Heures allouées** | Budget horaire de référence pour le suivi. |
+
+Le bouton **Modifier le projet** (en-tête) reste réservé aux informations d'identité : nom, description, dates, budget, chef de projet et champs chantier BTP. Les paramètres ci-dessus se modifient uniquement dans cet onglet.
+
+La permission `projects:update` est requise pour enregistrer les changements.
 
 ---
 
