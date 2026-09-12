@@ -26,8 +26,6 @@ public sealed class CreateManyToManyRelationCommandTests
     private static readonly Guid Uid = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
     private readonly Mock<ICustomEntityRepository> _entities = new();
-    private readonly Mock<ICustomFieldRepository> _fields = new();
-    private readonly Mock<IStudioQuotaService> _quota = new();
     private readonly Mock<IAuditService> _audit = new();
     private readonly Mock<ICurrentUser> _currentUser = new();
     private readonly Mock<IMediator> _mediator = new();
@@ -48,9 +46,6 @@ public sealed class CreateManyToManyRelationCommandTests
         RegisterEntity(_projets);
 
         _entities.Setup(r => r.KeyExistsAsync(Tid, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
-        _entities.Setup(r => r.CountAsync(Tid, It.IsAny<CancellationToken>())).ReturnsAsync(2);
-        _quota.Setup(q => q.EnsureUnderLimitAsync(Tid, StudioQuotas.MaxEntitiesKey, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
         _jsonIndex.Setup(j => j.EnsureFieldIndexAsync(Tid, It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _audit.Setup(a => a.LogAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -281,12 +276,20 @@ public sealed class CreateManyToManyRelationCommandTests
         _jsonIndex.Verify(j => j.EnsureFieldIndexAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    /// <summary>
+    /// Le quota de tables est celui de <c>CreateCustomEntityCommand</c> (une jonction EST une table) :
+    /// son échec remonte tel quel, aucun champ n'est créé et rien n'est à compenser.
+    /// </summary>
     [Fact]
-    public async Task Quota_failure_stops_before_any_write()
+    public async Task Quota_failure_of_the_junction_creation_is_returned_as_is_without_any_field()
     {
         var quotaError = Error.Validation("quota", "Quota de tables atteint.");
-        _quota.Setup(q => q.EnsureUnderLimitAsync(Tid, StudioQuotas.MaxEntitiesKey, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure(quotaError));
+        _mediator.Setup(m => m.Send(It.IsAny<CreateCustomEntityCommand>(), It.IsAny<CancellationToken>()))
+            .Returns((CreateCustomEntityCommand c, CancellationToken _) =>
+            {
+                _sent.Add(c);
+                return Task.FromResult(Result.Failure<CustomEntityDto>(quotaError));
+            });
 
         var result = await Handler().Handle(
             new CreateManyToManyRelationCommand(_employes.Id, new CreateManyToManyRelationRequest(_projets.Id, null, null, null)),
@@ -294,7 +297,9 @@ public sealed class CreateManyToManyRelationCommandTests
 
         Assert.True(result.IsFailure);
         Assert.Equal(quotaError, result.Error);
-        Assert.Empty(_sent);
+        Assert.Single(_sent.OfType<CreateCustomEntityCommand>());
+        Assert.Empty(_sent.OfType<CreateCustomFieldCommand>());
+        Assert.Empty(_sent.OfType<DeleteCustomEntityCommand>());
     }
 
     [Fact]
@@ -329,7 +334,7 @@ public sealed class CreateManyToManyRelationCommandTests
     // ---- helpers ----
 
     private CreateManyToManyRelationCommandHandler Handler() => new(
-        _entities.Object, _fields.Object, _quota.Object, _audit.Object, _currentUser.Object, _mediator.Object, _jsonIndex.Object);
+        _entities.Object, _audit.Object, _currentUser.Object, _mediator.Object, _jsonIndex.Object);
 
     private void RegisterEntity(CustomEntityDefinition entity) =>
         _entities.Setup(r => r.GetByIdAsync(Tid, entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);

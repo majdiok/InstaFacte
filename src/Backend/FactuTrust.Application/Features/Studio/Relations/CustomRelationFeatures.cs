@@ -44,8 +44,6 @@ public sealed class CreateManyToManyRelationCommandHandler
     private const int MaxDefaultKeySuffix = 9;
 
     private readonly ICustomEntityRepository _entities;
-    private readonly ICustomFieldRepository _fields;
-    private readonly IStudioQuotaService _quota;
     private readonly IAuditService _audit;
     private readonly ICurrentUser _currentUser;
     private readonly IMediator _mediator;
@@ -53,16 +51,12 @@ public sealed class CreateManyToManyRelationCommandHandler
 
     public CreateManyToManyRelationCommandHandler(
         ICustomEntityRepository entities,
-        ICustomFieldRepository fields,
-        IStudioQuotaService quota,
         IAuditService audit,
         ICurrentUser currentUser,
         IMediator mediator,
         IJsonIndexManager jsonIndex)
     {
         _entities = entities;
-        _fields = fields;
-        _quota = quota;
         _audit = audit;
         _currentUser = currentUser;
         _mediator = mediator;
@@ -104,14 +98,8 @@ public sealed class CreateManyToManyRelationCommandHandler
             return Result.Failure<ManyToManyRelationDto>(junctionKeyResult.Error);
         var junctionKey = junctionKeyResult.Value;
 
-        // Quota on custom entities (a junction IS a table) — checked up-front for a clean 400 before any write.
-        var entityCount = await _entities.CountAsync(tenantId, cancellationToken);
-        var quota = await _quota.EnsureUnderLimitAsync(
-            tenantId, StudioQuotas.MaxEntitiesKey, entityCount, StudioQuotas.MaxEntitiesFallback, "tables personnalisées", cancellationToken);
-        if (quota.IsFailure)
-            return Result.Failure<ManyToManyRelationDto>(quota.Error);
-
-        // (4) Junction entity (Kind = Junction), inheriting the source's system.
+        // (4) Junction entity (Kind = Junction), inheriting the source's system. CreateCustomEntityCommand
+        // applies the custom-entity quota (a junction IS a table) before any write.
         var displayName = string.IsNullOrWhiteSpace(req.JunctionDisplayName)
             ? $"{source.DisplayName} – {target.DisplayName}"
             : req.JunctionDisplayName.Trim();
