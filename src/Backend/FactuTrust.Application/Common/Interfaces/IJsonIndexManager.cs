@@ -11,6 +11,13 @@ public interface IJsonIndexManager
     /// <summary>Ensures the computed column + filtered index exist for a (sanitized) field key. Idempotent, best-effort.</summary>
     Task EnsureUniqueFieldIndexAsync(Guid tenantId, string fieldKey, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// R10 (PR 2.1) : ensures the NON-unique computed column + filtered index <c>jx_&lt;key&gt;</c> exist for a
+    /// (sanitized) field key so server-side filters (<c>filterField</c>/<c>filterValue</c>) and pair-uniqueness
+    /// checks on junction tables can seek the index. Idempotent, best-effort (never throws).
+    /// </summary>
+    Task EnsureFieldIndexAsync(Guid tenantId, string fieldKey, CancellationToken cancellationToken = default);
+
     /// <summary>True if the indexed computed column exists for the field key (cached). Used to decide whether to seek the index.</summary>
     Task<bool> IndexedColumnExistsAsync(Guid tenantId, string fieldKey, CancellationToken cancellationToken = default);
 }

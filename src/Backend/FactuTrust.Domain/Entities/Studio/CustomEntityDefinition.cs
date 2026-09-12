@@ -1,3 +1,5 @@
+using FactuTrust.Domain.Enums;
+
 namespace FactuTrust.Domain.Entities.Studio;
 
 /// <summary>
@@ -29,6 +31,13 @@ public sealed class CustomEntityDefinition
     /// <summary>Optional parent system grouping (Notion-style multi-table apps).</summary>
     public Guid? SystemId { get; private set; }
 
+    /// <summary>
+    /// Nature de l'entité (<see cref="CustomEntityKind.Standard"/> par défaut). Une
+    /// <see cref="CustomEntityKind.Junction"/> porte une relation plusieurs‑à‑plusieurs ; la valeur
+    /// est fixée à la création et n'est pas modifiable par <see cref="Update"/>.
+    /// </summary>
+    public CustomEntityKind Kind { get; private set; }
+
     public bool IsDeleted { get; private set; }
     public DateTime? DeletedAt { get; private set; }
 
@@ -48,7 +57,8 @@ public sealed class CustomEntityDefinition
         string? icon,
         string? description,
         Guid? createdBy,
-        Guid? systemId = null)
+        Guid? systemId = null,
+        CustomEntityKind kind = CustomEntityKind.Standard)
     {
         return new CustomEntityDefinition
         {
@@ -62,6 +72,7 @@ public sealed class CustomEntityDefinition
             IsActive = true,
             IsSystem = false,
             SystemId = systemId,
+            Kind = kind,
             IsDeleted = false,
             CreatedBy = createdBy,
             UpdatedBy = createdBy,

@@ -30,7 +30,15 @@ public sealed class JsonIndexManager : IJsonIndexManager
         _logger = logger;
     }
 
-    public async Task EnsureUniqueFieldIndexAsync(Guid tenantId, string fieldKey, CancellationToken cancellationToken = default)
+    public Task EnsureUniqueFieldIndexAsync(Guid tenantId, string fieldKey, CancellationToken cancellationToken = default)
+        => EnsureFieldIndexAsync(tenantId, fieldKey, cancellationToken);
+
+    /// <summary>
+    /// R10 : same DDL as the unique-field path — the filtered index created by
+    /// <see cref="JsonIndexSql.CreateIndexSql"/> is already NON-unique (uniqueness is enforced in
+    /// application code, never by SQL), so both entry points share one idempotent implementation.
+    /// </summary>
+    public async Task EnsureFieldIndexAsync(Guid tenantId, string fieldKey, CancellationToken cancellationToken = default)
     {
         if (!StudioKey.IsValidShape(fieldKey))
             return;

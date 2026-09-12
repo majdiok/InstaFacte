@@ -365,6 +365,14 @@ public sealed class OllamaSettings
     public bool EnableStudioAiSchemaDigest { get; set; }
 
     /// <summary>
+    /// PR 2.1 — relations plusieurs‑à‑plusieurs du Studio (table de jonction <c>Kind = Junction</c>).
+    /// False (défaut) = <c>GET/POST api/studio/entities/{id}/relations[/many-to-many]</c> répondent 404
+    /// et <c>CustomEntitySchemaDto.Relations</c> est vide ; la colonne <c>Kind</c> et le filtre serveur
+    /// <c>filterField/filterValue</c> des enregistrements restent actifs quoi qu'il arrive.
+    /// </summary>
+    public bool EnableStudioManyToMany { get; set; }
+
+    /// <summary>
     /// Budget de tours d'outils quand la requête Studio utilise le modèle avancé (GPU / cloud) :
     /// remplace le plafond CPU (<see cref="CpuMaxToolCallRounds"/>) pour ce seul tour. Borné 1..20.
     /// </summary>

@@ -118,11 +118,11 @@ public sealed class CreateCustomEntityCommandHandler
 
         var plural = string.IsNullOrWhiteSpace(req.DisplayNamePlural) ? req.DisplayName.Trim() : req.DisplayNamePlural.Trim();
         var entity = CustomEntityDefinition.Create(tenantId, key, req.DisplayName.Trim(), plural,
-            req.Icon?.Trim(), req.Description?.Trim(), userId, req.SystemId);
+            req.Icon?.Trim(), req.Description?.Trim(), userId, req.SystemId, req.Kind);
 
         await _entities.AddAsync(entity, cancellationToken);
         await StudioAudit.SafeLogAsync(_audit, "Studio.Entity.Created", "CustomEntity", entity.Id,
-            null, new { entity.Key, entity.DisplayName }, cancellationToken);
+            null, new { entity.Key, entity.DisplayName, Kind = entity.Kind.ToString() }, cancellationToken);
         return Result.Success(StudioMappers.ToDto(entity, 0));
     }
 }

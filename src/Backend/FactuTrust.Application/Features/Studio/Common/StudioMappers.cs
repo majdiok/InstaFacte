@@ -9,7 +9,7 @@ public static class StudioMappers
 {
     public static CustomEntityDto ToDto(CustomEntityDefinition e, int fieldCount) =>
         new(e.Id, e.Key, e.DisplayName, e.DisplayNamePlural, e.Icon, e.Description, e.IsActive,
-            fieldCount, e.SystemId, e.CreatedAt, e.UpdatedAt);
+            fieldCount, e.SystemId, e.CreatedAt, e.UpdatedAt, e.Kind);
 
     public static CustomSystemDto ToSystemDto(CustomSystemDefinition s, int entityCount, IReadOnlyList<string>? onboardingSteps) =>
         new(s.Id, s.Key, s.DisplayName, s.Icon, s.Description, onboardingSteps, s.IsActive, entityCount, s.CreatedAt, s.UpdatedAt);

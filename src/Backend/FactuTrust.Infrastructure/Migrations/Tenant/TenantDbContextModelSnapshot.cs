@@ -7410,6 +7410,11 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<int>("Kind")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -7432,6 +7437,8 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("TenantId", "Key")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "Kind");
 
                     b.HasIndex("TenantId", "SystemId");
 
