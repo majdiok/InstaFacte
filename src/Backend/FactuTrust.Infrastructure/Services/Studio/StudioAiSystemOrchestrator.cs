@@ -40,19 +40,39 @@ public sealed class StudioAiSystemOrchestrator
         var warnings = new List<string>();
         try
         {
-            // Pré-vérification de quota : refuser AVANT toute création si les N tables du système ne tiennent
-            // pas dans le quota de tables restant (évite un système orphelin + l'annulation en chaîne).
+            // Pré-vérification de quota : refuser AVANT toute création si les N tables NOUVELLES du
+            // système ne tiennent pas dans le quota restant. Une table réutilisée (existingKey) n'est
+            // pas créée : elle ne consomme aucun quota.
+            var newEntityCount = spec.Entities.Count(e => e.ExistingKey is null);
             if (_quota is not null && StudioContext.TryGet(_currentUser, out var quotaTenantId, out _, out _))
             {
                 var existing = await _mediator.Send(new ListCustomEntitiesQuery(true), ct);
                 var currentCount = existing.IsSuccess ? existing.Value.Count : 0;
                 var quotaResult = await _quota.EnsureUnderLimitAsync(quotaTenantId, StudioQuotas.MaxEntitiesKey,
-                    currentCount + spec.Entities.Count - 1, StudioQuotas.MaxEntitiesFallback, "tables personnalisées", ct);
+                    currentCount + newEntityCount - 1, StudioQuotas.MaxEntitiesFallback, "tables personnalisées", ct);
                 if (!quotaResult.IsSuccess)
                 {
                     Report("failed", "Échec – quota", "error", null, quotaResult.Error.Description);
                     return (false, quotaResult.Error.Description, null);
                 }
+            }
+
+            // Résolution des tables réutilisées AVANT toute écriture : si une clé demandée est
+            // introuvable ou inactive, on refuse SANS avoir créé le système (pas d'orphelin à
+            // annuler). Le message ne cite que la clé demandée — jamais les clés du tenant.
+            var entityKeyMap = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var reusedSpec in spec.Entities.Where(e => e.ExistingKey is not null))
+            {
+                Report("reusing_entity", $"Table existante « {reusedSpec.EntityDisplayName} »", "running", reusedSpec.Ref);
+                var schema = await _mediator.Send(new GetCustomEntitySchemaQuery(reusedSpec.ExistingKey!), ct);
+                if (!schema.IsSuccess || !schema.Value.Entity.IsActive)
+                {
+                    var reason = $"Table existante « {reusedSpec.ExistingKey} » introuvable ou inactive — la réutilisation demandée est impossible.";
+                    Report("reusing_entity", $"Table existante « {reusedSpec.EntityDisplayName} »", "error", reusedSpec.Ref, reason);
+                    return (false, reason, null);
+                }
+                entityKeyMap[reusedSpec.Ref] = reusedSpec.ExistingKey!;
+                Report("reusing_entity", $"Table existante « {reusedSpec.EntityDisplayName} »", "done", reusedSpec.Ref);
             }
 
             Report("creating_system", "Création du système", "running");
@@ -66,11 +86,12 @@ public sealed class StudioAiSystemOrchestrator
             journal.SystemKey = systemResult.Value.Key;
             Report("creating_system", "Création du système", "done");
 
-            var entityKeyMap = new Dictionary<string, string>(StringComparer.Ordinal);
-            var entityIdMap = new Dictionary<string, Guid>(StringComparer.Ordinal);
-
             foreach (var entitySpec in spec.Entities)
             {
+                // Table réutilisée : AUCUNE écriture (ni entité, ni champ, ni formulaire, ni état) et
+                // surtout pas de journal — l'annulation ne doit jamais supprimer une table existante.
+                if (entitySpec.ExistingKey is not null) continue;
+
                 Report("creating_entity", $"Table « {entitySpec.EntityDisplayName} »", "running", entitySpec.Ref);
                 var existing = await _mediator.Send(new ListCustomEntitiesQuery(true), ct);
                 var usedKeys = existing.IsSuccess
@@ -88,7 +109,6 @@ public sealed class StudioAiSystemOrchestrator
                 var entity = entityResult.Value;
                 journal.EntityIds.Add(entity.Id);
                 entityKeyMap[entitySpec.Ref] = entity.Key;
-                entityIdMap[entitySpec.Ref] = entity.Id;
 
                 var simpleFields = entitySpec.Fields.Where(f => f.FieldType != CustomFieldType.RelationCustom).ToList();
                 var relationFields = entitySpec.Fields.Where(f => f.FieldType == CustomFieldType.RelationCustom).ToList();
@@ -164,6 +184,12 @@ public sealed class StudioAiSystemOrchestrator
                 {
                     if (!entityKeyMap.TryGetValue(batch.EntityRef, out var entityKey)) continue;
                     if (!entityByRef.TryGetValue(batch.EntityRef, out var entitySpec)) continue;
+                    // Jamais d'écriture dans une table réutilisée : le lot de seed est ignoré.
+                    if (entitySpec.ExistingKey is not null)
+                    {
+                        warnings.Add($"Données de « {entitySpec.EntityDisplayName} » ignorées : table existante réutilisée, aucune écriture.");
+                        continue;
+                    }
                     var fieldByKey = entitySpec.Fields.ToDictionary(f => f.Key, StringComparer.Ordinal);
 
                     foreach (var rec in batch.Records)
@@ -197,9 +223,12 @@ public sealed class StudioAiSystemOrchestrator
                 refKey = e.Ref,
                 entityKey = entityKeyMap[e.Ref],
                 displayName = e.EntityDisplayName,
+                reused = e.ExistingKey is not null,
                 openUrl = $"/studio/d/{entityKeyMap[e.Ref]}"
             }).ToList();
 
+            var reusedCount = spec.Entities.Count(e => e.ExistingKey is not null);
+            var createdCount = spec.Entities.Count - reusedCount;
             var payload = new
             {
                 success = true,
@@ -207,10 +236,13 @@ public sealed class StudioAiSystemOrchestrator
                 systemUrl = $"/studio/systems/{journal.SystemKey}",
                 displayName = spec.SystemDisplayName,
                 entityCount = spec.Entities.Count,
+                createdCount,
+                reusedCount,
                 entities,
                 warnings,
                 buildSteps = journal.Steps,
-                message = $"Système « {spec.SystemDisplayName} » créé avec {spec.Entities.Count} table(s)."
+                message = $"Système « {spec.SystemDisplayName} » créé avec {createdCount} table(s)"
+                    + (reusedCount > 0 ? $" et {reusedCount} table(s) existante(s) réutilisée(s)." : ".")
                     + (warnings.Count > 0 ? $" {warnings.Count} élément(s) ignoré(s)." : string.Empty)
             };
             return (true, null, payload);

@@ -234,4 +234,152 @@ public sealed class StudioAiSystemOrchestratorTests
 
     private static CustomRecordDto RecordDto() =>
         new(Guid.NewGuid(), null, DateTime.UtcNow, DateTime.UtcNow, null);
+
+    // ---- Réutilisation de tables existantes (existingKey — PR 1.3) ----
+
+    [Fact]
+    public async Task Reused_entity_is_never_created_nor_written_but_relations_point_at_it()
+    {
+        const string json = """
+        { "system": { "displayName": "Suivi" }, "entities": [
+          { "ref": "employes", "existingKey": "employes" },
+          { "ref": "demandes", "displayName": "Demandes", "fields": [
+            { "label": "Employé", "type": "relation", "relationTo": "employes" },
+            { "label": "Statut", "type": "text" }
+          ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        SetupHappyStructure();
+        var reusedId = Guid.NewGuid();
+        _mediator.Setup(m => m.Send(It.Is<GetCustomEntitySchemaQuery>(q => q.EntityKey == "employes"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new CustomEntitySchemaDto(
+                new CustomEntityDto(reusedId, "employes", "Employés", "Employés", null, null, true, 2, Guid.NewGuid(), DateTime.UtcNow, DateTime.UtcNow),
+                new List<CustomFieldDto>(), new FormLayout())));
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object);
+        var (success, error, payload) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        // UNE seule table créée (« demandes ») : jamais d'écriture pour la table réutilisée.
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomEntityCommand>(), It.IsAny<CancellationToken>()), Times.Once);
+        _mediator.Verify(m => m.Send(It.Is<CreateCustomFieldCommand>(c => c.EntityId == reusedId), It.IsAny<CancellationToken>()), Times.Never);
+        // La relation de « demandes » vise la VRAIE clé de la table réutilisée.
+        _mediator.Verify(m => m.Send(It.Is<CreateCustomFieldCommand>(c =>
+                c.Request.FieldType == CustomFieldType.RelationCustom
+                && c.Request.Relation != null && c.Request.Relation.Kind == "custom" && c.Request.Relation.Ref == "employes"),
+            It.IsAny<CancellationToken>()), Times.Once);
+        // Le payload distingue création et réutilisation.
+        var json2 = JsonSerializer.Serialize(payload);
+        Assert.Contains("\"reused\":true", json2, StringComparison.Ordinal);
+        Assert.Contains("\"reusedCount\":1", json2, StringComparison.Ordinal);
+        Assert.Contains("\"createdCount\":1", json2, StringComparison.Ordinal);
+        // La table réutilisée n'est JAMAIS supprimée en cas de nettoyage.
+        _mediator.Verify(m => m.Send(It.Is<DeleteCustomEntityCommand>(c => c.Id == reusedId), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Unknown_existing_key_fails_before_any_write()
+    {
+        const string json = """
+        { "system": { "displayName": "Suivi" }, "entities": [
+          { "ref": "employes", "existingKey": "employes" },
+          { "ref": "demandes", "displayName": "Demandes", "fields": [ { "label": "Statut" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        _mediator.Setup(m => m.Send(It.IsAny<GetCustomEntitySchemaQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<CustomEntitySchemaDto>(Error.Validation("entityKey", "introuvable")));
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object);
+        var (success, error, payload) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.False(success);
+        Assert.Null(payload);
+        Assert.Contains("employes", error!);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomSystemCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomEntityCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Inactive_existing_key_fails_before_any_write()
+    {
+        const string json = """
+        { "system": { "displayName": "Suivi" }, "entities": [
+          { "ref": "employes", "existingKey": "employes" },
+          { "ref": "demandes", "displayName": "Demandes", "fields": [ { "label": "Statut" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        _mediator.Setup(m => m.Send(It.IsAny<GetCustomEntitySchemaQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new CustomEntitySchemaDto(
+                new CustomEntityDto(Guid.NewGuid(), "employes", "Employés", "Employés", null, null, false, 0, Guid.NewGuid(), DateTime.UtcNow, DateTime.UtcNow),
+                new List<CustomFieldDto>(), new FormLayout())));
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object);
+        var (success, _, _) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.False(success);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomSystemCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Seed_targeting_a_reused_entity_is_skipped_with_a_warning()
+    {
+        const string json = """
+        { "system": { "displayName": "Suivi" }, "entities": [
+          { "ref": "employes", "existingKey": "employes" },
+          { "ref": "demandes", "displayName": "Demandes", "fields": [ { "label": "Statut" } ] }
+        ], "seed": [ { "entityRef": "employes", "records": [ { "nom": "Sami" } ] } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        SetupHappyStructure();
+        _mediator.Setup(m => m.Send(It.IsAny<GetCustomEntitySchemaQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new CustomEntitySchemaDto(
+                EntityDto("employes"), new List<CustomFieldDto>(), new FormLayout())));
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object);
+        var (success, error, payload) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        // AUCUN enregistrement écrit : le seul lot de seed visait la table réutilisée.
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomRecordCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Contains("aucune", JsonSerializer.Serialize(payload), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Preflight_quota_counts_only_new_entities()
+    {
+        const string json = """
+        { "system": { "displayName": "Suivi" }, "entities": [
+          { "ref": "employes", "existingKey": "employes" },
+          { "ref": "demandes", "displayName": "Demandes", "fields": [ { "label": "Statut" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        _currentUser.Setup(x => x.TenantId).Returns(Guid.NewGuid());
+        _mediator.Setup(m => m.Send(It.IsAny<ListCustomEntitiesQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<CustomEntityDto>>(new List<CustomEntityDto> { EntityDto("a"), EntityDto("b") }));
+        var quota = new Mock<IStudioQuotaService>();
+        int? requested = null;
+        quota.Setup(q => q.EnsureUnderLimitAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(),
+                It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback((Guid _, string _, int count, int _, string _, CancellationToken _) => requested = count)
+            .ReturnsAsync(Result.Failure(Error.Validation("Plan", "stop")));
+        _mediator.Setup(m => m.Send(It.IsAny<GetCustomEntitySchemaQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new CustomEntitySchemaDto(
+                EntityDto("employes"), new List<CustomFieldDto>(), new FormLayout())));
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object, quota.Object);
+        var (success, _, _) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.False(success);
+        // 2 tables existantes + 1 NOUVELLE (la réutilisée ne compte pas) - 1 = 2.
+        Assert.Equal(2, requested);
+    }
 }

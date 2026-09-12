@@ -78,6 +78,9 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
     // Outils au périmètre cabinet (agent Chef de mission) — seuls outils multi-dossiers du catalogue.
     // Optionnel (défaut null) pour préserver les constructions existantes des tests.
     private readonly IFirmAgentToolExecutor? _firmAgent;
+    // Dépôt des tables Studio — sert UNIQUEMENT à détecter les doublons dans les aperçus de plan
+    // (lecture seule). Optionnel (défaut null), même motif que les autres dépendances facultatives.
+    private readonly ICustomEntityRepository? _customEntities;
 
     private static readonly JsonSerializerOptions SerializeOptions = new()
     {
@@ -113,8 +116,11 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
         ICashFlowForecastService? cashFlowForecast = null,
         ICashFlowForecastRepository? cashFlowRepository = null,
         // Moteur d'états — optionnel comme les autres, pour ne pas casser les constructions de test.
-        Application.Features.Studio.Common.SqlReport.ISqlReportEngine? sqlReports = null)
+        Application.Features.Studio.Common.SqlReport.ISqlReportEngine? sqlReports = null,
+        // Détection de doublons dans les aperçus — optionnelle, même motif.
+        ICustomEntityRepository? customEntities = null)
     {
+        _customEntities = customEntities;
         _sqlReports = sqlReports;
         _treasuryForecastOptions = treasuryForecastOptions?.Value ?? new TreasuryForecastOptions();
         _cashFlowForecast = cashFlowForecast;

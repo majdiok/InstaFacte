@@ -167,7 +167,8 @@ public static class StudioAiAppSpec
     /// <summary>Accent-folded slug (so « Date de début » → « date_de_debut », not « date_de_d_but »).</summary>
     public static string SlugKey(string input) => StudioKey.Slugify(RemoveDiacritics(input));
 
-    private static string RemoveDiacritics(string text)
+    /// <summary>Repli sans diacritiques (réutilisé par le détecteur de doublons).</summary>
+    internal static string RemoveDiacritics(string text)
     {
         if (string.IsNullOrEmpty(text)) return text;
         var decomposed = text.Normalize(System.Text.NormalizationForm.FormD);

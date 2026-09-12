@@ -178,6 +178,31 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     `null`). Cas limite : si le modèle avancé est un modèle **Ollama** et que le moteur tourne en
     **CPU seul**, le plafond CPU reste appliqué (le budget avancé est réservé au GPU / cloud).
 
+## Doublons et réutilisation de tables (`existingKey`)
+
+> Architecture : [`docs/architecture/studio-ai-duplicates-and-reuse.md`](../architecture/studio-ai-duplicates-and-reuse.md).
+> Prérequis : au moins une table Studio existante (ex. `employes` « Employés »). Aucune clé de
+> fonctionnalité nouvelle : tout se joue sous `Ollama:EnableStudioAiPlanPreview`.
+
+49. **Bandeau doublon** — « crée un système RH avec une table Employés (nom, poste) et une table
+    Demandes » ⇒ l'aperçu du plan affiche la table « Employés » signalée comme **doublon** de la
+    table existante `employes` (`summary.duplicates[]` non vide, `reason` = `same_key` /
+    `same_name` / `singular_plural`) et un avertissement en clair proposant la réutilisation. Le
+    plan reste confirmable tel quel (la table serait recréée sous une clé suffixée) : le signalement
+    n'est jamais un blocage. Contre-exemple : « crée une table Contrats » avec `contrats_cadres`
+    existante ⇒ **aucun** bandeau (jamais de rapprochement par préfixe).
+50. **Réutilisation via `existingKey`** — « crée un système de congés qui s'appuie sur la table
+    employes existante et ajoute une table Demandes de congés liée » ⇒ l'aperçu affiche l'étape
+    « Tables réutilisées : 1 » ; à la confirmation, l'exécution **ne crée ni ne modifie** la table
+    `employes` (aucun appel de création de table/champ/formulaire/état pour elle), la relation de
+    « Demandes de congés » pointe vers la clé réelle `employes`, et le payload final distingue
+    `createdCount` / `reusedCount`. Cas d'échec : une spec forgée avec `existingKey` inconnu ou
+    inactif ⇒ l'exécution échoue **avant** toute création (pas même le système), avec un message qui
+    ne cite que la clé demandée. Un lot `seed` visant la table réutilisée est ignoré avec un
+    avertissement — jamais d'écriture dans une table existante.
+
+
+
 ### Avant d'activer `EnableStudioSqlSourceGuard`
 
 41. Exécuter [`docs/runbooks/sql/studio-views-affected-by-guard.sql`](../runbooks/sql/studio-views-affected-by-guard.sql)
@@ -195,6 +220,8 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
 - Backend : `dotnet test src\Backend\tests\FactuTrust.Infrastructure.Tests --filter "FullyQualifiedName~.Studio"`
   (parsers, planificateur de diff, exécuteurs, cycle de vie des plans, catalogue d'outils, rendu PDF,
   politique d'accès aux tables, constructeur SQL des états, préréglages, digest de contexte).
+- Backend (doublons + réutilisation) : `--filter "FullyQualifiedName~StudioAiDuplicateDetector|FullyQualifiedName~StudioAiSystemSpec|FullyQualifiedName~StudioAiSystemOrchestrator"`
+  (rapprochements, parsing `existingKey`, exécution sans écriture sur les tables réutilisées).
 - Backend (contexte + modèle avancé) : `--filter "FullyQualifiedName~SendChatMessageHandlerStudioAdvancedModel|FullyQualifiedName~AiContextBuilderStudioDigest|FullyQualifiedName~StudioContextDigestService"`
   et `dotnet test src\Backend\tests\FactuTrust.API.Tests --filter "FullyQualifiedName~FactuTrust.API.Tests.Studio"`
   (`AiChatOptionsContractTests` + contrats des contrôleurs Studio ; c'est ce filtre qu'exécute `azure-pipelines.yml`

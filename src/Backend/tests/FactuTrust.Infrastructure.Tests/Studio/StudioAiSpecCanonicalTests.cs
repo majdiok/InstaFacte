@@ -118,6 +118,35 @@ public sealed class StudioAiSpecCanonicalTests
         Assert.Contains("\"key\": \"date_debut\"", canonical, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Reused_entity_round_trips_as_ref_existingKey_displayName_only()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "existingKey": "employes" },
+          { "ref": "demandes", "displayName": "Demandes", "fields": [
+            { "label": "Employé", "type": "relation", "relationTo": "employes" } ] }
+        ] }
+        """;
+
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var canonical = StudioAiSpecCanonical.CanonicalSystem(spec!);
+
+        // L'entité réutilisée n'émet QUE ref/existingKey/displayName : aucun champ, formulaire ou état.
+        Assert.Contains("\"existingKey\": \"employes\"", canonical, StringComparison.Ordinal);
+        var node = JsonNode.Parse(canonical)!;
+        var reused = node["entities"]!.AsArray()
+            .First(e => e!["ref"]!.GetValue<string>() == "employes")!;
+        Assert.Equal(new[] { "ref", "existingKey", "displayName" },
+            reused.AsObject().Select(p => p.Key).ToArray());
+        Assert.Equal("employes", reused["displayName"]!.GetValue<string>()); // repli sur la clé
+
+        // Stable à l'octet près au re-parse (l'éditeur d'aperçu ré-émet la même forme).
+        var canonicalAgain = StudioAiSpecCanonical.CanonicalFor(StudioAiPlanKind.CreateSystem, canonical, out var reparseError);
+        Assert.Null(reparseError);
+        Assert.Equal(canonical, canonicalAgain);
+    }
+
     [Theory]
     [InlineData("id")]
     [InlineData("RowVersion")]

@@ -14,7 +14,9 @@ public sealed record ParsedSystemEntity(
     string? Description,
     IReadOnlyList<ParsedSystemField> Fields,
     ParsedFormSpec? Form,
-    ParsedAppReport? Report);
+    ParsedAppReport? Report,
+    /// <summary>Clé d'une table EXISTANTE à réutiliser telle quelle (champs/formulaire/état ignorés).</summary>
+    string? ExistingKey = null);
 
 public sealed record ParsedSystemField(
     string Key,
@@ -49,14 +51,19 @@ public sealed record ParsedSystemSpec(
     string? SystemDescription,
     IReadOnlyList<string>? OnboardingSteps,
     IReadOnlyList<ParsedSystemEntity> Entities,
-    IReadOnlyList<ParsedSeedBatch> Seed);
+    IReadOnlyList<ParsedSeedBatch> Seed,
+    /// <summary>Avertissements de parsing (réutilisations ignorées, champs écartés) — additif, R6.</summary>
+    IReadOnlyList<string>? Warnings = null);
 
 /// <summary>
 /// Parses multi-table system specs for <c>studio_generate_system</c>.
 /// </summary>
 public static class StudioAiSystemSpec
 {
+    /// <summary>Borne de tables NOUVELLES par système (les tables réutilisées ne comptent pas).</summary>
     public const int MaxEntities = 8;
+    /// <summary>Borne de tables existantes réutilisées par système (<c>existingKey</c>).</summary>
+    public const int MaxExistingRefs = 8;
     public const int MaxSeedRecords = 200;
 
     private static readonly HashSet<string> RelationTypeAliases = new(StringComparer.OrdinalIgnoreCase)
@@ -84,16 +91,36 @@ public static class StudioAiSystemSpec
 
         var entitiesArr = root?["entities"]?.AsArray();
         if (entitiesArr is null || entitiesArr.Count == 0) { error = "Au moins une entité est requise."; return false; }
-        if (entitiesArr.Count > MaxEntities) { error = $"Maximum {MaxEntities} entités par système."; return false; }
 
         var entities = new List<ParsedSystemEntity>();
         var refs = new HashSet<string>(StringComparer.Ordinal);
+        var warnings = new List<string>();
+        var newCount = 0;
+        var reusedCount = 0;
 
         foreach (var en in entitiesArr)
         {
-            if (entities.Count >= MaxEntities) break;
-            var entity = ParseEntity(en, refs, out var entityError);
+            var entity = ParseEntity(en, refs, warnings, out var entityError);
             if (entity is null) { error = entityError; return false; }
+
+            // La borne MaxEntities ne vise que les tables NOUVELLES : une table réutilisée n'est ni
+            // créée ni comptée dans le quota. Au-delà de MaxExistingRefs, la réutilisation est
+            // ignorée avec avertissement (la spec reste exécutable), jamais un rejet franc.
+            if (entity.ExistingKey is not null)
+            {
+                if (reusedCount >= MaxExistingRefs)
+                {
+                    refs.Remove(entity.Ref);
+                    warnings.Add($"Entité « {entity.EntityDisplayName} » ignorée : au plus {MaxExistingRefs} tables existantes réutilisées par système.");
+                    continue;
+                }
+                reusedCount++;
+            }
+            else
+            {
+                if (newCount >= MaxEntities) { error = $"Maximum {MaxEntities} entités par système."; return false; }
+                newCount++;
+            }
             entities.Add(entity);
         }
 
@@ -111,7 +138,7 @@ public static class StudioAiSystemSpec
                     : f).ToList()
         }).ToList();
 
-        spec = new ParsedSystemSpec(displayName!.Trim(), systemIcon, systemDescription, onboarding, resolved, seed);
+        spec = new ParsedSystemSpec(displayName!.Trim(), systemIcon, systemDescription, onboarding, resolved, seed, warnings);
         return true;
     }
 
@@ -132,22 +159,53 @@ public static class StudioAiSystemSpec
         return ExistingRelationSources.IsRelationTarget(slug) ? slug : null;
     }
 
-    private static ParsedSystemEntity? ParseEntity(JsonNode? en, HashSet<string> refs, out string? error)
+    private static ParsedSystemEntity? ParseEntity(JsonNode? en, HashSet<string> refs, List<string> warnings, out string? error)
     {
         error = null;
         var refKey = Str(en?["ref"]) ?? Str(en?["key"]);
         var displayName = Str(en?["displayName"]) ?? Str(en?["name"]);
+
+        // Réutilisation d'une table existante : « existingKey » (alias existing/useExisting/reuse).
+        // Chaîne → clé explicite ; booléen true → la clé est celle de l'entité (ref/key/displayName).
+        // L'existence et l'état actif de la table sont revérifiés à l'exécution, jamais ici.
+        var existingNode = en?["existingKey"] ?? en?["existing"] ?? en?["useExisting"] ?? en?["reuse"];
+        var reuseFlag = Bool(existingNode);
+        if (reuseFlag == false)
+            existingNode = null; // « reuse: false » = pas de réutilisation
+        string? existingKey = null;
+        if (existingNode is not null && reuseFlag != true)
+        {
+            var rawExisting = Str(existingNode);
+            var candidate = rawExisting is null ? null : StudioAiAppSpec.SlugKey(rawExisting);
+            if (string.IsNullOrEmpty(candidate) || !StudioKey.IsValidShape(candidate))
+            {
+                error = $"Entité « {displayName ?? refKey ?? "?"} » : « existingKey » n'est pas une clé de table valide.";
+                return null;
+            }
+            existingKey = candidate;
+        }
+
+        if (existingKey is not null || existingNode is not null)
+        {
+            // La ref interne (relations/seed) retombe sur la clé réutilisée, puis sur le libellé.
+            // Le repli d'existingKey se fait sur la ref AVANT déduplication (la clé réutilisée reste
+            // celle demandée, jamais une forme suffixée « _2 »).
+            var baseRef = SlugRef(refKey, existingKey ?? displayName ?? "table");
+            existingKey ??= baseRef;
+            displayName ??= existingKey;
+            refKey = UniqueRef(baseRef, refs);
+
+            // La table n'est NI créée NI modifiée : champs/formulaire/état éventuels sont ignorés.
+            if (en?["fields"] is not null || en?["form"] is not null || en?["report"] is not null)
+                warnings.Add($"Entité « {displayName} » : champs, formulaire et état ignorés — la table existante « {existingKey} » est réutilisée telle quelle.");
+
+            return new ParsedSystemEntity(refKey, displayName.Trim(), displayName.Trim(), null, null,
+                Array.Empty<ParsedSystemField>(), null, null, existingKey);
+        }
+
         if (string.IsNullOrWhiteSpace(displayName)) { error = "Chaque entité doit avoir displayName."; return null; }
 
-        refKey = string.IsNullOrWhiteSpace(refKey)
-            ? StudioAiAppSpec.SlugKey(displayName!)
-            : StudioAiAppSpec.SlugKey(refKey);
-        if (string.IsNullOrEmpty(refKey) || !StudioKey.IsValidShape(refKey))
-            refKey = "table";
-        var baseRef = refKey;
-        var i = 1;
-        while (refs.Contains(refKey)) refKey = $"{baseRef}_{++i}";
-        refs.Add(refKey);
+        refKey = UniqueRef(SlugRef(refKey, displayName!), refs);
 
         var plural = Str(en?["displayNamePlural"]) ?? displayName!.Trim();
         var icon = Str(en?["icon"]);
@@ -242,6 +300,23 @@ public static class StudioAiSystemSpec
         var form = ParseForm(en?["form"], fields);
         var report = ParseEntityReport(en?["report"], fields);
         return new ParsedSystemEntity(refKey, displayName!.Trim(), plural.Trim(), icon, description, fields, form, report);
+    }
+
+    /// <summary>Slug accent-insensible de la ref explicite (sinon du repli) ; « table » si invalide.</summary>
+    private static string SlugRef(string? refKey, string fallback)
+    {
+        var slug = StudioAiAppSpec.SlugKey(string.IsNullOrWhiteSpace(refKey) ? fallback : refKey);
+        return string.IsNullOrEmpty(slug) || !StudioKey.IsValidShape(slug) ? "table" : slug;
+    }
+
+    /// <summary>Ref unique dans la spec : suffixe « _2 », « _3 »… en cas de collision, jamais d'écrasement.</summary>
+    private static string UniqueRef(string baseRef, HashSet<string> refs)
+    {
+        var refKey = baseRef;
+        var i = 1;
+        while (refs.Contains(refKey)) refKey = $"{baseRef}_{++i}";
+        refs.Add(refKey);
+        return refKey;
     }
 
     private static ParsedAppReport? ParseEntityReport(JsonNode? node, IReadOnlyList<ParsedSystemField> fields)
