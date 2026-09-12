@@ -106,4 +106,41 @@ describe('StudioAiComposerComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('5 pièces jointes');
   });
+
+  it('masque le toggle « Modèle avancé » quand l’administrateur ne l’a pas configuré', () => {
+    const fixture = create();
+    expect(fixture.nativeElement.querySelector('.sac__model')).toBeNull();
+  });
+
+  it('affiche le toggle avec le libellé du modèle, relié à son <label>, et émet le changement', () => {
+    const fixture = TestBed.createComponent(StudioAiComposerComponent);
+    fixture.componentRef.setInput('advancedModelAvailable', true);
+    fixture.componentRef.setInput('advancedModelLabel', 'GPT-4.1');
+    fixture.componentRef.setInput('useAdvancedModel', false);
+    fixture.detectChanges();
+
+    const changes: boolean[] = [];
+    fixture.componentInstance.advancedModelChange.subscribe(v => changes.push(v));
+
+    const model = fixture.nativeElement.querySelector('.sac__model') as HTMLElement;
+    expect(model.textContent).toContain('Modèle avancé');
+    expect(model.textContent).toContain('GPT-4.1');
+    const input = model.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const label = model.querySelector('label') as HTMLLabelElement;
+    expect(input.id).toBeTruthy();
+    expect(label.htmlFor).toBe(input.id);
+    expect(input.checked).toBeFalse();
+
+    input.click();
+    fixture.detectChanges();
+    expect(changes).toEqual([true]);
+  });
+
+  it('rend le micro désactivé avec l’indication « Bientôt »', () => {
+    const fixture = create();
+    const mic = fixture.nativeElement.querySelector('.sac__mic-button') as HTMLButtonElement;
+    expect(mic.disabled).toBeTrue();
+    expect(mic.getAttribute('aria-label')).toContain('Dicter la demande');
+    expect(mic.getAttribute('aria-label')).toContain('prochaine version');
+  });
 });

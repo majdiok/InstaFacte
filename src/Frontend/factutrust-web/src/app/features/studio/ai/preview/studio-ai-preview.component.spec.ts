@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
+import { AiChatService } from '@features/ai-assistant/services/ai-chat.service';
 import { AiStreamService } from '@features/ai-assistant/services/ai-stream.service';
 import { StudioAiBuildService } from '../../studio-ai-build.service';
 import { StudioNavService } from '../../studio-nav.service';
@@ -24,6 +25,7 @@ describe('StudioAiPreviewComponent', () => {
     builds.cancel.and.returnValue(of());
     builds.getCapabilities.and.returnValue(of());
     const nav = jasmine.createSpyObj<StudioNavService>('StudioNavService', ['refresh']);
+    const chat = jasmine.createSpyObj<AiChatService>('AiChatService', ['deleteConversation']);
 
     await TestBed.configureTestingModule({
       imports: [StudioAiPreviewComponent],
@@ -33,7 +35,8 @@ describe('StudioAiPreviewComponent', () => {
         StudioAiSessionStore,
         { provide: AiStreamService, useValue: stream },
         { provide: StudioAiBuildService, useValue: builds },
-        { provide: StudioNavService, useValue: nav }
+        { provide: StudioNavService, useValue: nav },
+        { provide: AiChatService, useValue: chat }
       ]
     }).compileComponents();
 

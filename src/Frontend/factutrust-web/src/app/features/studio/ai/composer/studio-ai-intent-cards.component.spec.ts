@@ -39,13 +39,27 @@ describe('StudioAiIntentCardsComponent', () => {
     expect(card(fixture, 'system').textContent).toContain('Système complet');
   });
 
-  it('désactive Workflow et Page avec un badge « Bientôt »', () => {
+  it('désactive Workflow et Page avec un badge « Bientôt » tant que le serveur ne les sert pas', () => {
     const fixture = create();
     for (const intent of ['workflow', 'page']) {
       expect(card(fixture, intent).disabled).withContext(intent).toBeTrue();
       expect(card(fixture, intent).textContent).toContain('Bientôt');
     }
     expect(card(fixture, 'table').disabled).toBeFalse();
+  });
+
+  it('active la carte Workflow quand `workflowToolsEnabled` est vrai (Page reste « Bientôt »)', () => {
+    const fixture = create({ ...ALL_ENABLED, workflowToolsEnabled: true });
+    const picked: StudioAiIntentCardDef[] = [];
+    fixture.componentInstance.pick.subscribe(def => picked.push(def));
+
+    expect(card(fixture, 'workflow').disabled).toBeFalse();
+    expect(card(fixture, 'workflow').textContent).not.toContain('Bientôt');
+    expect(card(fixture, 'page').disabled).toBeTrue();
+
+    card(fixture, 'workflow').click();
+    expect(picked[0].available).toBeTrue();
+    expect(picked[0].prompt).toContain('workflow');
   });
 
   it('désactive les cartes dont la capacité serveur est coupée', () => {

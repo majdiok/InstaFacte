@@ -42,7 +42,7 @@ type DesignerRow =
           <div studioEditor>
             <div class="studio-add-bar">
               <p-select [options]="availableFields()" [(ngModel)]="fieldToAdd" optionLabel="label" optionValue="id"
-                placeholder="Ajouter un champ" [showClear]="true" appendTo="body" styleClass="studio-add-dd"></p-select>
+                placeholder="Ajouter un champ" [showClear]="true" appendTo="body" panelStyleClass="studio-theme" styleClass="studio-add-dd"></p-select>
               <button pButton type="button" icon="fa-solid fa-plus" label="Champ" [disabled]="!fieldToAdd" (click)="addField()"></button>
               <button pButton type="button" icon="fa-solid fa-heading" label="Section" class="p-button-outlined" (click)="addSection()"></button>
             </div>
@@ -58,7 +58,7 @@ type DesignerRow =
                   @if (r.kind === 'field') {
                     <code class="studio-cname">{{ r.field.key }}</code>
                     <input pInputText [(ngModel)]="r.labelOverride" [placeholder]="r.field.label" class="studio-grow" />
-                    <p-select [options]="widthOptions" [(ngModel)]="r.width" optionLabel="label" optionValue="value" appendTo="body"></p-select>
+                    <p-select [options]="widthOptions" [(ngModel)]="r.width" optionLabel="label" optionValue="value" appendTo="body" panelStyleClass="studio-theme"></p-select>
                   }
                   <button pButton type="button" icon="fa-solid fa-xmark" class="p-button-text p-button-sm p-button-danger" (click)="removeRow(i)"></button>
                 </div>

@@ -1,19 +1,28 @@
-/* Atelier Studio IA — grille principale + rail de conversation (plan P1 §11). */
+/* Atelier Studio IA — coquille 3 zones : en-tête, colonne principale, rail droit 320 px (PR 1.4). */
 
 .studio-ai-page {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'header'
+    'main'
+    'rail';
   gap: var(--spacing-6, 1.5rem);
   align-items: start;
 
-  &--with-rail {
-    @media (min-width: 1280px) {
-      grid-template-columns: minmax(0, 1fr) 320px;
-    }
+  // Rail toujours présent : à côté du contenu dès 1280 px, empilé dessous en dessous.
+  @media (min-width: 1280px) {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-areas:
+      'header header'
+      'main rail';
   }
 }
 
+.studio-ai-page__header { grid-area: header; display: block; min-width: 0; }
+
 .studio-ai-page__main {
+  grid-area: main;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -21,16 +30,19 @@
 }
 
 .studio-ai-page__rail {
+  grid-area: rail;
+  display: block;
   min-width: 0;
 
   @media (min-width: 1280px) {
     position: sticky;
     top: var(--spacing-4, 1rem);
     max-height: calc(100vh - var(--spacing-8, 2rem));
-    display: flex;
-    flex-direction: column;
+    overflow-y: auto;
   }
 }
+
+.studio-ai-page__conversation { display: block; }
 
 .studio-ai-page__hero {
   display: flex;
@@ -49,6 +61,25 @@
   margin: 0;
   font-size: var(--font-size-sm, 0.875rem);
   color: var(--color-neutral-500, #6b7280);
+}
+
+// Bandeau D3 : modèle réellement utilisé pour le dernier tour.
+.studio-ai-page__model {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2, 0.5rem);
+  padding: var(--spacing-2, 0.5rem) var(--spacing-4, 1rem);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-primary-50, #eef2ff);
+  color: var(--color-primary-700, #4338ca);
+  font-size: var(--font-size-sm, 0.875rem);
+
+  i { flex: none; }
+
+  &--advanced {
+    background: var(--color-success-50, #ecfdf5);
+    color: var(--color-success-700, #047857);
+  }
 }
 
 .studio-ai-page__error {
