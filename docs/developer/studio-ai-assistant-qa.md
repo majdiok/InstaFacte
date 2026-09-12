@@ -245,6 +245,43 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     indexée existe — jamais la valeur en clair. `GET api/studio/nav` ⇒ `employes` et `projets` sont présents,
     `employes_projets` **absent** (dans un système comme à la racine) ; la sidebar Studio ne change pas.
 
+## Vues enregistrées (`Ollama:EnableStudioRecordViews`)
+
+> Architecture : [`docs/architecture/studio-record-views.md`](../architecture/studio-record-views.md).
+> Prérequis : migration tenant `20260912140000_AddStudioRecordViews_Tenant` appliquée ; une table Studio
+> existante `interventions` (champs `nom` Text, `statut` Select avec options `encours`/`termine`, `debut` Date,
+> `montant` Money) alimentée d'enregistrements, un compte avec `StudioDesignForms` (conception) et
+> `CustomRecordsRead` (lecture/exécution). Les appels se font avec Swagger / `curl`.
+
+56. **Vue Liste filtrée et triée côté serveur** — `POST api/studio/records/interventions/views` corps
+    `{ "key": "en_cours", "displayName": "En cours", "mode": "List", "definition": { "columns": [{ "fieldKey": "nom" }], "filters": [{ "fieldKey": "statut", "op": "eq", "value": "encours" }], "sort": [{ "fieldKey": "debut", "descending": true }], "searchEnabled": true, "pageSize": 25 } }` ⇒ `201` avec
+    `data.key = "en_cours"`, `data.mode = "List"` (enum sérialisé en chaîne), `data.isDefault = true` (première
+    vue de la table), un `rowVersion` base64 ; la définition est re-validée (filtre `gt` sur `nom` Text ⇒ `400
+    Validation.filters`). Puis `POST api/studio/records/interventions/views/{id}/run` corps `{ "page": 1 }` ⇒
+    `200` : `data.items[]` ne contient que les `statut = "encours"`, triés par `debut` décroissant,
+    `data.total` exact, `data.truncated = false`. `pageSize > 200` ⇒ `400 Validation.pageSize`.
+    `GET api/studio/records/interventions/views` ⇒ la vue en tête (défaut d'abord) ;
+    `GET api/studio/records/interventions/schema` ⇒ `data.views[]` la contient. Trace SQL : le `WHERE` est
+    paramétré (`@t`, `@e`, `@p0`), jamais la valeur en clair, et `SELECT r.*, COUNT(*) OVER()`.
+57. **Kanban groupé + borne 500** — `POST …/views` avec `"mode": "Kanban"`, `"kanban": { "groupByFieldKey": "statut", "titleFieldKey": "nom", "showEmptyGroup": true }` ⇒ `201` (un kanban sur un
+    champ non-`Select` ⇒ `400 Validation.kanban`). `POST …/views/{id}/run` ⇒ `200` avec `data.groups[]`
+    **ordonnés** selon les options (`encours`, `termine`), puis un groupe `{ "value": null, "label": "Sans valeur" }`
+    pour les lignes sans statut ; chaque groupe a `count` et `items[]`. Avec plus de 500 enregistrements ⇒
+    `data.truncated = true` (au plus 500 cartes chargées, `total` exact). `showEmptyGroup: false` masque les
+    colonnes vides.
+58. **PATCH partiel avec RowVersion** — `PATCH api/studio/records/interventions/{id}` corps
+    `{ "data": { "statut": "termine" }, "rowVersion": "<rowVersion de l'enregistrement>" }` ⇒ `200` : seules
+    les clés fournies changent (les autres, dont l'`AutoNumber`, sont conservées), `data.statut = "termine"`.
+    Rejouer le **même** corps avec l'ancien `rowVersion` ⇒ `409` (`Conflict`). Corps sans `rowVersion` ⇒
+    `400 Validation.rowVersion`. Clé inconnue ou calculée (`Formula`/`Lookup`/`Rollup`/`AutoNumber`) dans
+    `data` ⇒ `400 Validation.data` ; `null` sur une clé optionnelle l'efface. La mise à jour déclenche
+    l'événement d'automatisation `OnUpdate` existant.
+59. **Drapeau coupé** — `EnableStudioRecordViews: false` ⇒ `GET/POST …/views`, `GET/PUT/DELETE …/views/{id}`,
+    `POST …/views/{id}/default`, `POST …/views/{id}/run` et `PATCH …/records/{entityKey}/{id}` répondent tous
+    `404` **sans effet de bord** ; `GET api/studio/records/interventions/schema` ⇒ `data.views = []` ;
+    `GET api/ai/studio/capabilities` ⇒ `recordViewsEnabled: false`. La table `CustomRecordViewDefinitions`
+    reste inerte (migration additive).
+
 ## Migrations
 
 - `20260624181553_AddStudioSystems_Tenant` (systèmes multi-tables).
@@ -252,6 +289,10 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   Jumeau idempotent : `docs/runbooks/sql/AddStudioAiBuildPlans_Tenant.idempotent.sql`.
 - `20260912130000_AddStudioEntityKind_Tenant` (colonne `CustomEntityDefinitions.Kind`, défaut 0 = Standard,
   index `(TenantId, Kind)` — relations N-N). Jumeau idempotent : `docs/runbooks/sql/AddStudioEntityKind_Tenant.idempotent.sql`.
+- `20260912140000_AddStudioRecordViews_Tenant` (table `CustomRecordViewDefinitions`, FK cascade vers
+  `CustomEntityDefinitions`, index unique filtré `(TenantId, EntityDefinitionId, Key) WHERE IsDeleted = 0`,
+  index `(TenantId, EntityDefinitionId, IsDefault)` — vues enregistrées). Jumeau idempotent :
+  `docs/runbooks/sql/AddStudioRecordViews_Tenant.idempotent.sql`.
 
 ## Portée automatisée
 
