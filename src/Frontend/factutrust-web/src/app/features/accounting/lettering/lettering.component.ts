@@ -31,6 +31,8 @@ import { AccountingToolbarActionsComponent } from '../shared/accounting-toolbar-
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingCorrectionBannerComponent } from '../shared/accounting-correction-banner.component';
 import { ConfirmationService } from '@core/services/confirmation.service';
+import { FUNCTIONAL_CURRENCY } from '../manual-entry/models/entry-form.model';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 interface LetteringLine {
   lineId: string;
@@ -39,8 +41,15 @@ interface LetteringLine {
   entryNumber: number;
   accountNumber: string;
   label: string;
+  /** Montant au débit en devise de tenue. */
   debit: number;
+  /** Montant au crédit en devise de tenue. */
   credit: number;
+  /** Devise de l'opération, portée par l'écriture. */
+  currency: string;
+  /** Montants dans la devise de l'opération. 0 en mono-devise. */
+  debitInCurrency: number;
+  creditInCurrency: number;
   letteringCode?: string | null;
 }
 
@@ -69,6 +78,7 @@ interface LetteringLine {
   styleUrl: './lettering.component.scss'
 })
 export class LetteringComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly route = inject(ActivatedRoute);
   private readonly confirmationService = inject(ConfirmationService);
@@ -100,12 +110,42 @@ export class LetteringComponent implements OnInit {
     const sel = this.selectedLines();
     let debit = 0;
     let credit = 0;
+    let debitCurrency = 0;
+    let creditCurrency = 0;
     for (const l of sel) {
       debit += l.debit;
       credit += l.credit;
+      debitCurrency += l.debitInCurrency;
+      creditCurrency += l.creditInCurrency;
     }
+
+    // Une sélection mono-devise mélangeant des devises n'a pas de sens : le serveur la refusera,
+    // l'écran doit le refléter avant l'appel.
+    const currencies = new Set(sel.map(l => l.currency));
+    const currency = currencies.size === 1 ? [...currencies][0] : null;
+    const foreign = currency !== null && currency !== FUNCTIONAL_CURRENCY;
+
     const gap = Math.round((debit - credit) * 1000) / 1000;
-    return { count: sel.length, debit, credit, gap, balanced: sel.length >= 2 && gap === 0 };
+    const currencyGap = Math.round((debitCurrency - creditCurrency) * 1000) / 1000;
+
+    // L'équilibre s'apprécie sur la devise de l'opération : deux règlements de 1 000 EUR à des
+    // taux différents soldent le compte en euros, sans le solder en dinars.
+    const balanced = sel.length >= 2 && (foreign ? currencyGap === 0 : gap === 0);
+
+    return {
+      count: sel.length,
+      debit,
+      credit,
+      gap,
+      balanced,
+      currency,
+      foreign,
+      debitCurrency,
+      creditCurrency,
+      currencyGap,
+      /** Soldé en devise mais pas en dinars : c'est un écart de change, apurable. */
+      hasExchangeDifference: foreign && sel.length >= 2 && currencyGap === 0 && gap !== 0
+    };
   });
 
   constructor() {
@@ -202,7 +242,7 @@ export class LetteringComponent implements OnInit {
             this.error.set(res.error ?? 'Erreur lors du chargement des écritures.');
           }
         },
-        error: () => this.error.set('Erreur réseau. Vérifiez votre connexion.')
+        error: err => this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau. Vérifiez votre connexion.'))
       });
   }
 
@@ -215,6 +255,61 @@ export class LetteringComponent implements OnInit {
   canLetter(): boolean {
     const s = this.selectionSummary();
     return s.count >= 2 && (s.balanced || this.allowPartial);
+  }
+
+  readonly functionalCurrency = FUNCTIONAL_CURRENCY;
+
+  /** La colonne Devise n'apparaît que si le compte porte au moins une opération en devise. */
+  readonly hasForeignLines = computed(() =>
+    this.lines().some(l => l.currency !== FUNCTIONAL_CURRENCY)
+  );
+
+  /** Modale d'équilibrage : compte d'imputation saisi à chaque fois, sans défaut persisté. */
+  readonly settleOpen = signal(false);
+  readonly settling = signal(false);
+  settleAccount = '';
+
+  openSettle(): void {
+    if (!this.selectionSummary().hasExchangeDifference) return;
+    this.settleAccount = '';
+    this.settleOpen.set(true);
+  }
+
+  closeSettle(): void {
+    this.settleOpen.set(false);
+  }
+
+  /**
+   * Apure l'écart de change puis lettre l'ensemble, en une seule opération serveur. Le compte
+   * saisi est revalidé côté serveur (existence, activité, classe autorisée) : l'écran ne fait que
+   * le transmettre.
+   */
+  settleExchangeDifference(): void {
+    const account = this.settleAccount.trim();
+    if (!account || this.settling()) return;
+
+    const ids = this.selectedLines().map(l => l.lineId);
+    this.settling.set(true);
+    this.error.set(null);
+    this.successMessage.set(null);
+
+    this.api
+      .settleExchangeDifference(ids, account)
+      .pipe(finalize(() => this.settling.set(false)))
+      .subscribe({
+        next: res => {
+          if (res.success) {
+            this.successMessage.set(
+              `Écart de change apuré sur le compte ${account}, puis lettrage effectué.`);
+            this.settleOpen.set(false);
+            this.selectedLines.set([]);
+            this.load();
+          } else {
+            this.error.set(res.error ?? "Erreur lors de l'équilibrage.");
+          }
+        },
+        error: err => this.error.set(this.errors.extractErrorMessage(err, "Erreur réseau lors de l'équilibrage."))
+      });
   }
 
   letterSelected(): void {
@@ -242,7 +337,7 @@ export class LetteringComponent implements OnInit {
             this.error.set(res.error ?? 'Erreur lors du lettrage.');
           }
         },
-        error: () => this.error.set('Erreur réseau lors du lettrage.')
+        error: err => this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors du lettrage.'))
       });
   }
 
@@ -274,7 +369,7 @@ export class LetteringComponent implements OnInit {
                 this.error.set(res.error ?? 'Erreur lors du délettrage.');
               }
             },
-            error: () => this.error.set('Erreur réseau lors du délettrage.')
+            error: err => this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors du délettrage.'))
           });
       }
     });
@@ -303,6 +398,9 @@ export class LetteringComponent implements OnInit {
             label: line.label || entry.label,
             debit: line.debit,
             credit: line.credit,
+            currency: entry.currencyCode ?? FUNCTIONAL_CURRENCY,
+            debitInCurrency: line.debitInCurrency ?? 0,
+            creditInCurrency: line.creditInCurrency ?? 0,
             letteringCode: line.letteringCode ?? null
           });
         }

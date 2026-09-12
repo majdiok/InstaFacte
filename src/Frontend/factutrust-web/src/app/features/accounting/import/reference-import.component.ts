@@ -10,6 +10,7 @@ import {
   ReferenceImportTarget,
   ReferenceImportPreviewDto
 } from '../services/accounting.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /**
  * Import d'un référentiel (plan comptable, plan tiers ou balance d'ouverture) — dry-run puis commit
@@ -141,6 +142,7 @@ import {
   `
 })
 export class ReferenceImportComponent {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
 
   /** Cible d'import : 0 = plan comptable, 1 = plan tiers, 2 = balance d'ouverture. */
@@ -206,9 +208,9 @@ export class ReferenceImportComponent {
         }
         this.preview.set(res.data);
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set("Erreur réseau lors de l'aperçu.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur réseau lors de l'aperçu."));
       }
     });
   }
@@ -231,9 +233,9 @@ export class ReferenceImportComponent {
         this.selectedFile.set(null);
         this.mappingFile.set(null);
       },
-      error: () => {
+      error: err => {
         this.committing.set(false);
-        this.error.set("Erreur réseau lors de l'import.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur réseau lors de l'import."));
       }
     });
   }

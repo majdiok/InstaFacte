@@ -12,6 +12,7 @@ import {
   CreateInventoryEntryRequest
 } from '../services/accounting.service';
 import { todayLocalYmd } from '../shared/accounting-date-utils';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /**
  * Assistant d'écritures d'inventaire : sélection d'un type de régularisation (CCA/PCA, charges
@@ -133,6 +134,7 @@ import { todayLocalYmd } from '../shared/accounting-date-utils';
   `
 })
 export class InventoryAssistantComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
 
@@ -157,7 +159,7 @@ export class InventoryAssistantComponent implements OnInit {
   ngOnInit(): void {
     this.api.getInventoryKinds().subscribe({
       next: res => { if (res.success && res.data) this.kinds.set(res.data); },
-      error: () => this.error.set('Erreur de chargement des types.')
+      error: err => this.error.set(this.errors.extractErrorMessage(err, 'Erreur de chargement des types.'))
     });
     this.api.getChartOfAccounts().subscribe({
       next: res => { if (res.success && res.data) this.accounts.set(res.data.filter(a => a.isActive)); }
@@ -200,9 +202,9 @@ export class InventoryAssistantComponent implements OnInit {
           this.error.set(res.error ?? "Erreur lors de l'enregistrement.");
         }
       },
-      error: () => {
+      error: err => {
         this.saving.set(false);
-        this.error.set('Erreur réseau.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau.'));
       }
     });
   }

@@ -28,6 +28,7 @@ import {
   TUNISIAN_VAT_OPTIONS,
   timeStatusBadge
 } from './project-enums';
+import { formatLocalDate } from '@core/utils/date.util';
 
 describe('project-enums', () => {
   it('parses project status from PascalCase, camelCase and numbers', () => {
@@ -146,7 +147,11 @@ describe('project-enums', () => {
 
   it('formats relative due labels', () => {
     const today = new Date();
-    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    // formatLocalDate et non toISOString() : cette dernière convertit en UTC et décale d'un jour
+    // pour les fuseaux positifs. En Tunisie (UTC+1), entre minuit et 1 h, l'UTC est encore la
+    // veille — le test échouait donc une heure par nuit, alors que `daysUntilDue` raisonne, lui,
+    // en date locale.
+    const iso = (d: Date) => formatLocalDate(d);
     expect(formatDaysUntilDue(null)).toBeNull();
     expect(formatDaysUntilDue(iso(today))).toBe("Aujourd'hui");
 

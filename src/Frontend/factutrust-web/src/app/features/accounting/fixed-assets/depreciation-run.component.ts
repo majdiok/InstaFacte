@@ -17,11 +17,12 @@ import {
   buildFiscalYearOptions,
   fiscalYearKey
 } from '../services/fiscal-year.util';
+import { AccountingAmountPipe } from '../shared/accounting-amount.pipe';
 
 @Component({
   selector: 'app-depreciation-run',
   standalone: true,
-  imports: [
+  imports: [AccountingAmountPipe, 
     CommonModule,
     FormsModule,
     RouterModule,
@@ -83,7 +84,7 @@ import {
       <ng-container *ngIf="!rerunMessage()">
         <p><strong>Dotations comptabilisées :</strong> {{ result()!.postedCount }}</p>
         <p><strong>Ignorées / en erreur :</strong> {{ result()!.skippedCount }}</p>
-        <p><strong>Total dotations :</strong> {{ result()!.totalDepreciationAmount | number: '1.3-3' }} TND</p>
+        <p><strong>Total dotations :</strong> {{ result()!.totalDepreciationAmount | accountingAmount }}</p>
         <ul *ngIf="result()!.errors?.length">
           <li *ngFor="let e of result()!.errors">{{ e }}</li>
         </ul>

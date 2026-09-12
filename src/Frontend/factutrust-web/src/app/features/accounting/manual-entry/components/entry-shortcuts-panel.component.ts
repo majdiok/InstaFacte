@@ -20,7 +20,7 @@ import { RouterModule } from '@angular/router';
   styles: `
     .shortcuts { padding:var(--spacing-4); margin-bottom:0; }
     .shortcuts__title { font-size:var(--font-size-sm); font-weight:var(--font-weight-semibold); margin:0 0 var(--spacing-2); text-transform:uppercase; color:var(--color-text-secondary); }
-    .shortcuts__list { list-style:none; padding:0; margin:0; }
+    .shortcuts__list { list-style:none; padding:0; margin:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap:0 var(--spacing-4); }
     .shortcuts__list li { margin-bottom:var(--spacing-2); }
     .shortcuts__list a { font-size:var(--font-size-sm); color:var(--color-primary-600); text-decoration:none; }
     .shortcuts__list a:hover { text-decoration:underline; }

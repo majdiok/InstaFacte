@@ -137,7 +137,14 @@ export const PERMISSIONS = {
     validate: 'accounting:validate',
     reverse: 'accounting:reverse',
     import: 'accounting:import',
-    declare: 'accounting:declare'
+    declare: 'accounting:declare',
+    /** Configurer le catalogue des devises et leurs taux de change. */
+    currenciesManage: 'accounting:currencies_manage',
+    /**
+     * Saisir un taux de change different de celui de la table. Le taux determine le montant en
+     * dinar porte en comptabilite : sans cette permission le champ est en lecture seule.
+     */
+    exchangeRateOverride: 'accounting:exchange_rate_override'
   },
   audit: {
     read: 'audit:read'

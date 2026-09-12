@@ -29,11 +29,13 @@ import {
 } from './audit-control.constants';
 import { downloadBlob } from '../shared/accounting-download.util';
 import { AuditCorrectionNavigator } from './audit-correction.navigation';
+import { AccountingAmountPipe } from '../shared/accounting-amount.pipe';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-audit-control-page',
   standalone: true,
-  imports: [
+  imports: [AccountingAmountPipe, 
     CommonModule,
     FormsModule,
     RouterModule,
@@ -52,6 +54,7 @@ import { AuditCorrectionNavigator } from './audit-correction.navigation';
   styleUrl: './audit-control-page.component.scss'
 })
 export class AuditControlPageComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly auditApi = inject(AccountingAuditService);
   private readonly correctionNavigator = inject(AuditCorrectionNavigator);
   private readonly route = inject(ActivatedRoute);
@@ -153,9 +156,9 @@ export class AuditControlPageComponent implements OnInit {
           this.loadModules();
         } else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur lors du contrôle');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur lors du contrôle'));
       }
     });
   }

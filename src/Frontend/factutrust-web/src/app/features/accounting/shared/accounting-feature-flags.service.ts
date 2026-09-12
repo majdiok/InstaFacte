@@ -11,13 +11,20 @@ export interface AccountingFeatureFlags {
   consoleAccountingErrors: boolean;
   /** Sous-module immobilisations (registre + amortissements) */
   fixedAssetsEnabled: boolean;
+  /**
+   * Comptabilite multi-devises : catalogue des devises, taux de change, saisie et lettrage en
+   * devise. A basculer CONJOINTEMENT avec le drapeau back `Accounting:MultiCurrencyEnabled` :
+   * drapeau front seul, les ecrans s'ouvrent mais l'API refuse toute ecriture.
+   */
+  multiCurrencyEnabled: boolean;
 }
 
 const DEFAULT_FLAGS: AccountingFeatureFlags = {
   sharedAccountingUi: true,
   tableShellOverlay: true,
   consoleAccountingErrors: false,
-  fixedAssetsEnabled: true
+  fixedAssetsEnabled: true,
+  multiCurrencyEnabled: true
 };
 
 @Injectable({ providedIn: 'root' })

@@ -29,6 +29,7 @@ describe('ManualEntryComponent', () => {
           provide: AccountingService,
           useValue: {
             getChartOfAccounts: () => of({ success: true, data: [] }),
+            getCurrencies: () => of({ success: true, data: [] }),
             getJournals: () => of({ success: true, data: [] }),
             getPeriods: () => of({ success: true, data: [] }),
             getJournalTemplates: () => of({ success: true, data: [] }),
@@ -94,6 +95,21 @@ describe('ManualEntryComponent', () => {
     expect(el.textContent).toContain('Saisie guidée');
     expect(el.textContent).toContain('Enregistrer');
     expect(el.textContent).not.toContain('Enregistrer les modifications');
+  });
+
+  it('affiche le récapitulatif et les raccourcis en bande basse, après la colonne de saisie', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const main = el.querySelector('.entry-layout__main');
+    const footer = el.querySelector('.entry-layout__footer');
+
+    expect(el.querySelector('.entry-layout__sidebar')).toBeNull();
+    expect(main).toBeTruthy();
+    expect(footer).toBeTruthy();
+    expect(footer!.querySelector('app-entry-summary-panel')).toBeTruthy();
+    expect(footer!.querySelector('app-entry-shortcuts-panel')).toBeTruthy();
+    expect(main!.compareDocumentPosition(footer!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .withContext('la bande doit venir après la colonne principale dans le DOM')
+      .toBeTruthy();
   });
 
   describe("import d'une pièce comptable", () => {
@@ -172,6 +188,7 @@ describe('ManualEntryComponent edit mode', () => {
           provide: AccountingService,
           useValue: {
             getChartOfAccounts: () => of({ success: true, data: [] }),
+            getCurrencies: () => of({ success: true, data: [] }),
             getJournals: () => of({ success: true, data: [] }),
             getPeriods: () => of({ success: true, data: [] }),
             getJournalTemplates: () => of({ success: true, data: [] }),
@@ -254,6 +271,7 @@ describe('ManualEntryComponent edit mode', () => {
 function buildAccountingServiceStub(entryOverrides: Record<string, unknown> = {}) {
   return {
     getChartOfAccounts: () => of({ success: true, data: [] }),
+            getCurrencies: () => of({ success: true, data: [] }),
     getJournals: () => of({ success: true, data: [] }),
     getPeriods: () => of({ success: true, data: [] }),
     getJournalTemplates: () => of({ success: true, data: [] }),

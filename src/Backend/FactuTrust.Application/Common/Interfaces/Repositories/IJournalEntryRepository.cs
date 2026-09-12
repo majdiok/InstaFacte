@@ -72,6 +72,29 @@ public interface IJournalEntryRepository
     Task<IReadOnlyList<JournalEntry>> GetDraftsByPeriodAsync(Guid periodId, string? journalCode, CancellationToken cancellationToken = default);
     Task<int> CountDraftsAsync(CancellationToken cancellationToken = default);
     Task<int> CountDraftsByFiscalYearAsync(int fiscalYear, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Positions ouvertes en devise à une date donnée, agrégées par compte et par devise.
+    ///
+    /// <para>
+    /// Ne retient que les comptes <b>monétaires</b> (classes 4 et 5 : tiers et trésorerie) : ce sont
+    /// les seuls que la réévaluation de clôture concerne. Les lignes déjà lettrées sont exclues —
+    /// une opération soldée n'a plus de position à réévaluer.
+    /// </para>
+    ///
+    /// <para>
+    /// Les positions sont exprimées en <b>débit net</b> (débits − crédits), dans la devise et en
+    /// devise de tenue : une créance donne un montant positif, une dette un montant négatif.
+    /// </para>
+    /// </summary>
+    Task<IReadOnlyList<(string AccountNumber, string CurrencyCode, decimal NetInCurrency, decimal NetFunctional)>>
+        GetOpenForeignCurrencyPositionsAsync(DateTime asOf, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lignes désignées, avec leur écriture (donc leur devise de transaction). Lecture seule ;
+    /// rejoint la transaction ambiante si elle existe.
+    /// </summary>
+    Task<IReadOnlyList<JournalEntryLine>> GetLinesByIdsAsync(IReadOnlyList<Guid> lineIds, CancellationToken cancellationToken = default);
+
     Task<JournalEntry> AddAsync(JournalEntry entity, CancellationToken cancellationToken = default);
     Task UpdateAsync(JournalEntry entity, CancellationToken cancellationToken = default);
     Task RemoveAsync(JournalEntry entity, CancellationToken cancellationToken = default);

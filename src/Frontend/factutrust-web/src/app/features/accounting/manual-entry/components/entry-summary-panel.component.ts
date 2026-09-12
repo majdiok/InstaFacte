@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { EntryFormStore } from '../services/entry-form.store';
 import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
+import { FUNCTIONAL_CURRENCY } from '../models/entry-form.model';
 
 @Component({
   selector: 'app-entry-summary-panel',
@@ -37,20 +38,39 @@ import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
             <dd>{{ tp.name }}</dd>
           </div>
         }
+        @if (store.isForeignCurrency()) {
+          <div class="summary-row">
+            <dt>Devise</dt>
+            <dd>{{ store.currency() }}</dd>
+          </div>
+          @if (store.exchangeRate(); as rate) {
+            <div class="summary-row">
+              <dt>Taux</dt>
+              <dd class="mono">{{ rate }}</dd>
+            </div>
+          }
+        }
         <div class="summary-row">
           <dt>Total débit</dt>
-          <dd class="mono">{{ store.totals().debit | number:'1.3-3' }} TND</dd>
+          <dd class="mono">{{ store.totals().debit | number : store.amountFormat() }} {{ store.currency() }}</dd>
         </div>
         <div class="summary-row">
           <dt>Total crédit</dt>
-          <dd class="mono">{{ store.totals().credit | number:'1.3-3' }} TND</dd>
+          <dd class="mono">{{ store.totals().credit | number : store.amountFormat() }} {{ store.currency() }}</dd>
         </div>
-        <div class="summary-row summary-row--highlight">
+        <div class="summary-row" [class.summary-row--highlight]="!store.isForeignCurrency()">
           <dt>Solde</dt>
           <dd class="mono" [class.balanced]="store.isBalanced()" [class.unbalanced]="!store.isBalanced()">
-            {{ store.balance() | number:'1.3-3' }} TND
+            {{ store.balance() | number : store.amountFormat() }} {{ store.currency() }}
           </dd>
         </div>
+        @if (store.isForeignCurrency()) {
+          <!-- Contre-valeur : indicative. Le serveur recalcule et absorbe le résidu d'arrondi. -->
+          <div class="summary-row summary-row--highlight">
+            <dt>Solde {{ functionalCurrency }}</dt>
+            <dd class="mono">{{ store.localBalance() | number:'1.3-3' }} {{ functionalCurrency }}</dd>
+          </div>
+        }
       </dl>
       @if (store.hasNonPersistedAssistFields()) {
         <p class="summary-panel__warn" role="note">
@@ -60,7 +80,7 @@ import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
     </aside>
   `,
   styles: `
-    .summary-panel { padding:var(--spacing-4); position:sticky; top:var(--spacing-4); }
+    .summary-panel { padding:var(--spacing-4); }
     .summary-panel__title { font-size:var(--font-size-sm); font-weight:var(--font-weight-semibold); margin:0 0 var(--spacing-3); text-transform:uppercase; letter-spacing:0.04em; color:var(--color-text-secondary); }
     .summary-panel__list { margin:0; }
     .summary-row { display:flex; justify-content:space-between; gap:var(--spacing-2); padding:var(--spacing-2) 0; border-bottom:1px solid var(--color-border-subtle); font-size:var(--font-size-sm); }
@@ -75,6 +95,7 @@ import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
 })
 export class EntrySummaryPanelComponent {
   readonly store = inject(EntryFormStore);
+  readonly functionalCurrency = FUNCTIONAL_CURRENCY;
 
   periodLabel(p: { fiscalYear: number; month: number }): string {
     return formatPeriodLabel(p.fiscalYear, p.month);

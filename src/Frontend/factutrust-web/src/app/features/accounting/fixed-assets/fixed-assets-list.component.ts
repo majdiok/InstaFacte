@@ -15,6 +15,7 @@ import {
   FixedAssetsService
 } from '../services/fixed-assets.service';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-fixed-assets-list',
@@ -198,6 +199,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
   ]
 })
 export class FixedAssetsListComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(FixedAssetsService);
 
   readonly FixedAssetStatus = FixedAssetStatus;
@@ -270,8 +272,8 @@ export class FixedAssetsListComponent implements OnInit {
           this.totalCount.set(res.data?.totalCount ?? 0);
           this.loading.set(false);
         },
-        error: () => {
-          this.error.set('Impossible de charger le registre des immobilisations.');
+        error: err => {
+          this.error.set(this.errors.extractErrorMessage(err, 'Impossible de charger le registre des immobilisations.'));
           this.loading.set(false);
         }
       });

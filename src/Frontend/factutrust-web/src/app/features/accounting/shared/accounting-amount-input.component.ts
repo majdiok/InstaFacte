@@ -86,7 +86,14 @@ export class AccountingAmountInputComponent implements ControlValueAccessor {
   private readonly host = inject(ElementRef<HTMLElement>);
 
   readonly locale = ACCOUNTING_AMOUNT_LOCALE;
-  readonly maxFractionDigits = ACCOUNTING_AMOUNT_FRACTION_DIGITS;
+
+  /**
+   * Décimales de la devise saisie. Par défaut le millime, si bien que les écrans en devise de
+   * tenue sont inchangés ; seule la saisie manuelle en devise étrangère le surcharge (2 pour
+   * l'euro), sans quoi la colonne « Débit (EUR) » affiche « 1000,000 » et accepte un centime
+   * au millime.
+   */
+  @Input() fractionDigits = ACCOUNTING_AMOUNT_FRACTION_DIGITS;
 
   @Input() inputId = '';
   @Input() ariaLabel = 'Montant';
@@ -110,8 +117,12 @@ export class AccountingAmountInputComponent implements ControlValueAccessor {
   private onTouched: () => void = () => {};
   private committed = true;
 
+  get maxFractionDigits(): number {
+    return this.fractionDigits;
+  }
+
   get minFractionDigits(): number {
-    return this.isFocused ? 0 : ACCOUNTING_AMOUNT_FRACTION_DIGITS;
+    return this.isFocused ? 0 : this.fractionDigits;
   }
 
   get useGrouping(): boolean {

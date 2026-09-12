@@ -1,5 +1,6 @@
 using System.Globalization;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.Services.Templates;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -107,6 +108,24 @@ public partial class PdfService
 
     // ── Journal (regroupé par code journal) ────────────────────────────────────────────────
 
+    /// <summary>Vrai si l'opération a été traitée dans une devise autre que celle de tenue.</summary>
+    private static bool IsForeignEntry(string? currencyCode) =>
+        !string.IsNullOrEmpty(currencyCode)
+        && !string.Equals(currencyCode, Money.DefaultCurrency, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Montant en devise, code compris. Vide pour une ligne en devise de tenue : la colonne reste
+    /// lisible quand seules quelques lignes de la page sont en devise.
+    /// </summary>
+    private static string ForeignAmountOrBlank(string? currencyCode, decimal debit, decimal credit)
+    {
+        if (!IsForeignEntry(currencyCode))
+            return string.Empty;
+
+        var amount = debit > 0 ? debit : credit;
+        return amount == 0 ? string.Empty : currencyCode + " " + amount.ToString("N2", CultureInfo.InvariantCulture);
+    }
+
     public Task<byte[]> GenerateJournalPdfAsync(IReadOnlyList<JournalEntryDto> entries, AccountingReportHeader header, CancellationToken cancellationToken = default)
     {
         var bytes = BuildReport(header, landscape: true, col =>
@@ -116,6 +135,10 @@ public partial class PdfService
                 EmptyNotice(col, "Aucune écriture sur la période.");
                 return;
             }
+
+            // La colonne Devise n'est ajoutee que si la periode contient une operation en devise :
+            // un dossier mono-devise obtient exactement la mise en page d'avant, largeurs comprises.
+            var showCurrency = entries.Any(e => IsForeignEntry(e.CurrencyCode));
 
             decimal grandDebit = 0, grandCredit = 0;
             foreach (var group in entries.GroupBy(e => e.JournalCode).OrderBy(g => g.Key))
@@ -131,6 +154,8 @@ public partial class PdfService
                         c.ConstantColumn(42);   // pièce
                         c.ConstantColumn(80);   // compte
                         c.RelativeColumn(3);    // libellé
+                        if (showCurrency)
+                            c.ConstantColumn(95); // devise
                         c.ConstantColumn(90);   // débit
                         c.ConstantColumn(90);   // crédit
                     });
@@ -141,6 +166,8 @@ public partial class PdfService
                         h.Cell().Element(HeadCell).Text("Pièce").Bold();
                         h.Cell().Element(HeadCell).Text("Compte").Bold();
                         h.Cell().Element(HeadCell).Text("Libellé").Bold();
+                        if (showCurrency)
+                            h.Cell().Element(HeadCell).AlignRight().Text("Devise").Bold();
                         h.Cell().Element(HeadCell).AlignRight().Text("Débit").Bold();
                         h.Cell().Element(HeadCell).AlignRight().Text("Crédit").Bold();
                     });
@@ -153,6 +180,8 @@ public partial class PdfService
                             table.Cell().Element(BodyCell).Text(entry.EntryNumber.ToString(CultureInfo.InvariantCulture));
                             table.Cell().Element(BodyCell).Text(line.AccountNumber);
                             table.Cell().Element(BodyCell).Text(PdfRenderHelpers.CleanTextForPdf(line.Label));
+                            if (showCurrency)
+                                table.Cell().Element(BodyCell).AlignRight().Text(ForeignAmountOrBlank(entry.CurrencyCode, line.DebitInCurrency, line.CreditInCurrency));
                             table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(line.Debit));
                             table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(line.Credit));
                             jDebit += line.Debit;
@@ -160,7 +189,7 @@ public partial class PdfService
                         }
                     }
 
-                    table.Cell().ColumnSpan(4).Element(TotalCell).AlignRight().Text($"Total journal {group.Key}").Bold();
+                    table.Cell().ColumnSpan(showCurrency ? 5u : 4u).Element(TotalCell).AlignRight().Text($"Total journal {group.Key}").Bold();
                     table.Cell().Element(TotalCell).AlignRight().Text(Amount(jDebit)).Bold();
                     table.Cell().Element(TotalCell).AlignRight().Text(Amount(jCredit)).Bold();
                 });
@@ -606,6 +635,8 @@ public partial class PdfService
                 return;
             }
 
+            var showCurrency = rows.Any(r => IsForeignEntry(r.CurrencyCode));
+
             decimal totalDebit = 0, totalCredit = 0;
             col.Item().Table(table =>
             {
@@ -615,6 +646,8 @@ public partial class PdfService
                     c.ConstantColumn(55);   // journal
                     c.ConstantColumn(42);   // pièce
                     c.RelativeColumn(3);    // libellé
+                    if (showCurrency)
+                        c.ConstantColumn(95); // devise
                     c.ConstantColumn(90);   // débit
                     c.ConstantColumn(90);   // crédit
                     c.ConstantColumn(95);   // solde
@@ -626,6 +659,8 @@ public partial class PdfService
                     h.Cell().Element(HeadCell).Text("Journal").Bold();
                     h.Cell().Element(HeadCell).Text("Pièce").Bold();
                     h.Cell().Element(HeadCell).Text("Libellé").Bold();
+                    if (showCurrency)
+                        h.Cell().Element(HeadCell).AlignRight().Text("Devise").Bold();
                     h.Cell().Element(HeadCell).AlignRight().Text("Débit").Bold();
                     h.Cell().Element(HeadCell).AlignRight().Text("Crédit").Bold();
                     h.Cell().Element(HeadCell).AlignRight().Text("Solde").Bold();
@@ -637,6 +672,8 @@ public partial class PdfService
                     table.Cell().Element(BodyCell).Text(r.JournalCode);
                     table.Cell().Element(BodyCell).Text(r.PieceNumber.ToString(CultureInfo.InvariantCulture));
                     table.Cell().Element(BodyCell).Text(PdfRenderHelpers.CleanTextForPdf(r.Label));
+                    if (showCurrency)
+                        table.Cell().Element(BodyCell).AlignRight().Text(ForeignAmountOrBlank(r.CurrencyCode, r.AmountInCurrency, 0m));
                     table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(r.Debit));
                     table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(r.Credit));
                     table.Cell().Element(BodyCell).AlignRight().Text(Amount(r.RunningBalance));
@@ -644,7 +681,7 @@ public partial class PdfService
                     totalCredit += r.Credit;
                 }
 
-                table.Cell().ColumnSpan(4).Element(TotalCell).AlignRight().Text("TOTAUX").Bold();
+                table.Cell().ColumnSpan(showCurrency ? 5u : 4u).Element(TotalCell).AlignRight().Text("TOTAUX").Bold();
                 table.Cell().Element(TotalCell).AlignRight().Text(Amount(totalDebit)).Bold();
                 table.Cell().Element(TotalCell).AlignRight().Text(Amount(totalCredit)).Bold();
                 table.Cell().Element(TotalCell).AlignRight().Text(Amount(totalDebit - totalCredit)).Bold();
@@ -968,6 +1005,8 @@ public partial class PdfService
                 return;
             }
 
+            var showCurrency = ledger.Rows.Any(r => IsForeignEntry(r.CurrencyCode));
+
             decimal totalDebit = 0, totalCredit = 0;
             col.Item().Table(table =>
             {
@@ -981,6 +1020,8 @@ public partial class PdfService
                     c.ConstantColumn(85);   // débit
                     c.ConstantColumn(85);   // crédit
                     c.ConstantColumn(90);   // solde
+                    if (showCurrency)
+                        c.ConstantColumn(80); // devise
                     c.ConstantColumn(50);   // lettrage
                 });
 
@@ -994,6 +1035,8 @@ public partial class PdfService
                     h.Cell().Element(HeadCell).AlignRight().Text("Débit").Bold();
                     h.Cell().Element(HeadCell).AlignRight().Text("Crédit").Bold();
                     h.Cell().Element(HeadCell).AlignRight().Text("Solde").Bold();
+                    if (showCurrency)
+                        h.Cell().Element(HeadCell).AlignRight().Text("Devise").Bold();
                     h.Cell().Element(HeadCell).Text("Lettr.").Bold();
                 });
 
@@ -1007,15 +1050,19 @@ public partial class PdfService
                     table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(r.Debit));
                     table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(r.Credit));
                     table.Cell().Element(BodyCell).AlignRight().Text(Amount(r.RunningBalance));
+                    if (showCurrency)
+                        table.Cell().Element(BodyCell).AlignRight().Text(ForeignAmountOrBlank(r.CurrencyCode, r.AmountInCurrency, 0m));
                     table.Cell().Element(BodyCell).Text(r.LetteringCode ?? string.Empty);
                     totalDebit += r.Debit;
                     totalCredit += r.Credit;
                 }
 
-                table.Cell().ColumnSpan(5).Element(TotalCell).AlignRight().Text("TOTAUX").Bold();
+                table.Cell().ColumnSpan(showCurrency ? 6u : 5u).Element(TotalCell).AlignRight().Text("TOTAUX").Bold();
                 table.Cell().Element(TotalCell).AlignRight().Text(Amount(totalDebit)).Bold();
                 table.Cell().Element(TotalCell).AlignRight().Text(Amount(totalCredit)).Bold();
                 table.Cell().Element(TotalCell).AlignRight().Text(Amount(ledger.OpeningBalance + totalDebit - totalCredit)).Bold();
+                if (showCurrency)
+                    table.Cell().Element(TotalCell).Text(string.Empty);
                 table.Cell().Element(TotalCell).Text(string.Empty);
             });
         });

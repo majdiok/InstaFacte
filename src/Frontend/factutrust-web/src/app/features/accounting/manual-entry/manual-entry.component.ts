@@ -34,6 +34,7 @@ import { EntryRecurringTabComponent } from './components/entry-recurring-tab.com
 import { AccountingDocumentImportDialogComponent } from './components/import/accounting-document-import-dialog.component';
 import { JournalEntryProposal } from './models/accounting-document-import.models';
 import { EntryTabId } from './models/entry-form.model';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-manual-entry',
@@ -142,7 +143,7 @@ import { EntryTabId } from './models/entry-form.model';
               [notes]="store.workNotes()"
               (notesChange)="store.workNotes.set($event)" />
           </div>
-          <div class="entry-layout__sidebar">
+          <div class="entry-layout__footer">
             <app-entry-summary-panel />
             <app-entry-third-party-panel [thirdParty]="store.dominantThirdParty()" />
             <app-entry-shortcuts-panel />
@@ -156,8 +157,7 @@ import { EntryTabId } from './models/entry-form.model';
           <div class="entry-layout__main">
             <app-guided-entry (finish)="submit('navigate')" />
           </div>
-          <div class="entry-layout__sidebar">
-            <app-entry-summary-panel />
+          <div class="entry-layout__footer">
             <app-entry-shortcuts-panel />
           </div>
         </div>
@@ -215,10 +215,9 @@ import { EntryTabId } from './models/entry-form.model';
   `,
   styles: `
     .entry-main-tabs { margin-bottom:var(--spacing-4); }
-    .entry-layout { display:grid; grid-template-columns:1fr 280px; gap:var(--spacing-4); align-items:start; }
-    @media (max-width:1280px) { .entry-layout { grid-template-columns:1fr; } }
+    .entry-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--spacing-4); }
     .entry-layout__main { min-width:0; }
-    .entry-layout__sidebar { display:flex; flex-direction:column; gap:var(--spacing-3); }
+    .entry-layout__footer { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap:var(--spacing-3); align-items:start; }
     .me-error { margin:var(--spacing-3) 0; }
     .text-danger { color:var(--color-error-600); }
     .text-success { color:var(--color-success-600); }
@@ -233,6 +232,7 @@ import { EntryTabId } from './models/entry-form.model';
   `
 })
 export class ManualEntryComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   readonly store = inject(EntryFormStore);
   readonly refs = inject(EntryReferenceStore);
   private readonly submitService = inject(EntrySubmitService);
@@ -463,9 +463,9 @@ export class ManualEntryComponent implements OnInit {
           this.store.loadFromEntry(entry);
           this.draftInitialized.set(true);
         },
-        error: () => {
+        error: err => {
           this.store.loading.set(false);
-          this.leaveEditWithError("Erreur réseau lors du chargement de l'écriture.");
+          this.leaveEditWithError(this.errors.extractErrorMessage(err, "Erreur réseau lors du chargement de l'écriture."));
         }
       });
   }
@@ -620,9 +620,9 @@ export class ManualEntryComponent implements OnInit {
             this.toast.add({ severity: 'error', summary: 'Échec', detail: res.error ?? 'Erreur', life: 6000 });
           }
         },
-        error: () => {
+        error: err => {
           this.savingTemplate.set(false);
-          this.toast.add({ severity: 'error', summary: 'Erreur réseau', detail: 'Impossible de sauvegarder.', life: 6000 });
+          this.toast.add({ severity: 'error', summary: 'Impossible de sauvegarder.', detail: this.errors.extractErrorMessage(err, 'Erreur réseau'), life: 6000 });
         }
       });
   }

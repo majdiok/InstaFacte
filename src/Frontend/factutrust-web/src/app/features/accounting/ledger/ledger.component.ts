@@ -34,6 +34,8 @@ import {
 } from '../shared/accounting-date-utils';
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
+import { FUNCTIONAL_CURRENCY } from '../manual-entry/models/entry-form.model';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /** Éditions du grand livre : un compte, une plage de comptes, ou le récapitulatif par racine. */
 type LedgerMode = 'single' | 'range' | 'recap';
@@ -61,6 +63,7 @@ type LedgerMode = 'single' | 'range' | 'recap';
   styleUrl: './ledger.component.scss'
 })
 export class LedgerComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly route = inject(ActivatedRoute);
   account = '4111';
@@ -102,13 +105,42 @@ export class LedgerComponent implements OnInit {
     }
   });
 
+  readonly functionalCurrency = FUNCTIONAL_CURRENCY;
+
+  /** Filtre Devise : '' = toutes. Purement client, sur les lignes déjà chargées. */
+  readonly currencyFilter = signal('');
+
+  /** Devises réellement présentes dans le relevé, devise de tenue comprise. */
+  readonly availableCurrencies = computed(() => {
+    const codes = new Set(this.rows().map(r => r.currencyCode || FUNCTIONAL_CURRENCY));
+    return [...codes].sort();
+  });
+
+  /**
+   * La colonne Devise n'apparaît que si le compte porte au moins une opération en devise : un
+   * dossier mono-devise conserve exactement les sept colonnes d'avant.
+   */
+  readonly hasForeignCurrency = computed(() =>
+    this.rows().some(r => (r.currencyCode || FUNCTIONAL_CURRENCY) !== FUNCTIONAL_CURRENCY)
+  );
+
+  /**
+   * Lignes affichées. Le solde progressif reste celui calculé par le serveur sur l'intégralité du
+   * relevé : filtrer n'en recalcule pas un partiel, qui n'aurait aucun sens comptable.
+   */
+  readonly visibleRows = computed(() => {
+    const filter = this.currencyFilter();
+    if (!filter) return this.rows();
+    return this.rows().filter(r => (r.currencyCode || FUNCTIONAL_CURRENCY) === filter);
+  });
+
   readonly totals = computed(() => {
     let debit = 0, credit = 0;
-    for (const r of this.rows()) {
+    for (const r of this.visibleRows()) {
       debit += r.debit;
       credit += r.credit;
     }
-    const lastRow = this.rows().at(-1);
+    const lastRow = this.visibleRows().at(-1);
     return { debit, credit, balance: lastRow?.runningBalance ?? 0 };
   });
 
@@ -244,7 +276,7 @@ export class LedgerComponent implements OnInit {
             this.error.set(res.error ?? 'Erreur');
           }
         },
-        error: () => this.error.set('Erreur réseau')
+        error: err => this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'))
       });
   }
 
@@ -262,7 +294,7 @@ export class LedgerComponent implements OnInit {
           if (res.success && res.data) this.generalLedger.set(res.data);
           else this.error.set(res.error ?? 'Erreur');
         },
-        error: () => this.error.set('Erreur réseau')
+        error: err => this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'))
       });
   }
 
@@ -280,7 +312,7 @@ export class LedgerComponent implements OnInit {
           if (res.success && res.data) this.recapRows.set(res.data);
           else this.error.set(res.error ?? 'Erreur');
         },
-        error: () => this.error.set('Erreur réseau')
+        error: err => this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'))
       });
   }
 
@@ -325,9 +357,9 @@ export class LedgerComponent implements OnInit {
         this.exporting.set(false);
         downloadBlob(blob, `grand_livre_${account}_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }
@@ -351,9 +383,9 @@ export class LedgerComponent implements OnInit {
           this.exporting.set(false);
           downloadBlob(blob, `grand_livre_general_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
         },
-        error: () => {
+        error: err => {
           this.exporting.set(false);
-          this.error.set("Erreur lors de l'export.");
+          this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
         }
       });
   }
@@ -371,9 +403,9 @@ export class LedgerComponent implements OnInit {
           `recap_grand_livre_n${this.recapLevel}_${this.fromStr}_${this.toStr}.${exportExtension(format)}`
         );
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }

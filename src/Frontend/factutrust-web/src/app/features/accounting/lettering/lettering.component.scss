@@ -314,3 +314,95 @@
     cursor: not-allowed;
   }
 }
+
+// ── Multi-devises ──────────────────────────────────────────────────────────
+
+.lettering-currency-cell {
+  white-space: nowrap;
+}
+
+.lettering-currency-amount {
+  margin-left: var(--spacing-2);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+}
+
+.lettering-currency-none {
+  color: var(--color-text-tertiary);
+}
+
+.lettering-exchange-hint {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-warning-800);
+  background: var(--color-warning-50);
+  border: 1px solid var(--color-warning-200);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-2) var(--spacing-3);
+}
+
+.lettering-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.45);
+  z-index: 1200;
+}
+
+.lettering-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1201;
+  width: min(32rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  padding: var(--spacing-5);
+  background: var(--color-background-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg, 0 10px 40px rgb(0 0 0 / 0.2));
+}
+
+.lettering-modal__title {
+  margin: 0 0 var(--spacing-3);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.lettering-modal__intro {
+  margin: 0 0 var(--spacing-4);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.lettering-modal__label {
+  display: block;
+  margin-bottom: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.lettering-modal__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-background-elevated);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.lettering-modal__hint {
+  margin: var(--spacing-2) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+
+.lettering-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-5);
+}

@@ -181,6 +181,8 @@ public partial class TenantDbContext : DbContext
     public DbSet<BudgetYear> BudgetYears => Set<BudgetYear>();
     public DbSet<BudgetLine> BudgetLines => Set<BudgetLine>();
     public DbSet<ThirdPartyAccountingProfile> ThirdPartyAccountingProfiles => Set<ThirdPartyAccountingProfile>();
+    public DbSet<Currency> Currencies => Set<Currency>();
+    public DbSet<CurrencyExchangeRate> CurrencyExchangeRates => Set<CurrencyExchangeRate>();
 
     // Bank reconciliation (rapprochement bancaire)
     public DbSet<BankStatement> BankStatements => Set<BankStatement>();
@@ -452,6 +454,8 @@ public partial class TenantDbContext : DbContext
         ConfigureFiscalSchedule(builder);
         ConfigureBudgeting(builder);
         ConfigureThirdPartyAccountingProfile(builder);
+        ConfigureCurrency(builder);
+        ConfigureCurrencyExchangeRate(builder);
         ConfigureBankStatement(builder);
         ConfigureBankStatementLine(builder);
 
@@ -3833,6 +3837,9 @@ public partial class TenantDbContext : DbContext
             entity.Property(e => e.ValidatedBy).HasMaxLength(256);
             // Pièce externe (référence + date), facultative — cf. JournalEntry.PieceRef/PieceDate.
             entity.Property(e => e.PieceRef).HasMaxLength(50);
+            entity.Property(e => e.CurrencyCode).IsRequired().HasMaxLength(3).HasDefaultValue("TND");
+            entity.Property(e => e.ExchangeRate).HasPrecision(18, 6).HasDefaultValue(1m);
+            entity.Property(e => e.ExchangeRateOverridden).HasDefaultValue(false);
             entity.HasIndex(e => e.PieceRef);
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => new { e.JournalCode, e.EntryNumber, e.EntryDate });
@@ -3942,6 +3949,13 @@ public partial class TenantDbContext : DbContext
             entity.Property(e => e.Label).HasMaxLength(500).IsRequired();
             entity.Property(e => e.LetteringCode).HasMaxLength(16);
             entity.Property(e => e.ThirdPartyKind).HasConversion<int>();
+            // Montants dans la devise de transaction. NE PAS confondre avec les colonnes
+            // DebitCurrency / CreditCurrency ci-dessous, qui portent la devise du Money et valent
+            // TOUJOURS la devise de tenue : c'est ce qui permet à tous les agrégats de restitution
+            // de sommer .Amount sans convertir.
+            entity.Property(e => e.DebitAmountInCurrency).HasPrecision(18, 3).HasDefaultValue(0m);
+            entity.Property(e => e.CreditAmountInCurrency).HasPrecision(18, 3).HasDefaultValue(0m);
+
             entity.OwnsOne(e => e.DebitAmount, m =>
             {
                 m.Property(x => x.Amount).HasColumnName("DebitAmount").HasPrecision(18, 3);
@@ -3983,6 +3997,53 @@ public partial class TenantDbContext : DbContext
             entity.ToTable("LetteringGroupMembers");
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.JournalEntryLineId);
+        });
+    }
+
+    private static void ConfigureCurrency(ModelBuilder builder)
+    {
+        builder.Entity<Currency>(entity =>
+        {
+            entity.ToTable("Currencies");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Code).IsRequired().HasMaxLength(Currency.CodeLength);
+            entity.Property(e => e.Label).IsRequired().HasMaxLength(Currency.MaxLabelLength);
+            entity.Property(e => e.RatePeriodicity).HasConversion<int>();
+            entity.HasIndex(e => e.Code).IsUnique();
+
+            // Une seule devise de tenue des comptes : index unique filtré sur IsFunctional.
+            entity.HasIndex(e => e.IsFunctional)
+                  .IsUnique()
+                  .HasFilter("[IsFunctional] = 1");
+        });
+    }
+
+    private static void ConfigureCurrencyExchangeRate(ModelBuilder builder)
+    {
+        builder.Entity<CurrencyExchangeRate>(entity =>
+        {
+            entity.ToTable("CurrencyExchangeRates");
+            entity.HasKey(e => e.Id);
+
+            // Unités de devise fonctionnelle pour UNE unité de devise étrangère (1 EUR = 3,31420 TND).
+            // 18,6 reprend la précision de l'ancienne colonne WithholdingTaxCertificateLines.ExchangeRate.
+            entity.Property(e => e.Rate).HasPrecision(18, 6);
+
+            // Month vaut NULL pour un taux fixe couvrant tout l'exercice. SQL Server considère les
+            // NULL comme distincts dans un index unique : l'unicité du taux fixe est donc portée par
+            // un second index filtré.
+            entity.HasIndex(e => new { e.CurrencyId, e.FiscalYear, e.Month })
+                  .IsUnique()
+                  .HasFilter("[Month] IS NOT NULL");
+
+            entity.HasIndex(e => new { e.CurrencyId, e.FiscalYear })
+                  .IsUnique()
+                  .HasFilter("[Month] IS NULL");
+
+            entity.HasOne(e => e.Currency)
+                  .WithMany()
+                  .HasForeignKey(e => e.CurrencyId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
     }
 

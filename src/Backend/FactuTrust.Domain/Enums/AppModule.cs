@@ -166,6 +166,8 @@ public static class AppModuleExtensions
             Permissions.Accounting.Read,
             Permissions.Accounting.Create,
             Permissions.Accounting.Close,
+            Permissions.Accounting.CurrenciesManage,
+            Permissions.Accounting.ExchangeRateOverride,
             Permissions.Accounting.Validate,
             Permissions.Accounting.Reverse,
             Permissions.Accounting.Import,

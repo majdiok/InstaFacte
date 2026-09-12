@@ -8,6 +8,23 @@ export interface ThirdPartyRef {
   display: string;
 }
 
+/** Devise de tenue des comptes. Miroir de `Money.DefaultCurrency` côté domaine. */
+export const FUNCTIONAL_CURRENCY = 'TND';
+
+/** Le dinar se tient au millime. */
+export const MILLIME_DECIMALS = 3;
+
+/**
+ * Arrondi au millime, aligné sur `MillimeRounding.Round` du domaine (au plus loin de zéro).
+ * Les montants comptables étant positifs, `Math.round` a le même comportement.
+ *
+ * Usage d'AFFICHAGE uniquement : la contre-valeur qui fait foi est celle que le serveur recalcule,
+ * lui seul absorbant le résidu d'arrondi sur la ligne de plus fort montant.
+ */
+export function toMillime(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
 export interface EntryLine {
   /** Identité stable côté UI (table track / focus). Non envoyé à l'API. */
   clientLineId: string;

@@ -17,6 +17,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
+using FactuTrust.Infrastructure.Tests.Fakes;
 
 namespace FactuTrust.Infrastructure.Tests.Services;
 
@@ -321,6 +322,7 @@ public sealed class ThirdPartyDirectoryTests
             new FakeCurrentUser { IsAccountingFirmDelegatedContext = isFirm },
             lettering,
             new PassthroughTenantUnitOfWork(),
+            new FakeExchangeRateResolver(),
             NullLogger<UpdateDraftJournalEntryCommandHandler>.Instance);
     }
 

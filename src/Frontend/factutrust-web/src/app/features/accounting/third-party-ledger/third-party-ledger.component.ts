@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
@@ -17,6 +17,8 @@ import {
 } from '../shared/accounting-date-utils';
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
+import { FUNCTIONAL_CURRENCY } from '../manual-entry/models/entry-form.model';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /**
  * Grand livre d'un tiers (client ou fournisseur) : solde d'ouverture + mouvements
@@ -106,6 +108,7 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
           <th>Pièce</th>
           <th>Compte</th>
           <th>Libellé</th>
+          @if (hasForeignCurrency()) { <th>Devise</th> }
           <th class="text-right">Débit</th>
           <th class="text-right">Crédit</th>
           <th class="text-right">Solde</th>
@@ -120,6 +123,15 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
           <td data-label="Pièce" class="tpl-num">{{ r.pieceRef }}</td>
           <td data-label="Compte" class="tpl-num">{{ r.accountNumber }}</td>
           <td data-label="Libellé">{{ r.label }}</td>
+          @if (hasForeignCurrency()) {
+            <td class="tpl-num" data-label="Devise">
+              @if (r.currencyCode && r.currencyCode !== functionalCurrency) {
+                {{ r.currencyCode }} {{ r.amountInCurrency | number : '1.2-2' }}
+              } @else {
+                —
+              }
+            </td>
+          }
           <td class="text-right tpl-num" data-label="Débit">{{ r.debit | number : '1.3-3' }}</td>
           <td class="text-right tpl-num" data-label="Crédit">{{ r.credit | number : '1.3-3' }}</td>
           <td class="text-right tpl-num" data-label="Solde" [class.tpl-negative]="r.runningBalance < 0">
@@ -133,7 +145,7 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
         </tr>
       </ng-template>
       <ng-template pTemplate="emptymessage">
-        <tr><td colspan="10" style="text-align:center;padding:2rem">
+        <tr><td [attr.colspan]="hasForeignCurrency() ? 11 : 10" style="text-align:center;padding:2rem">
           @if (thirdPartyId) { Aucun mouvement sur la période. } @else { Sélectionnez un tiers depuis la balance auxiliaire. }
         </td></tr>
       </ng-template>
@@ -157,6 +169,7 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
   `
 })
 export class ThirdPartyLedgerComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly route = inject(ActivatedRoute);
 
@@ -165,6 +178,13 @@ export class ThirdPartyLedgerComponent implements OnInit {
   fromStr = '';
   toStr = '';
   readonly ledger = signal<ThirdPartyLedgerDto | null>(null);
+
+  readonly functionalCurrency = FUNCTIONAL_CURRENCY;
+
+  /** La colonne n'apparaît que si le tiers porte au moins une opération en devise. */
+  readonly hasForeignCurrency = computed(() =>
+    (this.ledger()?.rows ?? []).some(r => (r.currencyCode || FUNCTIONAL_CURRENCY) !== FUNCTIONAL_CURRENCY)
+  );
   readonly error = signal<string | null>(null);
   readonly loading = signal(false);
   readonly exporting = signal(false);
@@ -198,9 +218,9 @@ export class ThirdPartyLedgerComponent implements OnInit {
         if (res.success && res.data) this.ledger.set(res.data);
         else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }
@@ -220,9 +240,9 @@ export class ThirdPartyLedgerComponent implements OnInit {
         this.exporting.set(false);
         downloadBlob(blob, `grand_livre_tiers_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }

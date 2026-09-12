@@ -130,7 +130,19 @@ public sealed record JournalEntryLineDto
     public string Label { get; init; } = null!;
     public decimal Debit { get; init; }
     public decimal Credit { get; init; }
+
+    /// <summary>
+    /// Devise du <c>Money</c> de la ligne : TOUJOURS la devise de tenue. Pour connaître la devise
+    /// de l'opération, lire <see cref="JournalEntryDto.CurrencyCode"/>.
+    /// </summary>
     public string Currency { get; init; } = null!;
+
+    /// <summary>Montant au débit dans la devise de transaction. 0 en mono-devise.</summary>
+    public decimal DebitInCurrency { get; init; }
+
+    /// <summary>Montant au crédit dans la devise de transaction. 0 en mono-devise.</summary>
+    public decimal CreditInCurrency { get; init; }
+
     public string? LetteringCode { get; init; }
     public Guid? ThirdPartyId { get; init; }
     public int ThirdPartyKind { get; init; }
@@ -158,6 +170,16 @@ public sealed record JournalEntryDto
     public DateTime? PieceDate { get; init; }
     /// <summary>Nombre de pièces jointes (GED) attachées à l'écriture.</summary>
     public int AttachmentCount { get; init; }
+
+    /// <summary>Devise dans laquelle l'opération a été traitée. Devise de tenue en mono-devise.</summary>
+    public string CurrencyCode { get; init; } = null!;
+
+    /// <summary>Taux appliqué : unités de devise de tenue pour UNE unité de la devise de transaction.</summary>
+    public decimal ExchangeRate { get; init; }
+
+    /// <summary>Vrai si le taux a été saisi manuellement au lieu d'être repris de la table.</summary>
+    public bool ExchangeRateOverridden { get; init; }
+
     public IReadOnlyList<JournalEntryLineDto> Lines { get; init; } = Array.Empty<JournalEntryLineDto>();
 }
 
@@ -167,9 +189,17 @@ public sealed record LedgerRowDto
     public string JournalCode { get; init; } = null!;
     public int PieceNumber { get; init; }
     public string Label { get; init; } = null!;
+
+    /// <summary>Montants et solde progressif : TOUJOURS en devise de tenue.</summary>
     public decimal Debit { get; init; }
     public decimal Credit { get; init; }
     public decimal RunningBalance { get; init; }
+
+    /// <summary>Devise de l'opération d'origine. Devise de tenue en mono-devise.</summary>
+    public string CurrencyCode { get; init; } = null!;
+
+    /// <summary>Montant de la ligne dans sa devise d'origine. 0 en mono-devise.</summary>
+    public decimal AmountInCurrency { get; init; }
 }
 
 public sealed record BalanceRowDto
@@ -182,6 +212,18 @@ public sealed record BalanceRowDto
     public decimal MovementCredit { get; init; }
     public decimal ClosingDebit { get; init; }
     public decimal ClosingCredit { get; init; }
+
+    /// <summary>
+    /// Devises etrangeres presentes sur le compte, triees. Vide pour un compte tenu uniquement en
+    /// devise de tenue.
+    ///
+    /// <para>
+    /// <b>Une liste, et non « la » devise du compte.</b> Une ligne de balance agrege un compte
+    /// toutes devises confondues : un fournisseur regle en euros puis en dollars porte deux devises,
+    /// et n'en afficher qu'une seule serait faux. Les montants restent, eux, en devise de tenue.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<string> ForeignCurrencies { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
@@ -398,6 +440,12 @@ public sealed record ThirdPartyLedgerRowDto
     public decimal Credit { get; init; }
     public decimal RunningBalance { get; init; }
     public string? LetteringCode { get; init; }
+
+    /// <summary>Devise de l'operation d'origine. Devise de tenue en mono-devise.</summary>
+    public string CurrencyCode { get; init; } = null!;
+
+    /// <summary>Montant de la ligne dans sa devise d'origine. 0 en mono-devise.</summary>
+    public decimal AmountInCurrency { get; init; }
 }
 
 public sealed record AgingReportRowDto
@@ -658,14 +706,36 @@ public sealed record CreateManualJournalEntryRequest
     /// <summary>Date de la pièce externe (facultative).</summary>
     public DateTime? PieceDate { get; init; }
     public IReadOnlyList<ManualJournalLineRequest> Lines { get; init; } = Array.Empty<ManualJournalLineRequest>();
+
+    /// <summary>Devise de la transaction. Vide ou absente = devise de tenue.</summary>
+    public string? CurrencyCode { get; init; }
+
+    /// <summary>
+    /// Taux souhaité. Le serveur part TOUJOURS de la table des taux : une valeur différente n'est
+    /// acceptée que dans la tolérance configurée et avec la permission de surcharge.
+    /// </summary>
+    public decimal? ExchangeRate { get; init; }
 }
 
 public sealed record ManualJournalLineRequest
 {
     public string AccountNumber { get; init; } = null!;
     public string LineLabel { get; init; } = null!;
+
+    /// <summary>
+    /// Montant au débit en devise de tenue. <b>Ignoré</b> lorsque l'écriture est en devise : le
+    /// serveur recalcule alors la contre-valeur depuis <see cref="DebitInCurrency"/>.
+    /// </summary>
     public decimal Debit { get; init; }
+
+    /// <summary>Montant au crédit en devise de tenue. Mêmes règles que <see cref="Debit"/>.</summary>
     public decimal Credit { get; init; }
+
+    /// <summary>Montant au débit dans la devise de transaction.</summary>
+    public decimal DebitInCurrency { get; init; }
+
+    /// <summary>Montant au crédit dans la devise de transaction.</summary>
+    public decimal CreditInCurrency { get; init; }
 
     /// <summary>Tiers optionnel (plan tiers) : auxiliarise la ligne (GL tiers, lettrage, FEC).</summary>
     public Guid? ThirdPartyId { get; init; }
@@ -684,6 +754,7 @@ public sealed record JournalSearchRowDto
     public int EntryNumber { get; init; }
     public string AccountNumber { get; init; } = null!;
     public string Label { get; init; } = null!;
+    /// <summary>Montants TOUJOURS en devise de tenue.</summary>
     public decimal Debit { get; init; }
     public decimal Credit { get; init; }
     public string? LetteringCode { get; init; }
@@ -691,6 +762,12 @@ public sealed record JournalSearchRowDto
     public bool IsDraft { get; init; }
     /// <summary>Référence de la pièce externe de l'écriture (facultative).</summary>
     public string? PieceRef { get; init; }
+
+    /// <summary>Devise de l'opération d'origine. Devise de tenue en mono-devise.</summary>
+    public string CurrencyCode { get; init; } = null!;
+
+    /// <summary>Montant de la ligne dans sa devise d'origine. 0 en mono-devise.</summary>
+    public decimal AmountInCurrency { get; init; }
 }
 
 /// <summary>Mise à jour d'une écriture EN BROUILLON (le journal et la date restent figés — ils numérotent la pièce).</summary>
@@ -702,6 +779,12 @@ public sealed record UpdateDraftJournalEntryRequest
     /// <summary>Date de la pièce externe (facultative).</summary>
     public DateTime? PieceDate { get; init; }
     public IReadOnlyList<ManualJournalLineRequest> Lines { get; init; } = Array.Empty<ManualJournalLineRequest>();
+
+    /// <summary>Devise de la transaction. Vide ou absente = devise de tenue.</summary>
+    public string? CurrencyCode { get; init; }
+
+    /// <summary>Taux souhaité. Mêmes règles de surcharge qu'à la création.</summary>
+    public decimal? ExchangeRate { get; init; }
 }
 
 /// <summary>Validation par lot des écritures en brouillon d'une période (optionnellement d'un journal donné).</summary>
@@ -1175,6 +1258,16 @@ public sealed record LetterEntriesRequest
 }
 
 /// <summary>Délettrage d'un groupe par son code (libère les lignes et supprime le groupe).</summary>
+/// <summary>
+/// Apurement de l'écart de change d'une sélection de lettrage. Le compte d'imputation est saisi à
+/// chaque fois : aucun défaut n'est persisté.
+/// </summary>
+public sealed record SettleExchangeDifferenceRequest
+{
+    public IReadOnlyList<Guid> JournalEntryLineIds { get; init; } = Array.Empty<Guid>();
+    public string AccountNumber { get; init; } = null!;
+}
+
 public sealed record UnletterEntriesRequest
 {
     public string Code { get; init; } = null!;

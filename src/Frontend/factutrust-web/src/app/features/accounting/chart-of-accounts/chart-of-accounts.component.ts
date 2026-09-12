@@ -687,13 +687,14 @@ export class ChartOfAccountsComponent implements OnInit {
     });
   }
 
-  /** Messages API (4xx/5xx) via ErrorHandlerService ; repli « erreur réseau » seulement si status 0. */
+  /**
+   * Messages API (4xx/5xx) via ErrorHandlerService ; repli « erreur réseau » seulement si status 0.
+   *
+   * Conservé comme point d'appel de l'écran : la règle elle-même vit désormais dans
+   * `ErrorHandlerService.extractErrorMessage`, où tout le module comptable la partage.
+   */
   httpFailureMessage(err: unknown, networkFallback: string): string {
-    const he = err as HttpErrorResponse;
-    if (he?.status === 0) {
-      return networkFallback;
-    }
-    return this.errorHandler.extractErrorMessage(err);
+    return this.errorHandler.extractErrorMessage(err, networkFallback);
   }
 
   ngOnInit(): void {
@@ -750,9 +751,9 @@ export class ChartOfAccountsComponent implements OnInit {
           this.error.set(res.error ?? 'Erreur de chargement');
         }
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errorHandler.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }

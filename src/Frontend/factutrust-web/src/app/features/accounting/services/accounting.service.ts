@@ -43,6 +43,12 @@ export interface JournalEntryDto {
   pieceDate?: string | null;
   /** Nombre de pièces jointes (GED) attachées à l'écriture. */
   attachmentCount: number;
+  /** Devise dans laquelle l'operation a ete traitee. Devise de tenue en mono-devise. */
+  currencyCode?: string;
+  /** Taux applique : unites de devise de tenue pour UNE unite de la devise de transaction. */
+  exchangeRate?: number;
+  /** Vrai si le taux a ete saisi manuellement au lieu d'etre repris de la table. */
+  exchangeRateOverridden?: boolean;
   lines: JournalEntryLineDto[];
 }
 
@@ -71,7 +77,15 @@ export interface JournalEntryLineDto {
   label: string;
   debit: number;
   credit: number;
+  /**
+   * Devise du montant de la ligne : TOUJOURS la devise de tenue. Pour la devise de l'operation,
+   * lire `JournalEntryDto.currencyCode`.
+   */
   currency: string;
+  /** Montant au debit dans la devise de l'operation. 0 en mono-devise. */
+  debitInCurrency?: number;
+  /** Montant au credit dans la devise de l'operation. 0 en mono-devise. */
+  creditInCurrency?: number;
   /** Aligné sur AccountingDtos.JournalEntryLineDto (lettrage manuel / état ligne). */
   letteringCode?: string | null;
   thirdPartyId?: string | null;
@@ -79,6 +93,10 @@ export interface JournalEntryLineDto {
 }
 
 export interface LedgerRowDto {
+  /** Devise de l'operation d'origine. Devise de tenue en mono-devise. */
+  currencyCode?: string;
+  /** Montant de la ligne dans sa devise d'origine. 0 en mono-devise. */
+  amountInCurrency?: number;
   entryDate: string;
   journalCode: string;
   pieceNumber: number;
@@ -89,6 +107,11 @@ export interface LedgerRowDto {
 }
 
 export interface BalanceRowDto {
+  /**
+   * Devises etrangeres presentes sur le compte. Une LISTE : une ligne de balance agrege un compte
+   * toutes devises confondues. Vide pour un compte tenu uniquement en devise de tenue.
+   */
+  foreignCurrencies?: string[];
   accountNumber: string;
   label: string;
   openingDebit: number;
@@ -219,6 +242,10 @@ export interface ThirdPartyLedgerDto {
 }
 
 export interface ThirdPartyLedgerRowDto {
+  /** Devise de l'operation d'origine. Devise de tenue en mono-devise. */
+  currencyCode?: string;
+  /** Montant de la ligne dans sa devise d'origine. 0 en mono-devise. */
+  amountInCurrency?: number;
   entryDate: string;
   journalCode: string;
   pieceNumber: number;
@@ -465,13 +492,26 @@ export interface CreateManualJournalEntryRequest {
   /** Date de la pièce externe (facultative, yyyy-MM-dd). */
   pieceDate?: string | null;
   lines: ManualJournalLineRequest[];
+  /** Devise de la transaction. Absente ou 'TND' = devise de tenue. */
+  currencyCode?: string | null;
+  /**
+   * Taux souhaite. Le serveur part TOUJOURS de la table des taux : une valeur differente n'est
+   * acceptee que dans la tolerance configuree et avec la permission de surcharge.
+   */
+  exchangeRate?: number | null;
 }
 
 export interface ManualJournalLineRequest {
   accountNumber: string;
   lineLabel: string;
+  /** Montant au debit en devise de tenue. Laisse a 0 en devise : le serveur le recalcule. */
   debit: number;
+  /** Montant au credit en devise de tenue. Meme regle que `debit`. */
   credit: number;
+  /** Montant au debit dans la devise de transaction. */
+  debitInCurrency?: number;
+  /** Montant au credit dans la devise de transaction. */
+  creditInCurrency?: number;
   /** Tiers optionnel de la ligne (comptabilité auxiliaire) — null = comportement historique. */
   thirdPartyId?: string | null;
   /** Obligatoire si thirdPartyId est fourni : 1 = client, 2 = fournisseur. */
@@ -609,6 +649,10 @@ export interface BudgetReportDto {
 }
 
 export interface JournalSearchRowDto {
+  /** Devise de l'operation d'origine. Devise de tenue en mono-devise. */
+  currencyCode?: string;
+  /** Montant de la ligne dans sa devise d'origine. 0 en mono-devise. */
+  amountInCurrency?: number;
   entryId: string;
   /** Id de la ligne d'écriture (utilisé notamment par le rapprochement bancaire). */
   lineId: string;
@@ -651,6 +695,13 @@ export interface UpdateDraftJournalEntryRequest {
   /** Date de la pièce externe (facultative, yyyy-MM-dd). */
   pieceDate?: string | null;
   lines: ManualJournalLineRequest[];
+  /** Devise de la transaction. Absente ou 'TND' = devise de tenue. */
+  currencyCode?: string | null;
+  /**
+   * Taux souhaite. Le serveur part TOUJOURS de la table des taux : une valeur differente n'est
+   * acceptee que dans la tolerance configuree et avec la permission de surcharge.
+   */
+  exchangeRate?: number | null;
 }
 
 /** Format du fichier de reprise (miroir de JournalImportFormat backend). */
@@ -1279,6 +1330,93 @@ export interface UpsertFiscalResultRequest {
   minimumTaxRegime: number;
 }
 
+export interface CurrencyDto {
+  id: string;
+  code: string;
+  label: string;
+  decimalPlaces: number;
+  /** 0 = Fixe (un taux par exercice), 1 = Mensuelle (un taux par mois). */
+  ratePeriodicity: number;
+  isActive: boolean;
+  /** Devise de tenue des comptes : sans taux, non desactivable, code fige. */
+  isFunctional: boolean;
+  configuredRateCount: number;
+  expectedRateCount: number;
+}
+
+export interface CurrencyExchangeRateDto {
+  id: string;
+  fiscalYear: number;
+  /** 1 a 12, ou null pour un taux fixe couvrant tout l'exercice. */
+  month: number | null;
+  /** Unites de devise de tenue pour UNE unite de cette devise (1 EUR = 3,31420 TND). */
+  rate: number;
+}
+
+export interface CurrencyDetailDto {
+  currency: CurrencyDto;
+  fiscalYear: number;
+  rates: CurrencyExchangeRateDto[];
+}
+
+/**
+ * Taux que le serveur appliquerait. L'ecran de saisie l'affiche tel quel plutot que de le
+ * recalculer : le serveur reste la seule autorite sur la valeur comptabilisee.
+ */
+export interface ResolvedExchangeRateDto {
+  currencyCode: string;
+  rate: number;
+  referenceRate: number;
+  isOverridden: boolean;
+  isFunctional: boolean;
+}
+
+export interface RunClosingRevaluationRequest {
+  fiscalYear: number;
+  month: number;
+  /** Ecarts de conversion passif — gains latents (185 en NCT 01). */
+  gainAccount: string;
+  /** Ecarts de conversion actif — pertes latentes (275 en NCT 01). */
+  lossAccount: string;
+  /** Facultatif : laisse vide, aucune provision n'est constatee. */
+  provisionExpenseAccount?: string | null;
+  provisionAccount?: string | null;
+}
+
+export interface ClosingRevaluationResultDto {
+  revaluationEntryId: string;
+  /** Ecriture de contre-passation, datee du premier jour de la periode suivante. */
+  reversalEntryId: string;
+  provisionEntryId?: string | null;
+  positionCount: number;
+  totalLatentGain: number;
+  totalLatentLoss: number;
+}
+
+export interface CreateCurrencyRequest {
+  code: string;
+  label: string;
+  decimalPlaces: number;
+  ratePeriodicity: number;
+}
+
+export interface UpdateCurrencyRequest {
+  label: string;
+  decimalPlaces: number;
+  ratePeriodicity: number;
+}
+
+export interface CurrencyRateEntryRequest {
+  month: number | null;
+  /** null efface le taux de la periode. */
+  rate: number | null;
+}
+
+export interface SaveCurrencyRatesRequest {
+  fiscalYear: number;
+  rates: CurrencyRateEntryRequest[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class AccountingService {
   private readonly http = inject(HttpClient);
@@ -1785,6 +1923,10 @@ export class AccountingService {
   }
 
   /** Délettre un groupe par son code : libère les lignes et supprime le groupe. */
+  settleExchangeDifference(journalEntryLineIds: string[], accountNumber: string): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(
+      `${this.base}/lettering/settle-exchange-difference`, { journalEntryLineIds, accountNumber });
+  }
   unletterEntries(code: string): Observable<ApiResponse<boolean>> {
     return this.http.post<ApiResponse<boolean>>(`${this.base}/unletter`, { code });
   }
@@ -1930,6 +2072,37 @@ export class AccountingService {
   }
   createJournalFamily(request: CreateJournalFamilyRequest): Observable<ApiResponse<string>> {
     return this.http.post<ApiResponse<string>>(`${this.base}/journal-families`, request);
+  }
+
+  // ── Devises et taux de change ──
+  getCurrencies(fiscalYear: number, includeInactive = false): Observable<ApiResponse<CurrencyDto[]>> {
+    const p = new HttpParams()
+      .set('fiscalYear', String(fiscalYear))
+      .set('includeInactive', String(includeInactive));
+    return this.http.get<ApiResponse<CurrencyDto[]>>(`${this.base}/currencies`, { params: p });
+  }
+  getCurrencyDetail(id: string, fiscalYear: number): Observable<ApiResponse<CurrencyDetailDto>> {
+    const p = new HttpParams().set('fiscalYear', String(fiscalYear));
+    return this.http.get<ApiResponse<CurrencyDetailDto>>(`${this.base}/currencies/${id}`, { params: p });
+  }
+  resolveExchangeRate(currencyCode: string, entryDate: string): Observable<ApiResponse<ResolvedExchangeRateDto>> {
+    const p = new HttpParams().set('currencyCode', currencyCode).set('entryDate', entryDate);
+    return this.http.get<ApiResponse<ResolvedExchangeRateDto>>(`${this.base}/currencies/resolve-rate`, { params: p });
+  }
+  runClosingRevaluation(request: RunClosingRevaluationRequest): Observable<ApiResponse<ClosingRevaluationResultDto>> {
+    return this.http.post<ApiResponse<ClosingRevaluationResultDto>>(`${this.base}/closing-revaluation`, request);
+  }
+  createCurrency(request: CreateCurrencyRequest): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.base}/currencies`, request);
+  }
+  updateCurrency(id: string, request: UpdateCurrencyRequest): Observable<ApiResponse<boolean>> {
+    return this.http.put<ApiResponse<boolean>>(`${this.base}/currencies/${id}`, request);
+  }
+  toggleCurrency(id: string): Observable<ApiResponse<boolean>> {
+    return this.http.patch<ApiResponse<boolean>>(`${this.base}/currencies/${id}/toggle`, {});
+  }
+  saveCurrencyRates(id: string, request: SaveCurrencyRatesRequest): Observable<ApiResponse<boolean>> {
+    return this.http.put<ApiResponse<boolean>>(`${this.base}/currencies/${id}/rates`, request);
   }
 
   // ── Comptabilité budgétaire ────────────────────────────────────────────────

@@ -29,6 +29,7 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
     private readonly IConfiguration _configuration;
     private readonly AccountingFirmsOptions _accountingFirmsOptions;
     private readonly PayrollOptions _payrollOptions;
+    private readonly AccountingSettings _accountingSettings;
     private readonly FirmGovernanceOptions _firmGovernanceOptions;
     private readonly ILogger<TenantAuthTokenService> _logger;
 
@@ -40,6 +41,7 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
         IConfiguration configuration,
         IOptions<AccountingFirmsOptions> accountingFirmsOptions,
         IOptions<PayrollOptions> payrollOptions,
+        IOptions<AccountingSettings> accountingSettings,
         IOptions<FirmGovernanceOptions> firmGovernanceOptions,
         ILogger<TenantAuthTokenService> logger)
     {
@@ -50,6 +52,7 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
         _configuration = configuration;
         _accountingFirmsOptions = accountingFirmsOptions.Value;
         _payrollOptions = payrollOptions.Value;
+        _accountingSettings = accountingSettings.Value;
         _firmGovernanceOptions = firmGovernanceOptions.Value;
         _logger = logger;
     }
@@ -128,6 +131,12 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
             effectivePermissions = nativeSnapshot.EffectivePermissions.ToList();
             enabledModuleIds = nativeSnapshot.EnabledModules.Select(m => (int)m).ToList();
         }
+
+        // Applique aux TROIS populations d'un coup (delegue cabinet, cabinet natif, societe) :
+        // drapeau eteint, la cle n'entre pas dans le jeton, donc ni menu ni bouton d'ecriture.
+        effectivePermissions = AccountingCurrencyAccess
+            .FilterWhenDisabled(effectivePermissions, _accountingSettings.MultiCurrencyEnabled)
+            .ToList();
 
         var isPayrollFirmManaged = false;
         if (!isDelegated

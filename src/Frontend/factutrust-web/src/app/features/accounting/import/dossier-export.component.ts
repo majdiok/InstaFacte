@@ -5,6 +5,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingService } from '../services/accounting.service';
 import { downloadBlob } from '../shared/accounting-download.util';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /**
  * Export d'archive de dossier (ZIP, lecture seule) : plan comptable, journal général, balance,
@@ -54,6 +55,7 @@ import { downloadBlob } from '../shared/accounting-download.util';
   `
 })
 export class DossierExportComponent {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
 
   fiscalYear = new Date().getFullYear() - 1;
@@ -76,9 +78,9 @@ export class DossierExportComponent {
         downloadBlob(blob, `dossier_${this.fiscalYear}.zip`);
         this.successMessage.set(`Archive du dossier ${this.fiscalYear} téléchargée.`);
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de la préparation de l'archive.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de la préparation de l'archive."));
       }
     });
   }

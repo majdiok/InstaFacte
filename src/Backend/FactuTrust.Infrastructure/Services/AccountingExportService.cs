@@ -3,6 +3,7 @@ using System.Text;
 using ClosedXML.Excel;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Domain.ValueObjects;
 
 namespace FactuTrust.Infrastructure.Services;
 
@@ -11,13 +12,24 @@ public sealed class AccountingExportService : IAccountingExportService
     private const char Separator = ';';
     private static readonly byte[] Utf8Bom = [0xEF, 0xBB, 0xBF];
 
+    /// <summary>Vrai si l'ecriture a ete traitee dans une devise autre que celle de tenue.</summary>
+    private static bool IsForeignCurrency(string? currencyCode) =>
+        !string.IsNullOrEmpty(currencyCode)
+        && !string.Equals(currencyCode, Money.DefaultCurrency, StringComparison.Ordinal);
+
+    /// <summary>Montant de la ligne dans sa devise : une ligne porte un debit OU un credit.</summary>
+    private static decimal AmountInCurrency(JournalEntryLineDto line) =>
+        line.DebitInCurrency > 0 ? line.DebitInCurrency : line.CreditInCurrency;
+
     public byte[] ExportJournalToCsv(IReadOnlyList<JournalEntryDto> entries)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Date;Journal;N°Pièce;Compte;Libellé;Débit;Crédit");
+        sb.AppendLine("Date;Journal;N°Pièce;Compte;Libellé;Débit;Crédit;Devise;Montant devise");
 
         foreach (var entry in entries)
         {
+            // Colonnes devise ajoutees EN FIN DE LIGNE : aucun indice existant ne bouge.
+            var foreign = IsForeignCurrency(entry.CurrencyCode);
             foreach (var line in entry.Lines)
             {
                 sb.Append(FormatDate(entry.EntryDate)).Append(Separator);
@@ -26,7 +38,9 @@ public sealed class AccountingExportService : IAccountingExportService
                 sb.Append(Escape(line.AccountNumber)).Append(Separator);
                 sb.Append(Escape(line.Label)).Append(Separator);
                 sb.Append(FormatDecimal(line.Debit)).Append(Separator);
-                sb.AppendLine(FormatDecimal(line.Credit));
+                sb.Append(FormatDecimal(line.Credit)).Append(Separator);
+                sb.Append(foreign ? Escape(entry.CurrencyCode) : string.Empty).Append(Separator);
+                sb.AppendLine(foreign ? FormatDecimal(AmountInCurrency(line)) : string.Empty);
             }
         }
 
@@ -88,20 +102,31 @@ public sealed class AccountingExportService : IAccountingExportService
         return BuildBytes(sb);
     }
 
+    /// <summary>
+    /// Grand livre d'un compte. Les colonnes « Devise » et « Montant devise » sont ajoutées
+    /// <b>en fin de ligne</b> : les indices des colonnes existantes ne bougent pas, et un
+    /// consommateur qui ignore les colonnes surnuméraires continue de fonctionner.
+    /// Elles ne sont renseignées que pour une opération en devise.
+    /// </summary>
     public byte[] ExportLedgerToCsv(IReadOnlyList<LedgerRowDto> rows)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Date;Journal;N°Pièce;Libellé;Débit;Crédit;Solde");
+        sb.AppendLine("Date;Journal;N°Pièce;Libellé;Débit;Crédit;Solde;Devise;Montant devise");
 
         foreach (var row in rows)
         {
+            var foreign = !string.IsNullOrEmpty(row.CurrencyCode)
+                          && !string.Equals(row.CurrencyCode, Money.DefaultCurrency, StringComparison.Ordinal);
+
             sb.Append(FormatDate(row.EntryDate)).Append(Separator);
             sb.Append(Escape(row.JournalCode)).Append(Separator);
             sb.Append(row.PieceNumber).Append(Separator);
             sb.Append(Escape(row.Label)).Append(Separator);
             sb.Append(FormatDecimal(row.Debit)).Append(Separator);
             sb.Append(FormatDecimal(row.Credit)).Append(Separator);
-            sb.AppendLine(FormatDecimal(row.RunningBalance));
+            sb.Append(FormatDecimal(row.RunningBalance)).Append(Separator);
+            sb.Append(foreign ? Escape(row.CurrencyCode) : string.Empty).Append(Separator);
+            sb.AppendLine(foreign ? FormatDecimal(row.AmountInCurrency) : string.Empty);
         }
 
         return BuildBytes(sb);
@@ -344,7 +369,8 @@ public sealed class AccountingExportService : IAccountingExportService
         var sb = new StringBuilder();
         sb.Append("Tiers;").AppendLine(Escape(ledger.ThirdPartyName));
         sb.Append("Solde d'ouverture;").AppendLine(FormatDecimal(ledger.OpeningBalance));
-        sb.AppendLine("Date;Journal;N°Pièce;Réf. pièce;Compte;Libellé;Débit;Crédit;Solde;Lettrage");
+        // Colonnes devise ajoutees EN FIN DE LIGNE : aucun indice existant ne bouge.
+        sb.AppendLine("Date;Journal;N°Pièce;Réf. pièce;Compte;Libellé;Débit;Crédit;Solde;Lettrage;Devise;Montant devise");
 
         foreach (var row in ledger.Rows)
         {
@@ -357,7 +383,11 @@ public sealed class AccountingExportService : IAccountingExportService
             sb.Append(FormatDecimal(row.Debit)).Append(Separator);
             sb.Append(FormatDecimal(row.Credit)).Append(Separator);
             sb.Append(FormatDecimal(row.RunningBalance)).Append(Separator);
-            sb.AppendLine(Escape(row.LetteringCode ?? string.Empty));
+            sb.Append(Escape(row.LetteringCode ?? string.Empty)).Append(Separator);
+
+            var foreign = IsForeignCurrency(row.CurrencyCode);
+            sb.Append(foreign ? Escape(row.CurrencyCode) : string.Empty).Append(Separator);
+            sb.AppendLine(foreign ? FormatDecimal(row.AmountInCurrency) : string.Empty);
         }
 
         return BuildBytes(sb);
@@ -472,7 +502,7 @@ public sealed class AccountingExportService : IAccountingExportService
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("Journal");
 
-        var headers = new[] { "Date", "Journal", "N\u00b0Pi\u00e8ce", "Compte", "Libell\u00e9", "D\u00e9bit", "Cr\u00e9dit" };
+        var headers = new[] { "Date", "Journal", "N\u00b0Pi\u00e8ce", "Compte", "Libell\u00e9", "D\u00e9bit", "Cr\u00e9dit", "Devise", "Montant devise" };
         for (var c = 0; c < headers.Length; c++)
             ws.Cell(1, c + 1).Value = headers[c];
         StyleHeaderRow(ws, headers.Length);
@@ -492,6 +522,12 @@ public sealed class AccountingExportService : IAccountingExportService
                 ws.Cell(row, 6).Style.NumberFormat.Format = "#,##0.000";
                 ws.Cell(row, 7).Value = line.Credit;
                 ws.Cell(row, 7).Style.NumberFormat.Format = "#,##0.000";
+                if (IsForeignCurrency(entry.CurrencyCode))
+                {
+                    ws.Cell(row, 8).Value = entry.CurrencyCode;
+                    ws.Cell(row, 9).Value = AmountInCurrency(line);
+                    ws.Cell(row, 9).Style.NumberFormat.Format = "#,##0.000";
+                }
                 row++;
             }
         }
@@ -505,7 +541,7 @@ public sealed class AccountingExportService : IAccountingExportService
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add($"Grand Livre {accountNumber}");
 
-        var headers = new[] { "Date", "Journal", "N\u00b0Pi\u00e8ce", "Libell\u00e9", "D\u00e9bit", "Cr\u00e9dit", "Solde" };
+        var headers = new[] { "Date", "Journal", "N\u00b0Pi\u00e8ce", "Libell\u00e9", "D\u00e9bit", "Cr\u00e9dit", "Solde", "Devise", "Montant devise" };
         for (var c = 0; c < headers.Length; c++)
             ws.Cell(1, c + 1).Value = headers[c];
         StyleHeaderRow(ws, headers.Length);
@@ -524,6 +560,12 @@ public sealed class AccountingExportService : IAccountingExportService
             ws.Cell(row, 6).Style.NumberFormat.Format = "#,##0.000";
             ws.Cell(row, 7).Value = r.RunningBalance;
             ws.Cell(row, 7).Style.NumberFormat.Format = "#,##0.000";
+            if (IsForeignCurrency(r.CurrencyCode))
+            {
+                ws.Cell(row, 8).Value = r.CurrencyCode;
+                ws.Cell(row, 9).Value = r.AmountInCurrency;
+                ws.Cell(row, 9).Style.NumberFormat.Format = "#,##0.000";
+            }
             row++;
         }
 

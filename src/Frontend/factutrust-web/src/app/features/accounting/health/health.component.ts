@@ -8,6 +8,7 @@ import { AccountingService, AccountingHealthReportDto, PreClosingCheckDto } from
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /**
  * Centre de contrôle d'intégrité comptable — LECTURE SEULE. Diagnostics à la demande hors clôture :
@@ -133,6 +134,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
   `
 })
 export class AccountingHealthComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
 
   scope: 'year' | 'all' = 'year';
@@ -165,9 +167,9 @@ export class AccountingHealthComponent implements OnInit {
         if (res.success && res.data) this.report.set(res.data);
         else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }

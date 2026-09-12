@@ -105,6 +105,8 @@ describe('AccountingDocumentImportDialogComponent', () => {
         {
           provide: AccountingService,
           useValue: {
+            // Le store de référence charge aussi les devises depuis ce service.
+            getCurrencies: () => of({ success: true, data: [] }),
             getChartOfAccounts: () =>
               of({
                 success: true,

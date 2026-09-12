@@ -10,6 +10,7 @@ import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.co
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /**
  * Livre d'inventaire d'un exercice : édition légale figée (états financiers NCT + provisions
@@ -127,6 +128,7 @@ import { ToastService } from '@core/services/toast.service';
   `
 })
 export class InventoryBookComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
 
@@ -166,9 +168,9 @@ export class InventoryBookComponent implements OnInit {
           this.error.set(res.error ?? 'Erreur');
         }
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }
@@ -180,9 +182,9 @@ export class InventoryBookComponent implements OnInit {
         this.exporting.set(false);
         downloadBlob(blob, `livre_inventaire_${this.fiscalYear}.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }

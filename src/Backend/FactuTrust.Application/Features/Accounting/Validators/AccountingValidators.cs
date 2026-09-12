@@ -75,15 +75,14 @@ public sealed class CreateManualJournalEntryCommandValidator : AbstractValidator
             .Must(lines => lines.Count >= 2)
             .WithMessage("Au moins deux lignes sont requises.");
 
-        RuleFor(x => x.Request.Lines)
-            .Must(lines =>
-            {
-                var totalDebit = lines.Sum(l => l.Debit);
-                var totalCredit = lines.Sum(l => l.Credit);
-                return Math.Abs(totalDebit - totalCredit) < 0.001m;
-            })
+        RuleFor(x => x.Request)
+            .Must(r => ManualEntryLineRules.IsBalanced(r.Lines, r.CurrencyCode))
             .WithMessage("L'écriture doit être équilibrée (total débit = total crédit).")
             .When(x => x.Request.Lines.Count >= 2);
+
+        RuleFor(x => x.Request)
+            .Must(r => r.Lines.All(l => ManualEntryLineRules.HasSingleSide(l, r.CurrencyCode)))
+            .WithMessage("Une ligne ne peut pas avoir simultanément un débit et un crédit.");
 
         RuleForEach(x => x.Request.Lines).ChildRules(line =>
         {
@@ -92,10 +91,47 @@ public sealed class CreateManualJournalEntryCommandValidator : AbstractValidator
 
             line.RuleFor(l => l.LineLabel)
                 .NotEmpty().WithMessage("Le libellé est obligatoire pour chaque ligne.");
+        });
+    }
+}
 
-            line.RuleFor(l => l)
-                .Must(l => !(l.Debit > 0 && l.Credit > 0))
-                .WithMessage("Une ligne ne peut pas avoir simultanément un débit et un crédit.");
+/// <summary>
+/// Validateur de la modification d'un brouillon. Il n'existait pas : la modification ne reposait
+/// que sur les contrôles du domaine, et les écarts de forme remontaient donc plus tard et avec des
+/// messages différents de ceux de la création.
+/// </summary>
+public sealed class UpdateDraftJournalEntryCommandValidator : AbstractValidator<UpdateDraftJournalEntryCommand>
+{
+    public UpdateDraftJournalEntryCommandValidator()
+    {
+        RuleFor(x => x.Request.Label)
+            .NotEmpty().WithMessage("Le libellé est obligatoire.")
+            .MaximumLength(500).WithMessage("Le libellé ne peut pas dépasser 500 caractères.");
+
+        RuleFor(x => x.Request.PieceRef)
+            .MaximumLength(50).WithMessage("La référence de pièce ne peut pas dépasser 50 caractères.");
+
+        RuleFor(x => x.Request.Lines)
+            .NotEmpty().WithMessage("Les lignes sont obligatoires.")
+            .Must(lines => lines.Count >= 2)
+            .WithMessage("Au moins deux lignes sont requises.");
+
+        RuleFor(x => x.Request)
+            .Must(r => ManualEntryLineRules.IsBalanced(r.Lines, r.CurrencyCode))
+            .WithMessage("L'écriture doit être équilibrée (total débit = total crédit).")
+            .When(x => x.Request.Lines.Count >= 2);
+
+        RuleFor(x => x.Request)
+            .Must(r => r.Lines.All(l => ManualEntryLineRules.HasSingleSide(l, r.CurrencyCode)))
+            .WithMessage("Une ligne ne peut pas avoir simultanément un débit et un crédit.");
+
+        RuleForEach(x => x.Request.Lines).ChildRules(line =>
+        {
+            line.RuleFor(l => l.AccountNumber)
+                .NotEmpty().WithMessage("Le numéro de compte est obligatoire pour chaque ligne.");
+
+            line.RuleFor(l => l.LineLabel)
+                .NotEmpty().WithMessage("Le libellé est obligatoire pour chaque ligne.");
         });
     }
 }

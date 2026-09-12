@@ -11,6 +11,7 @@ import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.co
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-balance-sheet',
@@ -191,6 +192,7 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
   `
 })
 export class BalanceSheetComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   fiscalYear = new Date().getFullYear();
   readonly data = signal<BalanceSheetDto | null>(null);
@@ -242,9 +244,9 @@ export class BalanceSheetComponent implements OnInit {
         if (res.success && res.data) this.data.set(res.data);
         else this.error.set(res.error ?? 'Erreur lors du chargement du bilan');
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }
@@ -256,9 +258,9 @@ export class BalanceSheetComponent implements OnInit {
         this.exporting.set(false);
         downloadBlob(blob, `bilan_${this.fiscalYear}.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }

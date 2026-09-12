@@ -309,7 +309,12 @@ public sealed class AccountingReportingService : IAccountingReportingService
                 Label = line.Label,
                 Debit = d,
                 Credit = c,
-                RunningBalance = running
+                RunningBalance = running,
+                CurrencyCode = line.JournalEntry.CurrencyCode,
+                // Un seul montant : une ligne porte un débit OU un crédit, jamais les deux.
+                AmountInCurrency = line.DebitAmountInCurrency > 0
+                    ? line.DebitAmountInCurrency
+                    : line.CreditAmountInCurrency
             });
         }
 
@@ -547,6 +552,25 @@ public sealed class AccountingReportingService : IAccountingReportingService
         var allAccounts = new HashSet<string>(openingMap.Keys);
         foreach (var m in movementMap.Keys) allAccounts.Add(m);
 
+        // Devises etrangeres rencontrees par compte, ouverture et mouvements confondus : un compte
+        // peut en porter plusieurs, d'ou une liste et non une valeur unique.
+        var currencyQuery = ctx.JournalEntryLines.AsNoTracking()
+            .Include(l => l.JournalEntry)
+            .Where(l => l.JournalEntry.EntryDate <= t && l.JournalEntry.CurrencyCode != "TND");
+        if (!ShowDrafts)
+            currencyQuery = currencyQuery.Where(l => l.JournalEntry.Status != JournalEntryStatus.Brouillon);
+
+        var currencyPairs = await currencyQuery
+            .Select(l => new { l.AccountNumber, l.JournalEntry.CurrencyCode })
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var currencyMap = currencyPairs
+            .GroupBy(x => x.AccountNumber)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<string>)g.Select(x => x.CurrencyCode).Distinct().OrderBy(c => c).ToList());
+
         var rows = new List<BalanceRowDto>();
         foreach (var acc in allAccounts.OrderBy(x => x))
         {
@@ -574,7 +598,10 @@ public sealed class AccountingReportingService : IAccountingReportingService
                 MovementDebit = md,
                 MovementCredit = mc,
                 ClosingDebit = cd,
-                ClosingCredit = cc
+                ClosingCredit = cc,
+                ForeignCurrencies = currencyMap.TryGetValue(acc, out var currencies)
+                    ? currencies
+                    : Array.Empty<string>()
             });
         }
 
@@ -1139,7 +1166,11 @@ public sealed class AccountingReportingService : IAccountingReportingService
                 Debit = line.DebitAmount.Amount,
                 Credit = line.CreditAmount.Amount,
                 RunningBalance = running,
-                LetteringCode = line.LetteringCode
+                LetteringCode = line.LetteringCode,
+                CurrencyCode = line.JournalEntry.CurrencyCode,
+                AmountInCurrency = line.DebitAmountInCurrency > 0
+                    ? line.DebitAmountInCurrency
+                    : line.CreditAmountInCurrency
             });
         }
 
@@ -1246,7 +1277,11 @@ public sealed class AccountingReportingService : IAccountingReportingService
                 LetteringCode = l.LetteringCode,
                 Status = (int)l.JournalEntry.Status,
                 IsDraft = l.JournalEntry.Status == JournalEntryStatus.Brouillon,
-                PieceRef = l.JournalEntry.PieceRef
+                PieceRef = l.JournalEntry.PieceRef,
+                CurrencyCode = l.JournalEntry.CurrencyCode,
+                AmountInCurrency = l.DebitAmountInCurrency > 0
+                    ? l.DebitAmountInCurrency
+                    : l.CreditAmountInCurrency
             })
             .ToListAsync(cancellationToken);
 
@@ -1448,6 +1483,9 @@ public sealed class AccountingReportingService : IAccountingReportingService
         IsDraft = j.Status == JournalEntryStatus.Brouillon,
         PieceRef = j.PieceRef,
         PieceDate = j.PieceDate,
+        CurrencyCode = j.CurrencyCode,
+        ExchangeRate = j.ExchangeRate,
+        ExchangeRateOverridden = j.ExchangeRateOverridden,
         Lines = j.Lines.OrderBy(l => l.LineNumber).Select(l => new JournalEntryLineDto
         {
             Id = l.Id,
@@ -1457,6 +1495,8 @@ public sealed class AccountingReportingService : IAccountingReportingService
             Debit = l.DebitAmount.Amount,
             Credit = l.CreditAmount.Amount,
             Currency = l.DebitAmount.Amount > 0 ? l.DebitAmount.Currency : l.CreditAmount.Currency,
+            DebitInCurrency = l.DebitAmountInCurrency,
+            CreditInCurrency = l.CreditAmountInCurrency,
             LetteringCode = l.LetteringCode,
             ThirdPartyId = l.ThirdPartyId,
             ThirdPartyKind = (int)l.ThirdPartyKind

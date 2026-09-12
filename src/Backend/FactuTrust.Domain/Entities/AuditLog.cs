@@ -366,6 +366,16 @@ public static class AuditActions
         public const string JournalUpdated = "Accounting.JournalUpdated";
         public const string JournalToggled = "Accounting.JournalToggled";
         public const string JournalFamilyCreated = "Accounting.JournalFamilyCreated";
+        public const string CurrencyCreated = "Accounting.CurrencyCreated";
+        public const string CurrencyUpdated = "Accounting.CurrencyUpdated";
+        public const string CurrencyToggled = "Accounting.CurrencyToggled";
+        public const string CurrencyRatesSaved = "Accounting.CurrencyRatesSaved";
+        /// <summary>Taux de change saisi manuellement, différent de celui de la table.</summary>
+        public const string ExchangeRateOverridden = "Accounting.ExchangeRateOverridden";
+        /// <summary>Écart de change apuré par une écriture d'ajustement depuis l'écran de lettrage.</summary>
+        public const string ExchangeDifferenceSettled = "Accounting.ExchangeDifferenceSettled";
+        /// <summary>Réévaluation des positions en devise à la clôture d'une période.</summary>
+        public const string ClosingRevaluationRun = "Accounting.ClosingRevaluationRun";
         public const string BudgetPostCreated = "Accounting.BudgetPostCreated";
         public const string BudgetPostUpdated = "Accounting.BudgetPostUpdated";
         public const string BudgetPostToggled = "Accounting.BudgetPostToggled";

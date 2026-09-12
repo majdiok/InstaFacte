@@ -8,6 +8,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
 import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-totals-bar/table-totals-bar.component';
 import { AccountingService, BudgetReportDto } from '../services/accounting.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 const MONTH_NAMES = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
 
@@ -152,6 +153,7 @@ const MONTH_NAMES = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Jui
   `
 })
 export class BudgetReportComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
 
   readonly monthNames = MONTH_NAMES;
@@ -192,9 +194,9 @@ export class BudgetReportComponent implements OnInit {
           this.error.set(res.error ?? "Erreur de chargement de l'état budgétaire.");
         }
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set("Erreur réseau lors du chargement de l'état budgétaire.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur réseau lors du chargement de l'état budgétaire."));
       }
     });
   }
@@ -212,9 +214,9 @@ export class BudgetReportComponent implements OnInit {
         a.click();
         URL.revokeObjectURL(url);
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export de l'état budgétaire.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export de l'état budgétaire."));
       }
     });
   }

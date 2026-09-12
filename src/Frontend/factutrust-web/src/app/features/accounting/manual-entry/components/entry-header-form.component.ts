@@ -1,4 +1,4 @@
-import { Component, inject, input } from '@angular/core';
+import { Component, computed, effect, inject, input, signal } from '@angular/core';
 
 import { CommonModule } from '@angular/common';
 
@@ -11,6 +11,16 @@ import { EntryReferenceStore } from '../services/entry-reference.store';
 import { PeriodBadgeComponent } from './period-badge.component';
 
 import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
+
+import { AccountingService } from '../../services/accounting.service';
+
+import { AccountingFeatureFlagsService } from '../../shared/accounting-feature-flags.service';
+
+import { AuthService } from '@core/services/auth.service';
+
+import { PERMISSIONS } from '@core/config/permission-keys';
+
+import { FUNCTIONAL_CURRENCY, MILLIME_DECIMALS } from '../models/entry-form.model';
 
 
 
@@ -91,6 +101,58 @@ import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
           </select>
 
         </div>
+
+
+
+        @if (showCurrency()) {
+
+          <div class="form-field">
+
+            <label class="field-label" for="eh-currency">Devise <span class="req">*</span></label>
+
+            <select id="eh-currency" class="me-input"
+                    [ngModel]="store.currency()" (ngModelChange)="onCurrencyChange($event)"
+                    [disabled]="store.editingLocked()">
+
+              @for (c of currencies(); track c.code) {
+
+                <option [value]="c.code">{{ c.code }} — {{ c.label }}</option>
+
+              }
+
+            </select>
+
+          </div>
+
+        }
+
+
+
+        @if (showCurrency() && store.isForeignCurrency()) {
+
+          <div class="form-field">
+
+            <label class="field-label" for="eh-rate">Taux <span class="req">*</span></label>
+
+            <input id="eh-rate" type="number" step="0.00001" min="0" class="me-input"
+                   [class.me-input--locked]="!canOverrideRate()"
+                   [readonly]="!canOverrideRate()"
+                   [ngModel]="store.exchangeRate()" (ngModelChange)="onRateChange($event)"
+                   [attr.aria-label]="'Taux de change ' + store.currency()" />
+
+            @if (rateError(); as err) {
+
+              <p class="eh-rate-msg eh-rate-msg--error" role="alert">{{ err }}</p>
+
+            } @else if (store.exchangeRate() !== null) {
+
+              <p class="eh-rate-msg">1 {{ store.currency() }} = {{ store.exchangeRate() }} {{ functionalCurrency }}</p>
+
+            }
+
+          </div>
+
+        }
 
 
 
@@ -193,6 +255,10 @@ import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
 
     .me-input:focus { outline:none; border-color:var(--color-primary-500); box-shadow:0 0 0 3px var(--color-primary-200); }
 
+    .eh-rate-msg { font-size:var(--font-size-xs); color:var(--color-text-secondary); margin:0; font-variant-numeric:tabular-nums; }
+
+    .eh-rate-msg--error { color:var(--color-error-600); }
+
   `
 
 })
@@ -208,6 +274,111 @@ export class EntryHeaderFormComponent {
   readonly lockJournal = input(false);
 
   readonly lockDate = input(false);
+
+
+
+  private readonly api = inject(AccountingService);
+
+  private readonly flags = inject(AccountingFeatureFlagsService);
+
+  private readonly auth = inject(AuthService);
+
+
+
+  readonly functionalCurrency = FUNCTIONAL_CURRENCY;
+
+  readonly rateError = signal<string | null>(null);
+
+
+
+  readonly currencies = computed(() => this.refs.currencies());
+
+
+
+  /**
+   * Le sélecteur n'apparaît que si le module est activé ET qu'il existe une alternative à la devise
+   * de tenue : un dossier mono-devise retrouve l'écran d'avant, au pixel près.
+   */
+  readonly showCurrency = computed(() =>
+    this.flags.isEnabled('multiCurrencyEnabled') && this.currencies().length > 1
+  );
+
+
+
+  /** Sans cette permission le taux est en lecture seule : il fixe la valeur comptable de l'écriture. */
+  readonly canOverrideRate = computed(() =>
+    this.auth.hasPermission(PERMISSIONS.accounting.exchangeRateOverride)
+  );
+
+
+
+  constructor() {
+    // Les décimales suivent la devise, d'où qu'elle vienne : le sélecteur, ou une écriture
+    // rechargée. L'effet dépend aussi du catalogue, donc il se corrige de lui-même si les
+    // devises arrivent après l'écriture.
+    effect(() => {
+      const code = this.store.currency();
+      const found = this.currencies().find(c => c.code === code);
+      this.store.currencyDecimals.set(found?.decimalPlaces ?? MILLIME_DECIMALS);
+    });
+
+    // Le taux dépend de la devise ET du mois de l'écriture : changer l'une ou l'autre le réévalue.
+    // La résolution est déléguée au serveur, pour que l'écran affiche exactement ce qui sera
+    // comptabilisé plutôt qu'une estimation locale.
+    effect(() => {
+      const code = this.store.currency();
+      const date = this.store.entryDate();
+
+      if (code === FUNCTIONAL_CURRENCY) {
+        this.store.exchangeRate.set(null);
+        this.rateError.set(null);
+        return;
+      }
+
+      if (!date) return;
+
+      this.api.resolveExchangeRate(code, date).subscribe({
+        next: res => {
+          // Une écriture rechargée garde le taux avec lequel elle a été comptabilisée : le
+          // remplacer par celui de la table la revaloriserait à la simple réouverture du
+          // formulaire. Dès que la devise ou la date change, la clé ne correspond plus et le
+          // taux fraîchement résolu reprend la main.
+          const hydrated = this.store.isHydratedRate(code, date);
+          if (res.success && res.data) {
+            if (!hydrated) this.store.exchangeRate.set(res.data.rate);
+            this.rateError.set(null);
+          } else {
+            // Aucun taux configuré pour la période : on efface plutôt que de laisser un taux
+            // périmé, et le message porte le mois exact à renseigner. Le taux d'une écriture
+            // rechargée survit en revanche au message : il est déjà comptabilisé.
+            if (!hydrated) this.store.exchangeRate.set(null);
+            this.rateError.set(res.error ?? 'Taux indisponible');
+          }
+        },
+        error: () => {
+          if (!this.store.isHydratedRate(code, date)) this.store.exchangeRate.set(null);
+          this.rateError.set('Taux indisponible');
+        }
+      });
+    });
+  }
+
+
+
+  onCurrencyChange(code: string): void {
+    // Choix délibéré de l'utilisateur : le taux de l'écriture rechargée ne fait plus foi, c'est
+    // celui de la table qui reprend la main. Les décimales, elles, suivent par l'effet du
+    // constructeur — un seul chemin, donc aucun risque qu'un rechargement les laisse sur la
+    // devise précédente.
+    this.store.clearHydratedRate();
+    this.store.currency.set(code);
+  }
+
+
+
+  onRateChange(value: number | null): void {
+    this.store.exchangeRate.set(value === null || value <= 0 ? null : value);
+  }
 
 
 

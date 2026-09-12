@@ -26,6 +26,7 @@ import {
   todayLocalYmd,
   validateDateRange
 } from '../shared/accounting-date-utils';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /** Ligne du centralisateur : un journal, ses montants mois par mois et son total. */
 interface CentralizerRow {
@@ -328,6 +329,7 @@ const FILE_BASE_BY_TAB: readonly string[] = [
   `
 })
 export class JournalSummaryComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly journalCatalog = inject(AccountingJournalCatalogService);
 
@@ -413,9 +415,9 @@ export class JournalSummaryComponent implements OnInit {
           if (res.success && res.data) this.summary.set(res.data);
           else this.error.set(res.error ?? 'Erreur');
         },
-        error: () => {
+        error: err => {
           this.loading.set(false);
-          this.error.set('Erreur réseau');
+          this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
         }
       });
   }
@@ -439,9 +441,9 @@ export class JournalSummaryComponent implements OnInit {
           const base = FILE_BASE_BY_TAB[this.activeTabIndex];
           downloadBlob(blob, `${base}_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
         },
-        error: () => {
+        error: err => {
           this.exporting.set(false);
-          this.error.set("Erreur lors de l'export.");
+          this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
         }
       });
   }

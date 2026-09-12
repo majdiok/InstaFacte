@@ -29,6 +29,7 @@ import {
 } from '../services/bank-reconciliation.service';
 import { BankAccountDto, BankAccountService } from '@core/services/bank-account.service';
 import { formatLocalDate, parseLocalDateString } from '../shared/accounting-date-utils';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 interface WizardStepDef {
   index: 1 | 2 | 3 | 4;
@@ -805,6 +806,7 @@ interface WizardStepDef {
   `
 })
 export class BankReconciliationComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(BankReconciliationService);
   private readonly accounting = inject(AccountingService);
   private readonly bankAccountsApi = inject(BankAccountService);
@@ -976,9 +978,9 @@ export class BankReconciliationComponent implements OnInit {
           this.statements.set(list);
         } else this.error.set(res.error ?? 'Erreur de chargement des relevés.');
       },
-      error: () => {
+      error: err => {
         this.loadingList.set(false);
-        this.error.set('Erreur réseau lors du chargement des relevés.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors du chargement des relevés.'));
       }
     });
   }
@@ -1032,9 +1034,9 @@ export class BankReconciliationComponent implements OnInit {
           this.error.set(res.error ?? 'Relevé introuvable.');
         }
       },
-      error: () => {
+      error: err => {
         this.loadingDetail.set(false);
-        this.error.set('Erreur réseau lors du chargement du relevé.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors du chargement du relevé.'));
       }
     });
   }
@@ -1049,7 +1051,7 @@ export class BankReconciliationComponent implements OnInit {
         if (res.success && res.data) this.reconStatement.set(res.data);
         else this.reconError.set(res.error ?? "Impossible d'établir l'état de rapprochement.");
       },
-      error: () => this.reconError.set("Erreur réseau lors du chargement de l'état de rapprochement.")
+      error: err => this.reconError.set(this.errors.extractErrorMessage(err, "Erreur réseau lors du chargement de l'état de rapprochement."))
     });
   }
 
@@ -1068,9 +1070,9 @@ export class BankReconciliationComponent implements OnInit {
         this.exportingRecon.set(false);
         downloadBlob(blob, `etat_rapprochement_${id}.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exportingRecon.set(false);
-        this.toast.add({ severity: 'error', summary: "Erreur lors de l'export de l'état de rapprochement.", life: 4000 });
+        this.toast.add({ severity: 'error', summary: this.errors.extractErrorMessage(err, "Erreur lors de l'export de l'état de rapprochement."), life: 4000 });
       }
     });
   }
@@ -1140,9 +1142,9 @@ export class BankReconciliationComponent implements OnInit {
         this.lastSourceFileName = this.selectedFile()?.name ?? null;
         this.lastImportMethod = this.mapImportMethod(data.extractionMethod, this.fileFormat);
       },
-      error: () => {
+      error: err => {
         this.previewing.set(false);
-        this.error.set("Erreur réseau lors de l'aperçu du relevé.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur réseau lors de l'aperçu du relevé."));
       }
     });
   }
@@ -1187,9 +1189,9 @@ export class BankReconciliationComponent implements OnInit {
         this.step.set(2);
         this.runAutoAssociate();
       },
-      error: () => {
+      error: err => {
         this.importing.set(false);
-        this.error.set("Erreur réseau lors de l'import du relevé.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur réseau lors de l'import du relevé."));
       }
     });
   }
@@ -1244,9 +1246,9 @@ export class BankReconciliationComponent implements OnInit {
             .map(a => a.bankStatementLineId));
         this.checked.set(preChecked);
       },
-      error: () => {
+      error: err => {
         this.autoAssociating.set(false);
-        this.error.set("Erreur réseau lors de l'association automatique.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur réseau lors de l'association automatique."));
       }
     });
   }
@@ -1289,9 +1291,9 @@ export class BankReconciliationComponent implements OnInit {
         });
         this.refreshSelected(() => this.runAutoAssociate());
       },
-      error: () => {
+      error: err => {
         this.applying.set(false);
-        this.error.set('Erreur réseau lors du rapprochement en lot.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors du rapprochement en lot.'));
       }
     });
   }
@@ -1340,9 +1342,9 @@ export class BankReconciliationComponent implements OnInit {
         const wantDebit = !line.isDebit;
         this.candidates.set(res.data.filter(c => !c.isDraft && (wantDebit ? c.debit > 0 : c.credit > 0)));
       },
-      error: () => {
+      error: err => {
         this.loadingCandidates.set(false);
-        this.error.set('Erreur réseau lors de la recherche de candidats.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors de la recherche de candidats.'));
       }
     });
   }
@@ -1367,9 +1369,9 @@ export class BankReconciliationComponent implements OnInit {
         this.closeCandidates();
         this.refreshSelected();
       },
-      error: () => {
+      error: err => {
         this.reconciling.set(false);
-        this.error.set('Erreur réseau lors du rapprochement.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors du rapprochement.'));
       }
     });
   }
@@ -1388,9 +1390,9 @@ export class BankReconciliationComponent implements OnInit {
         this.toast.add({ severity: 'success', summary: 'Rapprochement annulé', detail: line.description, life: 3000 });
         this.refreshSelected();
       },
-      error: () => {
+      error: err => {
         this.reconciling.set(false);
-        this.error.set('Erreur réseau lors du dé-rapprochement.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors du dé-rapprochement.'));
       }
     });
   }
@@ -1436,9 +1438,9 @@ export class BankReconciliationComponent implements OnInit {
           if (this.step() === 2) this.runAutoAssociate();
         });
       },
-      error: () => {
+      error: err => {
         this.creatingEntry.set(false);
-        this.error.set('Erreur réseau lors de la comptabilisation.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors de la comptabilisation.'));
       }
     });
   }

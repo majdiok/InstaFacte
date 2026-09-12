@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
+using FactuTrust.Infrastructure.Tests.Fakes;
 
 namespace FactuTrust.Infrastructure.Tests.Application;
 
@@ -136,6 +137,7 @@ public sealed class UpdateDraftJournalEntryCommandHandlerTests
             new FakeCurrentUser { IsAccountingFirmDelegatedContext = isFirm },
             lettering,
             new PassthroughTenantUnitOfWork(),
+            new FakeExchangeRateResolver(),
             NullLogger<UpdateDraftJournalEntryCommandHandler>.Instance);
     }
 

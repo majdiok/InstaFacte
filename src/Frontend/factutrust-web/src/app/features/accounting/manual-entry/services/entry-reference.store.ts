@@ -6,6 +6,7 @@ import {
   AccountingService,
   AccountingPeriodDto,
   ChartOfAccountDto,
+  CurrencyDto,
   JournalDto
 } from '../../services/accounting.service';
 import { TaxService, VatRateOption } from '@core/services/tax.service';
@@ -36,6 +37,13 @@ export class EntryReferenceStore {
   readonly vatRates = signal<VatRateOption[]>([]);
   readonly vatRatesFromFallback = signal(false);
   readonly bankAccounts = signal<BankAccountDto[]>([]);
+
+  /**
+   * Devises actives du catalogue, taux de l'exercice de la date du jour compris. Chargées même
+   * quand le multi-devises est éteint : la liste est alors simplement réduite à la devise de tenue,
+   * et rien ne l'expose dans l'interface.
+   */
+  readonly currencies = signal<CurrencyDto[]>([]);
   readonly loading = signal(true);
   readonly accountSuggestions = signal<AccountSuggestion[]>([]);
   readonly thirdPartySuggestions = signal<ThirdPartyRef[]>([]);
@@ -47,11 +55,12 @@ export class EntryReferenceStore {
       periods: this.api.getPeriods().pipe(catchError(() => of(null))),
       journals: this.api.getJournals().pipe(catchError(() => of(null))),
       vatRates: this.taxService.getVatRates({ skipGlobalErrorUi: true }).pipe(catchError(() => of(null))),
-      banks: this.bankService.list().pipe(catchError(() => of(null)))
+      banks: this.bankService.list().pipe(catchError(() => of(null))),
+      currencies: this.api.getCurrencies(new Date().getFullYear()).pipe(catchError(() => of(null)))
     })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: ({ accounts, periods, journals, vatRates, banks }) => {
+        next: ({ accounts, periods, journals, vatRates, banks, currencies }) => {
           if (accounts?.success && accounts.data) this.accounts.set(accounts.data);
           if (periods?.success && periods.data) this.periods.set(periods.data);
           if (journals?.success && journals.data) this.journals.set(journals.data);
@@ -63,6 +72,7 @@ export class EntryReferenceStore {
             this.vatRatesFromFallback.set(true);
           }
           if (banks?.success && banks.data) this.bankAccounts.set(banks.data.filter(b => b.isActive));
+          if (currencies?.success && currencies.data) this.currencies.set(currencies.data.filter(c => c.isActive));
           this.loading.set(false);
         },
         error: () => this.loading.set(false)

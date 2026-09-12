@@ -38,6 +38,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
 import { AccountingAmountInputComponent } from '../shared/accounting-amount-input.component';
 import { todayLocalYmd } from '../shared/accounting-date-utils';
 import { validateAccountTriplet } from './fixed-asset-account-rules';
+import { AccountingAmountPipe } from '../shared/accounting-amount.pipe';
 
 interface AssetFormModel {
   label: string;
@@ -68,7 +69,7 @@ type DisposalMode = 'cash' | 'receivable' | 'scrap';
 @Component({
   selector: 'app-fixed-asset-detail',
   standalone: true,
-  imports: [
+  imports: [AccountingAmountPipe, 
     CommonModule,
     FormsModule,
     RouterModule,
@@ -396,7 +397,7 @@ type DisposalMode = 'cash' | 'receivable' | 'scrap';
     <ng-template #normTable let-s let-simulated="simulated">
       <div class="norm-summary" *ngIf="s.lines.length">
         <div><strong>Nature du bien :</strong> {{ s.label }}</div>
-        <div><strong>Montant amortissable :</strong> {{ s.depreciableBase | number: '1.3-3' }} TND</div>
+        <div><strong>Montant amortissable :</strong> {{ s.depreciableBase | accountingAmount }}</div>
         <div><strong>Date de mise en service :</strong> {{ s.inServiceDate ? (s.inServiceDate | date: 'dd/MM/yyyy') : '—' }}</div>
         <div><strong>Durée de vie :</strong> {{ s.usefulLifeYears | number: '1.0-2' }} ans</div>
         <div><strong>Taux d'amortissement :</strong> {{ s.depreciationRatePercent | number: '1.2-2' }} %</div>
@@ -493,7 +494,7 @@ type DisposalMode = 'cash' | 'receivable' | 'scrap';
         <ng-container *ngIf="asset()!.depreciationMethod === DepreciationMethod.Accelerated"> (coefficient {{ asset()!.accelerationCoefficient | number: '1.1-2' }})</ng-container>
       </p>
       <p><strong>Comptes :</strong> {{ asset()!.assetAccountNumber }} / {{ asset()!.depreciationAccountNumber }} / {{ asset()!.expenseAccountNumber }}</p>
-      <p><strong>VNC actuelle :</strong> {{ asset()!.netBookValue | number: '1.3-3' }} TND</p>
+      <p><strong>VNC actuelle :</strong> {{ asset()!.netBookValue | accountingAmount }}</p>
       <p *ngIf="asset()!.supplierInvoiceId">
         <strong>Facture fournisseur :</strong>
         <a [routerLink]="['/supplier-invoices', asset()!.supplierInvoiceId]">Voir la facture source</a>

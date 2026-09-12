@@ -14,6 +14,8 @@ public static class DelegatedPermissionCatalog
         Permissions.Accounting.Create,
         Permissions.Accounting.Delete,
         Permissions.Accounting.Close,
+        Permissions.Accounting.CurrenciesManage,
+        Permissions.Accounting.ExchangeRateOverride,
         Permissions.Accounting.Validate,
         Permissions.Accounting.Reverse,
         Permissions.Accounting.Import,

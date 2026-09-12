@@ -49,6 +49,7 @@ interface ThirdPartyCard {
     }
   `,
   styles: `
+    :host { display:contents; }
     .tp-panel { padding:var(--spacing-4); margin-bottom:0; }
     .tp-panel__title { font-size:var(--font-size-sm); font-weight:var(--font-weight-semibold); margin:0 0 var(--spacing-2); text-transform:uppercase; color:var(--color-text-secondary); }
     .tp-panel__name { font-weight:var(--font-weight-semibold); margin:0 0 var(--spacing-2); }

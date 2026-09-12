@@ -161,6 +161,57 @@ public sealed class JournalEntryRepository : IJournalEntryRepository
             .CountAsync(j => j.Status == JournalEntryStatus.Brouillon && j.EntryDate.Year == fiscalYear, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<(string AccountNumber, string CurrencyCode, decimal NetInCurrency, decimal NetFunctional)>>
+        GetOpenForeignCurrencyPositionsAsync(DateTime asOf, CancellationToken cancellationToken = default)
+    {
+        var limit = asOf.Date;
+        await using var context = _contextFactory.CreateContext();
+
+        var rows = await context.JournalEntryLines
+            .AsNoTracking()
+            .Include(l => l.JournalEntry)
+            .Where(l => l.JournalEntry.EntryDate <= limit
+                        && l.JournalEntry.CurrencyCode != "TND"
+                        && l.LetteringCode == null
+                        && (l.AccountNumber.StartsWith("4") || l.AccountNumber.StartsWith("5")))
+            .Select(l => new
+            {
+                l.AccountNumber,
+                l.JournalEntry.CurrencyCode,
+                DebitCurrency = l.DebitAmountInCurrency,
+                CreditCurrency = l.CreditAmountInCurrency,
+                Debit = l.DebitAmount.Amount,
+                Credit = l.CreditAmount.Amount
+            })
+            .ToListAsync(cancellationToken);
+
+        // Agrégation en mémoire : les montants owned (Money) ne se regroupent pas côté SQL.
+        return rows
+            .GroupBy(r => new { r.AccountNumber, r.CurrencyCode })
+            .Select(g => (
+                g.Key.AccountNumber,
+                g.Key.CurrencyCode,
+                NetInCurrency: g.Sum(x => x.DebitCurrency - x.CreditCurrency),
+                NetFunctional: g.Sum(x => x.Debit - x.Credit)))
+            .Where(p => p.NetInCurrency != 0 || p.NetFunctional != 0)
+            .OrderBy(p => p.AccountNumber)
+            .ThenBy(p => p.CurrencyCode)
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<JournalEntryLine>> GetLinesByIdsAsync(IReadOnlyList<Guid> lineIds, CancellationToken cancellationToken = default)
+    {
+        if (lineIds.Count == 0)
+            return Array.Empty<JournalEntryLine>();
+
+        await using var context = _contextFactory.CreateContext();
+        return await context.JournalEntryLines
+            .AsNoTracking()
+            .Include(l => l.JournalEntry)
+            .Where(l => lineIds.Contains(l.Id))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<JournalEntry> AddAsync(JournalEntry entity, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

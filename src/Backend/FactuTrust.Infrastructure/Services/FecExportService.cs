@@ -4,6 +4,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Infrastructure.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
+using FactuTrust.Domain.ValueObjects;
 
 namespace FactuTrust.Infrastructure.Services;
 
@@ -149,6 +150,20 @@ public sealed class FecExportService : IFecExportService
                 if (!string.IsNullOrEmpty(line.LetteringCode) && letteringDates.TryGetValue(line.Id, out var letDate))
                     dateLet = letDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
 
+                // Montantdevise / Idevise : renseignés uniquement pour une opération en devise.
+                // Le FEC attend le montant DANS la devise d'origine et son code ; les colonnes Debit
+                // et Credit restent, elles, en devise de tenue.
+                var montantDevise = string.Empty;
+                var idevise = string.Empty;
+                if (!string.Equals(entry.CurrencyCode, Money.DefaultCurrency, StringComparison.Ordinal))
+                {
+                    var amountInCurrency = line.DebitAmountInCurrency > 0
+                        ? line.DebitAmountInCurrency
+                        : line.CreditAmountInCurrency;
+                    montantDevise = FormatAmount(amountInCurrency);
+                    idevise = entry.CurrencyCode;
+                }
+
                 var fields = new[]
                 {
                     entry.JournalCode,
@@ -167,8 +182,8 @@ public sealed class FecExportService : IFecExportService
                     line.LetteringCode ?? string.Empty,
                     dateLet,
                     ecritureDate, // ValidDate
-                    string.Empty, // Montantdevise (requires multi-currency support)
-                    string.Empty  // Idevise (requires multi-currency support)
+                    montantDevise,
+                    idevise
                 };
 
                 sb.AppendLine(string.Join(Sep, fields));

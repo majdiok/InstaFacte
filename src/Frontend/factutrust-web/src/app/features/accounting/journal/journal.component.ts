@@ -28,6 +28,8 @@ import { ConfirmationService } from '@core/services/confirmation.service';
 import { canDeleteDraftAccountingEntries, canEditDraftAccountingEntries, canValidateAccountingEntries } from '@core/utils/accounting-access';
 import { AccountingJournalCatalogService } from '../shared/accounting-journal-catalog.service';
 import { AccountingJournalTab } from '../shared/accounting-journal-tabs.model';
+import { FUNCTIONAL_CURRENCY } from '../manual-entry/models/entry-form.model';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /** Types de source désignant une écriture générée par le module Paie.
  *  Ces écritures ne sont ni supprimables ni extournables depuis la comptabilité —
@@ -62,6 +64,10 @@ type JournalFlatRow = {
   attachmentCount: number;
   /** Vrai sur la première ligne d'une écriture : porte le badge de statut et l'action de validation. */
   firstOfEntry: boolean;
+  /** Devise de l'opération. Devise de tenue en mono-devise. */
+  currency: string;
+  /** Montant dans la devise d'origine. 0 en mono-devise. */
+  amountInCurrency: number;
 };
 
 @Component({
@@ -214,6 +220,9 @@ type JournalFlatRow = {
             <th scope="col" class="journal-col-narrow">N°</th>
             <th scope="col">Libellé</th>
             <th scope="col" class="journal-col-account">Compte</th>
+            @if (hasForeignCurrency()) {
+              <th scope="col" class="journal-col-narrow">Devise</th>
+            }
             <th scope="col" class="journal-col-amount">Débit</th>
             <th scope="col" class="journal-col-amount">Crédit</th>
             <th scope="col" class="journal-col-narrow">Statut</th>
@@ -234,6 +243,16 @@ type JournalFlatRow = {
             <td class="journal-col-account" data-label="Compte">
               <span class="journal-account-code">{{ r.account }}</span>
             </td>
+            @if (hasForeignCurrency()) {
+              <td class="journal-col-narrow" data-label="Devise">
+                @if (r.currency !== functionalCurrency) {
+                  <span class="journal-account-code">{{ r.currency }}</span>
+                  <span class="journal-currency-amount">{{ r.amountInCurrency | number : '1.2-2' }}</span>
+                } @else {
+                  <span class="journal-currency-none">—</span>
+                }
+              </td>
+            }
             <td class="journal-col-amount" data-label="Débit">{{ r.debit | number : '1.3-3' }}</td>
             <td class="journal-col-amount" data-label="Crédit">{{ r.credit | number : '1.3-3' }}</td>
             <td class="journal-col-narrow" data-label="Statut">
@@ -323,7 +342,7 @@ type JournalFlatRow = {
         </ng-template>
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="9" class="journal-empty">
+            <td [attr.colspan]="hasForeignCurrency() ? 10 : 9" class="journal-empty">
               <p class="journal-empty-title">Aucune ligne</p>
               <p class="journal-empty-hint">Élargissez la période, actualisez ou modifiez le filtre de recherche.</p>
             </td>
@@ -539,6 +558,8 @@ type JournalFlatRow = {
       width: 1%;
       white-space: nowrap;
     }
+    .journal-currency-amount { margin-left:var(--spacing-1); font-variant-numeric:tabular-nums; color:var(--color-text-secondary); font-size:var(--font-size-xs); }
+    .journal-currency-none { color:var(--color-text-tertiary); }
     .journal-account-code {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-variant-numeric: tabular-nums;
@@ -723,6 +744,7 @@ type JournalFlatRow = {
   `
 })
 export class JournalComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly monitoring = inject(AccountingMonitoringService);
   private readonly auth = inject(AuthService);
@@ -769,6 +791,16 @@ export class JournalComponent implements OnInit {
   readonly uploading = signal(false);
   readonly attachBusyId = signal<string | null>(null);
   readonly attachError = signal<string | null>(null);
+
+  readonly functionalCurrency = FUNCTIONAL_CURRENCY;
+
+  /**
+   * La colonne Devise n'apparaît que si le journal affiché porte au moins une opération en devise :
+   * un dossier mono-devise conserve exactement les neuf colonnes d'avant.
+   */
+  readonly hasForeignCurrency = computed(() =>
+    this.flatRows().some(r => r.currency !== FUNCTIONAL_CURRENCY)
+  );
 
   readonly totals = computed(() => {
     let debit = 0;
@@ -820,9 +852,9 @@ export class JournalComponent implements OnInit {
         this.exporting.set(false);
         downloadBlob(blob, `journal_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }
@@ -857,6 +889,8 @@ export class JournalComponent implements OnInit {
               account: l.accountNumber,
               debit: l.debit,
               credit: l.credit,
+              currency: e.currencyCode ?? FUNCTIONAL_CURRENCY,
+              amountInCurrency: (l.debitInCurrency || l.creditInCurrency) ?? 0,
               status: e.status,
               isDraft: e.isDraft,
               isReversed: e.isReversed,
@@ -1003,9 +1037,9 @@ export class JournalComponent implements OnInit {
         if (res.success && res.data) this.attachments.set(res.data);
         else this.attachError.set(res.error ?? 'Erreur de chargement des pièces.');
       },
-      error: () => {
+      error: err => {
         this.attachLoading.set(false);
-        this.attachError.set('Erreur réseau lors du chargement des pièces.');
+        this.attachError.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors du chargement des pièces.'));
       }
     });
   }
@@ -1025,9 +1059,9 @@ export class JournalComponent implements OnInit {
         if (res.success) this.reloadAttachments(target.entryId);
         else this.attachError.set(res.error ?? "Erreur lors de l'ajout de la pièce.");
       },
-      error: () => {
+      error: err => {
         this.uploading.set(false);
-        this.attachError.set("Erreur réseau lors de l'ajout de la pièce.");
+        this.attachError.set(this.errors.extractErrorMessage(err, "Erreur réseau lors de l'ajout de la pièce."));
       }
     });
   }
@@ -1044,9 +1078,9 @@ export class JournalComponent implements OnInit {
         link.click();
         URL.revokeObjectURL(url);
       },
-      error: () => {
+      error: err => {
         this.attachBusyId.set(null);
-        this.attachError.set('Erreur lors du téléchargement.');
+        this.attachError.set(this.errors.extractErrorMessage(err, 'Erreur lors du téléchargement.'));
       }
     });
   }
@@ -1068,9 +1102,9 @@ export class JournalComponent implements OnInit {
             if (res.success) this.reloadAttachments(a.journalEntryId);
             else this.attachError.set(res.error ?? 'Erreur lors de la suppression.');
           },
-          error: () => {
+          error: err => {
             this.attachBusyId.set(null);
-            this.attachError.set('Erreur réseau lors de la suppression.');
+            this.attachError.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors de la suppression.'));
           }
         });
       }

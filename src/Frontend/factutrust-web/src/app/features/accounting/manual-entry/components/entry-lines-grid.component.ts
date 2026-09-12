@@ -9,7 +9,7 @@ import { VatAssistService } from '../services/vat-assist.service';
 import { EntryGridNavigationService } from '../services/entry-grid-navigation.service';
 import { BalanceIndicatorComponent } from './balance-indicator.component';
 import { AccountingAmountInputComponent } from '../../shared/accounting-amount-input.component';
-import { ThirdPartyRef } from '../models/entry-form.model';
+import { FUNCTIONAL_CURRENCY, ThirdPartyRef } from '../models/entry-form.model';
 
 @Component({
   selector: 'app-entry-lines-grid',
@@ -24,7 +24,7 @@ import { ThirdPartyRef } from '../models/entry-form.model';
                 [class.balanced]="store.isBalanced()"
                 [class.unbalanced]="!store.isBalanced()"
                 aria-live="polite">
-            Solde <strong>{{ store.balance() | number:'1.3-3' }}</strong> TND
+            Solde <strong>{{ store.balance() | number : store.amountFormat() }}</strong> {{ store.currency() }}
           </span>
         }
       </div>
@@ -62,8 +62,12 @@ import { ThirdPartyRef } from '../models/entry-form.model';
               <th class="col-account" style="width:14%">Compte général</th>
               <th class="col-label" style="width:22%">Libellé</th>
               <th class="col-aux" style="width:16%">Auxiliaire</th>
-              <th class="col-amount text-right" style="width:11%">Débit</th>
-              <th class="col-amount text-right" style="width:11%">Crédit</th>
+              <th class="col-amount text-right" style="width:11%">Débit{{ currencySuffix() }}</th>
+              <th class="col-amount text-right" style="width:11%">Crédit{{ currencySuffix() }}</th>
+              @if (store.isForeignCurrency()) {
+                <th class="col-amount text-right" style="width:11%">Débit ({{ functionalCurrency }})</th>
+                <th class="col-amount text-right" style="width:11%">Crédit ({{ functionalCurrency }})</th>
+              }
               @if (store.columnVisibility().piece) {
                 <th style="width:8%">Pièce <span class="assist-hint" title="Aide à la saisie — non comptabilisé">ⓘ</span></th>
               }
@@ -140,6 +144,7 @@ import { ThirdPartyRef } from '../models/entry-form.model';
                   [navigateOnTab]="true"
                   [rowIndex]="i"
                   side="debit"
+                  [fractionDigits]="store.currencyDecimals()"
                   [inputId]="'debit-' + i"
                   [ariaLabel]="'Débit ligne ' + (i + 1)"
                   [disabled]="!!line.isVatGenerated"
@@ -157,6 +162,7 @@ import { ThirdPartyRef } from '../models/entry-form.model';
                   [navigateOnTab]="true"
                   [rowIndex]="i"
                   side="credit"
+                  [fractionDigits]="store.currencyDecimals()"
                   [inputId]="'credit-' + i"
                   [ariaLabel]="'Crédit ligne ' + (i + 1)"
                   [disabled]="!!line.isVatGenerated"
@@ -165,6 +171,14 @@ import { ThirdPartyRef } from '../models/entry-form.model';
                   (enterPressed)="onAmountEnter(i, 'credit', line)"
                   (tabFromAmount)="onAmountTab(i, 'credit', line, $event.shiftKey)" />
               </td>
+              @if (store.isForeignCurrency()) {
+                <td class="col-amount text-right me-amount-cell me-amount-local">
+                  {{ store.toLocalAmount(line.debit) | number : '1.3-3' }}
+                </td>
+                <td class="col-amount text-right me-amount-cell me-amount-local">
+                  {{ store.toLocalAmount(line.credit) | number : '1.3-3' }}
+                </td>
+              }
               @if (store.columnVisibility().piece) {
                 <td>
                   <input type="text" [(ngModel)]="line.pieceRef" class="me-line-input"
@@ -202,8 +216,12 @@ import { ThirdPartyRef } from '../models/entry-form.model';
           <ng-template pTemplate="footer">
             <tr class="lines-grid__footer-totals">
               <td [attr.colspan]="footerColspan()">Totaux</td>
-              <td class="text-right me-amount-cell">{{ store.totals().debit | number:'1.3-3' }}</td>
-              <td class="text-right me-amount-cell">{{ store.totals().credit | number:'1.3-3' }}</td>
+              <td class="text-right me-amount-cell">{{ store.totals().debit | number : store.amountFormat() }}</td>
+              <td class="text-right me-amount-cell">{{ store.totals().credit | number : store.amountFormat() }}</td>
+              @if (store.isForeignCurrency()) {
+                <td class="text-right me-amount-cell me-amount-local">{{ store.localTotals().debit | number : '1.3-3' }}</td>
+                <td class="text-right me-amount-cell me-amount-local">{{ store.localTotals().credit | number : '1.3-3' }}</td>
+              }
               @if (store.columnVisibility().piece) { <td></td> }
               @if (store.columnVisibility().dueDate) { <td></td> }
               @if (store.columnVisibility().vat) { <td></td> }
@@ -217,6 +235,8 @@ import { ThirdPartyRef } from '../models/entry-form.model';
       <app-balance-indicator
         [totalDebit]="store.totals().debit"
         [totalCredit]="store.totals().credit"
+        [currencyCode]="store.currency()"
+        [amountFormat]="store.amountFormat()"
         [canAutoBalance]="store.canAutoBalance()"
         (autoBalance)="store.autoBalance()" />
     </section>
@@ -236,6 +256,7 @@ import { ThirdPartyRef } from '../models/entry-form.model';
     .me-amount-debit { background: color-mix(in srgb, var(--color-primary-500, #3b82f6) 6%, transparent); }
     .me-amount-credit { background: color-mix(in srgb, var(--color-success-500, #22c55e) 6%, transparent); }
     .me-amount-cell { font-variant-numeric:tabular-nums; }
+    .me-amount-local { color:var(--color-text-secondary); background:var(--color-background-subtle); }
     .text-right { text-align:right; }
     .text-center { text-align:center; }
     .me-row-actions { display:flex; gap:var(--spacing-1); justify-content:center; }
@@ -286,6 +307,7 @@ export class EntryLinesGridComponent {
 
   readonly compactMode = input(false);
   readonly hideAnalyzeSlot = input(false);
+  readonly functionalCurrency = FUNCTIONAL_CURRENCY;
   readonly title = input('Lignes d\'écriture');
 
   accountSuggestions: AccountSuggestion[] = [];
@@ -293,6 +315,11 @@ export class EntryLinesGridComponent {
   allSelected(): boolean {
     const n = this.store.lines().length;
     return n > 0 && this.store.selectedLineIndexes().size === n;
+  }
+
+  /** Suffixe « (EUR) » sur les colonnes saisies, vide en mono-devise. */
+  currencySuffix(): string {
+    return this.store.isForeignCurrency() ? ` (${this.store.currency()})` : '';
   }
 
   footerColspan(): number {

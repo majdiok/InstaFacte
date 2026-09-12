@@ -110,6 +110,7 @@ public sealed class TenantAuthTokenServicePayrollFirmManagedTests
             config,
             Microsoft.Extensions.Options.Options.Create(new AccountingFirmsOptions { Enabled = true }),
             Microsoft.Extensions.Options.Options.Create(new PayrollOptions { FirmExclusiveOperations = firmExclusiveOperations }),
+            Microsoft.Extensions.Options.Options.Create(new AccountingSettings { MultiCurrencyEnabled = true }),
             Microsoft.Extensions.Options.Options.Create(new FirmGovernanceOptions { Enabled = true }),
             Mock.Of<ILogger<TenantAuthTokenService>>());
     }

@@ -17,6 +17,7 @@ import {
 } from '../shared/accounting-date-utils';
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /**
  * Balance auxiliaire : une ligne par tiers (clients ou fournisseurs) avec soldes
@@ -143,6 +144,7 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
   `
 })
 export class AuxiliaryBalanceComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
 
   kind = 1;
@@ -188,9 +190,9 @@ export class AuxiliaryBalanceComponent implements OnInit {
         if (res.success && res.data) this.rows.set(res.data);
         else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }
@@ -210,9 +212,9 @@ export class AuxiliaryBalanceComponent implements OnInit {
         const kindName = this.kind === 1 ? 'clients' : 'fournisseurs';
         downloadBlob(blob, `balance_auxiliaire_${kindName}_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }

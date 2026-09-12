@@ -76,8 +76,19 @@ export class ErrorHandlerService {
   /**
    * Extracts error message from HTTP error response.
    * Handles multiple error response formats from the backend.
+   *
+   * @param networkFallback Message rendu à la place du message générique de connexion lorsque la
+   * requête n'a pas abouti du tout (`status === 0`). Il porte le contexte de l'action — « … lors du
+   * chargement du relevé. » — que le message générique ne peut pas connaître. Passer ce paramètre
+   * permet à un écran d'afficher la raison du refus côté serveur tout en conservant son message
+   * réseau d'origine. **Sans ce paramètre, le comportement est strictement celui d'avant.**
    */
-  extractErrorMessage(error: HttpErrorResponse | any): string {
+  extractErrorMessage(error: HttpErrorResponse | any, networkFallback?: string): string {
+    // Le repli n'est consenti que sur une absence totale de réponse : un 4xx porte un message
+    // métier qu'il ne faut jamais masquer derrière un libellé d'erreur réseau.
+    if (networkFallback !== undefined && (error as HttpErrorResponse)?.status === 0) {
+      return networkFallback;
+    }
     if (this.isTenantMigrationFailure(error)) {
       return this.getTenantMigrationFailureMessage();
     }

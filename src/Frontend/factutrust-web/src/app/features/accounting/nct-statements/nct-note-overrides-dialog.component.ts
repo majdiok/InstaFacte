@@ -9,6 +9,7 @@ import {
   NctNoteOverrideDto
 } from '../services/accounting.service';
 import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /** Ligne d'édition : entrée du catalogue enrichie de sa personnalisation éventuelle. */
 interface NoteEditRow {
@@ -108,6 +109,7 @@ interface NoteEditRow {
   `
 })
 export class NctNoteOverridesDialogComponent implements OnChanges {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
 
@@ -146,9 +148,9 @@ export class NctNoteOverridesDialogComponent implements OnChanges {
           }
         });
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.notify('error', 'Impossible de charger le catalogue des annexes.');
+        this.notify('error', this.errors.extractErrorMessage(err, 'Impossible de charger le catalogue des annexes.'));
       }
     });
   }
@@ -190,9 +192,9 @@ export class NctNoteOverridesDialogComponent implements OnChanges {
           this.notify('error', res.error ?? "L'enregistrement a échoué.");
         }
       },
-      error: () => {
+      error: err => {
         row.saving = false;
-        this.notify('error', "Erreur réseau lors de l'enregistrement.");
+        this.notify('error', this.errors.extractErrorMessage(err, "Erreur réseau lors de l'enregistrement."));
       }
     });
   }
@@ -209,9 +211,9 @@ export class NctNoteOverridesDialogComponent implements OnChanges {
         this.notify('success', `Note ${row.number} rétablie.`);
         this.changed.emit();
       },
-      error: () => {
+      error: err => {
         row.saving = false;
-        this.notify('error', 'Erreur réseau lors du rétablissement.');
+        this.notify('error', this.errors.extractErrorMessage(err, 'Erreur réseau lors du rétablissement.'));
       }
     });
   }

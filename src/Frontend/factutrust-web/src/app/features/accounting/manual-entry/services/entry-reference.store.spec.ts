@@ -20,6 +20,7 @@ describe('EntryReferenceStore', () => {
 
   const accountingMock = {
     getChartOfAccounts: () => of({ success: true, data: [{ accountNumber: '607', label: 'Achats', isActive: true }] }),
+            getCurrencies: () => of({ success: true, data: [] }),
     getPeriods: () => of({ success: true, data: [] }),
     getJournals: () => of({ success: true, data: [] })
   };

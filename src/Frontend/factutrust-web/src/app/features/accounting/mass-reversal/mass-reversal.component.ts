@@ -13,6 +13,7 @@ import {
   todayLocalYmd,
   validateDateRange
 } from '../shared/accounting-date-utils';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /**
  * Correction de masse d'écritures VALIDÉES par extourne.
@@ -154,6 +155,7 @@ import {
   `
 })
 export class MassReversalComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
 
   fromStr = '';
@@ -224,9 +226,9 @@ export class MassReversalComponent implements OnInit {
           this.error.set(res.error ?? 'Erreur');
         }
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }
@@ -254,10 +256,10 @@ export class MassReversalComponent implements OnInit {
           this.error.set(res.error ?? "L'extourne a échoué.");
         }
       },
-      error: () => {
+      error: err => {
         this.acting.set(false);
         this.pendingConfirm.set(false);
-        this.error.set("Erreur réseau lors de l'extourne.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur réseau lors de l'extourne."));
       }
     });
   }

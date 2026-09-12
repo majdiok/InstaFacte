@@ -200,3 +200,14 @@
   gap: var(--spacing-2);
   font-weight: var(--font-weight-regular);
 }
+
+.ledger-currency-amount {
+  margin-left: var(--spacing-1);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.ledger-currency-none {
+  color: var(--color-text-tertiary);
+}

@@ -8,6 +8,7 @@ import { AccountingService, PreClosingChecklistDto, PreClosingCheckDto } from '.
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /**
  * Contrôles de pré-clôture : diagnostic de révision d'un exercice avant clôture annuelle
@@ -124,6 +125,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
   `
 })
 export class PreClosingComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
 
   fiscalYear = new Date().getFullYear();
@@ -148,9 +150,9 @@ export class PreClosingComponent implements OnInit {
         if (res.success && res.data) this.checklist.set(res.data);
         else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }

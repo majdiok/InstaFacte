@@ -132,8 +132,16 @@ const PAYMENT_METHODS = [
               }
               <div class="form-field">
                 <label>Devise</label>
-                <input type="text" value="TND — Dinar Tunisien" readonly class="readonly" />
+                <!-- Lecture seule : la devise se choisit dans l'en-tête de l'onglet standard,
+                     mais l'état est partagé — l'afficher en dur mentirait dès qu'elle change. -->
+                <input type="text" [value]="currencyLabel()" readonly class="readonly" />
               </div>
+              @if (store.isForeignCurrency()) {
+                <div class="form-field">
+                  <label>Taux</label>
+                  <input type="text" [value]="store.exchangeRate() ?? '—'" readonly class="readonly" />
+                </div>
+              }
               <div class="form-field">
                 <label>Date d'échéance</label>
                 <input type="date" [ngModel]="store.headerDueDate()" (ngModelChange)="store.headerDueDate.set($event)" />
@@ -162,6 +170,7 @@ const PAYMENT_METHODS = [
                   [ngModel]="store.amountTtc()"
                   (ngModelChange)="onTtcChange($event)"
                   side="debit"
+                  [fractionDigits]="store.currencyDecimals()"
                   inputId="guided-amount-ttc"
                   ariaLabel="Montant TTC" />
               </div>
@@ -171,6 +180,7 @@ const PAYMENT_METHODS = [
                   [ngModel]="store.amountHt()"
                   (ngModelChange)="onHtChange($event)"
                   side="debit"
+                  [fractionDigits]="store.currencyDecimals()"
                   inputId="guided-amount-ht"
                   ariaLabel="Montant HT" />
               </div>
@@ -180,6 +190,7 @@ const PAYMENT_METHODS = [
                   [ngModel]="store.amountVat()"
                   (ngModelChange)="store.amountVat.set($event)"
                   side="credit"
+                  [fractionDigits]="store.currencyDecimals()"
                   inputId="guided-amount-vat"
                   ariaLabel="Montant TVA" />
               </div>
@@ -263,6 +274,13 @@ export class GuidedEntryComponent {
   readonly refs = inject(EntryReferenceStore);
   private readonly api = inject(AccountingService);
   private readonly destroyRef = inject(DestroyRef);
+
+  /** « EUR — Euro » quand le catalogue est chargé, le code seul sinon. */
+  currencyLabel(): string {
+    const code = this.store.currency();
+    const found = this.refs.currencies().find(c => c.code === code);
+    return found ? `${found.code} — ${found.label}` : code;
+  }
 
   @Output() finish = new EventEmitter<void>();
 

@@ -14,6 +14,7 @@ import {
   JournalEntryTemplateDto,
   JournalEntryTemplateLineRequest
 } from '../services/accounting.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 interface TemplateForm {
   id: string | null;
@@ -242,6 +243,7 @@ const JOURNAL_CODES = ['JV', 'JA', 'JC', 'JB', 'JOD', 'JIM', 'JAN'];
   `
 })
 export class EntryTemplatesComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -268,7 +270,7 @@ export class EntryTemplatesComponent implements OnInit {
         if (res.success && res.data) this.templates.set(res.data);
         else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => { this.loading.set(false); this.error.set('Erreur réseau'); }
+      error: err => { this.loading.set(false); this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau')); }
     });
   }
 
@@ -348,11 +350,11 @@ export class EntryTemplatesComponent implements OnInit {
     };
     if (f.id) {
       this.api.updateJournalTemplate(f.id, { ...request, isActive: f.isActive }).subscribe({
-        next: res => done(res.success, res.error), error: () => done(false, 'Erreur réseau')
+        next: res => done(res.success, res.error), error: err => done(false, this.errors.extractErrorMessage(err, 'Erreur réseau'))
       });
     } else {
       this.api.createJournalTemplate(request).subscribe({
-        next: res => done(res.success, res.error), error: () => done(false, 'Erreur réseau')
+        next: res => done(res.success, res.error), error: err => done(false, this.errors.extractErrorMessage(err, 'Erreur réseau'))
       });
     }
   }
@@ -375,7 +377,7 @@ export class EntryTemplatesComponent implements OnInit {
               this.load();
             } else this.error.set(res.error ?? 'Erreur lors de la génération.');
           },
-          error: () => { this.runningId.set(null); this.error.set('Erreur réseau lors de la génération.'); }
+          error: err => { this.runningId.set(null); this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors de la génération.')); }
         });
       }
     });
@@ -387,7 +389,7 @@ export class EntryTemplatesComponent implements OnInit {
         if (res.success) { this.toast.add({ severity: 'success', summary: 'Modèle supprimé', detail: t.name, life: 4000 }); this.load(); }
         else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => this.error.set('Erreur réseau')
+      error: err => this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'))
     });
   }
 }

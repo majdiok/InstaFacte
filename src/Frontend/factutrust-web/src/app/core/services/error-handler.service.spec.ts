@@ -14,6 +14,47 @@ describe('ErrorHandlerService', () => {
     expect(service).toBeTruthy();
   });
 
+  /**
+   * Le repli réseau existe pour qu'un écran affiche la raison d'un refus métier sans perdre le
+   * contexte de son message d'origine (« … lors du chargement du relevé. »). Le piège serait de
+   * l'appliquer trop largement : un 4xx porte un message qu'il ne faut jamais masquer.
+   */
+  describe('extractErrorMessage — repli réseau contextuel', () => {
+    const CONTEXTE = 'Erreur réseau lors du chargement du relevé.';
+
+    it('rend le repli quand la requête n’a pas abouti', () => {
+      const message = service.extractErrorMessage(new HttpErrorResponse({ status: 0 }), CONTEXTE);
+
+      expect(message).toBe(CONTEXTE);
+    });
+
+    it('rend le message du serveur sur un refus métier, jamais le repli', () => {
+      const error = new HttpErrorResponse({
+        status: 400,
+        error: { success: false, error: "La gestion multi-devises n'est pas activée." }
+      });
+
+      const message = service.extractErrorMessage(error, CONTEXTE);
+
+      expect(message).toBe("La gestion multi-devises n'est pas activée.");
+      expect(message).not.toBe(CONTEXTE);
+    });
+
+    it('rend le message par défaut du statut quand le corps ne porte rien', () => {
+      // Cas des exports : la réponse est un Blob, illisible ici — le statut reste parlant.
+      const error = new HttpErrorResponse({ status: 403, error: new Blob() });
+
+      expect(service.extractErrorMessage(error, CONTEXTE)).toBe('Accès non autorisé.');
+    });
+
+    it('sans le paramètre, le comportement est strictement celui d’avant', () => {
+      const network = service.extractErrorMessage(new HttpErrorResponse({ status: 0 }));
+
+      expect(network).toContain('se connecter au serveur');
+      expect(network).not.toBe(CONTEXTE);
+    });
+  });
+
   describe('extractErrorMessage', () => {
     it('should handle network error (status 0)', () => {
       const error = new HttpErrorResponse({ status: 0 });

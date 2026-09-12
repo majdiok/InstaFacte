@@ -9,6 +9,7 @@ import {
   JournalImportFormat,
   JournalImportPreviewDto
 } from '../services/accounting.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-accounting-import',
@@ -226,6 +227,7 @@ import {
   `
 })
 export class ImportComponent {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
 
   format: JournalImportFormat = JournalImportFormat.Csv;
@@ -276,9 +278,9 @@ export class ImportComponent {
         }
         this.preview.set(res.data);
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set("Erreur réseau lors de l'aperçu.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur réseau lors de l'aperçu."));
       }
     });
   }
@@ -303,9 +305,9 @@ export class ImportComponent {
         this.selectedFile.set(null);
         this.mappingFile.set(null);
       },
-      error: () => {
+      error: err => {
         this.committing.set(false);
-        this.error.set("Erreur réseau lors de l'import.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur réseau lors de l'import."));
       }
     });
   }

@@ -8,6 +8,7 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Logging;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
+using FactuTrust.Domain.Authorization;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Auth;
 using FactuTrust.Domain.Entities;
@@ -41,6 +42,7 @@ public class AuthController : ControllerBase
     private readonly IAccountingFirmRegistrationService _accountingFirmRegistrationService;
     private readonly FirmGovernanceOptions _firmGovernanceOptions;
     private readonly AccountingFirmsOptions _accountingFirmsOptions;
+    private readonly AccountingSettings _accountingSettings;
     private readonly IEmailService _emailService;
     private readonly IClientPortalService _clientPortalService;
     private readonly IRegistrationSectorService _registrationSectorService;
@@ -61,6 +63,7 @@ public class AuthController : ControllerBase
         IAccountingFirmRegistrationService accountingFirmRegistrationService,
         IOptions<FirmGovernanceOptions> firmGovernanceOptions,
         IOptions<AccountingFirmsOptions> accountingFirmsOptions,
+        IOptions<AccountingSettings> accountingSettings,
         IEmailService emailService,
         IClientPortalService clientPortalService,
         IRegistrationSectorService registrationSectorService,
@@ -80,6 +83,7 @@ public class AuthController : ControllerBase
         _accountingFirmRegistrationService = accountingFirmRegistrationService;
         _firmGovernanceOptions = firmGovernanceOptions.Value;
         _accountingFirmsOptions = accountingFirmsOptions.Value;
+        _accountingSettings = accountingSettings.Value;
         _emailService = emailService;
         _clientPortalService = clientPortalService;
         _registrationSectorService = registrationSectorService;
@@ -996,6 +1000,12 @@ public class AuthController : ControllerBase
             enabledModuleIds = snapshot.EnabledModules.Select(m => (int)m).ToList();
             effectivePermissions = snapshot.EffectivePermissions.ToList();
         }
+
+        // Miroir obligatoire du filtre applique a l'emission du JWT
+        // (TenantAuthTokenService) : sans lui, /auth/me renverrait une permission que le jeton
+        // ne porte pas, et le bouton d'ecriture resterait affiche.
+        effectivePermissions = AccountingCurrencyAccess
+            .FilterWhenDisabled(effectivePermissions, _accountingSettings.MultiCurrencyEnabled);
 
         return new UserDto
         {

@@ -20,6 +20,7 @@ import {
   AccountingJournalTabChange
 } from '../shared/accounting-journal-tabs.model';
 import { AccountingJournalCatalogService } from '../shared/accounting-journal-catalog.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 type JournalFlatRow = {
   date: string;
@@ -242,6 +243,7 @@ type JournalFlatRow = {
   `
 })
 export class SubJournalsComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly journalCatalog = inject(AccountingJournalCatalogService);
 
@@ -341,9 +343,9 @@ export class SubJournalsComponent implements OnInit {
         }
         this.flatRows.set(this.flatten(res.data));
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }

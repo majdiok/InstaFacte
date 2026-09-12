@@ -6,6 +6,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { ToastService } from '@core/services/toast.service';
 import { AccountingService } from '../services/accounting.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-account-replacement',
@@ -64,6 +65,7 @@ import { AccountingService } from '../services/accounting.service';
   `
 })
 export class AccountReplacementComponent {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
 
@@ -95,7 +97,7 @@ export class AccountReplacementComponent {
           this.previewCount.set(res.data);
         } else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => this.error.set('Erreur réseau')
+      error: err => this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'))
     });
   }
 
@@ -115,7 +117,7 @@ export class AccountReplacementComponent {
           this.newAccount = '';
         } else this.error.set(res.error ?? 'Le remplacement a échoué.');
       },
-      error: () => { this.replacing.set(false); this.error.set('Erreur réseau'); }
+      error: err => { this.replacing.set(false); this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau')); }
     });
   }
 }

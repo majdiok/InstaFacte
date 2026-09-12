@@ -67,6 +67,20 @@
             <label class="ledger-label" for="ledger-to">Au</label>
             <input id="ledger-to" type="date" class="p-inputtext" [(ngModel)]="toStr" />
           </div>
+          @if (hasForeignCurrency()) {
+            <!-- Dans la grille de filtres, pas dans la barre d'outils : celle-ci est surveillée par
+                 un test de non-chevauchement à 1280 px. -->
+            <div class="ledger-field">
+              <label class="ledger-label" for="ledger-currency">Devise</label>
+              <select id="ledger-currency" class="p-inputtext"
+                      [ngModel]="currencyFilter()" (ngModelChange)="currencyFilter.set($event)">
+                <option value="">Toutes</option>
+                @for (code of availableCurrencies(); track code) {
+                  <option [value]="code">{{ code }}</option>
+                }
+              </select>
+            </div>
+          }
         </div>
       </ng-template>
       <ng-template pTemplate="end">
@@ -221,7 +235,7 @@
     } @else {
       <div class="ledger-table-wrap">
         <p-table
-          [value]="rows()"
+          [value]="visibleRows()"
           [paginator]="true"
           [rows]="20"
           [rowsPerPageOptions]="[10, 20, 50]"
@@ -244,6 +258,9 @@
               <th scope="col">Journal</th>
               <th scope="col">Pièce</th>
               <th scope="col">Libellé</th>
+              @if (hasForeignCurrency()) {
+                <th scope="col">Devise</th>
+              }
               <th scope="col" class="text-right">Débit</th>
               <th scope="col" class="text-right">Crédit</th>
               <th scope="col" class="text-right">Solde</th>
@@ -255,6 +272,16 @@
               <td data-label="Journal"><span class="ledger-code">{{ r.journalCode }}</span></td>
               <td data-label="Pièce"><span class="ledger-code">{{ r.pieceNumber }}</span></td>
               <td class="ledger-label-cell" data-label="Libellé">{{ r.label }}</td>
+              @if (hasForeignCurrency()) {
+                <td data-label="Devise">
+                  @if (r.currencyCode && r.currencyCode !== functionalCurrency) {
+                    <span class="ledger-code">{{ r.currencyCode }}</span>
+                    <span class="ledger-currency-amount">{{ r.amountInCurrency | number : '1.2-2' }}</span>
+                  } @else {
+                    <span class="ledger-currency-none">—</span>
+                  }
+                </td>
+              }
               <td class="text-right ledger-amount" data-label="Débit">{{ r.debit | number : '1.3-3' }}</td>
               <td class="text-right ledger-amount" data-label="Crédit">{{ r.credit | number : '1.3-3' }}</td>
               <td
@@ -268,7 +295,7 @@
           </ng-template>
           <ng-template pTemplate="footer">
             <tr class="acc-totals-row">
-              <td colspan="4">Totaux</td>
+              <td [attr.colspan]="hasForeignCurrency() ? 5 : 4">Totaux</td>
               <td class="text-right ledger-amount">{{ totals().debit | number : '1.3-3' }}</td>
               <td class="text-right ledger-amount">{{ totals().credit | number : '1.3-3' }}</td>
               <td class="text-right ledger-amount"

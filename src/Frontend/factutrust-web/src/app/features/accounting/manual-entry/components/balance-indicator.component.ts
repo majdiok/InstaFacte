@@ -1,5 +1,6 @@
 import { Component, computed, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FUNCTIONAL_CURRENCY, MILLIME_DECIMALS } from '../models/entry-form.model';
 
 @Component({
   selector: 'app-balance-indicator',
@@ -21,8 +22,8 @@ import { CommonModule } from '@angular/common';
         } @else {
           <span class="me-balance-label">
             Écart :
-            <strong>{{ gap() | number : '1.3-3' }}</strong>
-            <span class="me-balance-currency"> TND</span>
+            <strong>{{ gap() | number : amountFormat() }}</strong>
+            <span class="me-balance-currency"> {{ currencyCode() }}</span>
           </span>
         }
       </div>
@@ -51,6 +52,19 @@ export class BalanceIndicatorComponent {
   readonly totalDebit = input.required<number>();
   readonly totalCredit = input.required<number>();
   readonly canAutoBalance = input<boolean>(false);
+
+  /**
+   * Devise de l'écart : celle de la SAISIE, jamais la devise de tenue. L'équilibre s'apprécie sur
+   * les montants saisis, et « Équilibrer auto » y place bien son montant — afficher un autre
+   * libellé donnerait un nombre qui n'existe dans aucune des deux devises. La contre-valeur en
+   * dinar, elle, est portée par le récapitulatif.
+   *
+   * Les deux valeurs par défaut reproduisent l'affichage mono-devise : un appelant qui ne les
+   * passe pas est rigoureusement inchangé.
+   */
+  readonly currencyCode = input<string>(FUNCTIONAL_CURRENCY);
+  readonly amountFormat = input<string>(`1.${MILLIME_DECIMALS}-${MILLIME_DECIMALS}`);
+
   readonly autoBalance = output<void>();
 
   readonly isEmpty = computed(() => {

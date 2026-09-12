@@ -90,7 +90,7 @@
               <div class="ac-cell-sub">{{ row.detailSummary }}</div>
             </td>
             <td>{{ row.accountRef || '—' }}</td>
-            <td class="text-right">{{ row.amount | number:'1.3-3' }} TND</td>
+            <td class="text-right">{{ row.amount | accountingAmount }}</td>
             <td>{{ statusLabel(row.status) }}</td>
             <td>
               @if (canCorrect(row)) {

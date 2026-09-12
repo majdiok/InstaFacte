@@ -245,6 +245,8 @@ public static class DependencyInjection
         services.AddScoped<IAccountingPeriodRepository, AccountingPeriodRepository>();
         services.AddScoped<IJournalEntryRepository, JournalEntryRepository>();
         services.AddScoped<IJournalRepository, JournalRepository>();
+        services.AddScoped<ICurrencyRepository, CurrencyRepository>();
+        services.AddScoped<IExchangeRateResolver, ExchangeRateResolver>();
         services.AddScoped<IBudgetRepository, BudgetRepository>();
         services.AddScoped<IJournalEntryTemplateRepository, JournalEntryTemplateRepository>();
         services.AddScoped<IVatDeclarationRepository, VatDeclarationRepository>();

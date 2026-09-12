@@ -217,6 +217,35 @@ export const ACCOUNTING_ROUTES: Routes = [
     title: 'Paramètres fiscaux - InstaFact'
   },
   {
+    path: 'currencies',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.accounting.read] },
+    loadComponent: () =>
+      import('./currencies/currencies.component').then(m => m.CurrenciesComponent),
+    title: 'Gestion des devises - InstaFact'
+  },
+  {
+    path: 'closing-revaluation',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.accounting.close] },
+    loadComponent: () =>
+      import('./currencies/closing-revaluation.component').then(m => m.ClosingRevaluationComponent),
+    title: 'Reevaluation de cloture - InstaFact'
+  },
+  {
+    // Segment parametre declare APRES la liste : l'ordre est significatif.
+    path: 'currencies/:id',
+    // Ecran d'ecriture pure (edition des taux) : il exige le droit correspondant.
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.accounting.currenciesManage] },
+    // Confirme la perte des taux non enregistres a la navigation. Garde ecrite en ligne pour ne
+    // pas casser le lazy-loading, comme pour fiscal-parameters.
+    canDeactivate: [(component: { canDeactivate: () => boolean }) => component.canDeactivate()],
+    loadComponent: () =>
+      import('./currencies/currency-edit.component').then(m => m.CurrencyEditComponent),
+    title: 'Edition de devise - InstaFact'
+  },
+  {
     path: 'lettering',
     loadComponent: () =>
       import('./lettering/lettering.component').then(m => m.LetteringComponent),

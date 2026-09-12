@@ -1,5 +1,13 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { LOCALE_ID } from '@angular/core';
+import { registerLocaleData } from '@angular/common';
+import localeFrTN from '@angular/common/locales/fr-TN';
+import localeFrTNExtra from '@angular/common/locales/extra/fr-TN';
 import { BalanceIndicatorComponent } from './balance-indicator.component';
+
+// main.ts n'est pas chargé sous Karma : sans cet enregistrement, le pipe `number` n'a pas les
+// données fr-TN et les assertions porteraient sur un formatage anglo-saxon.
+registerLocaleData(localeFrTN, 'fr-TN', localeFrTNExtra);
 
 describe('BalanceIndicatorComponent', () => {
   let fixture: ComponentFixture<BalanceIndicatorComponent>;
@@ -14,7 +22,8 @@ describe('BalanceIndicatorComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [BalanceIndicatorComponent]
+      imports: [BalanceIndicatorComponent],
+      providers: [{ provide: LOCALE_ID, useValue: 'fr-TN' }]
     }).compileComponents();
   });
 
@@ -44,5 +53,42 @@ describe('BalanceIndicatorComponent', () => {
     create(100, 50, true);
     const btn = fixture.nativeElement.querySelector('.me-auto-balance-btn');
     expect(btn).toBeTruthy();
+  });
+
+  /**
+   * L'écart s'apprécie sur les montants SAISIS. L'afficher en dinar donnait un nombre qui
+   * n'existait dans aucune des deux devises : « 600,000 TND » pour un écart de 600,00 EUR.
+   */
+  describe('devise de l’écart', () => {
+    function createWithCurrency(debit: number, credit: number, code: string, format: string): void {
+      fixture = TestBed.createComponent(BalanceIndicatorComponent);
+      fixture.componentRef.setInput('totalDebit', debit);
+      fixture.componentRef.setInput('totalCredit', credit);
+      fixture.componentRef.setInput('currencyCode', code);
+      fixture.componentRef.setInput('amountFormat', format);
+      fixture.detectChanges();
+    }
+
+    function text(): string {
+      return (fixture.nativeElement as HTMLElement).textContent ?? '';
+    }
+
+    it('reste en dinar au millime quand aucune devise n’est passée', () => {
+      // Non-régression mono-devise : les appelants qui ignorent les nouvelles entrées.
+      create(100, 50);
+
+      expect(text()).toContain('TND');
+      expect(text()).toContain('50,000');
+    });
+
+    it('porte la devise de saisie et ses décimales', () => {
+      // Le cas du ticket : 1 000 EUR au débit, 400 au crédit.
+      createWithCurrency(1000, 400, 'EUR', '1.2-2');
+
+      expect(text()).toContain('600,00');
+      expect(text()).toContain('EUR');
+      expect(text()).not.toContain('TND');
+      expect(text()).not.toContain('600,000');
+    });
   });
 });

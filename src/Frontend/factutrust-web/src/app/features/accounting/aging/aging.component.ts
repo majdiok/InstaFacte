@@ -12,6 +12,7 @@ import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.co
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-accounting-aging',
@@ -212,6 +213,7 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
   `
 })
 export class AgingComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   readonly clients = signal<AgingReportRowDto[]>([]);
   readonly suppliers = signal<AgingReportRowDto[]>([]);
@@ -286,9 +288,9 @@ export class AgingComponent implements OnInit {
         if (r.success && r.data) this.clients.set(r.data);
         else this.errClients.set(r.error ?? 'Erreur de chargement.');
       },
-      error: () => {
+      error: err => {
         this.loadingClients.set(false);
-        this.errClients.set('Erreur réseau. Réessayez plus tard.');
+        this.errClients.set(this.errors.extractErrorMessage(err, 'Erreur réseau. Réessayez plus tard.'));
       }
     });
   }
@@ -302,9 +304,9 @@ export class AgingComponent implements OnInit {
         if (r.success && r.data) this.suppliers.set(r.data);
         else this.errSup.set(r.error ?? 'Erreur de chargement.');
       },
-      error: () => {
+      error: err => {
         this.loadingSuppliers.set(false);
-        this.errSup.set('Erreur réseau. Réessayez plus tard.');
+        this.errSup.set(this.errors.extractErrorMessage(err, 'Erreur réseau. Réessayez plus tard.'));
       }
     });
   }
@@ -316,9 +318,9 @@ export class AgingComponent implements OnInit {
         this.exportingClients.set(false);
         downloadBlob(blob, `balance_agee_clients.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exportingClients.set(false);
-        this.errClients.set("Erreur lors de l'export.");
+        this.errClients.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }
@@ -330,9 +332,9 @@ export class AgingComponent implements OnInit {
         this.exportingSuppliers.set(false);
         downloadBlob(blob, `balance_agee_fournisseurs.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exportingSuppliers.set(false);
-        this.errSup.set("Erreur lors de l'export.");
+        this.errSup.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }

@@ -82,6 +82,7 @@ public sealed class CreateManualJournalEntryCommandHandler : IRequestHandler<Cre
     private readonly IChartOfAccountRepository _chartOfAccounts;
     private readonly IAuditService _auditService;
     private readonly ICurrentUser _currentUser;
+    private readonly IExchangeRateResolver _exchangeRates;
     private readonly AccountingSettings _settings;
 
     public CreateManualJournalEntryCommandHandler(
@@ -90,6 +91,7 @@ public sealed class CreateManualJournalEntryCommandHandler : IRequestHandler<Cre
         IChartOfAccountRepository chartOfAccounts,
         IAuditService auditService,
         ICurrentUser currentUser,
+        IExchangeRateResolver exchangeRates,
         IOptions<AccountingSettings> settings)
     {
         _periodService = periodService;
@@ -97,6 +99,7 @@ public sealed class CreateManualJournalEntryCommandHandler : IRequestHandler<Cre
         _chartOfAccounts = chartOfAccounts;
         _auditService = auditService;
         _currentUser = currentUser;
+        _exchangeRates = exchangeRates;
         _settings = settings.Value;
     }
 
@@ -129,7 +132,16 @@ public sealed class CreateManualJournalEntryCommandHandler : IRequestHandler<Cre
         var mapped = ManualJournalLineMapper.Map(r.Lines);
         if (mapped.IsFailure)
             return Result.Failure<Guid>(mapped.Error);
-        var lines = mapped.Value;
+
+        // Résolution serveur du taux puis conversion : les montants en devise de tenue transmis par
+        // le client sont recalculés, jamais repris tels quels.
+        var prepared = await ManualEntryCurrencyPreparation.PrepareAsync(
+            _exchangeRates, r.CurrencyCode, r.ExchangeRate, r.EntryDate, mapped.Value, cancellationToken);
+        if (prepared.IsFailure)
+            return Result.Failure<Guid>(prepared.Error);
+
+        var lines = prepared.Value.Lines;
+        var rate = prepared.Value.Rate;
 
         var n = await _journalEntries.ReserveNextEntryNumberAsync(r.JournalCode, r.EntryDate.Year, cancellationToken);
         var create = JournalEntry.Create(
@@ -142,8 +154,11 @@ public sealed class CreateManualJournalEntryCommandHandler : IRequestHandler<Cre
             "Manual",
             null,
             lines,
+            currency: rate.CurrencyCode,
             pieceRef: r.PieceRef,
-            pieceDate: r.PieceDate);
+            pieceDate: r.PieceDate,
+            exchangeRate: rate.Rate,
+            exchangeRateOverridden: rate.IsOverridden);
 
         if (create.IsFailure)
             return Result.Failure<Guid>(create.Error);
@@ -157,8 +172,20 @@ public sealed class CreateManualJournalEntryCommandHandler : IRequestHandler<Cre
             AuditActions.Accounting.ManualEntryCreated,
             "JournalEntry",
             entry.Id,
-            newValues: new { r.JournalCode, r.EntryDate, r.Label, LineCount = r.Lines.Count },
+            newValues: new { r.JournalCode, r.EntryDate, r.Label, LineCount = r.Lines.Count, entry.CurrencyCode, entry.ExchangeRate },
             cancellationToken: cancellationToken);
+
+        // Trace dédiée : une dérogation au taux de la table doit rester retrouvable pour elle-même,
+        // sans avoir à relire toutes les créations d'écritures.
+        if (rate.IsOverridden)
+        {
+            await _auditService.LogAsync(
+                AuditActions.Accounting.ExchangeRateOverridden,
+                "JournalEntry",
+                entry.Id,
+                newValues: new { rate.CurrencyCode, AppliedRate = rate.Rate, rate.ReferenceRate },
+                cancellationToken: cancellationToken);
+        }
 
         return Result.Success(entry.Id);
     }
@@ -770,6 +797,7 @@ public sealed class UpdateDraftJournalEntryCommandHandler : IRequestHandler<Upda
     private readonly ICurrentUser _currentUser;
     private readonly ILetteringService _lettering;
     private readonly ITenantUnitOfWork _unitOfWork;
+    private readonly IExchangeRateResolver _exchangeRates;
     private readonly ILogger<UpdateDraftJournalEntryCommandHandler> _logger;
 
     public UpdateDraftJournalEntryCommandHandler(
@@ -779,6 +807,7 @@ public sealed class UpdateDraftJournalEntryCommandHandler : IRequestHandler<Upda
         ICurrentUser currentUser,
         ILetteringService lettering,
         ITenantUnitOfWork unitOfWork,
+        IExchangeRateResolver exchangeRates,
         ILogger<UpdateDraftJournalEntryCommandHandler> logger)
     {
         _journalEntries = journalEntries;
@@ -787,6 +816,7 @@ public sealed class UpdateDraftJournalEntryCommandHandler : IRequestHandler<Upda
         _currentUser = currentUser;
         _lettering = lettering;
         _unitOfWork = unitOfWork;
+        _exchangeRates = exchangeRates;
         _logger = logger;
     }
 
@@ -812,7 +842,22 @@ public sealed class UpdateDraftJournalEntryCommandHandler : IRequestHandler<Upda
         var mappedLines = ManualJournalLineMapper.Map(request.Request.Lines);
         if (mappedLines.IsFailure)
             return Result.Failure(mappedLines.Error);
-        var lines = mappedLines.Value;
+
+        // Le taux se résout sur la date de l'écriture, que la modification d'un brouillon ne change
+        // pas (le champ est verrouillé en édition). Lecture hors transaction, comme le contrôle des
+        // comptes ci-dessus ; l'existence réelle et les garde-fous sont revérifiés sous verrou.
+        var existing = await _journalEntries.GetByIdAsync(request.Id, cancellationToken);
+        if (existing is null)
+            return Result.Failure(Error.NotFound("JournalEntry", request.Id));
+
+        var prepared = await ManualEntryCurrencyPreparation.PrepareAsync(
+            _exchangeRates, request.Request.CurrencyCode, request.Request.ExchangeRate,
+            existing.EntryDate, mappedLines.Value, cancellationToken);
+        if (prepared.IsFailure)
+            return Result.Failure(prepared.Error);
+
+        var lines = prepared.Value.Lines;
+        var resolvedRate = prepared.Value.Rate;
 
         // D1 (plan) : le cabinet comptable en contexte délégué peut modifier TOUT brouillon
         // (caisse, extourne, lettré, natures combinées) ; un utilisateur hors cabinet reste
@@ -884,8 +929,11 @@ public sealed class UpdateDraftJournalEntryCommandHandler : IRequestHandler<Upda
                 return e.UpdateDraftLines(
                     request.Request.Label,
                     lines,
+                    currency: resolvedRate.CurrencyCode,
                     pieceRef: request.Request.PieceRef,
-                    pieceDate: request.Request.PieceDate);
+                    pieceDate: request.Request.PieceDate,
+                    exchangeRate: resolvedRate.Rate,
+                    exchangeRateOverridden: resolvedRate.IsOverridden);
             }, ct);
         }, cancellationToken);
 
@@ -913,9 +961,22 @@ public sealed class UpdateDraftJournalEntryCommandHandler : IRequestHandler<Upda
                 UnletteredGroups = letteringCodes,
                 OldTotalDebit = oldTotalDebit,
                 NewTotalDebit = newTotalDebit,
-                FirmDelegatedOverride = isFirm && (isReversal || sourceEntityType == "CashOperation" || wasLettered)
+                FirmDelegatedOverride = isFirm && (isReversal || sourceEntityType == "CashOperation" || wasLettered),
+                resolvedRate.CurrencyCode,
+                ExchangeRate = resolvedRate.Rate
             },
             cancellationToken: cancellationToken);
+
+        // Trace dédiée de la dérogation au taux, comme à la création.
+        if (resolvedRate.IsOverridden)
+        {
+            await _auditService.LogAsync(
+                AuditActions.Accounting.ExchangeRateOverridden,
+                "JournalEntry",
+                request.Id,
+                newValues: new { resolvedRate.CurrencyCode, AppliedRate = resolvedRate.Rate, resolvedRate.ReferenceRate },
+                cancellationToken: cancellationToken);
+        }
 
         // Audits complémentaires par groupe délettré : doublons de confort pour les consommateurs
         // de l'écran lettrage. NON bloquants (try/catch + LogWarning) — le seul enregistrement qui
@@ -1214,7 +1275,8 @@ public static class ManualJournalLineMapper
                 thirdPartyId = id;
                 kind = (ThirdPartyKind)l.ThirdPartyKind!.Value;
             }
-            mapped.Add(new JournalLineInput(l.AccountNumber, l.LineLabel, l.Debit, l.Credit, thirdPartyId, kind));
+            mapped.Add(new JournalLineInput(l.AccountNumber, l.LineLabel, l.Debit, l.Credit, thirdPartyId, kind,
+                l.DebitInCurrency, l.CreditInCurrency));
         }
         return Result.Success(mapped);
     }

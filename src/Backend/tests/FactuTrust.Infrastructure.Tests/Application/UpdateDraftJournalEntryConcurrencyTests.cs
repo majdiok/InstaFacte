@@ -18,6 +18,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
+using FactuTrust.Infrastructure.Tests.Fakes;
 
 namespace FactuTrust.Infrastructure.Tests.Application;
 
@@ -131,6 +132,7 @@ public sealed class UpdateDraftJournalEntryConcurrencyTests : IDisposable
         new(scope.JournalEntries, ChartMock().Object, new Mock<IAuditService>().Object,
             new FakeCurrentUser { IsAccountingFirmDelegatedContext = isFirm },
             scope.Lettering, scope.UnitOfWork,
+            new FakeExchangeRateResolver(),
             NullLogger<UpdateDraftJournalEntryCommandHandler>.Instance);
 
     private static ValidateJournalEntryCommandHandler BuildValidateHandler(Scope scope) =>

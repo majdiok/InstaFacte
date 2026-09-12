@@ -22,8 +22,15 @@ describe('ChartOfAccountsComponent', () => {
     component: ChartOfAccountsComponent;
     extractErrorMessage: jasmine.Spy;
   } {
+    const apiMessage = overrides.extractErrorMessage
+      ?? 'Le numéro de compte doit être un numéro SCE (chiffres, points autorisés).';
+    // Le repli réseau vit dans ErrorHandlerService depuis que `httpFailureMessage` lui délègue :
+    // le double doit donc l'honorer, sinon il teste un contrat que le service n'a plus.
     const extractErrorMessage = jasmine.createSpy('extractErrorMessage')
-      .and.returnValue(overrides.extractErrorMessage ?? 'Le numéro de compte doit être un numéro SCE (chiffres, points autorisés).');
+      .and.callFake((err: unknown, networkFallback?: string) =>
+        networkFallback !== undefined && (err as HttpErrorResponse)?.status === 0
+          ? networkFallback
+          : apiMessage);
 
     TestBed.configureTestingModule({
       providers: [
@@ -209,7 +216,9 @@ describe('ChartOfAccountsComponent', () => {
     component.form.label = 'Personnel — mutuelle complémentaire';
     component.create();
 
-    expect(extractErrorMessage).not.toHaveBeenCalled();
+    // Le service est bien sollicité — c'est lui qui arbitre — mais il rend le repli contextuel.
+    expect(extractErrorMessage).toHaveBeenCalledWith(
+      jasmine.any(HttpErrorResponse), 'Erreur réseau lors de la création du compte.');
     expect(component.createError()).toBe('Erreur réseau lors de la création du compte.');
   });
 
@@ -221,7 +230,9 @@ describe('ChartOfAccountsComponent', () => {
     const apiErr = new HttpErrorResponse({ status: 400, error: { error: 'Le compte 428.1 existe déjà.' } });
     expect(component.httpFailureMessage(apiErr, 'Erreur réseau lors de la création du compte.'))
       .toBe('Le compte 428.1 existe déjà (Personnel — mutuelles et caisses complémentaires).');
-    expect(extractErrorMessage).toHaveBeenCalledWith(apiErr);
+    // Le repli voyage désormais avec l'erreur : c'est le service qui arbitre lequel rendre.
+    expect(extractErrorMessage).toHaveBeenCalledWith(
+      apiErr, 'Erreur réseau lors de la création du compte.');
 
     expect(component.httpFailureMessage(new HttpErrorResponse({ status: 0 }), 'Erreur réseau lors de la création du compte.'))
       .toBe('Erreur réseau lors de la création du compte.');

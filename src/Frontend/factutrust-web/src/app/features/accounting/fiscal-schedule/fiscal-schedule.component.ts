@@ -43,6 +43,7 @@ import {
   formatFiscalDate,
   toInputDate
 } from './fiscal-schedule.view-model';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-fiscal-schedule',
@@ -182,6 +183,7 @@ import {
   `]
 })
 export class FiscalScheduleComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly schedule = inject(FiscalScheduleService);
   private readonly firmSchedule = inject(FirmFiscalScheduleService);
   private readonly firmAssignment = inject(FirmAssignmentService);
@@ -392,7 +394,7 @@ export class FiscalScheduleComponent implements OnInit {
           this.selected = this.list.items.find(item => item.id === previousId) ?? this.list.items[0] ?? null;
           this.loadSelectedDetails();
         },
-        error: () => this.errorMessage = "Impossible de charger l'echeancier fiscal."
+        error: err => this.errorMessage = this.errors.extractErrorMessage(err, "Impossible de charger l'echeancier fiscal.")
       });
   }
 

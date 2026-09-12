@@ -8,6 +8,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
 import { AccountingTableActionsComponent } from '../shared/accounting-table-actions.component';
 import { ToastService } from '@core/services/toast.service';
 import { AccountingService, BudgetPostDto, BudgetPostKind } from '../services/accounting.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 interface BudgetPostForm {
   id: string | null;
@@ -113,6 +114,7 @@ interface BudgetPostForm {
   `
 })
 export class BudgetPostsComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
 
@@ -135,7 +137,7 @@ export class BudgetPostsComponent implements OnInit {
         if (res.success && res.data) this.posts.set(res.data);
         else this.error.set(res.error ?? 'Erreur de chargement des postes budgétaires.');
       },
-      error: () => { this.loading.set(false); this.error.set('Erreur réseau'); }
+      error: err => { this.loading.set(false); this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau')); }
     });
   }
 
@@ -159,16 +161,16 @@ export class BudgetPostsComponent implements OnInit {
     };
     const body = { label: f.label.trim(), kind: f.kind, accountPrefixes: f.accountPrefixes.trim(), displayOrder: f.displayOrder };
     if (f.id) {
-      this.api.updateBudgetPost(f.id, body).subscribe({ next: r => done(r.success, r.error), error: () => done(false, 'Erreur réseau') });
+      this.api.updateBudgetPost(f.id, body).subscribe({ next: r => done(r.success, r.error), error: err => done(false, this.errors.extractErrorMessage(err, 'Erreur réseau')) });
     } else {
-      this.api.createBudgetPost({ code: f.code.trim().toUpperCase(), ...body }).subscribe({ next: r => done(r.success, r.error), error: () => done(false, 'Erreur réseau') });
+      this.api.createBudgetPost({ code: f.code.trim().toUpperCase(), ...body }).subscribe({ next: r => done(r.success, r.error), error: err => done(false, this.errors.extractErrorMessage(err, 'Erreur réseau')) });
     }
   }
 
   toggle(p: BudgetPostDto): void {
     this.api.toggleBudgetPost(p.id).subscribe({
       next: r => { if (r.success) this.load(); else this.error.set(r.error ?? 'Erreur'); },
-      error: () => this.error.set('Erreur réseau')
+      error: err => this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'))
     });
   }
 }

@@ -4,6 +4,7 @@ using FactuTrust.Application.Common.Enums;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Budgeting;
+using FactuTrust.Application.Features.Accounting.CurrencyCatalog;
 using FactuTrust.Application.Features.Accounting.ThirdPartyDirectory;
 using FactuTrust.Application.Features.Accounting.Commands;
 using FactuTrust.Application.Features.Accounting.Fiscal;
@@ -1317,6 +1318,94 @@ public sealed class AccountingController : ControllerBase
         return Ok(ApiResponse<int>.Ok(r.Value, $"{r.Value} ligne(s) modifiée(s)."));
     }
 
+    // ── Devises et taux de change ──────────────────────────────────────────
+    //
+    // Lecture ouverte à accounting:read : la saisie d'écritures a besoin du catalogue et du taux
+    // du mois. L'écriture exige accounting:currencies_manage, nettement plus restreinte — le taux
+    // détermine le montant en dinar porté en comptabilité.
+
+    [HttpGet("currencies")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetCurrencies([FromQuery] int fiscalYear, [FromQuery] bool includeInactive, CancellationToken cancellationToken)
+    {
+        var year = fiscalYear > 0 ? fiscalYear : DateTime.UtcNow.Year;
+        var r = await _mediator.Send(new GetCurrenciesQuery(year, includeInactive), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<CurrencyDto>>.Ok(r.Value));
+    }
+
+    [HttpGet("currencies/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetCurrencyDetail(Guid id, [FromQuery] int fiscalYear, CancellationToken cancellationToken)
+    {
+        var year = fiscalYear > 0 ? fiscalYear : DateTime.UtcNow.Year;
+        var r = await _mediator.Send(new GetCurrencyDetailQuery(id, year), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<CurrencyDetailDto>.Ok(r.Value));
+    }
+
+    [HttpPost("closing-revaluation")]
+    [Authorize(Policy = PermissionPolicies.AccountingClose)]
+    public async Task<IActionResult> RunClosingRevaluation([FromBody] RunClosingRevaluationRequest request, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new RunClosingRevaluationCommand(request), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<ClosingRevaluationResultDto>.Ok(r.Value));
+    }
+
+    [HttpGet("currencies/resolve-rate")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ResolveExchangeRate([FromQuery] string currencyCode, [FromQuery] DateTime entryDate, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new ResolveExchangeRateQuery(currencyCode, entryDate), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<ResolvedExchangeRateDto>.Ok(r.Value));
+    }
+
+    [HttpPost("currencies")]
+    [Authorize(Policy = PermissionPolicies.AccountingCurrenciesManage)]
+    public async Task<IActionResult> CreateCurrency([FromBody] CreateCurrencyRequest request, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new CreateCurrencyCommand(request), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<Guid>.Ok(r.Value));
+    }
+
+    [HttpPut("currencies/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.AccountingCurrenciesManage)]
+    public async Task<IActionResult> UpdateCurrency(Guid id, [FromBody] UpdateCurrencyRequest request, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new UpdateCurrencyCommand(id, request), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    [HttpPatch("currencies/{id:guid}/toggle")]
+    [Authorize(Policy = PermissionPolicies.AccountingCurrenciesManage)]
+    public async Task<IActionResult> ToggleCurrency(Guid id, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new ToggleCurrencyCommand(id), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    [HttpPut("currencies/{id:guid}/rates")]
+    [Authorize(Policy = PermissionPolicies.AccountingCurrenciesManage)]
+    public async Task<IActionResult> SaveCurrencyRates(Guid id, [FromBody] SaveCurrencyRatesRequest request, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new SaveCurrencyRatesCommand(id, request), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
     [HttpGet("journals")]
     [Authorize(Policy = PermissionPolicies.AccountingRead)]
     public async Task<IActionResult> GetJournals([FromQuery] bool includeInactive, CancellationToken cancellationToken)
@@ -1565,6 +1654,17 @@ public sealed class AccountingController : ControllerBase
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    [HttpPost("lettering/settle-exchange-difference")]
+    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    public async Task<IActionResult> SettleExchangeDifference([FromBody] SettleExchangeDifferenceRequest request, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(
+            new SettleExchangeDifferenceCommand(request.JournalEntryLineIds, request.AccountNumber), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<Guid>.Ok(r.Value));
     }
 
     [HttpPost("unletter")]

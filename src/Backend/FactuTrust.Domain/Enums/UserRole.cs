@@ -150,6 +150,8 @@ public static class UserRoleExtensions
             Permissions.Accounting.Read,
             Permissions.Accounting.Create,
             Permissions.Accounting.Close,
+            Permissions.Accounting.CurrenciesManage,
+            Permissions.Accounting.ExchangeRateOverride,
             Permissions.Accounting.Reverse,
             Permissions.Accounting.Import,
             Permissions.Accounting.Declare,
@@ -422,6 +424,8 @@ public static class UserRoleExtensions
             Permissions.Accounting.Read,
             Permissions.Accounting.Create,
             Permissions.Accounting.Close,
+            Permissions.Accounting.CurrenciesManage,
+            Permissions.Accounting.ExchangeRateOverride,
             Permissions.Accounting.Reverse,
             Permissions.Accounting.Import,
             Permissions.Accounting.Declare,
@@ -676,6 +680,16 @@ public static class Permissions
 
         /// <summary>Établir/soumettre les déclarations fiscales (TVA, déclaration mensuelle).</summary>
         public const string Declare = "accounting:declare";
+
+        /// <summary>Configurer le catalogue des devises et leurs taux de change.</summary>
+        public const string CurrenciesManage = "accounting:currencies_manage";
+
+        /// <summary>
+        /// Saisir un taux de change différent de celui de la table, dans la limite de la tolérance
+        /// configurée. Le taux détermine le montant en dinar porté en comptabilité : sans cette
+        /// permission le champ est en lecture seule, et toute dérogation est tracée à l'audit.
+        /// </summary>
+        public const string ExchangeRateOverride = "accounting:exchange_rate_override";
     }
 
     public static class Audit

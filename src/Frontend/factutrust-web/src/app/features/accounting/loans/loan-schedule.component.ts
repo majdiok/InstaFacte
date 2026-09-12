@@ -7,6 +7,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 import { AccountingService, LoanScheduleDto } from '../services/accounting.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /**
  * Tableau d'amortissement d'un emprunt : échéancier complet (capital restant dû, intérêt, capital
@@ -125,6 +126,7 @@ import { AccountingService, LoanScheduleDto } from '../services/accounting.servi
   `
 })
 export class LoanScheduleComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly route = inject(ActivatedRoute);
 
@@ -165,9 +167,9 @@ export class LoanScheduleComponent implements OnInit {
         if (res.success && res.data) this.schedule.set(res.data);
         else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }
@@ -181,9 +183,9 @@ export class LoanScheduleComponent implements OnInit {
         const number = this.schedule()?.loan.loanNumber ?? this.loanId;
         downloadBlob(blob, `echeancier_${number}.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }

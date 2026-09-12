@@ -45,6 +45,8 @@ export const ACCOUNTING_MODULES: AccountingModuleDef[] = [
       { label: 'Plan comptable', route: '/accounting/chart', icon: 'fa-solid fa-sitemap', perms: ['accounting:read'] },
       { label: 'Plan tiers', route: '/accounting/third-parties', icon: 'fa-solid fa-address-book', perms: ['accounting:read'] },
       { label: 'Journaux & familles', route: '/accounting/journals', icon: 'fa-solid fa-book-bookmark', perms: ['accounting:read'] },
+      { label: 'Gestion des devises', route: '/accounting/currencies', icon: 'fa-solid fa-coins', perms: ['accounting:read'] },
+      { label: 'Réévaluation de clôture', route: '/accounting/closing-revaluation', icon: 'fa-solid fa-scale-unbalanced', perms: ['accounting:close'] },
       { label: "Modèles d'écriture", route: '/accounting/entry-templates', icon: 'fa-solid fa-clone', perms: ['accounting:read'] }
     ]
   },

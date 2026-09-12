@@ -373,6 +373,27 @@ public sealed class AccountingSettings
     public bool CashDeskVatEnabled { get; set; }
 
     /// <summary>
+    /// Active la comptabilité multi-devises : catalogue des devises, taux de change, saisie et
+    /// lettrage en devise.
+    /// </summary>
+    /// <remarks>
+    /// OFF par défaut. Drapeau éteint, le catalogue est en lecture seule, aucune écriture ne peut
+    /// être saisie dans une devise autre que la devise de tenue, et l'écran de saisie est
+    /// strictement identique à ce qu'il était avant le chantier.
+    /// </remarks>
+    public bool MultiCurrencyEnabled { get; set; }
+
+    /// <summary>
+    /// Écart maximal toléré, en pourcentage, entre un taux saisi manuellement et celui de la table
+    /// des taux. Au-delà, la saisie est refusée même avec la permission de surcharge.
+    /// </summary>
+    /// <remarks>
+    /// La borne existe pour transformer une faute de frappe en refus plutôt qu'en écriture fausse :
+    /// un taux à 33,1420 au lieu de 3,31420 multiplierait la contre-valeur par dix.
+    /// </remarks>
+    public decimal ExchangeRateOverrideTolerancePercent { get; set; } = 5m;
+
+    /// <summary>
     /// Numéros de compte SCE portés par la configuration, pour un contrôle de forme au démarrage.
     /// </summary>
     /// <remarks>

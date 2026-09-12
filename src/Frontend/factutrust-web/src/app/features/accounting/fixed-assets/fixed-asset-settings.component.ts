@@ -16,6 +16,7 @@ import {
   fiscalYearLabel,
   fiscalYearStartDateTime
 } from '../services/fiscal-year.util';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /** Aperçu d'un libellé d'exercice pour un format donné et le mois de début courant. */
 function sampleLabel(startMonth: number, format: string): string {
@@ -183,6 +184,7 @@ function toFrDate(d: Date): string {
   ]
 })
 export class FixedAssetSettingsComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(FixedAssetsService);
 
   readonly monthOptions = MONTH_LABELS_FR.map((label, idx) => ({ value: idx + 1, label }));
@@ -237,9 +239,9 @@ export class FixedAssetSettingsComponent implements OnInit {
           };
         }
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Impossible de charger les paramètres d\'exercice.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Impossible de charger les paramètres d\'exercice.'));
       }
     });
   }

@@ -5,6 +5,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AccountingService, JournalEntryTemplateDto } from '../../services/accounting.service';
 import { ToastService } from '@core/services/toast.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-template-picker-modal',
@@ -149,6 +150,7 @@ import { ConfirmationService } from '@core/services/confirmation.service';
   `
 })
 export class TemplatePickerModalComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
@@ -193,9 +195,9 @@ export class TemplatePickerModalComponent implements OnInit {
             this.error.set(res.error ?? 'Erreur lors du chargement des modèles.');
           }
         },
-        error: () => {
+        error: err => {
           this.loading.set(false);
-          this.error.set('Erreur réseau lors du chargement des modèles.');
+          this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors du chargement des modèles.'));
         }
       });
   }
@@ -254,12 +256,12 @@ export class TemplatePickerModalComponent implements OnInit {
                 });
               }
             },
-            error: () => {
+            error: err => {
               this.deleting.set(false);
               this.toast.add({
                 severity: 'error',
-                summary: 'Erreur réseau',
-                detail: 'Impossible de supprimer le modèle.',
+                summary: 'Impossible de supprimer le modèle.',
+                detail: this.errors.extractErrorMessage(err, 'Erreur réseau'),
                 life: 6000
               });
             }

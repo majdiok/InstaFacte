@@ -133,6 +133,7 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
             config,
             accountingFirmsOptions,
             payrollOptions,
+            Microsoft.Extensions.Options.Options.Create(new AccountingSettings { MultiCurrencyEnabled = true }),
             Microsoft.Extensions.Options.Options.Create(new FirmGovernanceOptions
             {
                 Enabled = true,
@@ -272,6 +273,7 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
             config,
             accountingFirmsOptions,
             payrollOptions,
+            Microsoft.Extensions.Options.Options.Create(new AccountingSettings { MultiCurrencyEnabled = true }),
             Microsoft.Extensions.Options.Options.Create(new FirmGovernanceOptions { Enabled = true }),
             Mock.Of<ILogger<TenantAuthTokenService>>());
         var response = await tokenService.GenerateTokensAsync(FirmUserId, FirmId);
@@ -337,6 +339,7 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
             config,
             accountingFirmsOptions,
             payrollOptions,
+            Microsoft.Extensions.Options.Options.Create(new AccountingSettings { MultiCurrencyEnabled = true }),
             Microsoft.Extensions.Options.Options.Create(new FirmGovernanceOptions { Enabled = true }),
             Mock.Of<ILogger<TenantAuthTokenService>>());
 
@@ -389,6 +392,7 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
             config,
             Microsoft.Extensions.Options.Options.Create(new AccountingFirmsOptions { Enabled = true }),
             Microsoft.Extensions.Options.Options.Create(new PayrollOptions { FirmExclusiveOperations = true }),
+            Microsoft.Extensions.Options.Options.Create(new AccountingSettings { MultiCurrencyEnabled = true }),
             Microsoft.Extensions.Options.Options.Create(new FirmGovernanceOptions
             {
                 Enabled = true,
@@ -444,6 +448,7 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
             config,
             Microsoft.Extensions.Options.Options.Create(new AccountingFirmsOptions { Enabled = true }),
             Microsoft.Extensions.Options.Options.Create(new PayrollOptions { FirmExclusiveOperations = true }),
+            Microsoft.Extensions.Options.Options.Create(new AccountingSettings { MultiCurrencyEnabled = true }),
             Microsoft.Extensions.Options.Options.Create(new FirmGovernanceOptions
             {
                 Enabled = true,

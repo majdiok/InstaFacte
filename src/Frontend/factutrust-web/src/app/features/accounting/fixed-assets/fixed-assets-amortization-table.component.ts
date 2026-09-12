@@ -24,6 +24,7 @@ import {
 } from '../services/fixed-asset-settings-defaults';
 import { fiscalYearLabel } from '../services/fiscal-year.util';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-fixed-assets-amortization-table',
@@ -385,6 +386,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
   ]
 })
 export class FixedAssetsAmortizationTableComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(FixedAssetsService);
   private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
@@ -456,8 +458,8 @@ export class FixedAssetsAmortizationTableComponent implements OnInit {
           this.report.set(res.data ?? null);
           this.loading.set(false);
         },
-        error: () => {
-          this.error.set("Impossible de charger le tableau des amortissements de l'exercice.");
+        error: err => {
+          this.error.set(this.errors.extractErrorMessage(err, "Impossible de charger le tableau des amortissements de l'exercice."));
           this.loading.set(false);
         }
       });

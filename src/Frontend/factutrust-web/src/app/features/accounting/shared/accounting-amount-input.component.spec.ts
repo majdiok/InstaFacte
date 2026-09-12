@@ -104,4 +104,28 @@ describe('AccountingAmountInputComponent', () => {
     component.side = 'credit';
     expect(component.styleClass).toContain('accounting-amount-input--credit');
   });
+
+  describe('décimales de la devise', () => {
+    it('reste au millime sans entrée explicite', () => {
+      // Non-régression des écrans en devise de tenue, qui ne passent rien.
+      expect(component.fractionDigits).toBe(ACCOUNTING_AMOUNT_FRACTION_DIGITS);
+      expect(component.maxFractionDigits).toBe(ACCOUNTING_AMOUNT_FRACTION_DIGITS);
+      expect(component.minFractionDigits).toBe(ACCOUNTING_AMOUNT_FRACTION_DIGITS);
+    });
+
+    it('borne à deux décimales quand la devise en compte deux', () => {
+      component.fractionDigits = 2;
+
+      expect(component.maxFractionDigits).toBe(2);
+      expect(component.minFractionDigits).toBe(2);
+    });
+
+    it('laisse la frappe libre pendant la saisie, quelle que soit la devise', () => {
+      component.fractionDigits = 2;
+      component.onFocus();
+
+      expect(component.minFractionDigits).toBe(0);
+      expect(component.maxFractionDigits).toBe(2);
+    });
+  });
 });

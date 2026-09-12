@@ -4,6 +4,7 @@ import { RouterModule } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AccountingService, JournalEntryTemplateDto } from '../../services/accounting.service';
 import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-entry-recurring-tab',
@@ -56,6 +57,7 @@ import { ToastService } from '@core/services/toast.service';
   `
 })
 export class EntryRecurringTabComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
@@ -99,9 +101,9 @@ export class EntryRecurringTabComponent implements OnInit {
             this.toast.add({ severity: 'error', summary: 'Échec', detail: res.error ?? 'Erreur', life: 6000 });
           }
         },
-        error: () => {
+        error: err => {
           this.runningId.set(null);
-          this.toast.add({ severity: 'error', summary: 'Erreur réseau', detail: 'Impossible de générer l\'écriture.', life: 6000 });
+          this.toast.add({ severity: 'error', summary: 'Impossible de générer l\'écriture.', detail: this.errors.extractErrorMessage(err, 'Erreur réseau'), life: 6000 });
         }
       });
   }

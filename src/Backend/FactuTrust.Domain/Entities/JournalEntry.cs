@@ -4,13 +4,22 @@ using FactuTrust.Domain.ValueObjects;
 
 namespace FactuTrust.Domain.Entities;
 
+/// <param name="Debit">Montant au débit, TOUJOURS en devise de tenue.</param>
+/// <param name="Credit">Montant au crédit, TOUJOURS en devise de tenue.</param>
+/// <param name="DebitInCurrency">
+/// Montant au débit dans la devise de transaction. Renseigné uniquement par le chemin multi-devises,
+/// qui a déjà converti <paramref name="Debit"/>. Reste à 0 en mono-devise.
+/// </param>
+/// <param name="CreditInCurrency">Idem pour le crédit.</param>
 public readonly record struct JournalLineInput(
     string AccountNumber,
     string Label,
     decimal Debit,
     decimal Credit,
     Guid? ThirdPartyId,
-    ThirdPartyKind ThirdPartyKind);
+    ThirdPartyKind ThirdPartyKind,
+    decimal DebitInCurrency = 0m,
+    decimal CreditInCurrency = 0m);
 
 /// <summary>
 /// Accounting journal entry (piece) with balanced lines.
@@ -41,6 +50,26 @@ public sealed class JournalEntry : AggregateRoot
     /// <summary>Date de la pièce externe, distincte de la date comptable. Facultative.</summary>
     public DateTime? PieceDate { get; private set; }
 
+    /// <summary>
+    /// Devise dans laquelle l'opération a été traitée. Vaut la devise de tenue
+    /// (<see cref="Money.DefaultCurrency"/>) pour toute écriture mono-devise, donc pour la totalité
+    /// de l'existant. Les montants comptables restent quant à eux <b>toujours</b> exprimés en devise
+    /// de tenue : voir le garde-fou de <see cref="BuildLines"/>.
+    /// </summary>
+    public string CurrencyCode { get; private set; } = Money.DefaultCurrency;
+
+    /// <summary>
+    /// Taux appliqué pour convertir les montants en devise de tenue : unités de devise de tenue pour
+    /// UNE unité de devise de transaction. Vaut 1 pour une écriture en devise de tenue.
+    /// </summary>
+    public decimal ExchangeRate { get; private set; } = 1m;
+
+    /// <summary>
+    /// Vrai si le taux a été saisi manuellement au lieu d'être repris de la table des taux. La
+    /// surcharge exige une permission dédiée et laisse une trace d'audit.
+    /// </summary>
+    public bool ExchangeRateOverridden { get; private set; }
+
     private readonly List<JournalEntryLine> _lines = new();
     public IReadOnlyCollection<JournalEntryLine> Lines => _lines.AsReadOnly();
 
@@ -63,7 +92,9 @@ public sealed class JournalEntry : AggregateRoot
         Guid? reversesEntryId = null,
         JournalEntryStatus initialStatus = JournalEntryStatus.Validee,
         string? pieceRef = null,
-        DateTime? pieceDate = null)
+        DateTime? pieceDate = null,
+        decimal? exchangeRate = null,
+        bool exchangeRateOverridden = false)
     {
         journalCode = journalCode?.Trim().ToUpperInvariant() ?? string.Empty;
         if (string.IsNullOrEmpty(journalCode))
@@ -77,7 +108,7 @@ public sealed class JournalEntry : AggregateRoot
         if (pieceResult.IsFailure)
             return Result.Failure<JournalEntry>(pieceResult.Error);
 
-        var linesResult = BuildLines(label, lineInputs, currency);
+        var linesResult = BuildLines(label, lineInputs, currency, exchangeRate);
         if (linesResult.IsFailure)
             return Result.Failure<JournalEntry>(linesResult.Error);
 
@@ -95,7 +126,10 @@ public sealed class JournalEntry : AggregateRoot
             ReversesEntryId = reversesEntryId,
             Status = initialStatus,
             PieceRef = pieceResult.Value,
-            PieceDate = pieceDate?.Date
+            PieceDate = pieceDate?.Date,
+            CurrencyCode = NormalizeCurrency(currency),
+            ExchangeRate = exchangeRate ?? 1m,
+            ExchangeRateOverridden = exchangeRateOverridden
         };
 
         foreach (var line in linesResult.Value)
@@ -111,13 +145,46 @@ public sealed class JournalEntry : AggregateRoot
     /// Construit et valide les lignes équilibrées d'une écriture (partagé entre la création et la
     /// mise à jour d'un brouillon).
     /// </summary>
+    /// <summary>Normalise un code devise ; une valeur vide vaut la devise de tenue.</summary>
+    private static string NormalizeCurrency(string? currency)
+    {
+        var normalized = currency?.Trim().ToUpperInvariant() ?? string.Empty;
+        return normalized.Length == 0 ? Money.DefaultCurrency : normalized;
+    }
+
     private static Result<List<JournalEntryLine>> BuildLines(
         string label,
         IReadOnlyList<JournalLineInput> lineInputs,
-        string currency)
+        string currency,
+        decimal? exchangeRate)
     {
         if (lineInputs.Count < 2)
             return Result.Failure<List<JournalEntryLine>>(Error.Validation("Lines", "Au moins deux lignes sont requises"));
+
+        // La comptabilité est tenue en devise fonctionnelle : DebitAmount / CreditAmount sont
+        // TOUJOURS exprimés dans cette devise. Tous les agrégats de restitution (grand livre,
+        // balance, bilan, compte de résultat, états NCT, balance âgée, FEC) somment .Amount SANS
+        // convertir : accepter ici des montants en euros les ferait additionner à des dinars.
+        //
+        // Le taux est le témoin explicite que l'appelant a converti. Il n'est renseigné que par le
+        // chemin multi-devises ; les quelque trente générations automatiques qui propagent la devise
+        // du document source (AccountingService : `var currency = invoice.TotalAmount.Currency;`)
+        // n'en passent aucun et restent donc refusées — c'est ce qui empêche une facture en euros
+        // d'entrer en comptabilité comme si elle était en dinars.
+        currency = NormalizeCurrency(currency);
+        if (currency != Money.DefaultCurrency && exchangeRate is null)
+        {
+            return Result.Failure<List<JournalEntryLine>>(Error.Validation(
+                "Currency",
+                $"La comptabilité est tenue en {Money.DefaultCurrency}. Une pièce en {currency} ne peut pas être "
+                + "comptabilisée sans taux de change."));
+        }
+
+        if (exchangeRate is not null and <= 0)
+        {
+            return Result.Failure<List<JournalEntryLine>>(Error.Validation(
+                "ExchangeRate", "Le taux de change doit être strictement positif."));
+        }
 
         decimal sumDebit = 0, sumCredit = 0;
         var lines = new List<JournalEntryLine>();
@@ -142,8 +209,12 @@ public sealed class JournalEntry : AggregateRoot
             sumDebit += li.Debit;
             sumCredit += li.Credit;
 
+            if (li.DebitInCurrency < 0 || li.CreditInCurrency < 0)
+                return Result.Failure<List<JournalEntryLine>>(Error.Validation("Amount", "Les montants en devise doivent être positifs ou nuls"));
+
             var lineLabel = string.IsNullOrWhiteSpace(li.Label) ? label : li.Label.Trim();
-            lines.Add(JournalEntryLine.Create(n++, acc, lineLabel, debit, credit, li.ThirdPartyId, li.ThirdPartyKind));
+            lines.Add(JournalEntryLine.Create(n++, acc, lineLabel, debit, credit, li.ThirdPartyId, li.ThirdPartyKind,
+                li.DebitInCurrency, li.CreditInCurrency));
         }
 
         // TND uses 3 decimal places (millimes). Round to 3 decimals before comparing
@@ -182,7 +253,9 @@ public sealed class JournalEntry : AggregateRoot
         IReadOnlyList<JournalLineInput> lineInputs,
         string currency = Money.DefaultCurrency,
         string? pieceRef = null,
-        DateTime? pieceDate = null)
+        DateTime? pieceDate = null,
+        decimal? exchangeRate = null,
+        bool exchangeRateOverridden = false)
     {
         if (Status != JournalEntryStatus.Brouillon)
             return Result.Failure(Error.Validation("Status", "Seule une écriture en brouillon peut être modifiée."));
@@ -195,13 +268,16 @@ public sealed class JournalEntry : AggregateRoot
         if (pieceResult.IsFailure)
             return Result.Failure(pieceResult.Error);
 
-        var linesResult = BuildLines(label, lineInputs, currency);
+        var linesResult = BuildLines(label, lineInputs, currency, exchangeRate);
         if (linesResult.IsFailure)
             return Result.Failure(linesResult.Error);
 
         Label = label;
         PieceRef = pieceResult.Value;
         PieceDate = pieceDate?.Date;
+        CurrencyCode = NormalizeCurrency(currency);
+        ExchangeRate = exchangeRate ?? 1m;
+        ExchangeRateOverridden = exchangeRateOverridden;
         _lines.Clear();
         foreach (var line in linesResult.Value)
         {

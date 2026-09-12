@@ -108,6 +108,8 @@ public static class PermissionPolicies
     public const string AccountingReverse = "perm:" + Permissions.Accounting.Reverse;
     public const string AccountingImport = "perm:" + Permissions.Accounting.Import;
     public const string AccountingDeclare = "perm:" + Permissions.Accounting.Declare;
+    public const string AccountingCurrenciesManage = "perm:" + Permissions.Accounting.CurrenciesManage;
+    public const string AccountingExchangeRateOverride = "perm:" + Permissions.Accounting.ExchangeRateOverride;
 
     public const string AuditRead = "perm:" + Permissions.Audit.Read;
 

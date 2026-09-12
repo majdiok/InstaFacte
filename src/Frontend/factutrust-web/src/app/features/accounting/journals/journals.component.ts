@@ -8,6 +8,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
 import { AccountingTableActionsComponent } from '../shared/accounting-table-actions.component';
 import { ToastService } from '@core/services/toast.service';
 import { AccountingService, JournalDto, JournalFamilyDto } from '../services/accounting.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 interface JournalForm {
   id: string | null;
@@ -117,6 +118,7 @@ interface JournalForm {
   `
 })
 export class JournalsComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
 
@@ -144,7 +146,7 @@ export class JournalsComponent implements OnInit {
         if (res.success && res.data) this.journals.set(res.data);
         else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => { this.loading.set(false); this.error.set('Erreur réseau'); }
+      error: err => { this.loading.set(false); this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau')); }
     });
   }
 
@@ -161,16 +163,16 @@ export class JournalsComponent implements OnInit {
       else this.error.set(err ?? 'Erreur');
     };
     if (f.id) {
-      this.api.updateJournal(f.id, { label: f.label.trim(), familyId: f.familyId }).subscribe({ next: r => done(r.success, r.error), error: () => done(false, 'Erreur réseau') });
+      this.api.updateJournal(f.id, { label: f.label.trim(), familyId: f.familyId }).subscribe({ next: r => done(r.success, r.error), error: err => done(false, this.errors.extractErrorMessage(err, 'Erreur réseau')) });
     } else {
-      this.api.createJournal({ code: f.code.trim().toUpperCase(), label: f.label.trim(), familyId: f.familyId }).subscribe({ next: r => done(r.success, r.error), error: () => done(false, 'Erreur réseau') });
+      this.api.createJournal({ code: f.code.trim().toUpperCase(), label: f.label.trim(), familyId: f.familyId }).subscribe({ next: r => done(r.success, r.error), error: err => done(false, this.errors.extractErrorMessage(err, 'Erreur réseau')) });
     }
   }
 
   toggle(j: JournalDto): void {
     this.api.toggleJournal(j.id).subscribe({
       next: r => { if (r.success) this.load(); else this.error.set(r.error ?? 'Erreur'); },
-      error: () => this.error.set('Erreur réseau')
+      error: err => this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'))
     });
   }
 
@@ -181,7 +183,7 @@ export class JournalsComponent implements OnInit {
         if (r.success) { this.toast.add({ severity: 'success', summary: 'Famille créée', detail: this.famLabel, life: 4000 }); this.famCode = ''; this.famLabel = ''; this.showFamily.set(false); this.load(); }
         else this.error.set(r.error ?? 'Erreur');
       },
-      error: () => this.error.set('Erreur réseau')
+      error: err => this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'))
     });
   }
 }

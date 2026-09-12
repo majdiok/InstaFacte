@@ -100,7 +100,7 @@ public sealed class LetteringService : ILetteringService
             validation = validationResult.Value;
         }
 
-        var (lines, account, isPartial, currency, debit, credit) = validation;
+        var (lines, account, isPartial, currency, debit, credit, _, _) = validation;
 
         var code = await NextCodeAsync(ctx, isPartial, cancellationToken);
         var amount = isPartial ? Math.Min(debit, credit) : debit;
@@ -133,8 +133,11 @@ public sealed class LetteringService : ILetteringService
         bool allowPartial,
         CancellationToken cancellationToken)
     {
+        // L'écriture porte la devise de transaction : la charger avec les lignes évite N+1 et
+        // permet d'apprécier l'équilibre sur les montants qui font foi pour cette devise.
         var lines = await ctx.JournalEntryLines
             .AsTracking()
+            .Include(l => l.JournalEntry)
             .Where(l => journalEntryLineIds.Contains(l.Id))
             .ToListAsync(cancellationToken);
 
@@ -148,9 +151,24 @@ public sealed class LetteringService : ILetteringService
         if (lines.Any(l => l.AccountNumber != account))
             return Result.Failure<LetteringValidation>(Error.Validation("AccountNumber", "Toutes les lignes doivent être sur le même compte."));
 
+        // Unicité de devise contrôlée AVANT l'équilibre : dans l'ordre inverse, un groupe
+        // multi-devises échouait d'abord sur « Balance », avec un message trompeur.
+        var currency = lines[0].JournalEntry?.CurrencyCode ?? Money.DefaultCurrency;
+        if (lines.Any(l => (l.JournalEntry?.CurrencyCode ?? Money.DefaultCurrency) != currency))
+            return Result.Failure<LetteringValidation>(Error.Validation("Currency", "Les lignes doivent partager la même devise."));
+
+        // Montants en devise de tenue : ils alimentent le groupe de lettrage et révèlent l'écart de
+        // change quand le compte est soldé en devise mais pas en dinar.
         var debit = lines.Sum(l => l.DebitAmount.Amount);
         var credit = lines.Sum(l => l.CreditAmount.Amount);
-        var balanced = Math.Round(debit, 3) == Math.Round(credit, 3);
+
+        // L'équilibre s'apprécie sur la devise de l'opération : deux règlements de 1 000 EUR à des
+        // taux différents soldent le compte en euros, tout en laissant un écart en dinars.
+        var foreign = currency != Money.DefaultCurrency;
+        var debitForBalance = foreign ? lines.Sum(l => l.DebitAmountInCurrency) : debit;
+        var creditForBalance = foreign ? lines.Sum(l => l.CreditAmountInCurrency) : credit;
+
+        var balanced = Math.Round(debitForBalance, 3) == Math.Round(creditForBalance, 3);
         if (!balanced && !allowPartial)
         {
             return Result.Failure<LetteringValidation>(Error.Validation("Balance",
@@ -158,20 +176,27 @@ public sealed class LetteringService : ILetteringService
         }
 
         var isPartial = !balanced;
-        var currency = lines[0].DebitAmount.Currency;
-        if (lines.Any(l => l.DebitAmount.Currency != currency || l.CreditAmount.Currency != currency))
-            return Result.Failure<LetteringValidation>(Error.Validation("Currency", "Les lignes doivent partager la même devise."));
 
-        return Result.Success(new LetteringValidation(lines, account, isPartial, currency, debit, credit));
+        return Result.Success(new LetteringValidation(
+            lines, account, isPartial, Money.DefaultCurrency, debit, credit,
+            currency, Math.Round(debit - credit, 3)));
     }
 
+    /// <param name="Currency">Devise du groupe de lettrage, toujours la devise de tenue (les montants du groupe le sont).</param>
+    /// <param name="TransactionCurrency">Devise des opérations lettrées.</param>
+    /// <param name="LocalGap">
+    /// Écart en devise de tenue. Non nul alors que le groupe est équilibré en devise = écart de
+    /// change, à apurer par une écriture d'ajustement.
+    /// </param>
     private sealed record LetteringValidation(
         List<JournalEntryLine> Lines,
         string Account,
         bool IsPartial,
         string Currency,
         decimal Debit,
-        decimal Credit);
+        decimal Credit,
+        string TransactionCurrency,
+        decimal LocalGap);
 
     public async Task<Result> UnletterAsync(string code, CancellationToken cancellationToken = default)
     {

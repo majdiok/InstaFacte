@@ -9,6 +9,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
 import { AccountingService, CreateLoanRequest, LoanDto } from '../services/accounting.service';
 import { todayLocalYmd } from '../shared/accounting-date-utils';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /**
  * Registre des emprunts : liste + création (l'échéancier est généré côté serveur à la création).
@@ -198,6 +199,7 @@ import { todayLocalYmd } from '../shared/accounting-date-utils';
   `
 })
 export class LoansListComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly router = inject(Router);
 
@@ -243,9 +245,9 @@ export class LoansListComponent implements OnInit {
         if (res.success && res.data) this.loans.set(res.data.items);
         else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }
@@ -267,9 +269,9 @@ export class LoansListComponent implements OnInit {
           this.error.set(res.error ?? 'La création a échoué.');
         }
       },
-      error: () => {
+      error: err => {
         this.creating.set(false);
-        this.error.set('Erreur réseau lors de la création.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors de la création.'));
       }
     });
   }

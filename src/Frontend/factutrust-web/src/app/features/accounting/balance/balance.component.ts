@@ -26,6 +26,7 @@ import {
 } from '../shared/accounting-date-utils';
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-accounting-balance',
@@ -144,6 +145,9 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
             <tr>
               <th>Compte</th>
               <th>Libellé</th>
+              @if (hasForeignCurrency()) {
+                <th pTooltip="Devises presentes sur le compte — les montants restent en dinar" tooltipPosition="top">Devises</th>
+              }
               <th class="text-right" pTooltip="Ouverture débit" tooltipPosition="top">Ouv. D</th>
               <th class="text-right" pTooltip="Ouverture crédit" tooltipPosition="top">Ouv. C</th>
               <th class="text-right" pTooltip="Mouvement débit" tooltipPosition="top">Mouv. D</th>
@@ -164,6 +168,15 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
                 </a>
               </td>
               <td data-label="Libellé">{{ r.label }}</td>
+              @if (hasForeignCurrency()) {
+                <td data-label="Devises" class="bal-currencies">
+                  @if (r.foreignCurrencies?.length) {
+                    {{ r.foreignCurrencies.join(' · ') }}
+                  } @else {
+                    <span class="bal-currencies-none">—</span>
+                  }
+                </td>
+              }
               <td class="text-right" data-label="Ouv. D" style="font-variant-numeric:tabular-nums">{{ r.openingDebit | number : '1.3-3' }}</td>
               <td class="text-right" data-label="Ouv. C" style="font-variant-numeric:tabular-nums">{{ r.openingCredit | number : '1.3-3' }}</td>
               <td class="text-right" data-label="Mouv. D" style="font-variant-numeric:tabular-nums">{{ r.movementDebit | number : '1.3-3' }}</td>
@@ -174,7 +187,7 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
           </ng-template>
           <ng-template pTemplate="footer">
             <tr class="acc-totals-row">
-              <td colspan="2">Totaux</td>
+              <td [attr.colspan]="hasForeignCurrency() ? 3 : 2">Totaux</td>
               <td class="text-right" style="font-variant-numeric:tabular-nums">{{ totals().openingDebit | number : '1.3-3' }}</td>
               <td class="text-right" style="font-variant-numeric:tabular-nums">{{ totals().openingCredit | number : '1.3-3' }}</td>
               <td class="text-right" style="font-variant-numeric:tabular-nums">{{ totals().movementDebit | number : '1.3-3' }}</td>
@@ -184,7 +197,7 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
             </tr>
           </ng-template>
           <ng-template pTemplate="emptymessage">
-            <tr><td colspan="8" style="text-align:center;padding:2rem">Aucun mouvement sur la période.</td></tr>
+            <tr><td [attr.colspan]="hasForeignCurrency() ? 9 : 8" style="text-align:center;padding:2rem">Aucun mouvement sur la période.</td></tr>
           </ng-template>
         </p-table>
       </p-tabpanel>
@@ -343,6 +356,7 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
   `
 })
 export class BalanceComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   fromStr = '';
   toStr = '';
@@ -360,6 +374,15 @@ export class BalanceComponent implements OnInit {
   readonly monthIndexes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
   readonly rows = signal<BalanceRowDto[]>([]);
+
+  /**
+   * La colonne Devises n'apparaît que si au moins un compte de la balance porte une opération en
+   * devise. Elle liste les codes, sans montant : une ligne de balance agrège un compte toutes
+   * devises confondues, il n'existe donc pas de contre-valeur unique à afficher.
+   */
+  readonly hasForeignCurrency = computed(() =>
+    this.rows().some(r => (r.foreignCurrencies?.length ?? 0) > 0)
+  );
   readonly detailed = signal<DetailedBalanceDto | null>(null);
   readonly periodic = signal<PeriodicBalanceDto | null>(null);
   readonly error = signal<string | null>(null);
@@ -507,9 +530,9 @@ export class BalanceComponent implements OnInit {
         if (res.success && res.data) this.rows.set(res.data);
         else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }
@@ -528,9 +551,9 @@ export class BalanceComponent implements OnInit {
           if (res.success && res.data) this.detailed.set(res.data);
           else this.error.set(res.error ?? 'Erreur');
         },
-        error: () => {
+        error: err => {
           this.loading.set(false);
-          this.error.set('Erreur réseau');
+          this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
         }
       });
   }
@@ -544,9 +567,9 @@ export class BalanceComponent implements OnInit {
         if (res.success && res.data) this.periodic.set(res.data);
         else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }
@@ -586,9 +609,9 @@ export class BalanceComponent implements OnInit {
         this.exporting.set(false);
         downloadBlob(blob, `balance_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }
@@ -611,9 +634,9 @@ export class BalanceComponent implements OnInit {
           this.exporting.set(false);
           downloadBlob(blob, `balance_detaillee_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
         },
-        error: () => {
+        error: err => {
           this.exporting.set(false);
-          this.error.set("Erreur lors de l'export.");
+          this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
         }
       });
   }
@@ -625,9 +648,9 @@ export class BalanceComponent implements OnInit {
         this.exporting.set(false);
         downloadBlob(blob, `balance_par_periode_${this.fiscalYear}.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }

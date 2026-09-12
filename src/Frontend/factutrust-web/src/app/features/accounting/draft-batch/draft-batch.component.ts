@@ -17,6 +17,7 @@ import {
   todayLocalYmd,
   validateDateRange
 } from '../shared/accounting-date-utils';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 /**
  * Modifications de masse des écritures EN BROUILLARD (journal / date / libellé) + suppression en lot.
@@ -146,6 +147,7 @@ import {
   `
 })
 export class DraftBatchComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly journalCatalog = inject(AccountingJournalCatalogService);
   private readonly auth = inject(AuthService);
@@ -224,9 +226,9 @@ export class DraftBatchComponent implements OnInit {
           this.error.set(res.error ?? 'Erreur');
         }
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }
@@ -252,9 +254,9 @@ export class DraftBatchComponent implements OnInit {
           this.error.set(res.error ?? 'La modification a échoué.');
         }
       },
-      error: () => {
+      error: err => {
         this.acting.set(false);
-        this.error.set('Erreur réseau lors de la modification.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors de la modification.'));
       }
     });
   }
@@ -275,9 +277,9 @@ export class DraftBatchComponent implements OnInit {
           this.error.set(res.error ?? 'La suppression a échoué.');
         }
       },
-      error: () => {
+      error: err => {
         this.acting.set(false);
-        this.error.set('Erreur réseau lors de la suppression.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors de la suppression.'));
       }
     });
   }

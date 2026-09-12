@@ -22,7 +22,10 @@ import {
   ThirdPartyRef,
   createDefaultLines,
   createEmptyLine,
-  ensureClientLineId
+  ensureClientLineId,
+  FUNCTIONAL_CURRENCY,
+  MILLIME_DECIMALS,
+  toMillime
 } from '../models/entry-form.model';
 
 const DEFAULT_JOURNAL_OPTIONS: { code: string; label: string }[] = [
@@ -44,7 +47,39 @@ export class EntryFormStore {
   readonly pieceDate = signal('');
   readonly periodId = signal<string | null>(null);
   readonly description = signal('');
-  readonly currency = signal('TND');
+  readonly currency = signal(FUNCTIONAL_CURRENCY);
+
+  /**
+   * Taux appliqué : unités de dinar pour UNE unité de la devise de l'écriture. `null` tant qu'aucun
+   * taux n'a été résolu. Le serveur le recalcule de toute façon — celui-ci ne sert qu'à l'affichage
+   * de la contre-valeur et à signaler une éventuelle surcharge.
+   */
+  readonly exchangeRate = signal<number | null>(null);
+
+  /** Décimales de saisie de la devise courante (2 pour l'euro, 3 pour le dinar). */
+  readonly currencyDecimals = signal(MILLIME_DECIMALS);
+
+  /** Vrai dès que l'écriture n'est pas en devise de tenue : c'est ce qui ouvre les colonnes devise. */
+  readonly isForeignCurrency = computed(() => this.currency() !== FUNCTIONAL_CURRENCY);
+
+  /**
+   * Format d'affichage des montants saisis : les décimales de la devise (2 pour l'euro, 3 pour le
+   * dinar). Source unique — la grille, le récapitulatif et l'indicateur d'équilibre s'y réfèrent,
+   * sinon un même montant s'affiche différemment selon l'endroit de l'écran qui le porte.
+   */
+  readonly amountFormat = computed(() => {
+    const d = this.isForeignCurrency() ? this.currencyDecimals() : MILLIME_DECIMALS;
+    return `1.${d}-${d}`;
+  });
+
+  /**
+   * Devise et date dont le taux provient d'une écriture rechargée, et non de la table.
+   *
+   * Tant que la clé correspond, la résolution serveur ne doit pas écraser ce taux : une écriture
+   * déjà comptabilisée garde sa valeur même si la table a changé depuis. Dès que l'utilisateur
+   * change la devise ou la date, la clé ne correspond plus et le taux résolu reprend la main.
+   */
+  private readonly hydratedRateKey = signal<string | null>(null);
   readonly headerDueDate = signal('');
   readonly paymentMethod = signal<number | null>(null);
   readonly bankAccountId = signal<string | null>(null);
@@ -95,10 +130,54 @@ export class EntryFormStore {
     return Math.round((t.debit - t.credit) * 1000) / 1000;
   });
 
+  /**
+   * Totaux en devise de tenue. Les montants saisis sont exprimés dans la devise de l'écriture :
+   * en mono-devise la conversion est l'identité, et ces totaux valent exactement `totals()`.
+   *
+   * Affichage seul — le serveur recalcule et fait foi, notamment pour l'absorption du résidu
+   * d'arrondi que ce calcul-ci ne reproduit pas.
+   */
+  readonly localTotals = computed<EntryTotals>(() => {
+    const t = this.totals();
+    if (!this.isForeignCurrency()) return t;
+    const rate = this.exchangeRate();
+    if (!rate || rate <= 0) return { debit: 0, credit: 0 };
+    return { debit: toMillime(t.debit * rate), credit: toMillime(t.credit * rate) };
+  });
+
+  readonly localBalance = computed(() => {
+    const t = this.localTotals();
+    return Math.round((t.debit - t.credit) * 1000) / 1000;
+  });
+
+  /** Contre-valeur en dinar d'un montant saisi, pour les colonnes calculées de la grille. */
+  toLocalAmount(amount: number | null | undefined): number | null {
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value === 0) return null;
+    if (!this.isForeignCurrency()) return value;
+    const rate = this.exchangeRate();
+    if (!rate || rate <= 0) return null;
+    return toMillime(value * rate);
+  }
+
   readonly isBalanced = computed(() => {
     const t = this.totals();
     return Math.round(t.debit * 1000) === Math.round(t.credit * 1000) && t.debit > 0;
   });
+
+  /** Voir `hydratedRateKey` : le taux affiché vient-il de l'écriture rechargée ? */
+  isHydratedRate(code: string, date: string): boolean {
+    return this.hydratedRateKey() === `${code}|${date}`;
+  }
+
+  /**
+   * À appeler dès que l'utilisateur touche lui-même la devise : sans cela, revenir sur la devise
+   * d'origine après un aller-retour retrouverait une clé valide et la résolution serait ignorée,
+   * laissant le champ Taux vide. La date est traitée par `setEntryDate` / `setPeriodId`.
+   */
+  clearHydratedRate(): void {
+    this.hydratedRateKey.set(null);
+  }
 
   readonly periodClosed = computed(() => {
     if (!this.periodsLoaded()) return false;
@@ -188,11 +267,15 @@ export class EntryFormStore {
   }
 
   setEntryDate(date: string): void {
+    // Changement délibéré de l'utilisateur : le taux se réévalue sur la nouvelle période.
+    this.hydratedRateKey.set(null);
     this.entryDate.set(date);
     this.syncPeriodFromDate();
   }
 
   setPeriodId(id: string | null): void {
+    // La période déplace la date : même raison que `setEntryDate`.
+    this.hydratedRateKey.set(null);
     this.periodId.set(id);
     if (!id) return;
     const period = this.periods().find(p => p.id === id);
@@ -463,7 +546,9 @@ export class EntryFormStore {
       label,
       pieceRef: this.pieceRef().trim() || null,
       pieceDate: this.pieceDate() || null,
-      lines: linesWithAmount.map(l => this.mapLineToRequest(l, label))
+      lines: linesWithAmount.map(l => this.mapLineToRequest(l, label)),
+      currencyCode: this.currency(),
+      exchangeRate: this.isForeignCurrency() ? this.exchangeRate() : null
     };
 
     return { request, journalCode, entryDate };
@@ -477,18 +562,29 @@ export class EntryFormStore {
       label,
       pieceRef: this.pieceRef().trim() || null,
       pieceDate: this.pieceDate() || null,
-      lines: this.getSubmittableLines().map(l => this.mapLineToRequest(l, label))
+      lines: this.getSubmittableLines().map(l => this.mapLineToRequest(l, label)),
+      currencyCode: this.currency(),
+      exchangeRate: this.isForeignCurrency() ? this.exchangeRate() : null
     };
     return { request, journalCode, entryDate };
   }
 
   mapLineToRequest(line: EntryLine, fallbackLabel: string): ManualJournalLineRequest {
     const tp = line.thirdParty && typeof line.thirdParty === 'object' ? line.thirdParty : null;
+    const debit = Number(line.debit) || 0;
+    const credit = Number(line.credit) || 0;
+    const foreign = this.isForeignCurrency();
+
+    // En devise, les montants saisis partent dans les champs devise et les montants en dinar sont
+    // laissés à 0 : le serveur les recalcule intégralement depuis le taux qu'il a lui-même résolu.
+    // Les transmettre serait au mieux inutile, au pire trompeur.
     return {
       accountNumber: line.accountNumber.trim(),
       lineLabel: line.lineLabel || fallbackLabel,
-      debit: Number(line.debit) || 0,
-      credit: Number(line.credit) || 0,
+      debit: foreign ? 0 : debit,
+      credit: foreign ? 0 : credit,
+      debitInCurrency: foreign ? debit : 0,
+      creditInCurrency: foreign ? credit : 0,
       thirdPartyId: tp?.id ?? null,
       thirdPartyKind: tp?.kind ?? null
     };
@@ -512,6 +608,7 @@ export class EntryFormStore {
     this.selectedLineIndexes.set(new Set());
     this.editingEntryId.set(null);
     this.editingEntryNumber.set(null);
+    this.hydratedRateKey.set(null);
     this.isAutoGenerated.set(false);
     this.sourceEntityType.set(null);
     this.isReversal.set(false);
@@ -535,22 +632,38 @@ export class EntryFormStore {
     this.pieceRef.set(dto.pieceRef ?? '');
     this.pieceDate.set(toDateInputValue(dto.pieceDate));
 
-    const mapped: EntryLine[] = (dto.lines ?? []).map(l => ({
-      ...createEmptyLine(),
-      accountNumber: l.accountNumber,
-      lineLabel: l.label,
-      debit: l.debit > 0 ? l.debit : null,
-      credit: l.credit > 0 ? l.credit : null,
-      thirdParty:
-        l.thirdPartyId && l.thirdPartyKind
-          ? {
-              id: l.thirdPartyId,
-              kind: l.thirdPartyKind,
-              name: '',
-              display: ''
-            }
-          : null
-    }));
+    // La devise et le taux doivent repartir tels quels. Sans eux, `mapLineToRequest` part en
+    // mono-devise et l'enregistrement repose l'écriture en dinar, la contre-valeur devenue
+    // montant saisi : l'écriture perd sa devise et son taux sans que rien ne le signale.
+    const code = dto.currencyCode ?? FUNCTIONAL_CURRENCY;
+    const foreign = code !== FUNCTIONAL_CURRENCY;
+    const rate = foreign ? (dto.exchangeRate ?? null) : null;
+    this.currency.set(code);
+    this.exchangeRate.set(rate);
+    this.hydratedRateKey.set(rate !== null ? `${code}|${this.entryDate()}` : null);
+
+    const mapped: EntryLine[] = (dto.lines ?? []).map(l => {
+      // En devise, les colonnes de saisie portent les montants EN DEVISE. Le dinar n'est qu'une
+      // contre-valeur, que le serveur recalcule : le réinjecter ici en ferait un montant saisi.
+      const debit = foreign ? (l.debitInCurrency ?? 0) : l.debit;
+      const credit = foreign ? (l.creditInCurrency ?? 0) : l.credit;
+      return {
+        ...createEmptyLine(),
+        accountNumber: l.accountNumber,
+        lineLabel: l.label,
+        debit: debit > 0 ? debit : null,
+        credit: credit > 0 ? credit : null,
+        thirdParty:
+          l.thirdPartyId && l.thirdPartyKind
+            ? {
+                id: l.thirdPartyId,
+                kind: l.thirdPartyKind,
+                name: '',
+                display: ''
+              }
+            : null
+      };
+    });
     while (mapped.length < 2) {
       mapped.push(createEmptyLine());
     }

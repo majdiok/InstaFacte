@@ -16,6 +16,7 @@ import {
   BudgetYearStatus,
   SaveBudgetLineRequest
 } from '../services/accounting.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 interface EditableBudgetRow {
   budgetPostId: string;
@@ -163,6 +164,7 @@ const MONTH_LABELS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août
   `
 })
 export class BudgetEntryComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
@@ -248,9 +250,9 @@ export class BudgetEntryComponent implements OnInit {
         })));
         this.bumpTotals();
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau lors du chargement de la grille budgétaire.');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors du chargement de la grille budgétaire.'));
       }
     });
   }
@@ -292,9 +294,9 @@ export class BudgetEntryComponent implements OnInit {
         this.toast.add({ severity: 'success', summary: 'Budget enregistré', detail: `Exercice ${this.fiscalYear()}`, life: 4000 });
         this.load();
       },
-      error: () => {
+      error: err => {
         this.saving.set(false);
-        this.error.set("Erreur réseau lors de l'enregistrement du budget.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur réseau lors de l'enregistrement du budget."));
       }
     });
   }
@@ -322,9 +324,9 @@ export class BudgetEntryComponent implements OnInit {
             this.toast.add({ severity: 'success', summary: 'Budget initial validé', detail: `Exercice ${this.fiscalYear()}`, life: 4000 });
             this.load();
           },
-          error: () => {
+          error: err => {
             this.validating.set(false);
-            this.error.set('Erreur réseau lors de la validation du budget initial.');
+            this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau lors de la validation du budget initial.'));
           }
         });
       }

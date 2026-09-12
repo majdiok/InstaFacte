@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -8,6 +8,8 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingCorrectionBannerComponent } from '../shared/accounting-correction-banner.component';
 import { AccountingService, JournalSearchFilters, JournalSearchRowDto } from '../services/accounting.service';
+import { FUNCTIONAL_CURRENCY } from '../manual-entry/models/entry-form.model';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-entry-search',
@@ -60,6 +62,7 @@ import { AccountingService, JournalSearchFilters, JournalSearchRowDto } from '..
               <th scope="col">Date</th><th scope="col">Journal</th><th scope="col">N°</th>
               <th scope="col">Pièce</th>
               <th scope="col">Compte</th><th scope="col">Libellé</th>
+              @if (hasForeignCurrency()) { <th scope="col">Devise</th> }
               <th scope="col" class="es-amt">Débit</th><th scope="col" class="es-amt">Crédit</th>
               <th scope="col">Lettrage</th><th scope="col">Statut</th>
             </tr>
@@ -72,6 +75,15 @@ import { AccountingService, JournalSearchFilters, JournalSearchRowDto } from '..
               <td class="es-mono">{{ r.pieceRef }}</td>
               <td class="es-mono">{{ r.accountNumber }}</td>
               <td>{{ r.label }}</td>
+              @if (hasForeignCurrency()) {
+                <td class="es-mono">
+                  @if (r.currencyCode && r.currencyCode !== functionalCurrency) {
+                    {{ r.currencyCode }} {{ r.amountInCurrency | number : '1.2-2' }}
+                  } @else {
+                    —
+                  }
+                </td>
+              }
               <td class="es-amt">{{ r.debit | number : '1.3-3' }}</td>
               <td class="es-amt">{{ r.credit | number : '1.3-3' }}</td>
               <td>{{ r.letteringCode }}</td>
@@ -102,12 +114,20 @@ import { AccountingService, JournalSearchFilters, JournalSearchRowDto } from '..
   `
 })
 export class EntrySearchComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   private readonly route = inject(ActivatedRoute);
   readonly journalCodes = ['JV', 'JA', 'JC', 'JB', 'JOD', 'JIM', 'JAN'];
 
   f: JournalSearchFilters = {};
   readonly rows = signal<JournalSearchRowDto[]>([]);
+
+  readonly functionalCurrency = FUNCTIONAL_CURRENCY;
+
+  /** La colonne n'apparaît que si le résultat porte au moins une opération en devise. */
+  readonly hasForeignCurrency = computed(() =>
+    this.rows().some(r => (r.currencyCode || FUNCTIONAL_CURRENCY) !== FUNCTIONAL_CURRENCY)
+  );
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly searched = signal(false);
@@ -146,7 +166,7 @@ export class EntrySearchComponent implements OnInit {
         if (res.success && res.data) this.rows.set(res.data);
         else this.error.set(res.error ?? 'Erreur');
       },
-      error: () => { this.loading.set(false); this.error.set('Erreur réseau'); }
+      error: err => { this.loading.set(false); this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau')); }
     });
   }
 

@@ -16,6 +16,7 @@ import {
   computeYoYVariation
 } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 import { ScreenAnalysisHighlight } from '@features/ai-assistant/models/ai-screen-analysis-payload.schema';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 @Component({
   selector: 'app-income-statement',
@@ -198,6 +199,7 @@ import { ScreenAnalysisHighlight } from '@features/ai-assistant/models/ai-screen
   `
 })
 export class IncomeStatementComponent implements OnInit {
+  private readonly errors = inject(ErrorHandlerService);
   private readonly api = inject(AccountingService);
   fiscalYear = new Date().getFullYear();
   readonly data = signal<IncomeStatementDto | null>(null);
@@ -285,9 +287,9 @@ export class IncomeStatementComponent implements OnInit {
         if (res.success && res.data) this.data.set(res.data);
         else this.error.set(res.error ?? 'Erreur lors du chargement du compte de résultat');
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
-        this.error.set('Erreur réseau');
+        this.error.set(this.errors.extractErrorMessage(err, 'Erreur réseau'));
       }
     });
   }
@@ -299,9 +301,9 @@ export class IncomeStatementComponent implements OnInit {
         this.exporting.set(false);
         downloadBlob(blob, `compte_resultat_${this.fiscalYear}.${exportExtension(format)}`);
       },
-      error: () => {
+      error: err => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export.");
+        this.error.set(this.errors.extractErrorMessage(err, "Erreur lors de l'export."));
       }
     });
   }
