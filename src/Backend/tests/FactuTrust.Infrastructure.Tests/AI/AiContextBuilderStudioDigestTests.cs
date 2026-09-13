@@ -276,6 +276,34 @@ public sealed class AiContextBuilderStudioDigestTests
         Assert.Equal("v5", (string)field!.GetRawConstantValue()!);
     }
 
+    [Fact]
+    public async Task Many_to_many_rule_3e_and_example_appear_only_when_the_flag_is_on()
+    {
+        var digest = DigestMock(string.Empty, null);
+        var offBuilder = Build(Settings(digestEnabled: true), digest.Object);
+        var onSettings = Settings(digestEnabled: true);
+        onSettings.EnableStudioManyToMany = true;
+        var onBuilder = Build(onSettings, digest.Object);
+
+        var offPrompt = await offBuilder.BuildSystemPromptAsync(
+            AssistantMode.StudioBuilder, null, AssistantAgentScope.None, Opts());
+        var onPrompt = await onBuilder.BuildSystemPromptAsync(
+            AssistantMode.StudioBuilder, null, AssistantAgentScope.None, Opts());
+
+        Assert.DoesNotContain("3e. RELATION PLUSIEURS-À-PLUSIEURS", offPrompt);
+        Assert.DoesNotContain("EXEMPLE système formations", offPrompt);
+        Assert.Contains("EXEMPLE système congés", offPrompt);
+
+        Assert.Contains("3e. RELATION PLUSIEURS-À-PLUSIEURS", onPrompt);
+        Assert.Contains("many_to_many", onPrompt);
+        Assert.Contains("EXEMPLE système formations", onPrompt);
+        Assert.DoesNotContain("EXEMPLE système congés", onPrompt);
+
+        // Budget de la règle : ne doit pas gonfler le prompt de façon disproportionnée.
+        var ruleLine = onPrompt.Split('\n').Single(l => l.Contains("3e. RELATION PLUSIEURS-À-PLUSIEURS"));
+        Assert.True(ruleLine.Length <= 420, $"Règle 3e trop longue ({ruleLine.Length} caractères).");
+    }
+
     [Theory]
     [InlineData("system", "system")]
     [InlineData("  Relations ", "relations")]

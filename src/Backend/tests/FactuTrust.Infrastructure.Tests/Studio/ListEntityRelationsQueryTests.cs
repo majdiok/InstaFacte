@@ -85,6 +85,7 @@ public sealed class ListEntityRelationsQueryTests
         var junctionFields = await _fields.ListByTypeAsync(Tid, CustomFieldType.RelationCustom, includeInactive: false);
         Assert.Equal(junctionFields.Single(f => f.EntityDefinitionId == _junction.Id && f.Key == "employes").Id, manyToMany.FieldId);
         Assert.Equal(junctionFields.Single(f => f.Key == "projets").Id, manyToMany.JunctionTargetFieldId);
+        Assert.Equal("projets", manyToMany.JunctionTargetFieldKey);
     }
 
     [Fact]

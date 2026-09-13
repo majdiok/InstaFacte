@@ -103,6 +103,21 @@ public static class StudioAiSpecCanonical
             ["system"] = system,
             ["entities"] = entities
         };
+        if (spec.Relations.Count > 0)
+        {
+            root["relations"] = new JsonArray(spec.Relations.Select(r =>
+            {
+                var node = new JsonObject
+                {
+                    ["kind"] = r.Kind,
+                    ["from"] = r.FromRef,
+                    ["to"] = r.ToRef
+                };
+                if (r.Label is not null) node["label"] = r.Label;
+                if (r.JunctionName is not null) node["junctionName"] = r.JunctionName;
+                return (JsonNode)node;
+            }).ToArray());
+        }
         if (spec.Seed.Count > 0)
         {
             root["seed"] = new JsonArray(spec.Seed.Select(batch => (JsonNode)new JsonObject

@@ -1,11 +1,13 @@
 using System.Text.Json.Nodes;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Entities;
 using FactuTrust.Application.Features.Studio.Fields;
 using FactuTrust.Application.Features.Studio.Forms;
 using FactuTrust.Application.Features.Studio.Records;
+using FactuTrust.Application.Features.Studio.Relations;
 using FactuTrust.Application.Features.Studio.Reports;
 using FactuTrust.Application.Features.Studio.Systems;
 using FactuTrust.Domain.Common;
@@ -19,12 +21,16 @@ public sealed class StudioAiSystemOrchestrator
     private readonly IMediator _mediator;
     private readonly ICurrentUser _currentUser;
     private readonly IStudioQuotaService? _quota;
+    private readonly OllamaSettings? _settings;
 
-    public StudioAiSystemOrchestrator(IMediator mediator, ICurrentUser currentUser, IStudioQuotaService? quota = null)
+    public StudioAiSystemOrchestrator(
+        IMediator mediator, ICurrentUser currentUser,
+        IStudioQuotaService? quota = null, OllamaSettings? settings = null)
     {
         _mediator = mediator;
         _currentUser = currentUser;
         _quota = quota;
+        _settings = settings;
     }
 
     public async Task<(bool Success, string? Error, object? Payload)> ExecuteAsync(
@@ -41,15 +47,18 @@ public sealed class StudioAiSystemOrchestrator
         try
         {
             // Pré-vérification de quota : refuser AVANT toute création si les N tables NOUVELLES du
-            // système ne tiennent pas dans le quota restant. Une table réutilisée (existingKey) n'est
-            // pas créée : elle ne consomme aucun quota.
+            // système (+ les jonctions N-N à créer, si le drapeau est actif) ne tiennent pas dans le
+            // quota restant. Une table réutilisée (existingKey) n'est pas créée : elle ne consomme
+            // aucun quota.
+            var manyToMany = _settings?.EnableStudioManyToMany == true;
             var newEntityCount = spec.Entities.Count(e => e.ExistingKey is null);
+            var quotaCount = newEntityCount + (manyToMany ? spec.Relations.Count : 0);
             if (_quota is not null && StudioContext.TryGet(_currentUser, out var quotaTenantId, out _, out _))
             {
                 var existing = await _mediator.Send(new ListCustomEntitiesQuery(true), ct);
                 var currentCount = existing.IsSuccess ? existing.Value.Count : 0;
                 var quotaResult = await _quota.EnsureUnderLimitAsync(quotaTenantId, StudioQuotas.MaxEntitiesKey,
-                    currentCount + newEntityCount - 1, StudioQuotas.MaxEntitiesFallback, "tables personnalisées", ct);
+                    currentCount + quotaCount - 1, StudioQuotas.MaxEntitiesFallback, "tables personnalisées", ct);
                 if (!quotaResult.IsSuccess)
                 {
                     Report("failed", "Échec – quota", "error", null, quotaResult.Error.Description);
@@ -61,6 +70,7 @@ public sealed class StudioAiSystemOrchestrator
             // introuvable ou inactive, on refuse SANS avoir créé le système (pas d'orphelin à
             // annuler). Le message ne cite que la clé demandée — jamais les clés du tenant.
             var entityKeyMap = new Dictionary<string, string>(StringComparer.Ordinal);
+            var entityIdMap = new Dictionary<string, Guid>(StringComparer.Ordinal);
             foreach (var reusedSpec in spec.Entities.Where(e => e.ExistingKey is not null))
             {
                 Report("reusing_entity", $"Table existante « {reusedSpec.EntityDisplayName} »", "running", reusedSpec.Ref);
@@ -72,6 +82,7 @@ public sealed class StudioAiSystemOrchestrator
                     return (false, reason, null);
                 }
                 entityKeyMap[reusedSpec.Ref] = reusedSpec.ExistingKey!;
+                entityIdMap[reusedSpec.Ref] = schema.Value.Entity.Id;
                 Report("reusing_entity", $"Table existante « {reusedSpec.EntityDisplayName} »", "done", reusedSpec.Ref);
             }
 
@@ -86,6 +97,10 @@ public sealed class StudioAiSystemOrchestrator
             journal.SystemKey = systemResult.Value.Key;
             Report("creating_system", "Création du système", "done");
 
+            // Passe 1 : toutes les entités et leurs champs simples (non-relation). entityKeyMap /
+            // entityIdMap sont ainsi COMPLETS avant la passe 2 — plus de dégradation d'une relation
+            // vers une table déclarée plus loin dans le spec (référence en avant).
+            var createdEntities = new List<(ParsedSystemEntity Spec, Guid Id)>();
             foreach (var entitySpec in spec.Entities)
             {
                 // Table réutilisée : AUCUNE écriture (ni entité, ni champ, ni formulaire, ni état) et
@@ -109,9 +124,10 @@ public sealed class StudioAiSystemOrchestrator
                 var entity = entityResult.Value;
                 journal.EntityIds.Add(entity.Id);
                 entityKeyMap[entitySpec.Ref] = entity.Key;
+                entityIdMap[entitySpec.Ref] = entity.Id;
+                createdEntities.Add((entitySpec, entity.Id));
 
                 var simpleFields = entitySpec.Fields.Where(f => f.FieldType != CustomFieldType.RelationCustom).ToList();
-                var relationFields = entitySpec.Fields.Where(f => f.FieldType == CustomFieldType.RelationCustom).ToList();
 
                 Report("creating_fields", $"Champs de « {entitySpec.EntityDisplayName} »", "running", entitySpec.Ref);
                 foreach (var f in simpleFields)
@@ -122,10 +138,18 @@ public sealed class StudioAiSystemOrchestrator
                 }
                 Report("creating_fields", $"Champs de « {entitySpec.EntityDisplayName} »", "done", entitySpec.Ref);
 
+                Report("creating_entity", $"Table « {entitySpec.EntityDisplayName} »", "done", entitySpec.Ref);
+            }
+
+            // Passe 2 : champs de relation (many_to_one / one_to_many), une fois toutes les tables
+            // créées — entityKeyMap est complet, y compris pour les références en avant.
+            foreach (var (entitySpec, entityId) in createdEntities)
+            {
+                var relationFields = entitySpec.Fields.Where(f => f.FieldType == CustomFieldType.RelationCustom).ToList();
                 foreach (var f in relationFields)
                 {
                     Report("creating_relations", $"Relation « {f.Label} »", "running", entitySpec.Ref);
-                    var fr = await CreateFieldAsync(entity.Id, f, entityKeyMap, ct);
+                    var fr = await CreateFieldAsync(entityId, f, entityKeyMap, ct);
                     if (!fr.IsSuccess)
                     {
                         warnings.Add($"Relation « {f.Label} » ignorée : {fr.Error.Description}");
@@ -134,12 +158,57 @@ public sealed class StudioAiSystemOrchestrator
                     }
                     Report("creating_relations", $"Relation « {f.Label} »", "done", entitySpec.Ref);
                 }
+            }
 
+            // Passe 3 : relations plusieurs-à-plusieurs déclarées dans spec.Relations — une table de
+            // jonction par relation, via CreateManyToManyRelationCommand. Si le drapeau Ollama est
+            // désactivé, la passe est marquée "skipped" et un avertissement est ajouté, sans créer
+            // aucune jonction.
+            var createdRelations = new List<(string FromKey, string ToKey, string JunctionKey)>();
+            if (spec.Relations.Count > 0)
+            {
+                if (manyToMany)
+                {
+                    foreach (var rel in spec.Relations)
+                    {
+                        if (!entityIdMap.TryGetValue(rel.FromRef, out var fromId) || !entityIdMap.TryGetValue(rel.ToRef, out var toId))
+                        {
+                            warnings.Add($"Relation « {rel.FromRef} ↔ {rel.ToRef} » ignorée : table introuvable.");
+                            continue;
+                        }
+                        var fromKey = entityKeyMap[rel.FromRef];
+                        var toKey = entityKeyMap[rel.ToRef];
+                        Report("creating_junctions", $"Relation « {fromKey} ↔ {toKey} »", "running");
+                        var junctionKeyArg = rel.JunctionName is null ? null : StudioAiAppSpec.SlugKey(rel.JunctionName);
+                        var mmResult = await _mediator.Send(new CreateManyToManyRelationCommand(fromId,
+                            new CreateManyToManyRelationRequest(toId, rel.Label, junctionKeyArg, rel.JunctionName)), ct);
+                        if (!mmResult.IsSuccess)
+                        {
+                            warnings.Add($"Relation « {fromKey} ↔ {toKey} » ignorée : {mmResult.Error.Description}");
+                            Report("creating_junctions", $"Relation « {fromKey} ↔ {toKey} »", "error", null, mmResult.Error.Description);
+                            continue;
+                        }
+                        journal.EntityIds.Add(mmResult.Value.Junction.Id);
+                        createdRelations.Add((fromKey, toKey, mmResult.Value.Junction.Key));
+                        Report("creating_junctions", $"Relation « {fromKey} ↔ {toKey} »", "done");
+                    }
+                }
+                else
+                {
+                    const string offMessage = "Relations N-N non activées (Ollama:EnableStudioManyToMany).";
+                    warnings.Add(offMessage);
+                    Report("creating_junctions", "Relations plusieurs-à-plusieurs", "skipped", null, offMessage);
+                }
+            }
+
+            // Passe 4 : formulaires et états, après que toutes les relations (simples et N-N) existent.
+            foreach (var (entitySpec, entityId) in createdEntities)
+            {
                 if (entitySpec.Form is not null && _currentUser.HasPermission(Permissions.Studio.DesignForms))
                 {
                     Report("creating_form", $"Formulaire « {entitySpec.EntityDisplayName} »", "running", entitySpec.Ref);
                     var layout = BuildFormLayout(entitySpec.Form);
-                    var formResult = await _mediator.Send(new UpsertDefaultFormCommand(entity.Id,
+                    var formResult = await _mediator.Send(new UpsertDefaultFormCommand(entityId,
                         new SaveFormLayoutRequest(layout, null)), ct);
                     if (!formResult.IsSuccess)
                     {
@@ -163,7 +232,7 @@ public sealed class StudioAiSystemOrchestrator
                     };
                     var rr = await _mediator.Send(new UpsertCustomReportCommand(null,
                         new SaveCustomReportRequest(null, entitySpec.Report.DisplayName,
-                            CustomReportDataSourceKind.CustomEntity, entity.Key, def)), ct);
+                            CustomReportDataSourceKind.CustomEntity, entityKeyMap[entitySpec.Ref], def)), ct);
                     if (!rr.IsSuccess)
                     {
                         warnings.Add($"Rapport « {entitySpec.Report.DisplayName} » ignoré : {rr.Error.Description}");
@@ -172,10 +241,10 @@ public sealed class StudioAiSystemOrchestrator
                     else
                         Report("creating_report", $"Rapport « {entitySpec.Report.DisplayName} »", "done", entitySpec.Ref);
                 }
-
-                Report("creating_entity", $"Table « {entitySpec.EntityDisplayName} »", "done", entitySpec.Ref);
             }
 
+            // Passe 5 : pré-remplissage des données de référence, en dernier — après que toutes les
+            // relations (simples et N-N) existent, afin que les valeurs de relation du seed résolvent.
             if (spec.Seed.Count > 0 && _currentUser.HasPermission(Permissions.CustomData.RecordsWrite))
             {
                 Report("seeding_data", "Pré-remplissage des données de référence", "running");
@@ -227,6 +296,14 @@ public sealed class StudioAiSystemOrchestrator
                 openUrl = $"/studio/d/{entityKeyMap[e.Ref]}"
             }).ToList();
 
+            var relations = createdRelations.Select(r => new
+            {
+                from = r.FromKey,
+                to = r.ToKey,
+                junctionKey = r.JunctionKey,
+                openUrl = $"/studio/d/{r.JunctionKey}"
+            }).ToList();
+
             var reusedCount = spec.Entities.Count(e => e.ExistingKey is not null);
             var createdCount = spec.Entities.Count - reusedCount;
             var payload = new
@@ -239,10 +316,12 @@ public sealed class StudioAiSystemOrchestrator
                 createdCount,
                 reusedCount,
                 entities,
+                relations,
                 warnings,
                 buildSteps = journal.Steps,
                 message = $"Système « {spec.SystemDisplayName} » créé avec {createdCount} table(s)"
                     + (reusedCount > 0 ? $" et {reusedCount} table(s) existante(s) réutilisée(s)." : ".")
+                    + (relations.Count > 0 ? $" {relations.Count} relation(s) plusieurs-à-plusieurs." : string.Empty)
                     + (warnings.Count > 0 ? $" {warnings.Count} élément(s) ignoré(s)." : string.Empty)
             };
             return (true, null, payload);

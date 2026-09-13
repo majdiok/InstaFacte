@@ -91,7 +91,7 @@ public sealed partial class AiToolExecutor
         if (!StudioAiSystemSpec.TryParse(specJson, out var spec, out var parseError) || spec is null)
             return AiToolResult.Error(parseError ?? "Spécification système invalide.");
 
-        var orchestrator = new StudioAiSystemOrchestrator(_mediator, _currentUser, _studioQuota);
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator, _currentUser, _studioQuota, _ollamaSettings);
         var (success, error, payload) = await orchestrator.ExecuteAsync(spec, progress: null, ct);
         if (!success || payload is null)
             return AiToolResult.Error(error ?? "Échec de la création du système.");

@@ -244,6 +244,27 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     prédicat est `JSON_VALUE(DataJson, '$.employes') = @p0` — précédé de `[jx_employes] = @p0` si la colonne
     indexée existe — jamais la valeur en clair. `GET api/studio/nav` ⇒ `employes` et `projets` sont présents,
     `employes_projets` **absent** (dans un système comme à la racine) ; la sidebar Studio ne change pas.
+54. **Génération IA d'un système avec relation N-N** (`Ollama:EnableStudioManyToMany=true`,
+    `EnableStudioAiPlanPreview=true`) — demander à l'atelier IA « un système de formations : employés,
+    formations, et un employé peut suivre plusieurs formations ». `studio_plan_system` ⇒ le `spec_json`
+    contient `"relations": [{ "kind": "many_to_many", "from": "employes", "to": "formations" }]` et
+    **aucun** champ `relationTo` many_to_many sur les entités ; l'aperçu (`GET .../plans/{id}/preview`
+    ou SSE) affiche une étape « Relations plusieurs-à-plusieurs » nommant la table de liaison.
+    Confirmer le plan ⇒ le système est créé en cinq passes (entités/champs simples, champs relation
+    simple, jonctions N-N, formulaires/rapports, données) ; `GET api/studio/entities/{idEmployes}/relations`
+    ⇒ une entrée `kind: "many_to_many"` vers `formations` ; le payload de fin de construction contient
+    `relations: [{ from: "employes", to: "formations", junctionKey, openUrl }]`. Drapeau
+    `EnableStudioManyToMany=false` ⇒ le même prompt ne propose jamais `relations[]` (règle 3e absente du
+    prompt) ; si le spec en contient malgré tout (rejoué depuis un aperçu antérieur), la passe jonctions
+    est marquée « ignorée » et un avertissement `"Relations N-N non activées (Ollama:EnableStudioManyToMany)."`
+    apparaît dans le résultat, sans bloquer la création des tables/champs simples.
+55. **Référence en avant et tolérance des relations invalides** — un spec où l'entité `contrats`
+    déclare un champ `relation` vers `clients` alors que `clients` est décrite **après** `contrats` dans
+    `entities[]` ⇒ la relation résout la vraie clé de `clients` (pas de dégradation en `Text`, grâce aux
+    passes 1→2 de l'orchestrateur). Une relation `relations[]` vers une entité inconnue, un auto-lien
+    (`from == to`), une paire dupliquée (peu importe l'ordre), ou une 7ᵉ relation au-delà du maximum de 6
+    ⇒ ignorés avec un avertissement dans le résultat, **jamais** un rejet franc de tout le spec (à la
+    différence d'un champ invalide, qui rejette l'entité).
 
 ## Vues enregistrées (`Ollama:EnableStudioRecordViews`)
 
@@ -310,6 +331,10 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   `FACTUTRUST_TEST_SQL_CONNECTION` ou LocalDB, sinon `Skipped` —, nav sans jonction, migration `Kind`) ;
   contrats API : `StudioEntityRelationsControllerContractTests` et `StudioRecordsControllerContractTests`
   dans le filtre `FactuTrust.API.Tests.Studio`.
+- Backend (relations N-N dans la spec IA + orchestrateur multi-passes, PR 2.2) :
+  `--filter "FullyQualifiedName~StudioAiSystemOrchestrator|FullyQualifiedName~StudioAiSystemSpec|FullyQualifiedName~StudioAiSpecCanonical|FullyQualifiedName~AiContextBuilderStudio|FullyQualifiedName~StudioAiPlanCatalogTests"`
+  (alias de `kind`, promotion de champ, cap de 6 relations, dédoublonnage de paire, cinq passes de
+  l'orchestrateur, forme canonique de `relations[]`, règle 3e du prompt derrière le drapeau).
 - Frontend : `ng test --watch=false --browsers=ChromeHeadless` (service de plans + flux SSE de confirmation).
 - Gate complet : `powershell -File scripts\verify-all.ps1`.
 

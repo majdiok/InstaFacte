@@ -45,6 +45,23 @@ public sealed record ParsedSeedBatch(
     string EntityRef,
     IReadOnlyList<Dictionary<string, JsonNode?>> Records);
 
+/// <summary>
+/// Relation plusieurs-à-plusieurs déclarée dans <c>relations[]</c> d'une spec système (PR 2.2), OU
+/// promue depuis un champ d'entité de type <c>many_to_many</c>/<c>n_n</c> porteur d'un
+/// <c>relationTo</c> valide. <see cref="Kind"/> vaut toujours <c>"many_to_many"</c> après
+/// normalisation (seule nature acceptée pour l'instant).
+/// </summary>
+public sealed record ParsedSystemRelation(
+    string Kind,
+    /// <summary>Ref d'entité (slug) de la table source — doit exister parmi les refs de la spec.</summary>
+    string FromRef,
+    /// <summary>Ref d'entité (slug) de la table cible — doit exister et différer de <see cref="FromRef"/>.</summary>
+    string ToRef,
+    /// <summary>Libellé de la relation (≤ 80 caractères), affiché sur le champ de jonction correspondant.</summary>
+    string? Label,
+    /// <summary>Libellé de la table de jonction ; la clé est dérivée par le backend si absente.</summary>
+    string? JunctionName);
+
 public sealed record ParsedSystemSpec(
     string SystemDisplayName,
     string? SystemIcon,
@@ -53,7 +70,12 @@ public sealed record ParsedSystemSpec(
     IReadOnlyList<ParsedSystemEntity> Entities,
     IReadOnlyList<ParsedSeedBatch> Seed,
     /// <summary>Avertissements de parsing (réutilisations ignorées, champs écartés) — additif, R6.</summary>
-    IReadOnlyList<string>? Warnings = null);
+    IReadOnlyList<string>? Warnings = null,
+    /// <summary>Relations plusieurs-à-plusieurs déclarées (explicites ou promues) — additif, PR 2.2.</summary>
+    IReadOnlyList<ParsedSystemRelation>? Relations = null)
+{
+    public IReadOnlyList<ParsedSystemRelation> Relations { get; init; } = Relations ?? Array.Empty<ParsedSystemRelation>();
+}
 
 /// <summary>
 /// Parses multi-table system specs for <c>studio_generate_system</c>.
@@ -65,11 +87,41 @@ public static class StudioAiSystemSpec
     /// <summary>Borne de tables existantes réutilisées par système (<c>existingKey</c>).</summary>
     public const int MaxExistingRefs = 8;
     public const int MaxSeedRecords = 200;
+    /// <summary>Borne de relations plusieurs-à-plusieurs (explicites + promues) par système.</summary>
+    public const int MaxRelations = 6;
 
     private static readonly HashSet<string> RelationTypeAliases = new(StringComparer.OrdinalIgnoreCase)
     {
         "relation", "link", "lookup", "reference", "relationcustom", "foreign"
     };
+
+    /// <summary>Alias reconnus pour <c>relations[].kind</c> — tous normalisés en <c>"many_to_many"</c>.</summary>
+    private static readonly HashSet<string> ManyToManyAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "many_to_many", "manytomany", "many-to-many", "n_n", "nn", "n-n", "plusieurs_a_plusieurs", "m2m"
+    };
+
+    /// <summary>
+    /// Alias reconnus pour <c>fields[].type</c> qui PROMEUT un champ en relation N‑N plutôt que de le
+    /// créer : jeu volontairement restreint (le champ « relation » ordinaire reste RelationCustom).
+    /// </summary>
+    private static readonly HashSet<string> ManyToManyFieldTypeAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "many_to_many", "manytomany", "n_n", "nn"
+    };
+
+    /// <summary>
+    /// Champ promu en relation N‑N (PR 2.2), conservé jusqu'à la résolution finale : si la cible
+    /// <see cref="RelationToRaw"/> ne résout pas, le champ est réémis en champ Texte (jamais perdu).
+    /// </summary>
+    private sealed record PromotedField(
+        string EntityRef,
+        string Key,
+        string Label,
+        string RelationToRaw,
+        bool Required,
+        bool Unique,
+        Dictionary<string, JsonNode?>? Config);
 
     public static bool TryParse(string? specJson, out ParsedSystemSpec? spec, out string? error)
     {
@@ -92,15 +144,20 @@ public static class StudioAiSystemSpec
         var entitiesArr = root?["entities"]?.AsArray();
         if (entitiesArr is null || entitiesArr.Count == 0) { error = "Au moins une entité est requise."; return false; }
 
+        // List (pas IReadOnlyList) : la résolution finale des relations N‑N peut réémettre un champ
+        // promu en Texte quand sa cible est inconnue (le champ ne disparaît jamais).
         var entities = new List<ParsedSystemEntity>();
+        // Indexation ref → position pour retrouver l'entité propriétaire d'un champ promu.
+        var entityIndexByRef = new Dictionary<string, int>(StringComparer.Ordinal);
         var refs = new HashSet<string>(StringComparer.Ordinal);
         var warnings = new List<string>();
+        var promotedFields = new List<PromotedField>();
         var newCount = 0;
         var reusedCount = 0;
 
         foreach (var en in entitiesArr)
         {
-            var entity = ParseEntity(en, refs, warnings, out var entityError);
+            var entity = ParseEntity(en, refs, warnings, promotedFields, out var entityError);
             if (entity is null) { error = entityError; return false; }
 
             // La borne MaxEntities ne vise que les tables NOUVELLES : une table réutilisée n'est ni
@@ -121,11 +178,39 @@ public static class StudioAiSystemSpec
                 if (newCount >= MaxEntities) { error = $"Maximum {MaxEntities} entités par système."; return false; }
                 newCount++;
             }
+            entityIndexByRef[entity.Ref] = entities.Count;
             entities.Add(entity);
         }
 
         var seed = ParseSeed(root?["seed"], refs, out var seedError);
         if (seedError is not null) { error = seedError; return false; }
+
+        // Relations plusieurs-à-plusieurs (PR 2.2) : explicites (relations[]) + promues depuis un champ
+        // type "many_to_many"/"n_n" — dédoublonnées par paire, bornées à MaxRelations, jamais un rejet
+        // franc (une relation invalide dégrade en avertissement, comme le reste du parseur).
+        var promotedRelations = new List<ParsedSystemRelation>();
+        foreach (var pf in promotedFields)
+        {
+            var toRef = StudioAiAppSpec.SlugKey(pf.RelationToRaw);
+            if (string.IsNullOrEmpty(toRef) || !refs.Contains(toRef))
+            {
+                // Cible inconnue (coquille du modèle, source ERP) : la relation est abandonnée mais le
+                // CHAMP est réémis en Texte — il ne disparaît jamais du modèle de données.
+                var owner = entities[entityIndexByRef[pf.EntityRef]];
+            var ownerFields = (List<ParsedSystemField>)owner.Fields;
+                ownerFields.Add(new ParsedSystemField(
+                    pf.Key, pf.Label, CustomFieldType.Text, pf.Required, pf.Unique, null, pf.Config, null));
+                warnings.Add($"Champ « {pf.Label} » ({owner.Ref}.{pf.Key}) : relation plusieurs-à-plusieurs ignorée (table « {pf.RelationToRaw} » inconnue) — le champ est conservé en texte.");
+                continue;
+            }
+            promotedRelations.Add(new ParsedSystemRelation("many_to_many", pf.EntityRef, toRef, pf.Label, null));
+        }
+        var relations = ParseRelations(root?["relations"], refs, promotedRelations, warnings);
+
+        // D5 : les workflows ne sont pas encore pris en charge par la génération de système — avertir
+        // plutôt qu'échouer ou ignorer silencieusement (l'utilisateur doit savoir qu'il faut redemander).
+        if (root?["workflows"] is JsonArray workflowsArr && workflowsArr.Count > 0)
+            warnings.Add("Les workflows sont proposés séparément : demandez-les après la création du système.");
 
         // Tolerant relations: a custom relation whose target isn't a spec ref (e.g. the model pointed at an
         // ERP/unknown table for "connecté à l'ERP") degrades to a plain Text field instead of failing the
@@ -138,7 +223,7 @@ public static class StudioAiSystemSpec
                     : f).ToList()
         }).ToList();
 
-        spec = new ParsedSystemSpec(displayName!.Trim(), systemIcon, systemDescription, onboarding, resolved, seed, warnings);
+        spec = new ParsedSystemSpec(displayName!.Trim(), systemIcon, systemDescription, onboarding, resolved, seed, warnings, relations);
         return true;
     }
 
@@ -159,7 +244,9 @@ public static class StudioAiSystemSpec
         return ExistingRelationSources.IsRelationTarget(slug) ? slug : null;
     }
 
-    private static ParsedSystemEntity? ParseEntity(JsonNode? en, HashSet<string> refs, List<string> warnings, out string? error)
+    private static ParsedSystemEntity? ParseEntity(
+        JsonNode? en, HashSet<string> refs, List<string> warnings,
+        List<PromotedField> promotedFields, out string? error)
     {
         error = null;
         var refKey = Str(en?["ref"]) ?? Str(en?["key"]);
@@ -199,6 +286,7 @@ public static class StudioAiSystemSpec
             if (en?["fields"] is not null || en?["form"] is not null || en?["report"] is not null)
                 warnings.Add($"Entité « {displayName} » : champs, formulaire et état ignorés — la table existante « {existingKey} » est réutilisée telle quelle.");
 
+
             return new ParsedSystemEntity(refKey, displayName.Trim(), displayName.Trim(), null, null,
                 Array.Empty<ParsedSystemField>(), null, null, existingKey);
         }
@@ -227,6 +315,22 @@ public static class StudioAiSystemSpec
 
             var rawType = Str(fn?["type"]) ?? "text";
             var relationTo = Str(fn?["relationTo"]) ?? Str(fn?["relationToRef"]) ?? Str(fn?["targetRef"]);
+
+            // Promotion de champ (PR 2.2) : un champ typé many_to_many/n_n avec un relationTo n'est PAS
+            // créé — il devient une relation N‑N, résolue et dédoublonnée plus tard (TryParse) une fois
+            // TOUTES les refs connues : la référence en avant y est donc valide. Si la cible ne résout
+            // toujours pas à ce moment-là, le champ est réémis en Texte (jamais perdu).
+            // Sans relationTo, ce n'est qu'un type inconnu ordinaire (dégradé en Text ci-dessous).
+            if (ManyToManyFieldTypeAliases.Contains(rawType.Trim()) && !string.IsNullOrWhiteSpace(relationTo))
+            {
+                var promotedKey = UniqueFieldKey(label!, usedKeys);
+                var promotedRequired = Bool(fn?["required"]) ?? Bool(fn?["isRequired"]) ?? false;
+                var promotedUnique = Bool(fn?["unique"]) ?? Bool(fn?["isUnique"]) ?? false;
+                promotedFields.Add(new PromotedField(
+                    refKey!, promotedKey, label!, relationTo!, promotedRequired, promotedUnique,
+                    ParseFieldConfig(fn, CustomFieldType.Text)));
+                continue;
+            }
 
             // Clé explicite (éditeur d'aperçu « Personnaliser ») prioritaire sur la dérivation du
             // libellé : renommer un libellé ne doit jamais casser les références formulaire/rapport.
@@ -295,12 +399,103 @@ public static class StudioAiSystemSpec
             fields.Add(new ParsedSystemField(key, label!, fieldType, required, unique, options, config, relationRef));
         }
 
-        if (fields.Count == 0) { error = $"Entité « {displayName} » : aucun champ valide."; return null; }
+        // Plus de rejet franc « aucun champ valide » : une entité dont tous les champs sont promus en
+        // relations N‑N reste créable (elle peut légitimement n'avoir que des liens) ; si une cible ne
+        // résout pas, le champ promu est réémis en Texte à la résolution (TryParse) — jamais perdu.
 
         var form = ParseForm(en?["form"], fields);
         var report = ParseEntityReport(en?["report"], fields);
         return new ParsedSystemEntity(refKey, displayName!.Trim(), plural.Trim(), icon, description, fields, form, report);
     }
+
+
+    /// <summary>
+    /// Fusionne les relations explicites (<c>relations[]</c>) et les relations promues depuis un champ
+    /// (<paramref name="promotedRelations"/>) : refs résolues par <c>SlugKey</c> puis vérifiées dans
+    /// <paramref name="refs"/>, dédoublonnage par paire (ordre indifférent), borne <see cref="MaxRelations"/>
+    /// — chaque cas invalide dégrade en avertissement, jamais un rejet franc de la spec entière.
+    /// </summary>
+    private static IReadOnlyList<ParsedSystemRelation> ParseRelations(
+        JsonNode? node, HashSet<string> refs, List<ParsedSystemRelation> promotedRelations, List<string> warnings)
+    {
+        // « from »/« to » sont garantis non nuls ici (filtrés à l'ajout, ci-dessus et à la promotion).
+        var candidates = new List<(string From, string To, string? Label, string? Junction)>();
+        if (node is JsonArray arr)
+        {
+            foreach (var item in arr)
+            {
+                if (item is not JsonObject obj)
+                {
+                    warnings.Add("Relation ignorée : élément invalide.");
+                    continue;
+                }
+                var kindRaw = Str(obj["kind"]) ?? Str(obj["type"]) ?? "many_to_many";
+                if (!ManyToManyAliases.Contains(kindRaw.Trim()))
+                {
+                    warnings.Add($"Relation ignorée : type « {kindRaw} » non pris en charge (seul many_to_many est accepté).");
+                    continue;
+                }
+                var fromRaw = Str(obj["from"]) ?? Str(obj["source"]) ?? Str(obj["a"]);
+                var toRaw = Str(obj["to"]) ?? Str(obj["target"]) ?? Str(obj["b"]);
+                if (fromRaw is null || toRaw is null)
+                {
+                    warnings.Add("Relation ignorée : « from »/« to » sont obligatoires.");
+                    continue;
+                }
+                var label = Str(obj["label"]) ?? Str(obj["libelle"]);
+                var junction = Str(obj["junctionName"]) ?? Str(obj["junction"]) ?? Str(obj["table"]);
+                candidates.Add((fromRaw, toRaw, label, junction));
+            }
+        }
+        foreach (var promoted in promotedRelations)
+            candidates.Add((promoted.FromRef, promoted.ToRef, promoted.Label, promoted.JunctionName));
+
+        var result = new List<ParsedSystemRelation>();
+        var seenPairs = new HashSet<(string, string)>();
+        foreach (var c in candidates)
+        {
+            if (result.Count >= MaxRelations)
+            {
+                warnings.Add($"Au plus {MaxRelations} relations plusieurs-à-plusieurs ; les suivantes sont ignorées.");
+                break;
+            }
+
+            var from = StudioAiAppSpec.SlugKey(c.From);
+            if (string.IsNullOrEmpty(from) || !refs.Contains(from))
+            {
+                warnings.Add($"Relation ignorée : table « {c.From} » inconnue.");
+                continue;
+            }
+            var to = StudioAiAppSpec.SlugKey(c.To);
+            if (string.IsNullOrEmpty(to) || !refs.Contains(to))
+            {
+                warnings.Add($"Relation ignorée : table « {c.To} » inconnue.");
+                continue;
+            }
+            if (string.Equals(from, to, StringComparison.Ordinal))
+            {
+                warnings.Add("Relation ignorée : une table ne peut pas être liée à elle-même.");
+                continue;
+            }
+
+            var pair = string.CompareOrdinal(from, to) <= 0 ? (from, to) : (to, from);
+            if (!seenPairs.Add(pair))
+            {
+                warnings.Add($"Relation en double ignorée : {from} ↔ {to}.");
+                continue;
+            }
+
+            var label = string.IsNullOrWhiteSpace(c.Label) ? null : TruncateLabel(c.Label!.Trim(), 80);
+            // Borné comme Label : un nom de jonction pathologiquement long remonterait tel quel dans
+            // CreateCustomEntityRequest.DisplayName et pourrait faire échouer la création (EF) — rollback
+            // de tout le système, contraire à la tolérance visée.
+            var junctionName = string.IsNullOrWhiteSpace(c.Junction) ? null : TruncateLabel(c.Junction!.Trim(), 100);
+            result.Add(new ParsedSystemRelation("many_to_many", from, to, label, junctionName));
+        }
+        return result;
+    }
+
+    private static string TruncateLabel(string value, int max) => value.Length > max ? value[..max] : value;
 
     /// <summary>Slug accent-insensible de la ref explicite (sinon du repli) ; « table » si invalide.</summary>
     private static string SlugRef(string? refKey, string fallback)

@@ -1,11 +1,13 @@
 using System.Text.Json;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Entities;
 using FactuTrust.Application.Features.Studio.Fields;
 using FactuTrust.Application.Features.Studio.Forms;
 using FactuTrust.Application.Features.Studio.Records;
+using FactuTrust.Application.Features.Studio.Relations;
 using FactuTrust.Application.Features.Studio.Reports;
 using FactuTrust.Application.Features.Studio.Systems;
 using FactuTrust.Domain.Common;
@@ -381,5 +383,282 @@ public sealed class StudioAiSystemOrchestratorTests
         Assert.False(success);
         // 2 tables existantes + 1 NOUVELLE (la réutilisée ne compte pas) - 1 = 2.
         Assert.Equal(2, requested);
+    }
+
+    // ---- Relations plusieurs-à-plusieurs et orchestration multi-passes (PR 2.2) ----
+
+    [Fact]
+    public async Task Relation_field_pointing_to_a_later_entity_resolves_without_degrading()
+    {
+        // La référence en avant ("contrats" pointe vers "clients" déclarée après lui) ne doit plus
+        // dégrader la relation : entityKeyMap est complet dès la fin de la passe 1, avant la passe 2.
+        const string json = """
+        { "system": { "displayName": "Sys" }, "entities": [
+          { "ref": "contrats", "displayName": "Contrats", "fields": [
+            { "label": "Nom", "type": "text" },
+            { "label": "Client", "type": "relation", "relationTo": "clients_perso" }
+          ] },
+          { "ref": "fournisseurs", "displayName": "Fournisseurs", "fields": [ { "label": "Nom", "type": "text" } ] },
+          { "ref": "clients_perso", "displayName": "Clients perso", "fields": [ { "label": "Nom", "type": "text" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        SetupHappyStructure();
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object);
+        var (success, error, _) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        // "contrats" est le 1er créé (clé e0), "clients_perso" le 3ᵉ (clé e2, via SetupHappyStructure) :
+        // la relation doit viser la VRAIE clé de "clients_perso", jamais un texte dégradé.
+        _mediator.Verify(m => m.Send(
+            It.Is<CreateCustomFieldCommand>(c =>
+                c.Request.FieldType == CustomFieldType.RelationCustom
+                && c.Request.Relation != null && c.Request.Relation.Kind == "custom" && c.Request.Relation.Ref == "e2"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Command_order_respects_the_five_passes()
+    {
+        const string json = """
+        { "system": { "displayName": "Sys" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom", "type": "text" } ],
+            "report": { "displayName": "Rapport", "columns": ["nom"] } },
+          { "ref": "formations", "displayName": "Formations", "fields": [
+            { "label": "Nom", "type": "text" },
+            { "label": "Employe", "type": "relation", "relationTo": "employes" }
+          ], "form": { "sections": [ { "title": "Général", "fields": [ "nom" ] } ] } }
+        ], "relations": [ { "kind": "many_to_many", "from": "employes", "to": "formations" } ],
+        "seed": [ { "entityRef": "employes", "records": [ { "nom": "Sami" } ] } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        SetupHappyStructure();
+        SetupJunctionSuccess();
+        _mediator.Setup(m => m.Send(It.IsAny<UpsertDefaultFormCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new CustomFormDto(Guid.NewGuid(), "f", "F", true, new FormLayout())));
+        _mediator.Setup(m => m.Send(It.IsAny<UpsertCustomReportCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new CustomReportDto(Guid.NewGuid(), "r", "R",
+                CustomReportDataSourceKind.CustomEntity, "employes", new ReportDefinition(), true)));
+        var settings = new OllamaSettings { EnableStudioManyToMany = true };
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object, null, settings);
+        var (success, error, _) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error);
+
+        var invocations = _mediator.Invocations
+            .Select((inv, idx) => (Idx: idx, Arg: inv.Arguments[0]))
+            .ToList();
+        int FirstIndexOf<T>(Func<T, bool>? predicate = null) => invocations
+            .Where(x => x.Arg is T t && (predicate is null || predicate(t)))
+            .Select(x => x.Idx).DefaultIfEmpty(int.MaxValue).Min();
+        int LastIndexOf<T>(Func<T, bool>? predicate = null) => invocations
+            .Where(x => x.Arg is T t && (predicate is null || predicate(t)))
+            .Select(x => x.Idx).DefaultIfEmpty(-1).Max();
+
+        var lastSimpleField = LastIndexOf<CreateCustomFieldCommand>(c => c.Request.FieldType != CustomFieldType.RelationCustom);
+        var firstRelationField = FirstIndexOf<CreateCustomFieldCommand>(c => c.Request.FieldType == CustomFieldType.RelationCustom);
+        var junctionIdx = FirstIndexOf<CreateManyToManyRelationCommand>();
+        var formIdx = FirstIndexOf<UpsertDefaultFormCommand>();
+        var reportIdx = FirstIndexOf<UpsertCustomReportCommand>();
+        var seedIdx = FirstIndexOf<CreateCustomRecordCommand>();
+
+        Assert.True(lastSimpleField < firstRelationField, "les champs simples doivent précéder les relations");
+        Assert.True(firstRelationField < junctionIdx, "les relations simples doivent précéder les jonctions N-N");
+        Assert.True(junctionIdx < formIdx, "les jonctions doivent précéder les formulaires");
+        Assert.True(junctionIdx < reportIdx, "les jonctions doivent précéder les rapports");
+        Assert.True(Math.Max(formIdx, reportIdx) < seedIdx, "le seed doit être la toute dernière passe");
+    }
+
+    [Fact]
+    public async Task Junction_is_created_for_each_relation_when_the_flag_is_on()
+    {
+        const string json = """
+        { "system": { "displayName": "Sys" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom", "type": "text" } ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Nom", "type": "text" } ] }
+        ], "relations": [ { "kind": "many_to_many", "from": "employes", "to": "formations", "label": "Participants" } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        SetupHappyStructure();
+        Guid? sourceId = null, targetId = null;
+        CreateManyToManyRelationRequest? capturedRequest = null;
+        _mediator.Setup(m => m.Send(It.IsAny<CreateManyToManyRelationCommand>(), It.IsAny<CancellationToken>()))
+            .Callback((IRequest<Result<ManyToManyRelationDto>> cmd, CancellationToken _) =>
+            {
+                var c = (CreateManyToManyRelationCommand)cmd;
+                sourceId = c.SourceEntityId;
+                targetId = c.Request.TargetEntityId;
+                capturedRequest = c.Request;
+            })
+            .ReturnsAsync(Result.Success(JunctionDto()));
+        var settings = new OllamaSettings { EnableStudioManyToMany = true };
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object, null, settings);
+        var (success, error, payload) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateManyToManyRelationCommand>(), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.NotNull(sourceId);
+        Assert.NotNull(targetId);
+        Assert.NotEqual(sourceId, targetId);
+        Assert.Equal("Participants", capturedRequest!.Label);
+        var json2 = JsonSerializer.Serialize(payload);
+        Assert.Contains("junction", json2, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"openUrl\":\"/studio/d/", json2, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Flag_off_skips_junction_creation_and_warns()
+    {
+        const string json = """
+        { "system": { "displayName": "Sys" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom", "type": "text" } ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Nom", "type": "text" } ] }
+        ], "relations": [ { "kind": "many_to_many", "from": "employes", "to": "formations" } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        SetupHappyStructure();
+
+        // Pas de settings (donc drapeau OFF) — comportement par défaut.
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object);
+        var (success, error, payload) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateManyToManyRelationCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        var json2 = JsonSerializer.Serialize(payload);
+        Assert.Contains("EnableStudioManyToMany", json2, StringComparison.Ordinal);
+        Assert.Contains("\"skipped\"", json2, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Junction_failure_does_not_abort_the_build_and_is_reported_as_a_warning()
+    {
+        const string json = """
+        { "system": { "displayName": "Sys" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom", "type": "text" } ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Nom", "type": "text" } ] }
+        ], "relations": [ { "kind": "many_to_many", "from": "employes", "to": "formations" } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        SetupHappyStructure();
+        _mediator.Setup(m => m.Send(It.IsAny<CreateManyToManyRelationCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<ManyToManyRelationDto>(Error.Conflict("clé déjà utilisée")));
+        var settings = new OllamaSettings { EnableStudioManyToMany = true };
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object, null, settings);
+        var (success, error, payload) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        // Pas de rollback global pour un échec de jonction, seulement un avertissement.
+        _mediator.Verify(m => m.Send(It.IsAny<DeleteCustomEntityCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        var warningsProp = payload!.GetType().GetProperty("warnings");
+        var payloadWarnings = (System.Collections.Generic.IEnumerable<string>)warningsProp!.GetValue(payload)!;
+        Assert.Contains(payloadWarnings, w => w.Contains("clé déjà utilisée", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Quota_precheck_includes_relations_when_the_flag_is_on()
+    {
+        const string json = """
+        { "system": { "displayName": "Sys" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom", "type": "text" } ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Nom", "type": "text" } ] }
+        ], "relations": [ { "kind": "many_to_many", "from": "employes", "to": "formations" } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        _currentUser.Setup(x => x.TenantId).Returns(Guid.NewGuid());
+        _mediator.Setup(m => m.Send(It.IsAny<ListCustomEntitiesQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<CustomEntityDto>>(new List<CustomEntityDto>()));
+        var quota = new Mock<IStudioQuotaService>();
+        int? requested = null;
+        quota.Setup(q => q.EnsureUnderLimitAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(),
+                It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback((Guid _, string _, int count, int _, string _, CancellationToken _) => requested = count)
+            .ReturnsAsync(Result.Failure(Error.Validation("Plan", "stop")));
+        var settings = new OllamaSettings { EnableStudioManyToMany = true };
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object, quota.Object, settings);
+        var (success, _, _) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.False(success);
+        // 0 existantes + 2 NOUVELLES entités + 1 relation N-N (drapeau ON) - 1 = 2.
+        Assert.Equal(2, requested);
+    }
+
+    private void SetupJunctionSuccess()
+    {
+        _mediator.Setup(m => m.Send(It.IsAny<CreateManyToManyRelationCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(JunctionDto()));
+    }
+
+    private static ManyToManyRelationDto JunctionDto() => new(
+        EntityDto("employes_formations"),
+        FieldDto(),
+        FieldDto());
+
+    [Fact]
+    public async Task Flag_off_via_settings_skips_junction_creation_and_warns()
+    {
+        const string json = """
+        { "system": { "displayName": "Sys" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom", "type": "text" } ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Nom", "type": "text" } ] }
+        ], "relations": [ { "kind": "many_to_many", "from": "employes", "to": "formations" } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        SetupHappyStructure();
+        // Settings présents mais drapeau explicitement à false : même chemin que l'absence de settings.
+        var settings = new OllamaSettings { EnableStudioManyToMany = false };
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object, null, settings);
+        var (success, error, payload) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateManyToManyRelationCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Contains("\"skipped\"", JsonSerializer.Serialize(payload), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Exception_after_a_junction_rolls_back_everything_including_the_junction()
+    {
+        const string json = """
+        { "system": { "displayName": "Sys" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom", "type": "text" } ],
+            "form": { "sections": [ { "title": "Général", "fields": [ "nom" ] } ] } },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Nom", "type": "text" } ],
+            "form": { "sections": [ { "title": "Général", "fields": [ "nom" ] } ] } }
+        ], "relations": [ { "kind": "many_to_many", "from": "employes", "to": "formations" } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        // Tables et jonction créées ; la passe 4 (formulaires) lève une exception ⇒ rollback global.
+        SetupHappyStructure();
+        var junction = JunctionDto();
+        _mediator.Setup(m => m.Send(It.IsAny<CreateManyToManyRelationCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(junction));
+        _mediator.Setup(m => m.Send(It.IsAny<UpsertDefaultFormCommand>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("panne simulée"));
+        var settings = new OllamaSettings { EnableStudioManyToMany = true };
+
+        // 2 tables créées + 1 jonction = 3 suppressions.
+        var deleted = new List<Guid>();
+        _mediator.Setup(m => m.Send(It.IsAny<DeleteCustomEntityCommand>(), It.IsAny<CancellationToken>()))
+            .Callback((IRequest<Result> cmd, CancellationToken _) => deleted.Add(((DeleteCustomEntityCommand)cmd).Id))
+            .ReturnsAsync(Result.Success());
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object, null, settings);
+        var (success, error, _) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.False(success);
+        Assert.Equal(3, deleted.Count);
+        Assert.Contains(junction.Junction.Id, deleted);
     }
 }

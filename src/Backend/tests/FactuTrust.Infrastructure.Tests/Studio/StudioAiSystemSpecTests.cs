@@ -320,4 +320,189 @@ public sealed class StudioAiSystemSpecTests
         Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
         Assert.Equal("employes", spec!.Seed[0].EntityRef);
     }
+
+    // ---- Relations plusieurs-à-plusieurs (PR 2.2) ----
+
+    [Theory]
+    [InlineData("many_to_many")]
+    [InlineData("n_n")]
+    [InlineData("nn")]
+    [InlineData("many-to-many")]
+    [InlineData("m2m")]
+    public void Relation_kind_alias_is_recognized(string kind)
+    {
+        var json = $$"""
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom" } ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Titre" } ] }
+        ], "relations": [ { "kind": "{{kind}}", "from": "employes", "to": "formations" } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var rel = Assert.Single(spec!.Relations);
+        Assert.Equal("many_to_many", rel.Kind);
+        Assert.Equal("employes", rel.FromRef);
+        Assert.Equal("formations", rel.ToRef);
+    }
+
+    [Fact]
+    public void Self_relation_is_ignored_with_a_warning()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom" } ] }
+        ], "relations": [ { "kind": "many_to_many", "from": "employes", "to": "employes" } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Empty(spec!.Relations);
+        var warning = Assert.Single(spec.Warnings!);
+        Assert.Contains("liée à elle-même", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Seventh_relation_is_dropped_with_a_warning_beyond_the_cap()
+    {
+        var entities = string.Join(", ", Enumerable.Range(1, 8).Select(i =>
+            $$"""{ "ref": "table_{{i}}", "displayName": "Table {{i}}", "fields": [ { "label": "Nom" } ] }"""));
+        var relations = string.Join(", ", Enumerable.Range(1, 7).Select(i =>
+            $$"""{ "kind": "many_to_many", "from": "table_{{i}}", "to": "table_{{i + 1}}" }"""));
+        var json = $$"""
+        { "system": { "displayName": "T" }, "entities": [ {{entities}} ], "relations": [ {{relations}} ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Equal(StudioAiSystemSpec.MaxRelations, spec!.Relations.Count);
+        Assert.Contains(spec.Warnings!, w => w.Contains($"Au plus {StudioAiSystemSpec.MaxRelations}", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Relation_to_an_unknown_ref_is_ignored_with_a_warning()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom" } ] }
+        ], "relations": [ { "kind": "many_to_many", "from": "employes", "to": "inconnue" } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Empty(spec!.Relations);
+        var warning = Assert.Single(spec.Warnings!);
+        Assert.Contains("inconnue", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Duplicate_relation_pair_regardless_of_order_is_kept_once()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom" } ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Titre" } ] }
+        ], "relations": [
+          { "kind": "many_to_many", "from": "employes", "to": "formations" },
+          { "kind": "many_to_many", "from": "formations", "to": "employes" }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Single(spec!.Relations);
+        var warning = Assert.Single(spec.Warnings!);
+        Assert.Contains("double", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Field_typed_many_to_many_is_promoted_to_a_relation_and_excluded_from_fields()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [
+            { "label": "Nom", "type": "text" },
+            { "label": "Formations", "type": "many_to_many", "relationTo": "formations" }
+          ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Titre" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var employes = spec!.Entities.First(e => e.Ref == "employes");
+        Assert.Single(employes.Fields); // "Formations" retiré des champs, promu en relation
+        Assert.DoesNotContain(employes.Fields, f => f.Label == "Formations");
+        var rel = Assert.Single(spec.Relations);
+        Assert.Equal("employes", rel.FromRef);
+        Assert.Equal("formations", rel.ToRef);
+    }
+
+    [Fact]
+    public void Spec_without_relations_has_an_empty_list_and_no_warning_about_relations()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Empty(spec!.Relations);
+        Assert.True(spec.Warnings is null || spec.Warnings.Count == 0);
+    }
+
+    [Fact]
+    public void Workflows_array_is_ignored_with_a_deferral_warning()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom" } ] }
+        ], "workflows": [ { "name": "Notifier" } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var warning = Assert.Single(spec!.Warnings!);
+        Assert.Contains("workflows", warning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Promoted_field_with_unknown_target_is_reemitted_as_a_text_field_never_lost()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [
+            { "label": "Nom", "type": "text" },
+            { "label": "Clients", "type": "many_to_many", "relationTo": "clients" }
+          ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Empty(spec!.Relations); // source ERP « clients » : pas de table du même nom dans la spec
+        var employes = Assert.Single(spec.Entities);
+        Assert.Equal(2, employes.Fields.Count);
+        var clients = Assert.Single(employes.Fields, f => f.Label == "Clients");
+        Assert.Equal(CustomFieldType.Text, clients.FieldType);
+        Assert.Contains(spec.Warnings!, w => w.Contains("conservé en texte", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Promoted_field_target_declared_later_in_the_spec_resolves()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [
+            { "label": "Formations", "type": "n_n", "relationTo": "formations" }
+          ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Titre" } ] }
+        ] }
+        """;
+        // « employes » n'a QUE le champ promu (cible déclarée après) : l'entité survit, la relation est créée.
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Equal(2, spec!.Entities.Count);
+        Assert.Empty(spec.Entities.First(e => e.Ref == "employes").Fields);
+        var rel = Assert.Single(spec.Relations);
+        Assert.Equal("formations", rel.ToRef);
+    }
+
+    [Fact]
+    public void Overly_long_junction_name_is_truncated_to_100_characters()
+    {
+        var longName = new string('j', 150);
+        var json = $$"""
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employes", "fields": [ { "label": "Nom" } ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Titre" } ] }
+        ], "relations": [ { "kind": "many_to_many", "from": "employes", "to": "formations", "junctionName": "{{longName}}" } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var rel = Assert.Single(spec!.Relations);
+        Assert.Equal(100, rel.JunctionName!.Length);
+    }
 }
