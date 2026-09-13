@@ -238,6 +238,7 @@ Règle « 3e. RELATION PLUSIEURS‑À‑PLUSIEURS » et exemple dédié (« EXEM
 émis dans `AiContextBuilder.BuildStudioBuilderSystemPrompt` **uniquement si**
 `Ollama:EnableStudioManyToMany` est actif — drapeau off, le modèle ne voit ni la règle ni l'exemple et
 continue de proposer des champs `relationTo` plusieurs‑à‑un comme avant. La révision de cache du
-prompt (`SystemPromptCacheRevision`) reste `"v5"` : le contenu du prompt dépend déjà du tenant/drapeau
-via la clé de cache existante, pas besoin de l'incrémenter pour cette PR.
+prompt (`SystemPromptCacheRevision`) reste `"v5"` : le prompt StudioBuilder est reconstruit à chaque
+appel (retour avant `GetCachedStaticSystemPromptAsync`) — le drapeau est donc pris en compte
+immédiatement et aucune révision de cache n'est à incrémenter pour cette PR.
 

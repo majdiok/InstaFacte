@@ -16,7 +16,7 @@ public static class StudioAiPlanSummary
     public sealed record SummaryStep(string Key, string Label, string Detail);
 
     /// <summary><paramref name="ExistingKey"/> non null = table existante réutilisée telle quelle
-    /// (propriété omise du JSON quand null : les tables créées n'encombrent pas l'aperçu).</summary>
+    /// (propriété omise du JSON quand null : les tables créées n'encombrent pas l'aperçu).
     public sealed record SummaryEntity(
         string DisplayName,
         int FieldCount,
@@ -82,12 +82,9 @@ public static class StudioAiPlanSummary
                 $"{created.Count} table(s) | {totalFields} champ(s)"
                 + (totalRelations > 0 ? $" | {totalRelations} relation(s)" : string.Empty))
         };
-        var reusedCount = entities.Count(e => e.ExistingKey is not null);
-        if (reusedCount > 0)
-            steps.Add(new SummaryStep("reuse", "Tables réutilisées",
-                $"{reusedCount} table(s) existante(s) reprise(s) telle(s) quelle(s)"));
         var displayNameByRef = spec.Entities.ToDictionary(e => e.Ref, e => e.EntityDisplayName, StringComparer.Ordinal);
         string DisplayNameOf(string r) => displayNameByRef.TryGetValue(r, out var name) ? name : r;
+        // Étape « relations » juste après « data_model » (ordre figé par la spec pr-2.2).
         if (spec.Relations.Count > 0)
         {
             steps.Add(new SummaryStep("relations", "Relations plusieurs-à-plusieurs",
@@ -96,6 +93,11 @@ public static class StudioAiPlanSummary
                         ? $"{DisplayNameOf(r.FromRef)} ↔ {DisplayNameOf(r.ToRef)}"
                         : r.JunctionName))));
         }
+        var reusedCount = entities.Count(e => e.ExistingKey is not null);
+        if (reusedCount > 0)
+            steps.Add(new SummaryStep("reuse", "Tables réutilisées",
+                $"{reusedCount} table(s) existante(s) reprise(s) telle(s) quelle(s)"));
+
         if (formCount > 0)
             steps.Add(new SummaryStep("forms", "Formulaires", $"{formCount} formulaire(s) personnalisé(s)"));
         if (reportCount > 0)
@@ -198,6 +200,7 @@ public static class StudioAiPlanSummary
             StudioAiPlanKind.Report.ToString(), title, steps,
             Array.Empty<SummaryEntity>(), warnings, sample));
     }
+
 
     /// <summary><c>duplicates</c> et <c>relations</c> sont TOUJOURS présents dans le JSON (tableau vide par défaut).</summary>
     private static string Serialize(PlanSummary summary) => JsonSerializer.Serialize(
