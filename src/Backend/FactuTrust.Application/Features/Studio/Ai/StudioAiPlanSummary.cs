@@ -17,11 +17,14 @@ public static class StudioAiPlanSummary
 
     /// <summary><paramref name="ExistingKey"/> non null = table existante réutilisée telle quelle
     /// (propriété omise du JSON quand null : les tables créées n'encombrent pas l'aperçu).
+    /// <paramref name="ViewCount"/> : nombre de vues enregistrées proposées (PR 2.4) — omis du JSON
+    /// quand 0, pour ne pas changer la forme des aperçus existants.</summary>
     public sealed record SummaryEntity(
         string DisplayName,
         int FieldCount,
         int RelationCount,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExistingKey = null);
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExistingKey = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int ViewCount = 0);
 
     /// <summary>
     /// Une relation plusieurs-à-plusieurs de l'aperçu (PR 2.2) : libellés d'affichage des deux tables
@@ -66,7 +69,8 @@ public static class StudioAiPlanSummary
                 e.EntityDisplayName,
                 e.Fields.Count,
                 e.Fields.Count(f => f.FieldType is CustomFieldType.RelationCustom or CustomFieldType.RelationExisting),
-                e.ExistingKey))
+                e.ExistingKey,
+                e.Views.Count))
             .ToList();
 
         var created = entities.Where(e => e.ExistingKey is null).ToList();
@@ -102,6 +106,13 @@ public static class StudioAiPlanSummary
             steps.Add(new SummaryStep("forms", "Formulaires", $"{formCount} formulaire(s) personnalisé(s)"));
         if (reportCount > 0)
             steps.Add(new SummaryStep("reports", "États", $"{reportCount} état(s)"));
+        // Vues enregistrées proposées par entité (PR 2.4) : après les états, avant le seed.
+        var viewCount = spec.Entities.Sum(e => e.Views.Count);
+        if (viewCount > 0)
+            steps.Add(new SummaryStep("views", "Vues",
+                $"{viewCount} vue(s) : " + string.Join(", ", spec.Entities
+                    .SelectMany(e => e.Views)
+                    .Select(v => $"{v.DisplayName} ({StudioAiRecordViewSpec.ModeLabel(v.Mode)})"))));
         if (seedCount > 0)
             steps.Add(new SummaryStep("seed", "Données de référence", $"{seedCount} enregistrement(s)"));
         if (spec.OnboardingSteps is { Count: > 0 })
@@ -201,6 +212,29 @@ public static class StudioAiPlanSummary
             Array.Empty<SummaryEntity>(), warnings, sample));
     }
 
+    /// <summary>
+    /// Aperçu d'une VUE ENREGISTRÉE proposée (PR 2.4) : table cible, mode, volumétrie des
+    /// colonnes/filtres. Quand la spec a été résolue contre le schéma réel, l'appelant passe la spec
+    /// ajustée (mode dégradé inclus) et les avertissements de résolution.
+    /// </summary>
+    public static string ForRecordView(
+        ParsedRecordViewSpec spec, string entityDisplayName, IReadOnlyList<string> warnings)
+    {
+        var steps = new List<SummaryStep>
+        {
+            new("target", "Table", entityDisplayName),
+            new("mode", "Mode", StudioAiRecordViewSpec.ModeLabel(spec.Mode)),
+            new("columns", "Colonnes", $"{spec.Columns.Count}")
+        };
+        if (spec.Filters.Count > 0)
+            steps.Add(new SummaryStep("filters", "Filtres", $"{spec.Filters.Count}"));
+        if (spec.IsDefault)
+            steps.Add(new SummaryStep("default", "Vue par défaut", "oui"));
+
+        return Serialize(new PlanSummary(
+            StudioAiPlanKind.RecordView.ToString(), $"Vue « {spec.DisplayName} » sur {entityDisplayName}",
+            steps, Array.Empty<SummaryEntity>(), warnings));
+    }
 
     /// <summary><c>duplicates</c> et <c>relations</c> sont TOUJOURS présents dans le JSON (tableau vide par défaut).</summary>
     private static string Serialize(PlanSummary summary) => JsonSerializer.Serialize(

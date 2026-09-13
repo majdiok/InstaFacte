@@ -50,6 +50,9 @@ public static class StudioAiPlanDefaults
     public static string RequiredPermission(StudioAiPlanKind kind) => kind switch
     {
         StudioAiPlanKind.View => Permissions.Studio.DesignForms,
+        // PR 2.4 : une vue enregistrée relève de la conception des formulaires/affichages,
+        // comme une fenêtre — pas de la définition du modèle de données.
+        StudioAiPlanKind.RecordView => Permissions.Studio.DesignForms,
         StudioAiPlanKind.Report => Permissions.Studio.DesignReports,
         _ => Permissions.Studio.DesignEntities
     };

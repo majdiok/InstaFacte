@@ -463,6 +463,141 @@ public sealed class StudioAiPlanCreationFeaturesTests
             .Returns(Task.CompletedTask);
     }
 
+    // ---------- PR 2.4 — specs RecordView ----------
+
+    private const string RecordViewSpec = """
+        { "entity": "interventions", "name": "Kanban par statut", "mode": "kanban",
+          "columns": [ "titre", "statut" ], "groupBy": "statut" }
+        """;
+
+    private static IOptions<OllamaSettings> RecordViewSettings(bool recordViewTools = true) =>
+        Options.Create(new OllamaSettings
+        {
+            EnableStudioAiWorkbench = true,
+            EnableStudioAiPlanPreview = true,
+            EnableStudioRecordViews = true,
+            EnableStudioAiRecordViewTools = recordViewTools
+        });
+
+    [Fact]
+    public void TryCanonicalize_record_view_returns_canonical_and_summary()
+    {
+        var ok = StudioAiPlanCreation.TryCanonicalize(
+            StudioAiPlanKind.RecordView, RecordViewSpec, out var canonical, out var summary, out var error);
+
+        Assert.True(ok, error);
+        Assert.NotNull(canonical);
+        Assert.NotNull(summary);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(summary!);
+        Assert.Equal("RecordView", doc.RootElement.GetProperty("kind").GetString());
+        Assert.Equal("Vue « Kanban par statut » sur interventions", doc.RootElement.GetProperty("title").GetString());
+        var steps = doc.RootElement.GetProperty("steps").EnumerateArray()
+            .Select(s => (key: s.GetProperty("key").GetString(), detail: s.GetProperty("detail").GetString()))
+            .ToList();
+        Assert.Equal(("target", "interventions"), steps[0]);
+        Assert.Equal(("mode", "Kanban"), steps[1]);
+        Assert.Equal(("columns", "2"), steps[2]);
+
+        // Le canonique est la forme persistée : re-parse stable.
+        Assert.True(StudioAiRecordViewSpec.TryParse(canonical, out var reparsed, out _));
+        Assert.Equal(StudioAiSpecCanonical.CanonicalRecordView(reparsed!), canonical);
+    }
+
+    [Fact]
+    public async Task Validate_record_view_rejected_when_tools_flag_off()
+    {
+        var handler = new ValidateStudioAiSpecCommandHandler(RecordViewSettings(recordViewTools: false));
+
+        var result = await handler.Handle(
+            new ValidateStudioAiSpecCommand("RecordView", RecordViewSpec), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.kind", result.Error.Code);
+        Assert.Contains("ne sont pas activées", result.Error.Description);
+    }
+
+    [Fact]
+    public async Task Validate_record_view_without_schema_gives_reduced_summary()
+    {
+        // Dépôts absents : le résumé reflète la spec BRUTE (mode demandé, clé de table comme libellé).
+        var handler = new ValidateStudioAiSpecCommandHandler(RecordViewSettings());
+
+        var result = await handler.Handle(
+            new ValidateStudioAiSpecCommand("RecordView", RecordViewSpec), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.Valid);
+        Assert.Equal("Vue « Kanban par statut » sur interventions", result.Value.Summary!["title"]!.GetValue<string>());
+        Assert.Equal("kanban", result.Value.CanonicalJson!["mode"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Validate_record_view_resolves_against_the_real_schema()
+    {
+        // La table existe mais « statut » est un champ TEXTE : le kanban dégrade en Liste, et le
+        // résumé le reflète (QA 61 — jamais un aperçu promettant un kanban impossible).
+        var entity = CustomEntityDefinition.Create(TenantId, "interventions", "Interventions", "Interventions", null, null, UserId);
+        var entities = new Mock<ICustomEntityRepository>();
+        entities.Setup(r => r.GetByKeyAsync(TenantId, "interventions", It.IsAny<CancellationToken>())).ReturnsAsync(entity);
+        var fields = new Mock<ICustomFieldRepository>();
+        fields.Setup(r => r.ListByEntityAsync(TenantId, entity.Id, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<CustomFieldDefinition>
+            {
+                CustomFieldDefinition.Create(TenantId, entity.Id, "titre", "Titre", CustomFieldType.Text, false, false, 1, null, null, null, UserId),
+                CustomFieldDefinition.Create(TenantId, entity.Id, "statut", "Statut", CustomFieldType.Text, false, false, 2, null, null, null, UserId)
+            });
+
+        var handler = new ValidateStudioAiSpecCommandHandler(
+            RecordViewSettings(), entities.Object, _currentUser.Object, fields.Object);
+
+        var result = await handler.Handle(
+            new ValidateStudioAiSpecCommand("RecordView", RecordViewSpec), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var summary = result.Value.Summary!;
+        Assert.Equal("Vue « Kanban par statut » sur Interventions", summary["title"]!.GetValue<string>());
+        var steps = summary["steps"]!.AsArray()
+            .Select(s => (key: s!["key"]!.GetValue<string>(), detail: s["detail"]!.GetValue<string>()))
+            .ToList();
+        Assert.Equal(("target", "Interventions"), steps[0]);
+        Assert.Equal(("mode", "Liste"), steps[1]);
+        Assert.Contains(summary["warnings"]!.AsArray().Select(w => w!.GetValue<string>()),
+            w => w.Contains("Kanban impossible"));
+    }
+
+    [Fact]
+    public async Task FromSpec_record_view_creates_pending_plan()
+    {
+        SetupRealCreate();
+        var handler = new CreateStudioAiPlanFromSpecCommandHandler(_mediator.Object, RecordViewSettings());
+
+        var result = await handler.Handle(
+            new CreateStudioAiPlanFromSpecCommand("RecordView", RecordViewSpec), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(_addedPlan);
+        Assert.Equal(StudioAiPlanKind.RecordView, _addedPlan!.Kind);
+        // La spec persistée est la forme canonique ; le résumé est recalculé côté serveur.
+        Assert.Equal("kanban", JsonNode.Parse(_addedPlan.SpecJson)!["mode"]!.GetValue<string>());
+        Assert.Equal("RecordView", JsonNode.Parse(_addedPlan.SummaryJson)!["kind"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task FromSpec_record_view_without_flag_creates_nothing()
+    {
+        SetupRealCreate();
+        var handler = new CreateStudioAiPlanFromSpecCommandHandler(
+            _mediator.Object, RecordViewSettings(recordViewTools: false));
+
+        var result = await handler.Handle(
+            new CreateStudioAiPlanFromSpecCommand("RecordView", RecordViewSpec), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.kind", result.Error.Code);
+        Assert.Null(_addedPlan);
+    }
+
     private void VerifyNoCreation()
     {
         _mediator.Verify(m => m.Send(It.IsAny<CreateStudioAiPlanCommand>(), It.IsAny<CancellationToken>()), Times.Never);

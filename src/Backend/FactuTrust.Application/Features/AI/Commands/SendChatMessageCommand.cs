@@ -518,7 +518,8 @@ public sealed class SendChatMessageHandler
             _ollamaSettings.EnableStudioAiPlanPreview, _ollamaSettings.EnableStudioAiModifyTools,
             _ollamaSettings.EnableStudioAiViewTools,
             _ollamaSettings.EnableStudioAiReportTools && _ollamaSettings.EnableStudioSqlReportEngine,
-            studioToolFocus);
+            studioToolFocus,
+            studioRecordViewTools: _ollamaSettings.EnableStudioAiRecordViewTools && _ollamaSettings.EnableStudioRecordViews);
         // Les schémas d'outils sont injectés dans le contexte du modèle : on les compte dans
         // l'estimation de taille pour dimensionner num_ctx (sinon Ollama tronque silencieusement
         // l'invite quand de nombreux outils sont exposés → réponses dégradées / hors-sujet).
@@ -776,6 +777,7 @@ public sealed class SendChatMessageHandler
                     _ollamaSettings.EnableStudioAiViewTools,
                     _ollamaSettings.EnableStudioAiReportTools && _ollamaSettings.EnableStudioSqlReportEngine,
                     studioToolFocus,
+                    studioRecordViewTools: _ollamaSettings.EnableStudioAiRecordViewTools && _ollamaSettings.EnableStudioRecordViews,
                     preExecutedToolNamesToExclude: firmPreExecutedToolNames);
                 toolsApproxChars = tools.Count > 0 ? JsonSerializer.Serialize(tools).Length : 0;
             }
@@ -877,7 +879,9 @@ public sealed class SendChatMessageHandler
 
             if (reportResult.Success && !string.IsNullOrWhiteSpace(reportResult.Data))
             {
-                yield return studioReportDetection.Save
+                // R7/PR 2.4 : la décision « événement plan (carte d'aperçu) vs résultat d'état » suit
+                // la liste centralisée — studio_plan_report y figure, studio_run_report non.
+                yield return AiToolRegistry.StudioPlanEmittingTools.Contains(reportTool)
                     ? ChatStreamEvent.StudioPlanEvent(reportResult.Data)
                     : ChatStreamEvent.StudioReportResultEvent(reportResult.Data);
             }
@@ -1657,8 +1661,10 @@ public sealed class SendChatMessageHandler
                     }
                     // Flux plan → aperçu → confirmation : le payload du plan est poussé au client
                     // (événement studio_plan) pour afficher la carte d'aperçu avec Valider/Annuler.
-                    if ((toolCall.Function.Name == "studio_plan_app" || toolCall.Function.Name == "studio_plan_system"
-                            || toolCall.Function.Name == "studio_plan_report")
+                    // R7/PR 2.4 : la liste est centralisée dans AiToolRegistry.StudioPlanEmittingTools
+                    // (couvre désormais aussi studio_plan_changes et studio_plan_view — un seul
+                    // événement par appel, ce bloc n'étant exécuté qu'une fois par outil).
+                    if (AiToolRegistry.StudioPlanEmittingTools.Contains(toolCall.Function.Name)
                         && toolResult.Success && !string.IsNullOrWhiteSpace(toolResult.Data))
                     {
                         yield return ChatStreamEvent.StudioPlanEvent(toolResult.Data);
@@ -1682,7 +1688,8 @@ public sealed class SendChatMessageHandler
                             StudioReportFailure.Build(command.Message, studioBuilderToolError),
                             SourcesJsonOptions);
                     }
-                    else if ((toolCall.Function.Name == "studio_plan_app" || toolCall.Function.Name == "studio_plan_system")
+                    else if ((toolCall.Function.Name == "studio_plan_app" || toolCall.Function.Name == "studio_plan_system"
+                                || toolCall.Function.Name == "studio_plan_record_view")
                         && !toolResult.Success && assistantMode == AssistantMode.StudioBuilder)
                     {
                         studioBuilderToolError = string.IsNullOrWhiteSpace(toolResult.ErrorMessage)
@@ -2983,7 +2990,10 @@ public sealed class SendChatMessageHandler
         bool studioViewTools = false,
         bool studioReportTools = false,
         StudioToolFocus studioFocus = StudioToolFocus.None,
-        IReadOnlyCollection<string>? preExecutedToolNamesToExclude = null)
+        IReadOnlyCollection<string>? preExecutedToolNamesToExclude = null,
+        // PR 2.4 : vues enregistrées proposées par l'IA — en fin de signature, les appels
+        // positionnels existants (jusqu'à studioFocus) restent valides.
+        bool studioRecordViewTools = false)
     {
         var isCpuOnly = inferenceProfile?.Device == OllamaInferenceDevice.CpuOnly;
         var isScoped = mode == AssistantMode.Default && agentScope != AssistantAgentScope.None;
@@ -3005,7 +3015,7 @@ public sealed class SendChatMessageHandler
         var useCpuIntentSubset = cpuSubsetApplies && effectiveIntent is AiToolIntentRouter.AiToolIntent.Sales
             or AiToolIntentRouter.AiToolIntent.Stock
             or AiToolIntentRouter.AiToolIntent.Accounting;
-        var definitions = AiToolRegistry.GetDefinitionsForMode(mode, enableMutationTools, agentScope, studioPlanPreview, studioModifyTools, studioViewTools, studioReportTools, studioFocus)
+        var definitions = AiToolRegistry.GetDefinitionsForMode(mode, enableMutationTools, agentScope, studioPlanPreview, studioModifyTools, studioViewTools, studioReportTools, studioFocus, studioRecordViewTools: studioRecordViewTools)
             .Where(tool => AiToolIntentRouter.ShouldIncludeTool(
                 tool.Name,
                 effectiveIntent,
@@ -3027,7 +3037,7 @@ public sealed class SendChatMessageHandler
             {
                 // Synthesis ∩ scope trop étroit : repli déterministe sur la variante CPU du scope (lecture seule).
                 var cpuScopeTools = AiAgentScopeCatalog.GetCpuToolNames(agentScope);
-                definitions = AiToolRegistry.GetDefinitionsForMode(mode, enableMutationTools, agentScope)
+                definitions = AiToolRegistry.GetDefinitionsForMode(mode, enableMutationTools, agentScope, studioRecordViewTools: studioRecordViewTools)
                     .Where(t => cpuScopeTools.Contains(t.Name))
                     .ToList();
             }

@@ -5,6 +5,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.AI.DTOs;
+using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common.SqlReport;
 using FactuTrust.Domain.Constants;
 using FactuTrust.Domain.Enums;
@@ -21,8 +22,9 @@ public sealed class AiContextBuilder : IAiContextBuilder
     /// <summary>
     /// Révision de la clé de cache du prompt statique. À incrémenter quand le texte du prompt change
     /// (la clé historique ne hashe pas le contenu — sans ça l'ancien prompt resterait jusqu'au TTL).
+    /// v5 → v6 : règle 13 « vues enregistrées » du prompt StudioBuilder (PR 2.4).
     /// </summary>
-    private const string SystemPromptCacheRevision = "v5";
+    private const string SystemPromptCacheRevision = "v6";
     private readonly ICompanyRepository _companyRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IMemoryCache _memoryCache;
@@ -126,7 +128,8 @@ public sealed class AiContextBuilder : IAiContextBuilder
                 studioOptions?.NormalizedIntent,
                 schemaDigest,
                 lastPlanDigest,
-                _ollamaSettings.EnableStudioManyToMany)
+                _ollamaSettings.EnableStudioManyToMany,
+                recordViewTools: StudioAiPlanCreation.RecordViewToolsEnabled(_ollamaSettings))
                 + BuildTemporalContextSuffix();
         }
 
@@ -150,11 +153,12 @@ public sealed class AiContextBuilder : IAiContextBuilder
     /// chaîne vide = activée mais aucune table (ligne « Aucune table Studio pour l'instant. »).
     /// </param>
     /// <param name="lastPlanDigest">Digest du dernier plan de l'utilisateur ; null/vide = section omise.</param>
+    /// <param name="recordViewTools">PR 2.4 : règle 13 « vues enregistrées » (outil studio_plan_record_view).</param>
     private static string BuildStudioBuilderSystemPrompt(
         bool planPreview = false, bool modifyTools = false, bool viewTools = false,
         bool reportTools = false, string? reportSourceDigest = null,
         string? studioIntent = null, string? schemaDigest = null, string? lastPlanDigest = null,
-        bool manyToMany = false)
+        bool manyToMany = false, bool recordViewTools = false)
     {
         // Flux plan → aperçu → confirmation : mêmes règles, mais les outils deviennent studio_plan_*
         // et le modèle ne doit JAMAIS prétendre que la création a déjà eu lieu.
@@ -236,6 +240,13 @@ public sealed class AiContextBuilder : IAiContextBuilder
                 sb.AppendLine("DERNIER PLAN :");
                 sb.AppendLine(lastPlanDigest.TrimEnd());
             }
+        }
+        if (recordViewTools)
+        {
+            sb.AppendLine("13. VUES : pour « tableau kanban par statut », « planning/calendrier », « liste filtrée », "
+                + "appelle studio_plan_record_view avec { entity, name, mode: \"list\"|\"kanban\"|\"calendar\", columns, filters, sort, "
+                + "groupBy (champ Select uniquement), start/end (champ Date) }. Dans un système, ajoute au plus 3 \"views\" "
+                + "par entité. Ne crée jamais de vue sur une table inexistante : vérifie le SCHÉMA EXISTANT.");
         }
         sb.AppendLine();
         sb.AppendLine(manyToMany

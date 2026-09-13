@@ -133,6 +133,34 @@ public sealed partial class AiToolExecutor
             StudioAiPlanSummary.ForView(spec.Title, spec.Table, definition, warnings), ct);
     }
 
+    /// <summary>
+    /// PR 2.4 — plan d'une VUE ENREGISTRÉE sur une table Studio existante : garde des trois drapeaux,
+    /// schéma RÉEL relu (la vue est résolue contre les vraies clés, avec avertissements), spec
+    /// persistée en forme canonique, résumé reflétant la résolution (mode éventuellement dégradé).
+    /// </summary>
+    private async Task<AiToolResult> HandleStudioPlanRecordView(Dictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!StudioAiPlanCreation.RecordViewToolsEnabled(_ollamaSettings))
+            return AiToolResult.Error("Les vues enregistrées par l'IA ne sont pas activées.");
+
+        var specJson = GetStringArg(args, "spec_json");
+        if (!StudioAiRecordViewSpec.TryParse(specJson, out var spec, out var parseError) || spec is null)
+            return AiToolResult.Error(parseError ?? "Spécification de vue enregistrée invalide.");
+        if (string.IsNullOrWhiteSpace(spec.EntityKey))
+            return AiToolResult.Error("La vue enregistrée exige la clé de la table cible (« entity »).");
+
+        var schemaResult = await _mediator.Send(new GetCustomEntitySchemaQuery(spec.EntityKey), ct);
+        if (!schemaResult.IsSuccess)
+            return AiToolResult.Error($"Table « {spec.EntityKey} » introuvable. Vérifiez son nom avec studio_get_table_schema.");
+
+        var schema = schemaResult.Value;
+        var (mode, definition, warnings) = StudioAiRecordViewSpec.ResolveAgainstSchema(spec, schema.Fields);
+        return await CreatePlanAsync(StudioAiPlanKind.RecordView,
+            StudioAiSpecCanonical.CanonicalRecordView(spec),
+            StudioAiPlanSummary.ForRecordView(
+                StudioAiRecordViewSpec.ApplyResolution(spec, mode, definition), schema.Entity.DisplayName, warnings), ct);
+    }
+
     /// <summary>Tables SQL consultables (liste blanche vivante) — ancre le modèle sur le schéma réel.</summary>
     private async Task<AiToolResult> HandleStudioListSqlTables(Dictionary<string, object?> args, CancellationToken ct)
     {

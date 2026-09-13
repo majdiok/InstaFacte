@@ -16,7 +16,15 @@ public sealed record ParsedSystemEntity(
     ParsedFormSpec? Form,
     ParsedAppReport? Report,
     /// <summary>Clé d'une table EXISTANTE à réutiliser telle quelle (champs/formulaire/état ignorés).</summary>
-    string? ExistingKey = null);
+    string? ExistingKey = null,
+    /// <summary>
+    /// Vues enregistrées proposées (PR 2.4, ≤ <see cref="StudioAiSystemSpec.MaxViewsPerEntity"/>) —
+    /// les clés de champ ne sont PAS résolues au parsing, elles le sont à l'exécution.
+    /// </summary>
+    IReadOnlyList<ParsedRecordViewSpec>? Views = null)
+{
+    public IReadOnlyList<ParsedRecordViewSpec> Views { get; init; } = Views ?? Array.Empty<ParsedRecordViewSpec>();
+}
 
 public sealed record ParsedSystemField(
     string Key,
@@ -89,6 +97,8 @@ public static class StudioAiSystemSpec
     public const int MaxSeedRecords = 200;
     /// <summary>Borne de relations plusieurs-à-plusieurs (explicites + promues) par système.</summary>
     public const int MaxRelations = 6;
+    /// <summary>Borne de vues enregistrées proposées par entité (PR 2.4) ; l'excédent dégrade en avertissement.</summary>
+    public const int MaxViewsPerEntity = 3;
 
     private static readonly HashSet<string> RelationTypeAliases = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -286,6 +296,10 @@ public static class StudioAiSystemSpec
             if (en?["fields"] is not null || en?["form"] is not null || en?["report"] is not null)
                 warnings.Add($"Entité « {displayName} » : champs, formulaire et état ignorés — la table existante « {existingKey} » est réutilisée telle quelle.");
 
+            // PR 2.4 : les vues proposées visent les tables CRÉÉES du système ; sur une table
+            // réutilisée elles seraient perdues au canonical — jamais silencieusement (R6).
+            if (en?["views"] is JsonArray reusedViews && reusedViews.Count > 0)
+                warnings.Add($"Entité « {displayName} » : vues ignorées — la table existante « {existingKey} » est réutilisée telle quelle.");
 
             return new ParsedSystemEntity(refKey, displayName.Trim(), displayName.Trim(), null, null,
                 Array.Empty<ParsedSystemField>(), null, null, existingKey);
@@ -405,9 +419,49 @@ public static class StudioAiSystemSpec
 
         var form = ParseForm(en?["form"], fields);
         var report = ParseEntityReport(en?["report"], fields);
-        return new ParsedSystemEntity(refKey, displayName!.Trim(), plural.Trim(), icon, description, fields, form, report);
+        var views = ParseViews(en?["views"], warnings);
+        return new ParsedSystemEntity(refKey, displayName!.Trim(), plural.Trim(), icon, description, fields, form, report,
+            Views: views.Count > 0 ? views : null);
     }
 
+    /// <summary>
+    /// Vues enregistrées d'une entité de système (PR 2.4) : chaque vue est parsée par
+    /// <see cref="StudioAiRecordViewSpec.TryParseNode"/> ; une vue illisible ou au-delà de
+    /// <see cref="MaxViewsPerEntity"/> dégrade en avertissement, jamais en rejet de la spec.
+    /// Les clés de champ ne sont PAS résolues ici (elles le sont à l'exécution, passe 4).
+    /// </summary>
+    private static IReadOnlyList<ParsedRecordViewSpec> ParseViews(JsonNode? node, List<string> warnings)
+    {
+        var views = new List<ParsedRecordViewSpec>();
+        if (node is null) return views;
+        if (node is not JsonArray arr)
+        {
+            warnings.Add("« views » ignoré : un tableau de vues est attendu.");
+            return views;
+        }
+        foreach (var item in arr)
+        {
+            if (views.Count >= MaxViewsPerEntity)
+            {
+                warnings.Add($"Au plus {MaxViewsPerEntity} vues par table ; les suivantes sont ignorées.");
+                break;
+            }
+            if (!StudioAiRecordViewSpec.TryParseNode(item, out var view, out var viewError) || view is null)
+                warnings.Add($"Vue ignorée : {viewError ?? "illisible."}");
+            else
+            {
+                // Une vue d'entité de système n'a JAMAIS de clé de table : si le modèle en écrit une,
+                // elle est ignorée (l'entité hôte fait foi) — signalé, esprit R6 (jamais silencieux).
+                if (view.EntityKey is not null)
+                {
+                    warnings.Add($"Vue « {view.DisplayName} » : clé de table « {view.EntityKey} » ignorée (la vue appartient à l'entité qui la déclare).");
+                    view = view with { EntityKey = null };
+                }
+                views.Add(view);
+            }
+        }
+        return views;
+    }
 
     /// <summary>
     /// Fusionne les relations explicites (<c>relations[]</c>) et les relations promues depuis un champ

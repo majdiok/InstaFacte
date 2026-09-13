@@ -181,6 +181,17 @@ public sealed class StudioAiPlanFeaturesTests
         Assert.Contains("NotFound", result.Error.Code, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData(StudioAiPlanKind.View, Permissions.Studio.DesignForms)]
+    // PR 2.4 : une vue enregistrée relève de la conception des affichages, comme une fenêtre.
+    [InlineData(StudioAiPlanKind.RecordView, Permissions.Studio.DesignForms)]
+    [InlineData(StudioAiPlanKind.Report, Permissions.Studio.DesignReports)]
+    [InlineData(StudioAiPlanKind.CreateSystem, Permissions.Studio.DesignEntities)]
+    [InlineData(StudioAiPlanKind.CreateApp, Permissions.Studio.DesignEntities)]
+    [InlineData(StudioAiPlanKind.Amendment, Permissions.Studio.DesignEntities)]
+    public void RequiredPermission_maps_each_plan_kind(StudioAiPlanKind kind, string expected) =>
+        Assert.Equal(expected, StudioAiPlanDefaults.RequiredPermission(kind));
+
     private static StudioAiBuildPlan PendingPlan(TimeSpan? lifetime = null) =>
         StudioAiBuildPlan.Create(TenantId, StudioAiPlanKind.CreateSystem, "{\"system\":{}}", "{}", UserId,
             lifetime ?? StudioAiPlanDefaults.Lifetime);

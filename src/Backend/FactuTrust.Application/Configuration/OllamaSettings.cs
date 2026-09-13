@@ -386,6 +386,10 @@ public sealed class OllamaSettings
     /// <summary>Événements maximaux chargés par une vue Calendrier (au-delà, <c>truncated = true</c>). Défaut 1000.</summary>
     public int StudioRecordViewMaxCalendarEvents { get; set; } = 1000;
 
+    /// <summary>PR 2.4 — outil IA <c>studio_plan_record_view</c> et <c>entities[].views[]</c> dans les specs système.
+    /// Effectif seulement si <see cref="EnableStudioRecordViews"/> et <see cref="EnableStudioAiPlanPreview"/> sont actifs.</summary>
+    public bool EnableStudioAiRecordViewTools { get; set; } = false;
+
     /// <summary>
     /// Budget de tours d'outils quand la requête Studio utilise le modèle avancé (GPU / cloud) :
     /// remplace le plafond CPU (<see cref="CpuMaxToolCallRounds"/>) pour ce seul tour. Borné 1..20.
