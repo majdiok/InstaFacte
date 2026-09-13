@@ -140,9 +140,7 @@ public sealed partial class AiToolExecutor
     /// </summary>
     private async Task<AiToolResult> HandleStudioPlanRecordView(Dictionary<string, object?> args, CancellationToken ct)
     {
-        if (!_ollamaSettings.EnableStudioAiPlanPreview
-            || !_ollamaSettings.EnableStudioRecordViews
-            || !_ollamaSettings.EnableStudioAiRecordViewTools)
+        if (!StudioAiPlanCreation.RecordViewToolsEnabled(_ollamaSettings))
             return AiToolResult.Error("Les vues enregistrées par l'IA ne sont pas activées.");
 
         var specJson = GetStringArg(args, "spec_json");
@@ -157,16 +155,10 @@ public sealed partial class AiToolExecutor
 
         var schema = schemaResult.Value;
         var (mode, definition, warnings) = StudioAiRecordViewSpec.ResolveAgainstSchema(spec, schema.Fields);
-        var resolved = spec with
-        {
-            Mode = StudioAiRecordViewSpec.ModeKey(mode),
-            Columns = definition.Columns.Select(c => c.FieldKey).ToList(),
-            Filters = definition.Filters,
-            Sort = definition.Sort
-        };
         return await CreatePlanAsync(StudioAiPlanKind.RecordView,
             StudioAiSpecCanonical.CanonicalRecordView(spec),
-            StudioAiPlanSummary.ForRecordView(resolved, schema.Entity.DisplayName, warnings), ct);
+            StudioAiPlanSummary.ForRecordView(
+                StudioAiRecordViewSpec.ApplyResolution(spec, mode, definition), schema.Entity.DisplayName, warnings), ct);
     }
 
     /// <summary>Tables SQL consultables (liste blanche vivante) — ancre le modèle sur le schéma réel.</summary>

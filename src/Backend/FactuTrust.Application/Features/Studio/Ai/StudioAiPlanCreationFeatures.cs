@@ -36,7 +36,8 @@ public static class StudioAiPlanCreation
     /// <summary>
     /// Garde des vues enregistrées proposées par l'IA (PR 2.4) : les TROIS drapeaux doivent être
     /// levés — l'outil a son propre drapeau, la fonctionnalité cible la sienne, et le plan produit
-    /// n'a de sens que dans le flux d'aperçu.
+    /// n'a de sens que dans le flux d'aperçu. Règle UNIQUE, réutilisée par la capability, le prompt,
+    /// l'outil de chat et les gardes validate/from-spec.
     /// </summary>
     public static bool RecordViewToolsEnabled(OllamaSettings settings) =>
         settings.EnableStudioAiRecordViewTools
@@ -85,13 +86,7 @@ public static class StudioAiPlanCreation
                     StudioAiRecordViewSpec.ResolveAgainstSchema(recordView, recordViewSchema.Fields);
                 // Le résumé reflète ce qui sera RÉELLEMENT créé : mode éventuellement dégradé et
                 // colonnes/filtres/tris effectifs (jamais la promesse brute du modèle).
-                var resolved = recordView with
-                {
-                    Mode = StudioAiRecordViewSpec.ModeKey(mode),
-                    Columns = definition.Columns.Select(c => c.FieldKey).ToList(),
-                    Filters = definition.Filters,
-                    Sort = definition.Sort
-                };
+                var resolved = StudioAiRecordViewSpec.ApplyResolution(recordView, mode, definition);
                 summary = StudioAiPlanSummary.ForRecordView(resolved, recordViewSchema.EntityDisplayName, resolveWarnings);
             }
             else

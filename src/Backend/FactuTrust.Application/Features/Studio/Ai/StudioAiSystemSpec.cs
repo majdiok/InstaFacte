@@ -449,7 +449,16 @@ public static class StudioAiSystemSpec
             if (!StudioAiRecordViewSpec.TryParseNode(item, out var view, out var viewError) || view is null)
                 warnings.Add($"Vue ignorée : {viewError ?? "illisible."}");
             else
+            {
+                // Une vue d'entité de système n'a JAMAIS de clé de table : si le modèle en écrit une,
+                // elle est ignorée (l'entité hôte fait foi) — signalé, esprit R6 (jamais silencieux).
+                if (view.EntityKey is not null)
+                {
+                    warnings.Add($"Vue « {view.DisplayName} » : clé de table « {view.EntityKey} » ignorée (la vue appartient à l'entité qui la déclare).");
+                    view = view with { EntityKey = null };
+                }
                 views.Add(view);
+            }
         }
         return views;
     }

@@ -98,11 +98,8 @@ public sealed class StudioAiCapabilitiesQueryHandler
             AdvancedModelLabel: advancedModelAvailable ? HumanFriendlyModelLabel(advancedModelRef) : null,
             ManyToManyEnabled: _settings.EnableStudioManyToMany,
             RecordViewsEnabled: _settings.EnableStudioRecordViews,
-            // PR 2.4 : les outils de vues IA exigent leur propre drapeau ET les vues enregistrées
-            // ET le flux d'aperçu (le plan créé doit pouvoir être confirmé).
-            RecordViewToolsEnabled: _settings.EnableStudioAiRecordViewTools
-                && _settings.EnableStudioRecordViews
-                && _settings.EnableStudioAiPlanPreview,
+            // PR 2.4 : règle centralisée (propre drapeau + vues enregistrées + flux d'aperçu).
+            RecordViewToolsEnabled: StudioAiPlanCreation.RecordViewToolsEnabled(_settings),
             SystemExportEnabled: false,
             WorkflowsEnabled: false,
             WorkflowToolsEnabled: false));

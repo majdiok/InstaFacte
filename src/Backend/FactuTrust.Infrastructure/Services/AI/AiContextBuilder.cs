@@ -5,6 +5,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.AI.DTOs;
+using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common.SqlReport;
 using FactuTrust.Domain.Constants;
 using FactuTrust.Domain.Enums;
@@ -128,9 +129,7 @@ public sealed class AiContextBuilder : IAiContextBuilder
                 schemaDigest,
                 lastPlanDigest,
                 _ollamaSettings.EnableStudioManyToMany,
-                recordViewTools: _ollamaSettings.EnableStudioAiPlanPreview
-                    && _ollamaSettings.EnableStudioRecordViews
-                    && _ollamaSettings.EnableStudioAiRecordViewTools)
+                recordViewTools: StudioAiPlanCreation.RecordViewToolsEnabled(_ollamaSettings))
                 + BuildTemporalContextSuffix();
         }
 

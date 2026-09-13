@@ -150,7 +150,7 @@ public static class StudioAiRecordViewSpec
             if (seenColumns.Add(key))
                 columns.Add(key);
         }
-        if (spec.Columns.Count > 0 && columns.Count > MaxColumns)
+        if (columns.Count > MaxColumns)
         {
             warnings.Add($"Au-delà de {MaxColumns} colonnes, les suivantes ont été ignorées.");
             columns = columns.Take(MaxColumns).ToList();
@@ -306,7 +306,7 @@ public static class StudioAiRecordViewSpec
     /// </summary>
     public static string SlugKey(string displayName, IReadOnlySet<string> usedKeys)
     {
-        var slug = StudioAiAppSpec.SlugKey(StudioAiAppSpec.RemoveDiacritics(displayName));
+        var slug = StudioAiAppSpec.SlugKey(displayName); // SlugKey retire déjà les diacritiques
         var baseKey = string.IsNullOrEmpty(slug) ? "vue" : $"vue_{slug}";
         if (baseKey.Length > StudioKey.MaxLength) baseKey = baseKey[..StudioKey.MaxLength].TrimEnd('_');
 
@@ -320,6 +320,21 @@ public static class StudioAiRecordViewSpec
         }
         return key;
     }
+
+    /// <summary>
+    /// Spec ajustée de ce qui sera RÉELLEMENT enregistré après <see cref="ResolveAgainstSchema"/> :
+    /// mode éventuellement dégradé et colonnes/filtres/tris effectifs — base des résumés d'aperçu
+    /// (workbench et outil de chat, qui doivent promettre la même chose).
+    /// </summary>
+    public static ParsedRecordViewSpec ApplyResolution(
+        ParsedRecordViewSpec spec, CustomRecordViewMode mode, RecordViewDefinition definition) =>
+        spec with
+        {
+            Mode = ModeKey(mode),
+            Columns = definition.Columns.Select(c => c.FieldKey).ToList(),
+            Filters = definition.Filters,
+            Sort = definition.Sort
+        };
 
     /// <summary>Clé textuelle d'un mode résolu (pour reconstruire une spec ajustée après résolution).</summary>
     public static string ModeKey(CustomRecordViewMode mode) => mode switch

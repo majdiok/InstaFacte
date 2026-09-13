@@ -178,10 +178,6 @@ public sealed class StudioAiPlanExecutor : IStudioAiPlanExecutor
     }
 
     /// <summary>
-    /// Crée une fenêtre (vue lecture seule). Le schéma est RELU ici : la table et les colonnes sont
-    /// revalidées par le fournisseur gardé au moment de l'exécution, pas seulement à l'aperçu.
-    /// </summary>
-    /// <summary>
     /// Enregistre un état sur les tables réelles. Passe par <c>UpsertCustomReportCommand</c> — la MÊME
     /// commande que le concepteur humain : validation de source, permissions et audit sont mutualisés,
     /// et l'état créé par l'IA est en tout point un état Studio ordinaire.
@@ -275,7 +271,12 @@ public sealed class StudioAiPlanExecutor : IStudioAiPlanExecutor
         return (true, null, payload);
     }
 
-    private async Task<(bool Success, string? Error, object? Payload)> ExecuteViewAsync(        ParsedViewSpec spec, Guid tenantId, IStudioBuildProgress? progress, CancellationToken ct)
+    /// <summary>
+    /// Crée une fenêtre (vue lecture seule). Le schéma est RELU ici : la table et les colonnes sont
+    /// revalidées par le fournisseur gardé au moment de l'exécution, pas seulement à l'aperçu.
+    /// </summary>
+    private async Task<(bool Success, string? Error, object? Payload)> ExecuteViewAsync(
+        ParsedViewSpec spec, Guid tenantId, IStudioBuildProgress? progress, CancellationToken ct)
     {
         void Report(string phase, string label, string status, string? detail = null) =>
             progress?.Report(new StudioBuildStep(phase, label, status, null, detail));
