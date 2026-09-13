@@ -27,9 +27,9 @@ public sealed record StudioAiCapabilitiesDto(
     bool AdvancedModelAvailable,
     string StandardModelLabel,
     string? AdvancedModelLabel,
-    // Programme « Studio IA » (contrat A6, figé dès la PR 2.1) : ManyToManyEnabled (PR 2.1) et
-    // RecordViewsEnabled (PR 2.3) sont câblés ; les quatre autres restent false tant que leur
-    // drapeau n'existe pas (PR 2.4, 3.x).
+    // Programme « Studio IA » (contrat A6, figé dès la PR 2.1) : ManyToManyEnabled (PR 2.1),
+    // RecordViewsEnabled (PR 2.3) et RecordViewToolsEnabled (PR 2.4) sont câblés ; les trois autres
+    // restent false tant que leur drapeau n'existe pas (PR 3.x, 4.x).
     bool ManyToManyEnabled = false,
     bool RecordViewsEnabled = false,
     bool RecordViewToolsEnabled = false,
@@ -98,7 +98,11 @@ public sealed class StudioAiCapabilitiesQueryHandler
             AdvancedModelLabel: advancedModelAvailable ? HumanFriendlyModelLabel(advancedModelRef) : null,
             ManyToManyEnabled: _settings.EnableStudioManyToMany,
             RecordViewsEnabled: _settings.EnableStudioRecordViews,
-            RecordViewToolsEnabled: false,
+            // PR 2.4 : les outils de vues IA exigent leur propre drapeau ET les vues enregistrées
+            // ET le flux d'aperçu (le plan créé doit pouvoir être confirmé).
+            RecordViewToolsEnabled: _settings.EnableStudioAiRecordViewTools
+                && _settings.EnableStudioRecordViews
+                && _settings.EnableStudioAiPlanPreview,
             SystemExportEnabled: false,
             WorkflowsEnabled: false,
             WorkflowToolsEnabled: false));

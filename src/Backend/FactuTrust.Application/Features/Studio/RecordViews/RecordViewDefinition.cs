@@ -219,22 +219,29 @@ public static class RecordViewDefinitionValidator
 
     private static Error? ValidateOperatorForType(RecordViewFilter filter, string op, CustomFieldType type)
     {
-        var compatible = op switch
-        {
-            "eq" or "neq" or "is_empty" or "is_not_empty" => true,
-            "contains" => type is CustomFieldType.Text or CustomFieldType.MultilineText
-                or CustomFieldType.Select or CustomFieldType.MultiSelect,
-            "gt" or "gte" or "lt" or "lte" or "between" => type is CustomFieldType.Number or CustomFieldType.Decimal
-                or CustomFieldType.Money or CustomFieldType.Percentage or CustomFieldType.Rating
-                or CustomFieldType.Date or CustomFieldType.DateTime or CustomFieldType.AutoNumber,
-            "in" => type is CustomFieldType.Select or CustomFieldType.MultiSelect
-                or CustomFieldType.RelationCustom or CustomFieldType.RelationExisting,
-            _ => false
-        };
-        return compatible
+        return IsOperatorCompatible(op, type)
             ? null
             : Error.Validation("filters", $"Opérateur « {op} » incompatible avec le type {type} du champ « {filter.FieldKey} ».");
     }
+
+    /// <summary>
+    /// Table de compatibilité opérateur / type de champ (réutilisée telle quelle par la résolution des
+    /// vues proposées par l'IA, PR 2.4) : <c>eq</c>/<c>neq</c>/<c>is_empty</c>/<c>is_not_empty</c>
+    /// partout, <c>contains</c> sur les textes et listes, comparaisons sur les nombres et dates,
+    /// <c>in</c> sur les listes de choix et relations.
+    /// </summary>
+    public static bool IsOperatorCompatible(string op, CustomFieldType type) => op switch
+    {
+        "eq" or "neq" or "is_empty" or "is_not_empty" => true,
+        "contains" => type is CustomFieldType.Text or CustomFieldType.MultilineText
+            or CustomFieldType.Select or CustomFieldType.MultiSelect,
+        "gt" or "gte" or "lt" or "lte" or "between" => type is CustomFieldType.Number or CustomFieldType.Decimal
+            or CustomFieldType.Money or CustomFieldType.Percentage or CustomFieldType.Rating
+            or CustomFieldType.Date or CustomFieldType.DateTime or CustomFieldType.AutoNumber,
+        "in" => type is CustomFieldType.Select or CustomFieldType.MultiSelect
+            or CustomFieldType.RelationCustom or CustomFieldType.RelationExisting,
+        _ => false
+    };
 
     private static Error? ValidateKanban(
         RecordViewKanban? kanban, IReadOnlyDictionary<string, CustomFieldDefinition> fieldsByKey)

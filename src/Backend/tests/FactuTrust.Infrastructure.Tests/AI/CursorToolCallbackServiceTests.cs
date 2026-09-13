@@ -69,6 +69,73 @@ public sealed class CursorToolCallbackServiceTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // ---- R7/PR 2.4 : un outil « plan » pousse EXACTEMENT un événement studio_plan ----
+
+    [Theory]
+    [InlineData("studio_plan_app")]
+    [InlineData("studio_plan_system")]
+    [InlineData("studio_plan_report")]
+    [InlineData("studio_plan_changes")]
+    [InlineData("studio_plan_view")]
+    [InlineData("studio_plan_record_view")]
+    public async Task Plan_tool_success_enqueues_exactly_one_studio_plan_event(string toolName)
+    {
+        // La liste AiToolRegistry.StudioPlanEmittingTools est la SEULE condition d'émission :
+        // chaque outil qui produit un plan confirmable doit pousser la carte d'aperçu, une fois.
+        var registry = new CursorToolRunRegistry();
+        var service = new CursorToolCallbackService(registry, NullLogger<CursorToolCallbackService>.Instance);
+        var runId = Guid.NewGuid();
+        var token = CursorToolRunContext.CreateToken();
+        var scope = new Mock<IAiToolExecutorScopeFactory>();
+        scope.Setup(x => x.ExecuteAsync(
+                toolName,
+                It.IsAny<Dictionary<string, object?>>(),
+                It.IsAny<AiToolExecutionContext>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AiToolResult.Ok("""{"planId":"p1"}"""));
+        var ctx = CreateContext(runId, token, Mock.Of<IAiToolExecutor>(), scope.Object);
+        registry.Register(ctx);
+
+        var (status, _) = await service.ExecuteAsync(
+            runId, token,
+            new CursorToolCallbackRequest { Name = toolName, CallId = "c1" },
+            CancellationToken.None);
+
+        Assert.Equal(200, status);
+        var planEvents = ctx.ExtraEvents.Where(e => e.Type == "studio_plan").ToList();
+        Assert.Single(planEvents);
+        Assert.Equal("""{"planId":"p1"}""", planEvents[0].Content);
+    }
+
+    [Theory]
+    [InlineData("studio_run_report")]   // résultat d'état : autre événement, jamais studio_plan
+    [InlineData("list_invoices")]        // outil ordinaire
+    [InlineData("studio_generate_app")]  // chemin direct historique : pas de plan
+    public async Task Non_plan_tool_success_enqueues_no_studio_plan_event(string toolName)
+    {
+        var registry = new CursorToolRunRegistry();
+        var service = new CursorToolCallbackService(registry, NullLogger<CursorToolCallbackService>.Instance);
+        var runId = Guid.NewGuid();
+        var token = CursorToolRunContext.CreateToken();
+        var scope = new Mock<IAiToolExecutorScopeFactory>();
+        scope.Setup(x => x.ExecuteAsync(
+                toolName,
+                It.IsAny<Dictionary<string, object?>>(),
+                It.IsAny<AiToolExecutionContext>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AiToolResult.Ok("""{"ok":true}"""));
+        var ctx = CreateContext(runId, token, Mock.Of<IAiToolExecutor>(), scope.Object);
+        registry.Register(ctx);
+
+        var (status, _) = await service.ExecuteAsync(
+            runId, token,
+            new CursorToolCallbackRequest { Name = toolName, CallId = "c1" },
+            CancellationToken.None);
+
+        Assert.Equal(200, status);
+        Assert.DoesNotContain(ctx.ExtraEvents, e => e.Type == "studio_plan");
+    }
+
     private static CursorToolRunContext CreateContext(
         Guid runId,
         string token,

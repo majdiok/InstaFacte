@@ -18,7 +18,7 @@ namespace FactuTrust.Infrastructure.Tests.AI;
 /// PR 1.2 — digest de contexte dans le prompt StudioBuilder. Le prompt n'expose le « SCHÉMA EXISTANT »
 /// que si <see cref="OllamaSettings.EnableStudioAiSchemaDigest"/> est actif ; le budget de caractères
 /// transmis au service dépend du modèle retenu (CPU 1200 / avancé 4000) ; l'intention connue ajoute un
-/// préambule, une intention inconnue n'ajoute rien ; la révision de cache passe à « v5 »
+/// préambule, une intention inconnue n'ajoute rien ; la révision de cache suit les ajouts de règles (PR 2.4 ⇒ « v6 »)
 /// (PR 1.3 : la règle 11 enseigne « existingKey » pour réutiliser une table existante).
 /// </summary>
 public sealed class AiContextBuilderStudioDigestTests
@@ -267,13 +267,14 @@ public sealed class AiContextBuilderStudioDigestTests
     }
 
     [Fact]
-    public void System_prompt_cache_revision_is_v5()
+    public void System_prompt_cache_revision_is_v6()
     {
+        // PR 2.4 : règle 13 « vues enregistrées » ajoutée au prompt StudioBuilder ⇒ « v5 » → « v6 ».
         var field = typeof(AiContextBuilder).GetField(
             "SystemPromptCacheRevision",
             BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(field);
-        Assert.Equal("v5", (string)field!.GetRawConstantValue()!);
+        Assert.Equal("v6", (string)field!.GetRawConstantValue()!);
     }
 
     [Fact]
@@ -315,5 +316,42 @@ public sealed class AiContextBuilderStudioDigestTests
     {
         var options = new StudioPromptOptions(false, raw, TenantId, UserId);
         Assert.Equal(expected, options.NormalizedIntent);
+    }
+
+    // ---------- PR 2.4 — règle 13 « vues enregistrées » ----------
+
+    [Fact]
+    public async Task Record_view_rule_13_appears_only_with_the_flag()
+    {
+        var digest = DigestMock("- interventions « Interventions » : titre:text, statut:select", null);
+        var settings = Settings(digestEnabled: true);
+        var offPrompt = await Build(settings, digest.Object).BuildSystemPromptAsync(
+            AssistantMode.StudioBuilder, null, AssistantAgentScope.None, Opts());
+
+        var onSettings = Settings(digestEnabled: true);
+        onSettings.EnableStudioRecordViews = true;
+        onSettings.EnableStudioAiRecordViewTools = true;
+        var onPrompt = await Build(onSettings, digest.Object).BuildSystemPromptAsync(
+            AssistantMode.StudioBuilder, null, AssistantAgentScope.None, Opts());
+
+        Assert.DoesNotContain("studio_plan_record_view", offPrompt);
+        Assert.Contains("13. VUES", onPrompt);
+        Assert.Contains("studio_plan_record_view", onPrompt);
+    }
+
+    [Fact]
+    public async Task Record_view_rule_13_stays_short()
+    {
+        // La règle doit tenir dans le budget du prompt (≤ 480 caractères, comme les autres règles).
+        var digest = DigestMock("- t « T » : a:text", null);
+        var settings = Settings(digestEnabled: true);
+        settings.EnableStudioRecordViews = true;
+        settings.EnableStudioAiRecordViewTools = true;
+
+        var prompt = await Build(settings, digest.Object).BuildSystemPromptAsync(
+            AssistantMode.StudioBuilder, null, AssistantAgentScope.None, Opts());
+
+        var rule = prompt.Split('\n').First(l => l.StartsWith("13.", StringComparison.Ordinal));
+        Assert.True(rule.Length <= 480, $"règle 13 trop longue : {rule.Length} caractères");
     }
 }

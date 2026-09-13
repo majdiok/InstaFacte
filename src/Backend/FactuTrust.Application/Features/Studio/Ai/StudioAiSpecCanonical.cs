@@ -48,6 +48,9 @@ public static class StudioAiSpecCanonical
             case StudioAiPlanKind.Report:
                 if (!StudioAiReportSpec.TryParse(specJson, out var report, out error) || report is null) return null;
                 return CanonicalReport(report);
+            case StudioAiPlanKind.RecordView:
+                if (!StudioAiRecordViewSpec.TryParse(specJson, out var recordView, out error) || recordView is null) return null;
+                return CanonicalRecordView(recordView);
             default:
                 error = $"Nature de plan « {kind} » non prise en charge.";
                 return null;
@@ -95,6 +98,9 @@ public static class StudioAiSpecCanonical
                 .ToArray());
             if (entity.Form is not null) node["form"] = FormJson(entity.Form);
             if (entity.Report is not null) node["report"] = ReportJson(entity.Report);
+            // Vues enregistrées proposées (PR 2.4) : clés de champ non résolues, telles qu'émises.
+            if (entity.Views.Count > 0)
+                node["views"] = new JsonArray(entity.Views.Select(v => (JsonNode)RecordViewJson(v)).ToArray());
             entities.Add(node);
         }
 
@@ -263,6 +269,65 @@ public static class StudioAiSpecCanonical
         if (spec.To is not null) root["to"] = spec.To.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         return Serialize(root);
     }
+
+    // ---- Vue enregistrée (PR 2.4) -----------------------------------------------------------
+
+    /// <summary>Ordre fixe : entity?, name, mode, columns, filters, sort, groupBy?/start?/end?/title?, isDefault.</summary>
+    public static string CanonicalRecordView(ParsedRecordViewSpec spec)
+    {
+        var root = new JsonObject();
+        if (spec.EntityKey is not null) root["entity"] = spec.EntityKey;
+        root["name"] = spec.DisplayName;
+        root["mode"] = spec.Mode;
+        root["columns"] = StringArray(spec.Columns);
+        root["filters"] = RecordViewFiltersJson(spec.Filters);
+        root["sort"] = RecordViewSortJson(spec.Sort);
+        if (spec.GroupByFieldKey is not null) root["groupBy"] = spec.GroupByFieldKey;
+        if (spec.StartFieldKey is not null) root["start"] = spec.StartFieldKey;
+        if (spec.EndFieldKey is not null) root["end"] = spec.EndFieldKey;
+        if (spec.TitleFieldKey is not null) root["title"] = spec.TitleFieldKey;
+        root["isDefault"] = spec.IsDefault;
+        return Serialize(root);
+    }
+
+    /// <summary>Vue embarquée dans une spec système : jamais de clé « entity » (entité implicite).</summary>
+    private static JsonObject RecordViewJson(ParsedRecordViewSpec view)
+    {
+        var node = new JsonObject
+        {
+            ["name"] = view.DisplayName,
+            ["mode"] = view.Mode,
+            ["columns"] = StringArray(view.Columns),
+            ["filters"] = RecordViewFiltersJson(view.Filters),
+            ["sort"] = RecordViewSortJson(view.Sort)
+        };
+        if (view.GroupByFieldKey is not null) node["groupBy"] = view.GroupByFieldKey;
+        if (view.StartFieldKey is not null) node["start"] = view.StartFieldKey;
+        if (view.EndFieldKey is not null) node["end"] = view.EndFieldKey;
+        if (view.TitleFieldKey is not null) node["title"] = view.TitleFieldKey;
+        node["isDefault"] = view.IsDefault;
+        return node;
+    }
+
+    /// <summary>Filtres d'une vue : <c>{ "field", "op", "value"? }</c> (value omise quand absente).</summary>
+    private static JsonArray RecordViewFiltersJson(IReadOnlyList<RecordViews.RecordViewFilter> filters)
+    {
+        var array = new JsonArray();
+        foreach (var filter in filters)
+        {
+            var node = new JsonObject
+            {
+                ["field"] = filter.FieldKey,
+                ["op"] = filter.Op
+            };
+            if (filter.Value is not null) node["value"] = filter.Value.DeepClone();
+            array.Add(node);
+        }
+        return array;
+    }
+
+    private static JsonArray RecordViewSortJson(IReadOnlyList<RecordViews.RecordViewSort> sorts) =>
+        new(sorts.Select(s => (JsonNode)new JsonObject { ["field"] = s.FieldKey, ["desc"] = s.Descending }).ToArray());
 
     // ---- Briques communes --------------------------------------------------------------------
 

@@ -122,8 +122,37 @@ pré-contrôle + `DbUpdateConcurrencyException` en secours).
   `Studio.RecordView.Created` / `Updated` / `Deleted` / `DefaultSet`. Le PATCH est audité par le cycle de
   vie existant (`OnUpdate`).
 
+## Vues proposées par l'IA (PR 2.4)
+
+L'assistant Studio peut **préparer** des vues enregistrées — jamais les créer sans confirmation :
+
+- **Outil `studio_plan_record_view`** (flux plan → aperçu → confirmation, comme `studio_plan_view`) :
+  spec JSON `{ entity, name, mode: "list"|"kanban"|"calendar", columns?, filters?, sort?, groupBy?,
+  start?, end?, title?, isDefault? }`. Exposé seulement si `Ollama:EnableStudioAiRecordViewTools`
+  **et** `EnableStudioRecordViews` **et** `EnableStudioAiPlanPreview` (capability
+  `RecordViewToolsEnabled`) ; `RequiredPermission = Studio.DesignForms` (conception des affichages).
+- **`entities[].views[]` des specs système** (≤ 3 par table, `StudioAiSystemSpec.MaxViewsPerEntity`) :
+  l'orchestrateur les crée en **passe 4** (après champs/relations/rapport, avant le seed), en relisant
+  le schéma réel une fois par table ; l'échec d'une vue est un avertissement, jamais un rollback.
+- **Résolution contre le schéma réel** (`StudioAiRecordViewSpec.ResolveAgainstSchema`) : clés
+  tolérantes (clé exacte → casse → slug de clé ou de libellé ; `createdAt`/`updatedAt` reconnus) ;
+  colonnes inconnues retirées (défaut : 6 premiers champs actifs, borne 25) ; chaque filtre revérifié
+  par `RecordViewDefinitionValidator` (opérateur inconnu ou incompatible, valeur mal formée ⇒ retiré) ;
+  tri sur champ calculé retiré ; kanban sans champ Select à options ou calendrier sans champ date
+  **dégradés en Liste** ; filet final `RecordViewDefinitionValidator.Validate` (repli Liste simple).
+  Toute dégradation produit un **avertissement explicite** (résumé d'aperçu et payload d'exécution) —
+  jamais d'échec silencieux (R6).
+- **Plan `StudioAiPlanKind.RecordView = 5`** : résumé `ForRecordView` (table, mode, colonnes, filtres,
+  vue par défaut) reflétant la résolution ; exécution par `StudioAiPlanExecutor.ExecuteRecordViewAsync`
+  (relecture du schéma à la confirmation — il a pu changer depuis l'aperçu ; clé `vue_<slug>` suffixée
+  `_2`…`_99` en cas de collision). Le validate/from-spec accepte `kind: "RecordView"` quand les trois
+  drapeaux sont levés (sinon 400 `Validation.kind`).
+- Le prompt StudioBuilder gagne la **règle 13 « VUES »** (seulement quand l'outil est exposé) ;
+  `SystemPromptCacheRevision = "v6"`.
+
 ## Réversibilité
 
 Drapeau coupé ⇒ toutes les routes répondent 404 sans effet de bord et `schema.views = []`. La table est
 inerte. `Down` supprime la table (perte des vues acceptée en préprod ; en prod, désactiver le drapeau
-sans `Down`).
+sans `Down`). `EnableStudioAiRecordViewTools` coupé (avec `EnableStudioRecordViews` actif) ⇒ CRUD manuel
+intact, seul l'outil IA disparaît ; les plans `RecordView` déjà créés restent exécutables.

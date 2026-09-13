@@ -110,6 +110,32 @@ public static class AiToolRegistry
         "propose_follow_up_prompts"
     };
 
+    /// <summary>
+    /// Vues enregistrées proposées par l'IA (PR 2.4, <c>EnableStudioAiRecordViewTools</c>) : un seul
+    /// outil de plan, exposé seulement dans le flux d'aperçu (comme <c>studio_plan_view</c>).
+    /// </summary>
+    public static readonly HashSet<string> StudioRecordViewToolNames = new(StringComparer.Ordinal)
+    {
+        "studio_plan_record_view"
+    };
+
+    /// <summary>
+    /// R7 — outils dont le résultat est poussé au frontend comme événement <c>studio_plan</c>
+    /// (carte d'aperçu Valider/Annuler). PR 2.4 : la liste est centralisée ici et couvre désormais
+    /// AUSSI <c>studio_plan_changes</c> et <c>studio_plan_view</c> (ils produisaient déjà un plan
+    /// confirmable mais leur événement n'était pas émis — changement observable voulu, un seul
+    /// événement par appel d'outil).
+    /// </summary>
+    public static readonly HashSet<string> StudioPlanEmittingTools = new(StringComparer.Ordinal)
+    {
+        "studio_plan_app",
+        "studio_plan_system",
+        "studio_plan_report",
+        "studio_plan_changes",
+        "studio_plan_view",
+        "studio_plan_record_view"
+    };
+
     /// <param name="enableMutationTools">When false, tools with <see cref="AiToolDefinition.IsMutating"/> are excluded.</param>
     /// <param name="agentScope">
     /// Expert de module optionnel : ne restreint le catalogue qu'en mode Default (les autres modes ont déjà
@@ -129,6 +155,11 @@ public static class AiToolRegistry
     /// noie les bons outils ; le focus le divise par trois. <see cref="StudioToolFocus.None"/> (défaut)
     /// = catalogue strictement inchangé.
     /// </param>
+    /// <param name="studioRecordViewTools">
+    /// Vues enregistrées proposées par l'IA (PR 2.4). Additif, en fin de signature : les appels
+    /// existants (positionnels jusqu'à <paramref name="studioFocus"/>) restent valides.
+    /// False (défaut) = catalogue strictement inchangé.
+    /// </param>
     public static IReadOnlyList<AiToolDefinition> GetDefinitionsForMode(
         AssistantMode mode,
         bool enableMutationTools,
@@ -137,7 +168,8 @@ public static class AiToolRegistry
         bool studioModifyTools = false,
         bool studioViewTools = false,
         bool studioReportTools = false,
-        StudioToolFocus studioFocus = StudioToolFocus.None)
+        StudioToolFocus studioFocus = StudioToolFocus.None,
+        bool studioRecordViewTools = false)
     {
         var studioSet = studioPlanPreview ? StudioBuilderPlanToolNames : StudioBuilderToolNames;
         // Modification et fenêtres ne sont proposées qu'en mode aperçu (rien ne s'applique sans validation).
@@ -146,6 +178,13 @@ public static class AiToolRegistry
             var expanded = new HashSet<string>(StudioBuilderPlanToolNames, StringComparer.Ordinal);
             if (studioModifyTools) expanded.UnionWith(StudioModifyToolNames);
             if (studioViewTools) expanded.UnionWith(StudioViewToolNames);
+            studioSet = expanded;
+        }
+        // Vues enregistrées (PR 2.4) : même garde que les fenêtres — le plan exige le flux d'aperçu.
+        if (studioPlanPreview && studioRecordViewTools)
+        {
+            var expanded = new HashSet<string>(studioSet, StringComparer.Ordinal);
+            expanded.UnionWith(StudioRecordViewToolNames);
             studioSet = expanded;
         }
         if (studioReportTools)
@@ -1682,6 +1721,35 @@ public static class AiToolRegistry
                 {
                     Type = "string",
                     Description = "Spécification JSON de la fenêtre (title + table + columns) conforme au schéma."
+                }
+            },
+            RequiredParameters = new() { "spec_json" },
+            IsMutating = true,
+            RequiredPermission = Permissions.Studio.DesignForms
+        },
+        new()
+        {
+            Name = "studio_plan_record_view",
+            Description =
+                "PRÉPARE un plan de création d'une VUE ENREGISTRÉE (liste, kanban ou calendrier) sur une table "
+                + "Studio EXISTANTE, soumis à validation utilisateur (rien n'est créé immédiatement). UTILISER pour "
+                + "« un kanban des interventions par statut », « un calendrier des échéances », « une liste filtrée "
+                + "des contrats actifs ». Appelle d'abord studio_get_table_schema pour connaître les VRAIES clés "
+                + "de champ. Fournir UN seul argument `spec_json` : "
+                + "{ \"entity\": clé de la table, \"name\": libellé de la vue, \"mode\": \"list\"|\"kanban\"|\"calendar\", "
+                + "\"columns\"?: [ clés de champ ], "
+                + "\"filters\"?: [ { \"field\": clé, \"op\": \"eq|neq|contains|gt|gte|lt|lte|in|is_empty|is_not_empty|between\", \"value\"?: any } ], "
+                + "\"sort\"?: [ { \"field\": clé, \"desc\"?: bool } ], "
+                + "\"groupBy\"?: clé d'un champ select (OBLIGATOIRE en kanban), "
+                + "\"start\"?: clé d'un champ date (OBLIGATOIRE en calendrier), \"end\"?: clé d'un champ date (optionnel), "
+                + "\"title\"?: clé du champ titre, \"isDefault\"?: bool }. "
+                + "Une vue n'écrit JAMAIS de données ; une table inexistante doit d'abord être créée.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["spec_json"] = new()
+                {
+                    Type = "string",
+                    Description = "Spécification JSON de la vue enregistrée (entity + name + mode) conforme au schéma."
                 }
             },
             RequiredParameters = new() { "spec_json" },

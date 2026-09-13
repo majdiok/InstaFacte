@@ -83,7 +83,9 @@ public sealed class CursorToolCallbackService
                 ctx.AccumulatedDashboardJson = result.Data;
                 ctx.ExtraEvents.Enqueue(ChatStreamEvent.DashboardEvent(result.Data));
             }
-            if (toolName is "studio_plan_app" or "studio_plan_system")
+            // R7/PR 2.4 : la liste des outils « plan » poussés au client est centralisée dans le
+            // registre (elle couvre désormais aussi studio_plan_changes et studio_plan_view).
+            if (AiToolRegistry.StudioPlanEmittingTools.Contains(toolName))
                 ctx.ExtraEvents.Enqueue(ChatStreamEvent.StudioPlanEvent(result.Data));
         }
 

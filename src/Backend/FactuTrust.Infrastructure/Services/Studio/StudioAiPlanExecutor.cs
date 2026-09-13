@@ -4,6 +4,7 @@ using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Entities;
 using FactuTrust.Application.Features.Studio.Fields;
+using FactuTrust.Application.Features.Studio.RecordViews;
 using FactuTrust.Application.Features.Studio.Reports;
 using FactuTrust.Application.Features.Studio.Views;
 using FactuTrust.Domain.Entities.Studio;
@@ -78,6 +79,12 @@ public sealed class StudioAiPlanExecutor : IStudioAiPlanExecutor
                 if (!StudioAiReportSpec.TryParse(plan.SpecJson, out var spec, out var error) || spec is null)
                     return (false, error ?? "Spécification d'état invalide.", null);
                 return await ExecuteReportAsync(spec, progress, cancellationToken);
+            }
+            case StudioAiPlanKind.RecordView:
+            {
+                if (!StudioAiRecordViewSpec.TryParse(plan.SpecJson, out var spec, out var error) || spec is null)
+                    return (false, error ?? "Spécification de vue enregistrée invalide.", null);
+                return await ExecuteRecordViewAsync(spec, progress, cancellationToken);
             }
             default:
                 return (false, $"Type de plan non pris en charge : {plan.Kind}.", null);
@@ -213,8 +220,62 @@ public sealed class StudioAiPlanExecutor : IStudioAiPlanExecutor
         return (true, null, payload);
     }
 
-    private async Task<(bool Success, string? Error, object? Payload)> ExecuteViewAsync(
-        ParsedViewSpec spec, Guid tenantId, IStudioBuildProgress? progress, CancellationToken ct)
+    /// <summary>
+    /// Crée une vue enregistrée sur une table Studio EXISTANTE (PR 2.4) : le schéma est RELU ici
+    /// (champs et vues présentes), la spec du modèle est confrontée aux vraies clés avec
+    /// avertissements, puis la création passe par <c>CreateCustomRecordViewCommand</c> — la MÊME
+    /// commande que le concepteur humain (validation, quota, audit mutualisés).
+    /// </summary>
+    private async Task<(bool Success, string? Error, object? Payload)> ExecuteRecordViewAsync(
+        ParsedRecordViewSpec spec, IStudioBuildProgress? progress, CancellationToken ct)
+    {
+        void Report(string phase, string label, string status, string? detail = null) =>
+            progress?.Report(new StudioBuildStep(phase, label, status, null, detail));
+
+        if (string.IsNullOrWhiteSpace(spec.EntityKey))
+            return (false, "La vue enregistrée n'indique pas de table cible.", null);
+
+        Report("reading_schema", $"Lecture de « {spec.EntityKey} »", "running");
+        var schemaResult = await _mediator.Send(new GetCustomEntitySchemaQuery(spec.EntityKey), ct);
+        if (!schemaResult.IsSuccess)
+        {
+            Report("failed", "Table introuvable", "error", spec.EntityKey);
+            return (false, schemaResult.Error.Description, null);
+        }
+        var schema = schemaResult.Value;
+        Report("reading_schema", $"Lecture de « {schema.Entity.Key} »", "done");
+
+        var (mode, definition, warnings) = StudioAiRecordViewSpec.ResolveAgainstSchema(spec, schema.Fields);
+        var key = StudioAiRecordViewSpec.SlugKey(
+            spec.DisplayName, schema.Views.Select(v => v.Key).ToHashSet(StringComparer.Ordinal));
+
+        Report("creating_record_view", $"Vue « {spec.DisplayName} »", "running");
+        var result = await _mediator.Send(new CreateCustomRecordViewCommand(schema.Entity.Key,
+            new SaveCustomRecordViewRequest(key, spec.DisplayName, mode, definition, spec.IsDefault)), ct);
+        if (!result.IsSuccess)
+        {
+            Report("creating_record_view", $"Vue « {spec.DisplayName} »", "error", result.Error.Description);
+            return (false, result.Error.Description, null);
+        }
+        Report("creating_record_view", $"Vue « {spec.DisplayName} »", "done");
+        Report("completed", "Vue enregistrée créée", "done");
+
+        var view = result.Value;
+        var payload = new
+        {
+            success = true,
+            viewId = view.Id,
+            viewKey = view.Key,
+            entityKey = schema.Entity.Key,
+            mode = mode.ToString(),
+            openUrl = $"/studio/d/{schema.Entity.Key}?view={view.Id}",
+            warnings,
+            message = $"Vue « {view.DisplayName} » créée."
+        };
+        return (true, null, payload);
+    }
+
+    private async Task<(bool Success, string? Error, object? Payload)> ExecuteViewAsync(        ParsedViewSpec spec, Guid tenantId, IStudioBuildProgress? progress, CancellationToken ct)
     {
         void Report(string phase, string label, string status, string? detail = null) =>
             progress?.Report(new StudioBuildStep(phase, label, status, null, detail));

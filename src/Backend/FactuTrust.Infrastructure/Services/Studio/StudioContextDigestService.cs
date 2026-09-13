@@ -259,6 +259,7 @@ public sealed class StudioContextDigestService : IStudioContextDigestService
         StudioAiPlanKind.Amendment => "Modification",
         StudioAiPlanKind.View => "Fenêtre",
         StudioAiPlanKind.Report => "État",
+        StudioAiPlanKind.RecordView => "Vue enregistrée",
         _ => kind.ToString()
     };
 

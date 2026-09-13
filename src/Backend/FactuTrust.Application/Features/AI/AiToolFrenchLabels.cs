@@ -128,7 +128,8 @@ public static class AiToolFrenchLabels
         ["studio_list_report_sources"] = "la liste des états et sources disponibles",
         ["studio_describe_report_source"] = "la lecture des champs d'une source d'états",
         ["studio_run_report"] = "le calcul d'un état",
-        ["studio_plan_report"] = "la préparation d'un état Studio"
+        ["studio_plan_report"] = "la préparation d'un état Studio",
+        ["studio_plan_record_view"] = "la préparation d'une vue enregistrée"
     };
 
     /// <summary>Libellé FR de l'outil, ou libellé générique si l'identifiant est inconnu.</summary>

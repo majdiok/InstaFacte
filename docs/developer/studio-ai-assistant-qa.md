@@ -269,6 +269,8 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
 ## Vues enregistrées (`Ollama:EnableStudioRecordViews`)
 
 > Architecture : [`docs/architecture/studio-record-views.md`](../architecture/studio-record-views.md).
+> Les cas 60–62 (vues **proposées par l'IA**) exigent en plus `Ollama:EnableStudioAiRecordViewTools: true`
+> et `Ollama:EnableStudioAiPlanPreview: true` — capability `recordViewToolsEnabled`.
 > Prérequis : migration tenant `20260912140000_AddStudioRecordViews_Tenant` appliquée ; une table Studio
 > existante `interventions` (champs `nom` Text, `statut` Select avec options `encours`/`termine`, `debut` Date,
 > `montant` Money) alimentée d'enregistrements, un compte avec `StudioDesignForms` (conception) et
@@ -303,6 +305,25 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     `GET api/ai/studio/capabilities` ⇒ `recordViewsEnabled: false`. La table `CustomRecordViewDefinitions`
     reste inerte (migration additive).
 
+60. **Vue kanban proposée par l'IA** — `POST api/studio/ai/plans/from-spec` corps
+    `{ "kind": "RecordView", "specJson": "{\"entity\":\"interventions\",\"name\":\"Par statut\",\"mode\":\"kanban\",\"groupBy\":\"statut\"}" }`
+    ⇒ `200`, `summary.kind = "RecordView"`, étape `mode` = « Kanban », table cible « Interventions » ;
+    `POST api/studio/ai/plans/{id}/confirm` ⇒ le résultat porte `openUrl = "/studio/d/interventions?view=<id>"` ;
+    `GET api/studio/records/interventions/views` liste la clé `vue_par_statut` en mode `Kanban`. Un compte
+    sans `StudioDesignForms` ⇒ `403` à la confirmation (la vue relève de la conception des affichages).
+61. **Calendrier dégradé en liste** — même appel avec
+    `"{\"entity\":\"interventions\",\"name\":\"Agenda\",\"mode\":\"calendrier\",\"start\":\"nom\"}"`
+    (champ `nom` Text) ⇒ `200` avec résumé étape `mode` = « **Liste** » et `warnings[]` contenant
+    « Calendrier impossible … » ; la confirmation crée une vue **Liste** (jamais un échec, jamais une
+    promesse de calendrier impossible).
+62. **Trois vues max par table dans un système** — spec système (`studio_plan_system` ou workbench)
+    avec 4 `views` sur une même entité ⇒ résumé `viewCount = 3` + avertissement « Au plus 3 vues par
+    table » ; la confirmation montre la progression `creating_views` ×3. Avec
+    `EnableStudioAiRecordViewTools: false` ⇒ étape `creating_views` `skipped` + avertissement,
+    `GET api/ai/studio/capabilities` ⇒ `recordViewToolsEnabled: false`, l'outil
+    `studio_plan_record_view` est absent du catalogue, et `from-spec` avec `kind: "RecordView"` ⇒
+    `400 Validation.kind` (« Les vues enregistrées par l'IA ne sont pas activées. »).
+
 ## Migrations
 
 - `20260624181553_AddStudioSystems_Tenant` (systèmes multi-tables).
@@ -335,6 +356,12 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   `--filter "FullyQualifiedName~StudioAiSystemOrchestrator|FullyQualifiedName~StudioAiSystemSpec|FullyQualifiedName~StudioAiSpecCanonical|FullyQualifiedName~AiContextBuilderStudio|FullyQualifiedName~StudioAiPlanCatalogTests"`
   (alias de `kind`, promotion de champ, cap de 6 relations, dédoublonnage de paire, cinq passes de
   l'orchestrateur, forme canonique de `relations[]`, règle 3e du prompt derrière le drapeau).
+- Backend (vues enregistrées proposées par l'IA, PR 2.4) :
+  `--filter "FullyQualifiedName~StudioAiRecordViewSpec|FullyQualifiedName~StudioAiPlanExecutor|FullyQualifiedName~StudioAiSystemOrchestrator|FullyQualifiedName~StudioAiPlanCreationFeatures|FullyQualifiedName~StudioSilentFailureGuards|FullyQualifiedName~AiToolRegistryStudioRecordViewTools"`
+  (parsing/alias et résolution contre le schéma réel avec avertissements, borne 3 vues/entité, passe 4
+  de l'orchestrateur et son ordonnancement, exécution du plan `RecordView`, garde des trois drapeaux,
+  catalogue d'outils et `StudioPlanEmittingTools`) ; contrats API `validate`/`from-spec` kind
+  `RecordView` dans `StudioAiPlansControllerContractTests` (filtre `FactuTrust.API.Tests.Studio`).
 - Frontend : `ng test --watch=false --browsers=ChromeHeadless` (service de plans + flux SSE de confirmation).
 - Gate complet : `powershell -File scripts\verify-all.ps1`.
 

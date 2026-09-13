@@ -505,4 +505,83 @@ public sealed class StudioAiSystemSpecTests
         var rel = Assert.Single(spec!.Relations);
         Assert.Equal(100, rel.JunctionName!.Length);
     }
+
+    // ---------- PR 2.4 — vues enregistrées proposées (entities[].views[]) ----------
+
+    [Fact]
+    public void Entity_views_are_parsed_and_capped_at_three()
+    {
+        const string json = """
+        { "system": { "displayName": "Ops" }, "entities": [
+          { "ref": "taches", "displayName": "Taches", "fields": [ { "label": "Titre", "type": "text" } ],
+            "views": [ { "name": "A", "mode": "list" }, { "name": "B", "mode": "kanban" },
+                       { "name": "C", "mode": "calendar" }, { "name": "D" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var views = spec!.Entities[0].Views;
+        Assert.Equal(3, views.Count);
+        Assert.Equal(new[] { "list", "kanban", "calendar" }, views.Select(v => v.Mode));
+        // Une vue d'entité n'a JAMAIS de clé de table (l'entité est implicite).
+        Assert.All(views, v => Assert.Null(v.EntityKey));
+        Assert.Contains(spec.Warnings!, w => w.Contains("Au plus 3 vues"));
+    }
+
+    [Fact]
+    public void Unreadable_view_is_skipped_with_warning()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "taches", "displayName": "Taches", "fields": [ { "label": "Titre" } ],
+            "views": [ "???" ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Empty(spec!.Entities[0].Views);
+        Assert.Contains(spec.Warnings!, w => w.Contains("Vue ignorée"));
+    }
+
+    [Fact]
+    public void Invalid_view_mode_collects_warning_and_keeps_the_entity()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "taches", "displayName": "Taches", "fields": [ { "label": "Titre" } ],
+            "views": [ { "name": "A", "mode": "graphique" }, { "name": "B", "mode": "list" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var views = spec!.Entities[0].Views;
+        Assert.Single(views);
+        Assert.Equal("B", views[0].DisplayName);
+        Assert.Contains(spec.Warnings!, w => w.Contains("Mode de vue inconnu"));
+    }
+
+    [Fact]
+    public void Existing_entity_ignores_views_with_warning()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "taches", "existingKey": "taches",
+            "views": [ { "name": "A", "mode": "list" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Empty(spec!.Entities[0].Views);
+        Assert.Contains(spec.Warnings!, w => w.Contains("vues ignorées") && w.Contains("réutilisée telle quelle"));
+    }
+
+    [Fact]
+    public void Views_node_must_be_an_array()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "taches", "displayName": "Taches", "fields": [ { "label": "Titre" } ],
+            "views": { "name": "A" } }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Empty(spec!.Entities[0].Views);
+        Assert.Contains(spec.Warnings!, w => w.Contains("tableau de vues"));
+    }
 }

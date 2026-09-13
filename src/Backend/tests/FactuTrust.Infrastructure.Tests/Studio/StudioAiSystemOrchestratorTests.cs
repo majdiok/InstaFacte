@@ -7,6 +7,7 @@ using FactuTrust.Application.Features.Studio.Entities;
 using FactuTrust.Application.Features.Studio.Fields;
 using FactuTrust.Application.Features.Studio.Forms;
 using FactuTrust.Application.Features.Studio.Records;
+using FactuTrust.Application.Features.Studio.RecordViews;
 using FactuTrust.Application.Features.Studio.Relations;
 using FactuTrust.Application.Features.Studio.Reports;
 using FactuTrust.Application.Features.Studio.Systems;
@@ -204,6 +205,150 @@ public sealed class StudioAiSystemOrchestratorTests
         Assert.Equal("sum_montant", savedDef.Sort[0].Field);
         Assert.Equal("desc", savedDef.Sort[0].Dir);
         Assert.Contains("statut", savedDef.Grouping);
+    }
+
+    // ---- PR 2.4 — vues enregistrées proposées (passe 4) ----
+
+    private const string SpecWithKanbanView = """
+        { "system": { "displayName": "Ops" }, "entities": [
+          { "ref": "taches", "displayName": "Taches", "fields": [ { "label": "Titre", "type": "text" } ],
+            "views": [ { "name": "Kanban par statut", "mode": "kanban", "columns": [ "Titre" ], "groupBy": "Statut" } ] }
+        ] }
+        """;
+
+    private void SetupSchemaWithSelectFor(string entityKey)
+    {
+        var fields = new List<CustomFieldDto>
+        {
+            new(Guid.NewGuid(), "titre", "Titre", CustomFieldType.Text, false, false, 1, null, null, null, true),
+            new(Guid.NewGuid(), "statut", "Statut", CustomFieldType.Select, false, false, 2, null,
+                new List<SelectOptionDto> { new("a_faire", "À faire"), new("fait", "Fait") }, null, true)
+        };
+        _mediator.Setup(m => m.Send(It.Is<GetCustomEntitySchemaQuery>(q => q.EntityKey == entityKey),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new CustomEntitySchemaDto(EntityDto(entityKey), fields, new FormLayout())));
+    }
+
+    [Fact]
+    public async Task Views_are_created_after_fields_with_keys_resolved_against_the_real_schema()
+    {
+        Assert.True(StudioAiSystemSpec.TryParse(SpecWithKanbanView, out var spec, out var err), err);
+        SetupHappyStructure();
+        // SetupHappyStructure retourne « e0 » comme clé de la première table créée.
+        SetupSchemaWithSelectFor("e0");
+        _mediator.Setup(m => m.Send(It.IsAny<CreateCustomRecordViewCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CreateCustomRecordViewCommand c, CancellationToken _) =>
+                Result.Success(new CustomRecordViewDto(Guid.NewGuid(), c.Request.Key, c.Request.DisplayName,
+                    c.Request.Mode, c.Request.Definition, c.Request.IsDefault, true, "AAAA", DateTime.UtcNow)));
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object,
+            settings: new OllamaSettings { EnableStudioAiRecordViewTools = true, EnableStudioRecordViews = true });
+        var (success, error, payload) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        // Libellés du modèle résolus vers les vraies clés (« Titre » → titre, « Statut » → statut).
+        _mediator.Verify(m => m.Send(It.Is<CreateCustomRecordViewCommand>(c =>
+            c.EntityKey == "e0"
+            && c.Request.Key == "vue_kanban_par_statut"
+            && c.Request.Mode == CustomRecordViewMode.Kanban
+            && c.Request.Definition.Kanban!.GroupByFieldKey == "statut"
+            && c.Request.Definition.Columns.Select(x => x.FieldKey).SequenceEqual(new[] { "titre" })),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        // Le payload est un objet anonyme : assertions via JsonDocument (JsonSerializer échappe
+        // les caractères non-ASCII — les « » et é ne sont pas cherchables en clair).
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var view = Assert.Single(doc.RootElement.GetProperty("views").EnumerateArray());
+        Assert.Equal("e0", view.GetProperty("entityKey").GetString());
+        Assert.Equal("Kanban par statut", view.GetProperty("displayName").GetString());
+        Assert.Equal("Kanban", view.GetProperty("mode").GetString());
+        Assert.StartsWith("/studio/d/e0?view=", view.GetProperty("openUrl").GetString());
+        // buildSteps sérialise le record StudioBuildStep en PascalCase (pas d'options Web ici).
+        Assert.Contains(doc.RootElement.GetProperty("buildSteps").EnumerateArray(),
+            s => s.GetProperty("Phase").GetString() == "creating_views");
+    }
+
+    [Fact]
+    public async Task View_failure_is_a_warning_and_never_rolls_back_the_system()
+    {
+        Assert.True(StudioAiSystemSpec.TryParse(SpecWithKanbanView, out var spec, out var err), err);
+        SetupHappyStructure();
+        SetupSchemaWithSelectFor("e0");
+        _mediator.Setup(m => m.Send(It.IsAny<CreateCustomRecordViewCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<CustomRecordViewDto>(Error.Conflict("La clé de vue est déjà prise.")));
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object,
+            settings: new OllamaSettings { EnableStudioAiRecordViewTools = true, EnableStudioRecordViews = true });
+        var (success, error, payload) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error); // le système reste utilisable sans sa vue
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        Assert.Contains(doc.RootElement.GetProperty("warnings").EnumerateArray().Select(w => w.GetString()),
+            w => w!.Contains("ignorée"));
+        _mediator.Verify(m => m.Send(It.IsAny<DeleteCustomEntityCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Views_are_skipped_with_a_warning_when_the_flags_are_off()
+    {
+        Assert.True(StudioAiSystemSpec.TryParse(SpecWithKanbanView, out var spec, out var err), err);
+        SetupHappyStructure();
+
+        // Pas de settings ⇒ garde coupée : jamais de lecture de schéma ni de création de vue.
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object);
+        var (success, error, payload) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomRecordViewCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mediator.Verify(m => m.Send(It.IsAny<GetCustomEntitySchemaQuery>(), It.IsAny<CancellationToken>()), Times.Never);
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        Assert.Contains(doc.RootElement.GetProperty("warnings").EnumerateArray().Select(w => w.GetString()),
+            w => w!.Contains("non activées"));
+        Assert.Contains(doc.RootElement.GetProperty("buildSteps").EnumerateArray(),
+            s => s.GetProperty("Phase").GetString() == "creating_views"
+                && s.GetProperty("Status").GetString() == "skipped");
+    }
+
+    [Fact]
+    public async Task Views_are_created_after_fields_and_reports_but_before_seeding()
+    {
+        const string json = """
+        { "system": { "displayName": "Ops" }, "entities": [
+          { "ref": "taches", "displayName": "Taches", "fields": [ { "label": "Titre", "type": "text" } ],
+            "report": { "displayName": "Etat", "columns": [ "titre" ] },
+            "views": [ { "name": "Kanban", "mode": "kanban", "groupBy": "Statut" } ] }
+        ], "seed": [ { "entityRef": "taches", "records": [ { "titre": "X" } ] } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        SetupHappyStructure();
+        // La première table créée reçoit la clé « e0 » (séquence de SetupHappyStructure).
+        SetupSchemaWithSelectFor("e0");
+        _mediator.Setup(m => m.Send(It.IsAny<UpsertCustomReportCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new CustomReportDto(Guid.NewGuid(), "etat", "Etat",
+                CustomReportDataSourceKind.CustomEntity, "e0", new ReportDefinition(), true)));
+        _mediator.Setup(m => m.Send(It.IsAny<CreateCustomRecordViewCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CreateCustomRecordViewCommand cmd, CancellationToken _) =>
+                Result.Success(new CustomRecordViewDto(Guid.NewGuid(), cmd.Request.Key, cmd.Request.DisplayName,
+                    cmd.Request.Mode, cmd.Request.Definition, cmd.Request.IsDefault, true, "AAAA", DateTime.UtcNow)));
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object,
+            settings: new OllamaSettings { EnableStudioAiRecordViewTools = true, EnableStudioRecordViews = true });
+        var (success, error, _) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        var invocations = _mediator.Invocations
+            .Select((inv, idx) => (Idx: idx, Arg: inv.Arguments[0]))
+            .ToList();
+        int LastIndexOf<T>() => invocations.Where(x => x.Arg is T).Select(x => x.Idx).DefaultIfEmpty(-1).Max();
+        int FirstIndexOf<T>() => invocations.Where(x => x.Arg is T).Select(x => x.Idx).DefaultIfEmpty(int.MaxValue).Min();
+
+        // Passe 4 : la vue suit TOUS les champs et le rapport de l'entité ; le seed reste dernier.
+        Assert.True(LastIndexOf<CreateCustomFieldCommand>() < FirstIndexOf<UpsertCustomReportCommand>());
+        Assert.True(FirstIndexOf<UpsertCustomReportCommand>() < FirstIndexOf<CreateCustomRecordViewCommand>());
+        Assert.True(FirstIndexOf<CreateCustomRecordViewCommand>() < FirstIndexOf<CreateCustomRecordCommand>());
+        // Le schéma n'est relu qu'UNE fois pour l'entité (avant sa première vue).
+        Assert.Equal(1, invocations.Count(x => x.Arg is GetCustomEntitySchemaQuery));
     }
 
     private void SetupHappyStructure()

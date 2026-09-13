@@ -110,7 +110,9 @@ public sealed class StudioAiCapabilitiesQueryTests
 
     /// <summary>
     /// PR 2.3 : <c>RecordViewsEnabled</c> suit <c>Ollama:EnableStudioRecordViews</c> (indépendant du
-    /// workbench) ; <c>RecordViewToolsEnabled</c> (outils IA, PR 2.4) reste faux.
+    /// workbench). PR 2.4 : <c>RecordViewToolsEnabled</c> exige les TROIS drapeaux
+    /// (<c>EnableStudioAiRecordViewTools</c> + <c>EnableStudioRecordViews</c> +
+    /// <c>EnableStudioAiPlanPreview</c>) — ici il manque les deux derniers/premiers, donc faux.
     /// </summary>
     [Fact]
     public async Task RecordViews_follows_its_flag_and_view_tools_stay_false()
@@ -128,6 +130,34 @@ public sealed class StudioAiCapabilitiesQueryTests
             EnableStudioRecordViews = false
         }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
         Assert.False(disabled.Value.RecordViewsEnabled);
+    }
+
+    /// <summary>
+    /// PR 2.4 : les outils de vues enregistrées ne s'annoncent que si les TROIS drapeaux sont levés
+    /// (flag dédié + vues enregistrées + aperçu de plan — un plan sans aperçu ne serait pas validable).
+    /// </summary>
+    [Fact]
+    public async Task RecordViewTools_follows_its_three_flags()
+    {
+        var enabled = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioAiPlanPreview = true,
+            EnableStudioRecordViews = true,
+            EnableStudioAiRecordViewTools = true
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+        Assert.True(enabled.Value.RecordViewToolsEnabled);
+
+        // Chaque drapeau coupé à tour de rôle ⇒ faux.
+        foreach (var settings in new[]
+        {
+            new OllamaSettings { EnableStudioAiPlanPreview = false, EnableStudioRecordViews = true, EnableStudioAiRecordViewTools = true },
+            new OllamaSettings { EnableStudioAiPlanPreview = true, EnableStudioRecordViews = false, EnableStudioAiRecordViewTools = true },
+            new OllamaSettings { EnableStudioAiPlanPreview = true, EnableStudioRecordViews = true, EnableStudioAiRecordViewTools = false }
+        })
+        {
+            var result = await CreateHandler(settings).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+            Assert.False(result.Value.RecordViewToolsEnabled);
+        }
     }
 
     [Fact]

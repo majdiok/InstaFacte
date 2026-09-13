@@ -19,7 +19,14 @@ public enum StudioAiPlanKind
     /// Création d'un ÉTAT sur les tables réelles du tenant (lecture seule, agrégation SQL).
     /// Ajouté en fin d'énumération : valeur persistée en <c>int</c>, aucune migration requise.
     /// </summary>
-    Report = 4
+    Report = 4,
+
+    /// <summary>
+    /// Création d'une VUE ENREGISTRÉE (liste / kanban / calendrier) sur une table Studio existante
+    /// (PR 2.4). Ajouté en fin d'énumération : valeur persistée en <c>int</c>, aucune migration requise.
+    /// </summary>
+    RecordView = 5
+    // Workflow = 6 réservé (Phase 4)
 }
 
 /// <summary>Cycle de vie d'un plan Studio IA : proposé → confirmé/annulé → exécuté.</summary>

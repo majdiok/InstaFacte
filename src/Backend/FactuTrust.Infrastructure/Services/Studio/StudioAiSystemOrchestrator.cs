@@ -7,6 +7,7 @@ using FactuTrust.Application.Features.Studio.Entities;
 using FactuTrust.Application.Features.Studio.Fields;
 using FactuTrust.Application.Features.Studio.Forms;
 using FactuTrust.Application.Features.Studio.Records;
+using FactuTrust.Application.Features.Studio.RecordViews;
 using FactuTrust.Application.Features.Studio.Relations;
 using FactuTrust.Application.Features.Studio.Reports;
 using FactuTrust.Application.Features.Studio.Systems;
@@ -202,6 +203,7 @@ public sealed class StudioAiSystemOrchestrator
             }
 
             // Passe 4 : formulaires et états, après que toutes les relations (simples et N-N) existent.
+            var createdViews = new List<(string EntityKey, Guid ViewId, string DisplayName, CustomRecordViewMode Mode)>();
             foreach (var (entitySpec, entityId) in createdEntities)
             {
                 if (entitySpec.Form is not null && _currentUser.HasPermission(Permissions.Studio.DesignForms))
@@ -240,6 +242,54 @@ public sealed class StudioAiSystemOrchestrator
                     }
                     else
                         Report("creating_report", $"Rapport « {entitySpec.Report.DisplayName} »", "done", entitySpec.Ref);
+                }
+
+                // PR 2.4 : vues enregistrées proposées (≤ 3 par table), après le rapport — la table et
+                // tous ses champs existent déjà. Échec ou drapeaux coupés ⇒ avertissement + étape,
+                // jamais de rollback (le système est utilisable sans ses vues).
+                if (entitySpec.Views.Count > 0)
+                {
+                    if (_settings?.EnableStudioAiRecordViewTools == true && _settings.EnableStudioRecordViews)
+                    {
+                        var entityKey = entityKeyMap[entitySpec.Ref];
+                        // Schéma relu UNE fois par entité : les clés écrites par le modèle sont
+                        // confrontées aux vraies clés (et aux vues déjà présentes pour la collision).
+                        var viewSchema = await _mediator.Send(new GetCustomEntitySchemaQuery(entityKey), ct);
+                        if (!viewSchema.IsSuccess)
+                        {
+                            warnings.Add($"Vues de « {entitySpec.EntityDisplayName} » ignorées : {viewSchema.Error.Description}");
+                            Report("creating_views", $"Vues de « {entitySpec.EntityDisplayName} »", "error", entitySpec.Ref, viewSchema.Error.Description);
+                        }
+                        else
+                        {
+                            var usedViewKeys = viewSchema.Value.Views.Select(v => v.Key).ToHashSet(StringComparer.Ordinal);
+                            foreach (var viewSpec in entitySpec.Views)
+                            {
+                                Report("creating_views", $"Vue « {viewSpec.DisplayName} »", "running", entitySpec.Ref);
+                                var (mode, definition, resolveWarnings) =
+                                    StudioAiRecordViewSpec.ResolveAgainstSchema(viewSpec, viewSchema.Value.Fields);
+                                warnings.AddRange(resolveWarnings);
+                                var viewKey = StudioAiRecordViewSpec.SlugKey(viewSpec.DisplayName, usedViewKeys);
+                                var vr = await _mediator.Send(new CreateCustomRecordViewCommand(entityKey,
+                                    new SaveCustomRecordViewRequest(viewKey, viewSpec.DisplayName, mode, definition, viewSpec.IsDefault)), ct);
+                                if (!vr.IsSuccess)
+                                {
+                                    warnings.Add($"Vue « {viewSpec.DisplayName} » ignorée : {vr.Error.Description}");
+                                    Report("creating_views", $"Vue « {viewSpec.DisplayName} »", "error", entitySpec.Ref, vr.Error.Description);
+                                    continue;
+                                }
+                                usedViewKeys.Add(vr.Value.Key);
+                                createdViews.Add((entityKey, vr.Value.Id, vr.Value.DisplayName, mode));
+                                Report("creating_views", $"Vue « {viewSpec.DisplayName} »", "done", entitySpec.Ref);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        const string offMessage = "Vues enregistrées par l'IA non activées.";
+                        warnings.Add(offMessage);
+                        Report("creating_views", "Vues", "skipped", entitySpec.Ref, offMessage);
+                    }
                 }
             }
 
@@ -304,6 +354,17 @@ public sealed class StudioAiSystemOrchestrator
                 openUrl = $"/studio/d/{r.JunctionKey}"
             }).ToList();
 
+            // Vues enregistrées créées en passe 4 (PR 2.4) : une entrée par vue, lien direct vers
+            // la table filtrée par la vue.
+            var views = createdViews.Select(v => new
+            {
+                entityKey = v.EntityKey,
+                viewId = v.ViewId,
+                displayName = v.DisplayName,
+                mode = v.Mode.ToString(),
+                openUrl = $"/studio/d/{v.EntityKey}?view={v.ViewId}"
+            }).ToList();
+
             var reusedCount = spec.Entities.Count(e => e.ExistingKey is not null);
             var createdCount = spec.Entities.Count - reusedCount;
             var payload = new
@@ -317,11 +378,13 @@ public sealed class StudioAiSystemOrchestrator
                 reusedCount,
                 entities,
                 relations,
+                views,
                 warnings,
                 buildSteps = journal.Steps,
                 message = $"Système « {spec.SystemDisplayName} » créé avec {createdCount} table(s)"
                     + (reusedCount > 0 ? $" et {reusedCount} table(s) existante(s) réutilisée(s)." : ".")
                     + (relations.Count > 0 ? $" {relations.Count} relation(s) plusieurs-à-plusieurs." : string.Empty)
+                    + (views.Count > 0 ? $" {views.Count} vue(s) enregistrée(s)." : string.Empty)
                     + (warnings.Count > 0 ? $" {warnings.Count} élément(s) ignoré(s)." : string.Empty)
             };
             return (true, null, payload);

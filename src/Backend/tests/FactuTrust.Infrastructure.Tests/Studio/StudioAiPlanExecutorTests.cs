@@ -1,0 +1,151 @@
+using System.Text.Json;
+using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Features.Studio.Ai;
+using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.Fields;
+using FactuTrust.Application.Features.Studio.RecordViews;
+using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Entities.Studio;
+using FactuTrust.Domain.Enums;
+using FactuTrust.Infrastructure.Services.Studio;
+using MediatR;
+using Moq;
+using Xunit;
+
+namespace FactuTrust.Infrastructure.Tests.Studio;
+
+/// <summary>
+/// PR 2.4 — exécution d'un plan <c>RecordView</c> confirmé : la définition est RERÉSOLUE contre le
+/// schéma réel à l'exécution (le schéma a pu changer depuis l'aperçu), les dégradations restent des
+/// avertissements, l'échec « table introuvable » est explicite.
+/// </summary>
+public sealed class StudioAiPlanExecutorTests
+{
+    private static readonly Guid TenantId = Guid.NewGuid();
+    private static readonly Guid UserId = Guid.NewGuid();
+
+    private readonly Mock<IMediator> _mediator = new();
+    private readonly Mock<ICurrentUser> _currentUser = new();
+
+    public StudioAiPlanExecutorTests()
+    {
+        _currentUser.Setup(x => x.TenantId).Returns(TenantId);
+        _currentUser.Setup(x => x.HasPermission(It.IsAny<string>())).Returns(true);
+    }
+
+    private const string KanbanSpec = """
+        { "entity": "interventions", "name": "Kanban par statut", "mode": "kanban",
+          "columns": [ "Titre", "statut" ], "groupBy": "Statut",
+          "filters": [ { "field": "bidon", "op": "eq", "value": 1 } ] }
+        """;
+
+    [Fact]
+    public async Task Record_view_plan_creates_the_view_with_resolved_keys()
+    {
+        SetupInterventionsSchema();
+        _mediator.Setup(m => m.Send(It.IsAny<CreateCustomRecordViewCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CreateCustomRecordViewCommand c, CancellationToken _) =>
+                Result.Success(new CustomRecordViewDto(Guid.NewGuid(), c.Request.Key, c.Request.DisplayName,
+                    c.Request.Mode, c.Request.Definition, c.Request.IsDefault, true, "AAAA", DateTime.UtcNow)));
+
+        var executor = new StudioAiPlanExecutor(_mediator.Object, _currentUser.Object);
+        var (success, error, payload) = await executor.ExecuteAsync(Plan(KanbanSpec), null, CancellationToken.None);
+
+        Assert.True(success, error);
+        // Clés libellé résolues (« Titre » → titre, « Statut » → statut) ; filtre inconnu retiré + averti.
+        _mediator.Verify(m => m.Send(It.Is<CreateCustomRecordViewCommand>(c =>
+            c.EntityKey == "interventions"
+            && c.Request.Key == "vue_kanban_par_statut"
+            && c.Request.Mode == CustomRecordViewMode.Kanban
+            && c.Request.Definition.Kanban!.GroupByFieldKey == "statut"
+            && c.Request.Definition.Columns.Select(x => x.FieldKey).SequenceEqual(new[] { "titre", "statut" })
+            && c.Request.Definition.Filters.Count == 0),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        // Le payload est un objet anonyme : assertions via JsonDocument (JsonSerializer échappe
+        // les caractères non-ASCII — les « » du message ne sont pas cherchables en clair).
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        var root = doc.RootElement;
+        Assert.True(root.GetProperty("success").GetBoolean());
+        Assert.Equal("vue_kanban_par_statut", root.GetProperty("viewKey").GetString());
+        Assert.Equal("interventions", root.GetProperty("entityKey").GetString());
+        Assert.Equal("Kanban", root.GetProperty("mode").GetString());
+        Assert.StartsWith("/studio/d/interventions?view=", root.GetProperty("openUrl").GetString());
+        Assert.Equal("Vue « Kanban par statut » créée.", root.GetProperty("message").GetString());
+        Assert.Contains(
+            root.GetProperty("warnings").EnumerateArray().Select(w => w.GetString()),
+            w => w!.Contains("bidon"));
+    }
+
+    [Fact]
+    public async Task Record_view_plan_fails_clearly_when_the_table_is_missing()
+    {
+        _mediator.Setup(m => m.Send(It.IsAny<GetCustomEntitySchemaQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<CustomEntitySchemaDto>(
+                Error.Validation("entityKey", "Table « interventions » introuvable.")));
+
+        var executor = new StudioAiPlanExecutor(_mediator.Object, _currentUser.Object);
+        var (success, error, _) = await executor.ExecuteAsync(Plan(KanbanSpec), null, CancellationToken.None);
+
+        Assert.False(success);
+        Assert.Contains("introuvable", error);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomRecordViewCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Record_view_plan_with_invalid_spec_fails_without_touching_the_schema()
+    {
+        var executor = new StudioAiPlanExecutor(_mediator.Object, _currentUser.Object);
+        var (success, error, _) = await executor.ExecuteAsync(Plan("{ pas du json"), null, CancellationToken.None);
+
+        Assert.False(success);
+        Assert.NotNull(error);
+        _mediator.Verify(m => m.Send(It.IsAny<GetCustomEntitySchemaQuery>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Record_view_plan_without_entity_key_fails()
+    {
+        var executor = new StudioAiPlanExecutor(_mediator.Object, _currentUser.Object);
+        var (success, error, _) = await executor.ExecuteAsync(
+            Plan("""{ "name": "Vue orpheline", "mode": "list" }"""), null, CancellationToken.None);
+
+        Assert.False(success);
+        Assert.Contains("table cible", error);
+    }
+
+    [Fact]
+    public async Task Unknown_plan_kind_is_rejected_with_a_clear_message()
+    {
+        // Non-régression : l'aiguillage par nature refuse proprement une nature inconnue
+        // (ex. plan Workflow réservé à la phase 4).
+        var executor = new StudioAiPlanExecutor(_mediator.Object, _currentUser.Object);
+        var plan = StudioAiBuildPlan.Create(TenantId, (StudioAiPlanKind)99, "{}", "{}", UserId,
+            StudioAiPlanDefaults.Lifetime);
+
+        var (success, error, _) = await executor.ExecuteAsync(plan, null, CancellationToken.None);
+
+        Assert.False(success);
+        Assert.Contains("non pris en charge", error);
+    }
+
+    private static StudioAiBuildPlan Plan(string specJson) =>
+        StudioAiBuildPlan.Create(TenantId, StudioAiPlanKind.RecordView, specJson, "{}", UserId,
+            StudioAiPlanDefaults.Lifetime);
+
+    private void SetupInterventionsSchema()
+    {
+        var fields = new List<CustomFieldDto>
+        {
+            new(Guid.NewGuid(), "titre", "Titre", CustomFieldType.Text, false, false, 1, null, null, null, true),
+            new(Guid.NewGuid(), "statut", "Statut", CustomFieldType.Select, false, false, 2, null,
+                new List<SelectOptionDto> { new("planifiee", "Planifiée"), new("terminee", "Terminée") }, null, true)
+        };
+        _mediator.Setup(m => m.Send(
+                It.Is<GetCustomEntitySchemaQuery>(q => q.EntityKey == "interventions"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new CustomEntitySchemaDto(
+                new CustomEntityDto(Guid.NewGuid(), "interventions", "Interventions", "Interventions",
+                    null, null, true, 2, null, DateTime.UtcNow, DateTime.UtcNow),
+                fields, new FormLayout())));
+    }
+}

@@ -176,6 +176,89 @@ public sealed class StudioAiPlansControllerContractTests
         Assert.NotNull(summary["warnings"]);
     }
 
+    // ---------- PR 2.4 — kind « RecordView » sur validate / from-spec ----------
+
+    private const string RecordViewSpec = """{ "entity": "interventions", "name": "Kanban", "mode": "kanban", "groupBy": "statut" }""";
+
+    [Fact]
+    public async Task Validate_record_view_reaches_mediator_and_returns_200_when_valid()
+    {
+        var validation = new StudioAiSpecValidationDto(
+            Valid: true,
+            Summary: JsonNode.Parse("""{"kind":"RecordView"}"""),
+            CanonicalJson: JsonNode.Parse(RecordViewSpec),
+            Warnings: Array.Empty<string>());
+        var mediator = new Mock<IMediator>();
+        mediator.Setup(m => m.Send(It.IsAny<ValidateStudioAiSpecCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(validation));
+        var controller = CreateController(mediator, workbenchEnabled: true);
+
+        var result = await controller.ValidateSpec(
+            new ValidateStudioAiSpecRequest("RecordView", RecordViewSpec), CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<StudioAiSpecValidationDto>>(ok.Value);
+        Assert.True(body.Data!.Valid);
+        // La nature est transmise telle quelle au handler (le parse est insensible à la casse).
+        mediator.Verify(m => m.Send(
+            It.Is<ValidateStudioAiSpecCommand>(cmd => cmd.Kind == "RecordView" && cmd.SpecJson == RecordViewSpec),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Validate_record_view_maps_flag_off_to_400()
+    {
+        // Le rejet « vues enregistrées par l'IA non activées » est un Error.Validation("kind") du
+        // handler — mappé 400 par le contrôleur, jamais un 200 { valid = false }.
+        var mediator = new Mock<IMediator>();
+        mediator.Setup(m => m.Send(It.IsAny<ValidateStudioAiSpecCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<StudioAiSpecValidationDto>(
+                Error.Validation("kind", "Les vues enregistrées par l'IA ne sont pas activées.")));
+        var controller = CreateController(mediator, workbenchEnabled: true);
+
+        var result = await controller.ValidateSpec(
+            new ValidateStudioAiSpecRequest("RecordView", RecordViewSpec), CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Create_from_spec_record_view_returns_200_when_flag_on()
+    {
+        var now = DateTime.UtcNow;
+        var response = new StudioAiPlanCreationResponse(
+            new StudioAiPlanDto(Guid.NewGuid(), "RecordView", "Pending", "{}", null, null, now, now.AddMinutes(15), null),
+            new StudioAiPlanSpecDto(Guid.NewGuid(), "RecordView", "Pending", now.AddMinutes(15), "AAAA",
+                JsonNode.Parse(RecordViewSpec)!));
+        var mediator = new Mock<IMediator>();
+        mediator.Setup(m => m.Send(It.IsAny<CreateStudioAiPlanFromSpecCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(response));
+        var controller = CreateController(mediator, workbenchEnabled: true);
+
+        var result = await controller.CreateFromSpec(
+            new CreatePlanFromSpecRequest("RecordView", RecordViewSpec), CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(result);
+        mediator.Verify(m => m.Send(
+            It.Is<CreateStudioAiPlanFromSpecCommand>(cmd => cmd.Kind == "RecordView"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Create_from_spec_record_view_maps_flag_off_to_400()
+    {
+        var mediator = new Mock<IMediator>();
+        mediator.Setup(m => m.Send(It.IsAny<CreateStudioAiPlanFromSpecCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<StudioAiPlanCreationResponse>(
+                Error.Validation("kind", "Les vues enregistrées par l'IA ne sont pas activées.")));
+        var controller = CreateController(mediator, workbenchEnabled: true);
+
+        var result = await controller.CreateFromSpec(
+            new CreatePlanFromSpecRequest("RecordView", RecordViewSpec), CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
     private static async Task<IActionResult> PutSpecFailingWith(Error error)
     {
         var mediator = new Mock<IMediator>();

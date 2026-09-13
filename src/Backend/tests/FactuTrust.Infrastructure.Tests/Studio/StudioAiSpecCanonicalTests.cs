@@ -81,6 +81,13 @@ public sealed class StudioAiSpecCanonicalTests
           "filters": [ { "field": "Status", "op": "=", "value": "Paid" } ],
           "sort": [ { "field": "TotalAmount", "dir": "desc" } ], "from": "2026-01-01", "to": "2026-03-31" }
         """)]
+    [InlineData(StudioAiPlanKind.RecordView, """
+        { "entity": "interventions", "name": "Kanban par statut", "mode": "kanban",
+          "columns": [ "titre", "statut" ],
+          "filters": [ { "field": "statut", "op": "in", "value": ["planifiee", "en_cours"] } ],
+          "sort": [ { "field": "cout", "desc": true } ], "groupBy": "statut", "title": "titre",
+          "isDefault": true }
+        """)]
     public void CanonicalFor_round_trips_byte_stable_for_every_kind(StudioAiPlanKind kind, string specJson)
     {
         var canonical = StudioAiSpecCanonical.CanonicalFor(kind, specJson, out var error);
@@ -373,5 +380,131 @@ public sealed class StudioAiSpecCanonicalTests
         var canonical = StudioAiSpecCanonical.CanonicalSystem(spec!);
 
         Assert.DoesNotContain("\"relations\"", canonical, StringComparison.Ordinal);
+    }
+
+    // ---------- PR 2.4 — vues enregistrées ----------
+
+    [Fact]
+    public void Record_view_canonical_is_stable_and_coherent()
+    {
+        Assert.True(StudioAiRecordViewSpec.TryParse("""
+            { "entity": "interventions", "name": "Kanban par statut", "mode": "kanban",
+              "columns": [ "titre", "statut" ],
+              "filters": [ { "field": "statut", "op": "in", "value": ["planifiee"] } ],
+              "sort": [ { "field": "cout", "desc": true } ], "groupBy": "statut", "title": "titre",
+              "isDefault": true }
+            """, out var spec, out var parseError), parseError);
+
+        var canonical = StudioAiSpecCanonical.CanonicalRecordView(spec!);
+
+        // Ordre des clés fixe (diff d'aperçu lisible) : entity, name, mode, columns, filters, sort,
+        // groupBy, title, isDefault — start/end absents d'une spec kanban.
+        var node = JsonNode.Parse(canonical)!.AsObject();
+        Assert.Equal(
+            new[] { "entity", "name", "mode", "columns", "filters", "sort", "groupBy", "title", "isDefault" },
+            node.Select(p => p.Key));
+        Assert.Equal("kanban", node["mode"]!.GetValue<string>());
+        Assert.Equal("statut", node["groupBy"]!.GetValue<string>());
+        Assert.True(node["isDefault"]!.GetValue<bool>());
+        Assert.False(node.AsObject().ContainsKey("start"));
+    }
+
+    [Fact]
+    public void System_canonical_emits_entity_views_after_report()
+    {
+        const string json = """
+        { "system": { "displayName": "Ops" }, "entities": [
+          { "ref": "taches", "displayName": "Taches", "fields": [ { "label": "Titre", "type": "text" } ],
+            "report": { "displayName": "Etat", "fields": [ "titre" ] },
+            "views": [ { "name": "Kanban", "mode": "kanban", "groupBy": "statut" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+
+        var canonical = StudioAiSpecCanonical.CanonicalFor(StudioAiPlanKind.CreateSystem, json, out _);
+
+        var node = JsonNode.Parse(canonical!)!;
+        var entity = node["entities"]!.AsArray()[0]!.AsObject();
+        // Ordre : report puis views ; la vue d'entité ne porte JAMAIS de clé « entity ».
+        var keys = entity.Select(p => p.Key).ToList();
+        Assert.True(keys.IndexOf("report") < keys.IndexOf("views"), $"ordre inattendu : {string.Join(",", keys)}");
+        var view = entity["views"]!.AsArray()[0]!.AsObject();
+        Assert.Equal("Kanban", view["name"]!.GetValue<string>());
+        Assert.Equal("kanban", view["mode"]!.GetValue<string>());
+        Assert.False(view.ContainsKey("entity"));
+
+        // Aller-retour : le canonique se reparse à l'identique.
+        var again = StudioAiSpecCanonical.CanonicalFor(StudioAiPlanKind.CreateSystem, canonical!, out var reparseError);
+        Assert.Null(reparseError);
+        Assert.Equal(canonical, again);
+    }
+
+    [Fact]
+    public void System_summary_counts_views_and_adds_a_views_step()
+    {
+        const string json = """
+        { "system": { "displayName": "Ops" }, "entities": [
+          { "ref": "taches", "displayName": "Taches", "fields": [ { "label": "Titre", "type": "text" } ],
+            "views": [ { "name": "Kanban", "mode": "kanban", "groupBy": "statut" },
+                       { "name": "Toutes", "mode": "list" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(StudioAiPlanSummary.ForSystem(spec!));
+
+        var entity = doc.RootElement.GetProperty("entities")[0];
+        Assert.Equal(2, entity.GetProperty("viewCount").GetInt32());
+        var steps = doc.RootElement.GetProperty("steps").EnumerateArray().ToList();
+        var viewsStep = Assert.Single(steps, s => s.GetProperty("key").GetString() == "views");
+        Assert.Equal("Vues", viewsStep.GetProperty("label").GetString());
+        Assert.Contains("Kanban", viewsStep.GetProperty("detail").GetString());
+        // L'étape « vues » suit « tables » (et « états » s'il y en a) — jamais avant.
+        Assert.True(
+            steps.FindIndex(s => s.GetProperty("key").GetString() == "tables")
+                < steps.FindIndex(s => s.GetProperty("key").GetString() == "views"));
+    }
+
+    [Fact]
+    public void System_summary_omits_view_count_without_views()
+    {
+        const string json = """
+        { "system": { "displayName": "Ops" }, "entities": [
+          { "ref": "taches", "displayName": "Taches", "fields": [ { "label": "Titre", "type": "text" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(StudioAiPlanSummary.ForSystem(spec!));
+
+        Assert.False(doc.RootElement.GetProperty("entities")[0].TryGetProperty("viewCount", out _));
+        Assert.DoesNotContain(
+            doc.RootElement.GetProperty("steps").EnumerateArray(),
+            s => s.GetProperty("key").GetString() == "views");
+    }
+
+    [Fact]
+    public void Record_view_summary_lists_target_mode_and_columns()
+    {
+        Assert.True(StudioAiRecordViewSpec.TryParse("""
+            { "entity": "interventions", "name": "Urgentes", "mode": "list",
+              "columns": [ "titre", "client" ],
+              "filters": [ { "field": "priorite", "op": "eq", "value": "haute" } ], "isDefault": true }
+            """, out var spec, out var parseError), parseError);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(
+            StudioAiPlanSummary.ForRecordView(spec!, "Interventions", new[] { "Colonne « x » inconnue, ignorée." }));
+
+        Assert.Equal("RecordView", doc.RootElement.GetProperty("kind").GetString());
+        Assert.Equal("Vue « Urgentes » sur Interventions", doc.RootElement.GetProperty("title").GetString());
+        var steps = doc.RootElement.GetProperty("steps").EnumerateArray()
+            .Select(s => (key: s.GetProperty("key").GetString(), detail: s.GetProperty("detail").GetString()))
+            .ToList();
+        Assert.Equal(("target", "Interventions"), steps[0]);
+        Assert.Equal(("mode", "Liste"), steps[1]);
+        Assert.Equal(("columns", "2"), steps[2]);
+        Assert.Contains(steps, s => s.key == "filters" && s.detail == "1");
+        Assert.Contains(steps, s => s.key == "default");
+        Assert.Equal("Colonne « x » inconnue, ignorée.", doc.RootElement.GetProperty("warnings")[0].GetString());
     }
 }

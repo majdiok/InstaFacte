@@ -4,6 +4,9 @@ using FactuTrust.Application.Features.AI.Commands;
 using FactuTrust.Application.Features.AI.DTOs;
 using FactuTrust.Application.Features.AI.Tools;
 using FactuTrust.Application.Features.Studio.Ai;
+using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.RecordViews;
+using FactuTrust.Domain.Enums;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.Studio;
@@ -210,5 +213,53 @@ public sealed class StudioSilentFailureGuardsTests
             .ToList();
 
         Assert.Contains("studio_plan_app", names);
+    }
+
+    // ---- PR 2.4 : une vue enregistrée dégradée n'est JAMAIS silencieuse ----
+
+    private static readonly IReadOnlyList<CustomFieldDto> ViewFields =
+    [
+        new CustomFieldDto(Guid.NewGuid(), "titre", "Titre", CustomFieldType.Text, false, false, 1, null, null, null, true),
+        new CustomFieldDto(Guid.NewGuid(), "statut", "Statut", CustomFieldType.Select, false, false, 2, null,
+            new List<SelectOptionDto> { new("ouvert", "Ouvert") }, null, true),
+        new CustomFieldDto(Guid.NewGuid(), "echeance", "Échéance", CustomFieldType.Date, false, false, 3, null, null, null, true),
+        new CustomFieldDto(Guid.NewGuid(), "score", "Score", CustomFieldType.Formula, false, false, 4, null, null, null, true),
+    ];
+
+    /// <summary>Chaque scénario de dégradation doit produire AU MOINS un avertissement explicite.</summary>
+    [Theory]
+    // colonne / filtre / tri inconnus
+    [InlineData("""{"entity":"t","name":"v","columns":["fantome"]}""")]
+    [InlineData("""{"entity":"t","name":"v","filters":[{"field":"fantome","op":"eq","value":1}]}""")]
+    [InlineData("""{"entity":"t","name":"v","sort":[{"field":"fantome"}]}""")]
+    // opérateur incompatible avec le type (gte sur un texte)
+    [InlineData("""{"entity":"t","name":"v","filters":[{"field":"titre","op":"gte","value":1}]}""")]
+    // tri sur champ calculé
+    [InlineData("""{"entity":"t","name":"v","sort":[{"field":"score"}]}""")]
+    // kanban sans regroupement / calendrier sans champ date : dégradés en Liste
+    [InlineData("""{"entity":"t","name":"v","mode":"kanban"}""")]
+    [InlineData("""{"entity":"t","name":"v","mode":"calendar","start":"titre"}""")]
+    public void A_degraded_record_view_spec_always_emits_a_warning(string specJson)
+    {
+        Assert.True(StudioAiRecordViewSpec.TryParse(specJson, out var spec, out var error), error);
+
+        var (_, _, warnings) = StudioAiRecordViewSpec.ResolveAgainstSchema(spec!, ViewFields);
+
+        Assert.NotEmpty(warnings);
+        Assert.All(warnings, w => Assert.False(string.IsNullOrWhiteSpace(w)));
+    }
+
+    [Fact]
+    public void A_well_formed_record_view_spec_emits_no_warning()
+    {
+        // Contrepoint : une spec entièrement valide ne doit PAS être avertie (bruit = silence futur).
+        Assert.True(StudioAiRecordViewSpec.TryParse(
+            """{"entity":"t","name":"Kanban","mode":"kanban","columns":["titre","statut"],"groupBy":"statut"}""",
+            out var spec, out var error), error);
+
+        var (mode, _, warnings) = StudioAiRecordViewSpec.ResolveAgainstSchema(spec!, ViewFields);
+
+        Assert.Equal(CustomRecordViewMode.Kanban, mode);
+        Assert.Empty(warnings);
     }
 }
