@@ -24,12 +24,20 @@ public static class StudioAiPlanSummary
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExistingKey = null);
 
     /// <summary>
+    /// Une relation plusieurs-à-plusieurs de l'aperçu (PR 2.2) : libellés d'affichage des deux tables
+    /// (jamais de ref interne, l'aperçu ne montre que des noms lisibles) et nom de la jonction si fourni.
+    /// </summary>
+    public sealed record SummaryRelation(string FromDisplayName, string ToDisplayName, string Kind, string? JunctionName);
+
+    /// <summary>
     /// <paramref name="Sample"/> : quelques VRAIES lignes déjà calculées, jointes à l'aperçu d'un état.
     /// L'utilisateur valide alors sur des chiffres, pas sur une promesse. Paramètre optionnel en fin de
     /// record : les aperçus existants (table, système, fenêtre) sont inchangés.
     /// <paramref name="Duplicates"/> : indices de doublons (table proposée ≈ table existante) — la clé
     /// <c>duplicates</c> est TOUJOURS émise dans le JSON (tableau vide par défaut, jamais null) pour
     /// que le bandeau d'aperçu ait une forme stable.
+    /// <paramref name="Relations"/> : relations plusieurs-à-plusieurs déclarées (PR 2.2) ; comme
+    /// <c>duplicates</c>, la clé <c>relations</c> est TOUJOURS émise en tableau (vide par défaut).
     /// </summary>
     public sealed record PlanSummary(
         string Kind,
@@ -38,7 +46,8 @@ public static class StudioAiPlanSummary
         IReadOnlyList<SummaryEntity> Entities,
         IReadOnlyList<string> Warnings,
         Common.ReportResultDto? Sample = null,
-        IReadOnlyList<DuplicateHint>? Duplicates = null);
+        IReadOnlyList<DuplicateHint>? Duplicates = null,
+        IReadOnlyList<SummaryRelation>? Relations = null);
 
     /// <summary>
     /// Un avertissement en clair par indice de doublon : l'utilisateur voit POURQUOI la table est
@@ -77,6 +86,16 @@ public static class StudioAiPlanSummary
         if (reusedCount > 0)
             steps.Add(new SummaryStep("reuse", "Tables réutilisées",
                 $"{reusedCount} table(s) existante(s) reprise(s) telle(s) quelle(s)"));
+        var displayNameByRef = spec.Entities.ToDictionary(e => e.Ref, e => e.EntityDisplayName, StringComparer.Ordinal);
+        string DisplayNameOf(string r) => displayNameByRef.TryGetValue(r, out var name) ? name : r;
+        if (spec.Relations.Count > 0)
+        {
+            steps.Add(new SummaryStep("relations", "Relations plusieurs-à-plusieurs",
+                $"{spec.Relations.Count} relation(s) — tables de liaison : " + string.Join(", ", spec.Relations.Select(r =>
+                    string.IsNullOrWhiteSpace(r.JunctionName)
+                        ? $"{DisplayNameOf(r.FromRef)} ↔ {DisplayNameOf(r.ToRef)}"
+                        : r.JunctionName))));
+        }
         if (formCount > 0)
             steps.Add(new SummaryStep("forms", "Formulaires", $"{formCount} formulaire(s) personnalisé(s)"));
         if (reportCount > 0)
@@ -89,10 +108,14 @@ public static class StudioAiPlanSummary
         var warnings = new List<string>(spec.Warnings ?? Array.Empty<string>());
         warnings.AddRange(DuplicateWarnings(duplicates));
 
-        // Duplicates peut rester null ici : Serialize émet toujours un tableau (vide par défaut).
+        var summaryRelations = spec.Relations
+            .Select(r => new SummaryRelation(DisplayNameOf(r.FromRef), DisplayNameOf(r.ToRef), r.Kind, r.JunctionName))
+            .ToList();
+
+        // Duplicates/Relations peuvent rester null ici : Serialize émet toujours un tableau (vide par défaut).
         return Serialize(new PlanSummary(
             StudioAiPlanKind.CreateSystem.ToString(), spec.SystemDisplayName, steps, entities, warnings,
-            Duplicates: duplicates));
+            Duplicates: duplicates, Relations: summaryRelations));
     }
 
     public static string ForApp(ParsedAppSpec spec, IReadOnlyList<DuplicateHint>? duplicates = null)
@@ -176,8 +199,12 @@ public static class StudioAiPlanSummary
             Array.Empty<SummaryEntity>(), warnings, sample));
     }
 
-    /// <summary><c>duplicates</c> est TOUJOURS présent dans le JSON (tableau vide par défaut).</summary>
+    /// <summary><c>duplicates</c> et <c>relations</c> sont TOUJOURS présents dans le JSON (tableau vide par défaut).</summary>
     private static string Serialize(PlanSummary summary) => JsonSerializer.Serialize(
-        summary.Duplicates is null ? summary with { Duplicates = Array.Empty<DuplicateHint>() } : summary,
+        summary with
+        {
+            Duplicates = summary.Duplicates ?? Array.Empty<DuplicateHint>(),
+            Relations = summary.Relations ?? Array.Empty<SummaryRelation>()
+        },
         Options);
 }

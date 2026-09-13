@@ -322,4 +322,56 @@ public sealed class StudioAiSpecCanonicalTests
         var canonical = StudioAiSpecCanonical.CanonicalSystem(spec);
         Assert.Contains("\"format\": \"ean13\"", canonical, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Relations_round_trip_byte_stable_and_omit_null_label_and_junction_name()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employés", "fields": [ { "label": "Nom", "type": "text" } ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Nom", "type": "text" } ] }
+        ], "relations": [
+          { "kind": "many_to_many", "from": "employes", "to": "formations", "label": "Participants", "junctionName": "Suivis" }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var canonical = StudioAiSpecCanonical.CanonicalSystem(spec!);
+
+        Assert.Contains("\"relations\":", canonical, StringComparison.Ordinal);
+        Assert.Contains("\"kind\": \"many_to_many\"", canonical, StringComparison.Ordinal);
+        Assert.Contains("\"from\": \"employes\"", canonical, StringComparison.Ordinal);
+        Assert.Contains("\"to\": \"formations\"", canonical, StringComparison.Ordinal);
+        Assert.Contains("\"label\": \"Participants\"", canonical, StringComparison.Ordinal);
+        Assert.Contains("\"junctionName\": \"Suivis\"", canonical, StringComparison.Ordinal);
+
+        // Stable à l'octet près au re-parse.
+        Assert.True(StudioAiSystemSpec.TryParse(canonical, out var reparsed, out var reparseError), reparseError);
+        var canonicalAgain = StudioAiSpecCanonical.CanonicalSystem(reparsed!);
+        Assert.Equal(canonical, canonicalAgain);
+
+        // Sans label ni junctionName, les clés correspondantes sont omises (pas null).
+        const string minimal = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employés", "fields": [ { "label": "Nom", "type": "text" } ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Nom", "type": "text" } ] }
+        ], "relations": [ { "kind": "many_to_many", "from": "employes", "to": "formations" } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(minimal, out var minimalSpec, out var minimalError), minimalError);
+        var minimalCanonical = StudioAiSpecCanonical.CanonicalSystem(minimalSpec!);
+        var relationNode = JsonNode.Parse(minimalCanonical)!["relations"]!.AsArray()[0]!.AsObject();
+        Assert.Equal(new[] { "kind", "from", "to" }, relationNode.Select(p => p.Key).ToArray());
+    }
+
+    [Fact]
+    public void Spec_without_relations_omits_the_relations_key_from_the_canonical_form()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "employes", "displayName": "Employés", "fields": [ { "label": "Nom", "type": "text" } ] } ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var canonical = StudioAiSpecCanonical.CanonicalSystem(spec!);
+
+        Assert.DoesNotContain("\"relations\"", canonical, StringComparison.Ordinal);
+    }
 }

@@ -120,7 +120,12 @@ public sealed record EntityRelationDto(
     bool IsUnique,
     Guid? JunctionEntityId,
     string? JunctionEntityKey,
-    Guid? JunctionTargetFieldId);
+    Guid? JunctionTargetFieldId,
+    /// <summary>
+    /// Clé du champ de jonction pointant vers <see cref="TargetEntityId"/> (PR 2.2, même nature que
+    /// <see cref="JunctionTargetFieldId"/>). Null hors <c>many_to_many</c>.
+    /// </summary>
+    string? JunctionTargetFieldKey = null);
 
 /// <summary>Request body of <c>POST api/studio/entities/{id}/relations/many-to-many</c>.</summary>
 public sealed record CreateManyToManyRelationRequest(

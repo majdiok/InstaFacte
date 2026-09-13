@@ -1590,7 +1590,8 @@ public static class AiToolRegistry
                 + "\"relationTo\"?: ref, \"options\"?: [...] } ], "
                 + "\"form\"?: { \"sections\": [ { \"title\"?: string, \"fields\": [ clé | { \"field\": clé, \"width\": \"half|full\", \"label\"?: string } ] } ] }, "
                 + "\"report\"?: { \"displayName\", \"groupBy\"?, \"measures\"?, \"columns\"?, \"filters\"?, \"sort\"? } } ], "
-                + "\"seed\"?: [ { \"entityRef\": ref, \"records\": [ { fieldKey: value } ] } ] }. "
+                + "\"seed\"?: [ { \"entityRef\": ref, \"records\": [ { fieldKey: value } ] } ], "
+                + "\"relations\"?: [ { \"kind\": \"many_to_many\", \"from\": ref, \"to\": ref, \"label\"?: string, \"junctionName\"?: string } ] }. "
                 + "Un `select` porte `options` et JAMAIS `relationTo` ; `relationTo` ne sert qu'à lier une autre table ou une source ERP (clients/products). "
                 + "Après l'appel, un APERÇU est montré à l'utilisateur qui valide ou annule. N'émets QU'UN seul appel.",
             Parameters = new Dictionary<string, AiToolParameter>

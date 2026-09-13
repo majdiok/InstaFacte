@@ -123,6 +123,54 @@ public sealed class StudioAiPlanCatalogTests
     }
 
     [Fact]
+    public void System_plan_summary_reports_many_to_many_relations_with_junction_names()
+    {
+        const string json = """
+        { "system": { "displayName": "Formations" }, "entities": [
+          { "ref": "employes", "displayName": "Employés", "fields": [ { "label": "Nom", "type": "text" } ] },
+          { "ref": "formations", "displayName": "Formations", "fields": [ { "label": "Nom", "type": "text" } ] }
+        ], "relations": [
+          { "kind": "many_to_many", "from": "employes", "to": "formations", "label": "Participants", "junctionName": "Suivis" }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        using var doc = JsonDocument.Parse(StudioAiPlanSummary.ForSystem(spec!));
+        var root = doc.RootElement;
+
+        var relations = root.GetProperty("relations").EnumerateArray().ToList();
+        Assert.Single(relations);
+        Assert.Equal("Employés", relations[0].GetProperty("fromDisplayName").GetString());
+        Assert.Equal("Formations", relations[0].GetProperty("toDisplayName").GetString());
+        Assert.Equal("many_to_many", relations[0].GetProperty("kind").GetString());
+        Assert.Equal("Suivis", relations[0].GetProperty("junctionName").GetString());
+
+        var steps = root.GetProperty("steps").EnumerateArray()
+            .ToDictionary(s => s.GetProperty("key").GetString()!, s => s.GetProperty("detail").GetString()!);
+        Assert.Contains("1 relation(s)", steps["relations"]);
+        Assert.Contains("Suivis", steps["relations"]);
+    }
+
+    [Fact]
+    public void System_plan_summary_always_emits_an_empty_relations_array_without_any_declared()
+    {
+        const string json = """
+        { "system": { "displayName": "Sys" }, "entities": [
+          { "ref": "employes", "displayName": "Employés", "fields": [ { "label": "Nom", "type": "text" } ] }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        using var doc = JsonDocument.Parse(StudioAiPlanSummary.ForSystem(spec!));
+        var root = doc.RootElement;
+
+        Assert.Equal(0, root.GetProperty("relations").GetArrayLength());
+        var stepKeys = root.GetProperty("steps").EnumerateArray()
+            .Select(s => s.GetProperty("key").GetString()).ToList();
+        Assert.DoesNotContain("relations", stepKeys);
+    }
+
+    [Fact]
     public void App_plan_summary_describes_a_single_table()
     {
         const string json = """

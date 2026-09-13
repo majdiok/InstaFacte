@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Entities;
@@ -8,6 +9,7 @@ using FactuTrust.Application.Features.Studio.Views;
 using FactuTrust.Domain.Entities.Studio;
 using FactuTrust.Domain.Enums;
 using MediatR;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Infrastructure.Services.Studio;
 
@@ -24,17 +26,20 @@ public sealed class StudioAiPlanExecutor : IStudioAiPlanExecutor
     private readonly ICurrentUser _currentUser;
     private readonly IStudioQuotaService? _quota;
     private readonly ISqlSchemaProvider? _sqlSchema;
+    private readonly OllamaSettings? _settings;
 
     public StudioAiPlanExecutor(
         IMediator mediator,
         ICurrentUser currentUser,
         IStudioQuotaService? quota = null,
-        ISqlSchemaProvider? sqlSchema = null)
+        ISqlSchemaProvider? sqlSchema = null,
+        IOptions<OllamaSettings>? settings = null)
     {
         _mediator = mediator;
         _currentUser = currentUser;
         _quota = quota;
         _sqlSchema = sqlSchema;
+        _settings = settings?.Value;
     }
 
     public async Task<(bool Success, string? Error, object? Payload)> ExecuteAsync(
@@ -46,7 +51,7 @@ public sealed class StudioAiPlanExecutor : IStudioAiPlanExecutor
             {
                 if (!StudioAiSystemSpec.TryParse(plan.SpecJson, out var spec, out var error) || spec is null)
                     return (false, error ?? "Spécification système invalide.", null);
-                var orchestrator = new StudioAiSystemOrchestrator(_mediator, _currentUser, _quota);
+                var orchestrator = new StudioAiSystemOrchestrator(_mediator, _currentUser, _quota, _settings);
                 return await orchestrator.ExecuteAsync(spec, progress, cancellationToken);
             }
             case StudioAiPlanKind.CreateApp:

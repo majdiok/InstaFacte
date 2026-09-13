@@ -150,7 +150,8 @@ acceptable pour un lien métier, documenté comme tel.
 - `GET api/ai/studio/capabilities` expose `manyToManyEnabled` (câblé sur le drapeau) et fige le
   contrat des cinq booléens suivants (`recordViewsEnabled`, `recordViewToolsEnabled`,
   `systemExportEnabled`, `workflowsEnabled`, `workflowToolsEnabled`), tous `false` jusqu'à leur PR.
-- Aucun outil IA nouveau dans cette PR : `studio_plan_relation` arrive avec la PR 2.2.
+- Génération IA d'une relation N‑N : voir §8 (PR 2.2) — pas de nouvel outil `studio_plan_relation`,
+  intégré à `studio_plan_system`/`studio_generate_system`.
 
 ---
 
@@ -169,8 +170,74 @@ acceptable pour un lien métier, documenté comme tel.
 ## 7. Ce que ça ne fait pas (suite du programme)
 
 - Pas d'écran de saisie des liens ni d'onglet « Relations » : PR 2.5 (frontend).
-- Pas de génération IA de relation (`studio_plan_relation`) : PR 2.2.
 - Pas de suppression/édition d'une relation N‑N par endpoint dédié : on supprime la jonction comme
   toute entité (`DELETE api/studio/entities/{id}`).
 - Pas d'unicité SQL stricte de la paire (voir §3).
 - Pas d'auto‑lien (source == cible) : refusé `Validation.target`.
+
+---
+
+## 8. Création par l'IA (PR 2.2)
+
+**Écart vs. planification initiale :** pas de nouvel outil `studio_plan_relation` — la relation N‑N
+est un tableau `relations[]` optionnel du spec système existant (`studio_plan_system` /
+`studio_generate_system`), au même niveau que `entities`/`seed`. Un seul appel d'outil décrit tout le
+système, relations comprises.
+
+### 8.1 Spec système : `relations[]`
+
+`{ "kind": "many_to_many", "from": "<ref>", "to": "<ref>", "label"?: string, "junctionName"?: string }`.
+Parsé par `StudioAiSystemSpec.ParseRelations` (`FactuTrust.Application/Features/Studio/Ai/StudioAiSystemSpec.cs`) :
+
+- Alias de `kind` acceptés (jamais réémis par la forme canonique) : `n_n`, `nn`, `many-to-many`, `m2m`.
+- `from`/`to` doivent référencer deux entités **distinctes** du même spec (auto‑lien ignoré, avec
+  avertissement) ; une référence vers une entité inconnue est ignorée (avertissement), jamais un
+  rejet franc de tout le spec (contrairement aux champs — cohérent avec « rien ici n'échoue le spec »
+  au §2.2).
+- Maximum **6 relations** par spec ; au‑delà, les relations excédentaires sont abandonnées avec un
+  avertissement (pas de rejet franc).
+- Paire `(from, to)` dédupliquée sans tenir compte de l'ordre.
+- **Promotion de champ** : un champ typé `many_to_many` (ou alias) avec un `relationTo` n'est pas créé
+  comme champ — il devient une relation `relations[]` (dédoublonnée avec les relations explicites).
+- `relations` n'apparaît dans la forme canonique (`StudioAiSpecCanonical.CanonicalSystem`) que si la
+  liste est non vide ; `label`/`junctionName` sont omis (jamais `null`) quand absents.
+
+### 8.2 Orchestrateur multi‑passes (`StudioAiSystemOrchestrator`)
+
+La création d'un système passe désormais par **cinq passes** (au lieu d'une boucle unique par
+entité), pour que les relations (simples et N‑N) résolvent toujours des clés/ids réels, y compris en
+référence en avant (une entité référence une entité déclarée plus loin dans le spec) :
+
+1. **Entités + champs simples** : chaque entité est créée avec ses champs non‑relationnels ;
+   `entityKeyMap`/`entityIdMap` (ref → clé/id réels) sont complets à la fin de cette passe.
+2. **Champs relation simple** (`RelationCustom`) : résolus via `entityKeyMap`/`entityIdMap`, donc
+   sans dégradation même si la cible est déclarée après la source dans le spec.
+3. **Jonctions N‑N** : une `CreateManyToManyRelationCommand` par relation de `spec.Relations`, si
+   `Ollama:EnableStudioManyToMany` est actif. Drapeau off ⇒ passe marquée `skipped` + avertissement,
+   aucune jonction créée. Un échec de jonction individuelle **n'abandonne pas** la construction du
+   système (avertissement, `Report(..., "error", ...)`, la passe continue).
+4. **Formulaires et rapports** : après que toutes les relations existent, pour que leurs champs
+   `relationTo` référencent des tables déjà réellement créées.
+5. **Pré‑remplissage des données** (seed) : en tout dernier, pour que les valeurs de relation du seed
+   puissent résolver.
+
+Constructeur : `StudioAiSystemOrchestrator(IMediator, ICurrentUser, IStudioQuotaService? quota = null,
+OllamaSettings? settings = null)`. Le quota d'entités (`EnsureUnderLimitAsync`) inclut le nombre de
+relations N‑N (une jonction = une entité) quand le drapeau est actif.
+
+### 8.3 Payload et aperçu
+
+Le payload de fin de construction gagne un tableau `relations[]` (`from`, `to`, `junctionKey`,
+`openUrl`) et le `message` mentionne le nombre de relations créées. L'aperçu structuré
+(`StudioAiPlanSummary.ForSystem`) gagne une clé `relations` (toujours un tableau, jamais `null`) et,
+si `spec.Relations` est non vide, une étape `relations` listant les tables de liaison.
+
+### 8.4 Prompt
+
+Règle « 3e. RELATION PLUSIEURS‑À‑PLUSIEURS » et exemple dédié (« EXEMPLE système formations »),
+émis dans `AiContextBuilder.BuildStudioBuilderSystemPrompt` **uniquement si**
+`Ollama:EnableStudioManyToMany` est actif — drapeau off, le modèle ne voit ni la règle ni l'exemple et
+continue de proposer des champs `relationTo` plusieurs‑à‑un comme avant. La révision de cache du
+prompt (`SystemPromptCacheRevision`) reste `"v5"` : le contenu du prompt dépend déjà du tenant/drapeau
+via la clé de cache existante, pas besoin de l'incrémenter pour cette PR.
+

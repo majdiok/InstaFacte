@@ -334,7 +334,7 @@ public static class EntityRelationResolver
                             entity.Id, entity.Key, entity.DisplayName,
                             other.Target.Id, other.Target.Key, other.Target.DisplayName,
                             mine.Field.Id, mine.Field.Key, mine.Field.IsRequired, mine.Field.IsUnique,
-                            owner.Id, owner.Key, other.Field.Id));
+                            owner.Id, owner.Key, other.Field.Id, other.Field.Key));
                     }
                 }
                 continue;
