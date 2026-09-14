@@ -127,61 +127,6 @@
 }
 
 // ---- Runtime des vues enregistrées (2.5) ----
-.view-switcher {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-1, 0.25rem);
-  margin-bottom: var(--spacing-4);
-  border-bottom: 1px solid var(--color-border-subtle, #e2e8f0);
-}
-
-.view-switcher__tab {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-1, 0.25rem);
-  border: none;
-  background: transparent;
-  padding: var(--spacing-2) var(--spacing-3);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-neutral-600);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-
-  &:hover { color: var(--color-primary-600); }
-
-  &[aria-selected='true'] {
-    color: var(--color-primary-700);
-    border-bottom-color: var(--color-primary-600);
-  }
-}
-
-.view-switcher__star {
-  color: var(--color-warning-500, #f59e0b);
-  font-size: var(--font-size-xs);
-}
-
-.view-switcher__mode { margin-right: var(--spacing-1, 0.25rem); }
-
-.view-switcher-select { min-width: 14rem; }
-
-.runner-banner {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  padding: var(--spacing-2) var(--spacing-3);
-  margin-bottom: var(--spacing-3);
-  background: var(--color-warning-50, #fffbeb);
-  color: var(--color-warning-800, #92400e);
-  border: 1px solid var(--color-warning-200, #fde68a);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-}
-
-.runner-soon {
-  padding: var(--spacing-6);
-  text-align: center;
-  color: var(--color-neutral-500);
-  background: var(--color-neutral-50, #f8fafc);
-  border-radius: var(--radius-lg);
-}
+// Les styles du sélecteur de vue et du runner vivent désormais dans leurs composants
+// (`studio-view-switcher.component.ts`, `studio-record-view-runner.component.ts`) : cette feuille
+// est partagée par de nombreux composants et Angular la duplique dans chaque bundle.

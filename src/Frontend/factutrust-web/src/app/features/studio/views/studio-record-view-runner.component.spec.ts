@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideHttpClient } from '@angular/common/http';
 import { By } from '@angular/platform-browser';
 import { environment } from '@environments/environment';
 import { MessageService } from 'primeng/api';
@@ -38,8 +39,8 @@ describe('StudioRecordViewRunnerComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [StudioRecordViewRunnerComponent, HttpClientTestingModule],
-      providers: [MessageService]
+      imports: [StudioRecordViewRunnerComponent],
+      providers: [MessageService, provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     fixture = TestBed.createComponent(StudioRecordViewRunnerComponent);
     component = fixture.componentInstance;
@@ -94,5 +95,99 @@ describe('StudioRecordViewRunnerComponent', () => {
     httpMock.expectNone(`${environment.apiUrl}/studio/records/interventions/views/v1/run`);
 
     expect(fixture.debugElement.query(By.css('.runner-soon'))?.nativeElement.textContent).toContain('Kanban');
+  });
+
+  it('applique les colonnes de la vue (ordre et masquage), pas tous les champs', () => {
+    const allFields: CustomField[] = [
+      { id: 'f1', key: 'nom', label: 'Nom', fieldType: 0, isRequired: false, isActive: true } as CustomField,
+      { id: 'f2', key: 'ville', label: 'Ville', fieldType: 0, isRequired: false, isActive: true } as CustomField,
+      { id: 'f3', key: 'cp', label: 'Code postal', fieldType: 0, isRequired: false, isActive: true } as CustomField
+    ];
+    const v: CustomRecordViewDto = {
+      ...view,
+      definition: {
+        ...definition,
+        columns: [
+          { fieldKey: 'cp', hidden: false },
+          { fieldKey: 'nom', hidden: false },
+          { fieldKey: 'ville', hidden: true }
+        ]
+      }
+    };
+    fixture.componentRef.setInput('entityKey', 'interventions');
+    fixture.componentRef.setInput('allFields', allFields);
+    fixture.componentRef.setInput('view', v);
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/v1/run`)
+      .flush({ success: true, data: { mode: 'List', items: [], total: 0, page: 1, pageSize: 25, truncated: false }, message: null, errors: [] });
+    fixture.detectChanges();
+
+    const headers = fixture.debugElement.queryAll(By.css('th')).map(th => th.nativeElement.textContent.trim());
+    expect(headers).toEqual(['Code postal', 'Nom', 'Actions']);
+  });
+
+  it('tronque le rendu via previewLimit et affiche le bandeau', () => {
+    fixture.componentRef.setInput('entityKey', 'interventions');
+    fixture.componentRef.setInput('allFields', fields);
+    fixture.componentRef.setInput('view', view);
+    fixture.componentRef.setInput('previewLimit', 1);
+    fixture.detectChanges();
+    const result: RecordViewRunResultDto = {
+      mode: 'List',
+      items: [
+        { id: 'r1', data: { nom: 'A' }, createdAt: '', updatedAt: '' },
+        { id: 'r2', data: { nom: 'B' }, createdAt: '', updatedAt: '' }
+      ],
+      total: 2, page: 1, pageSize: 25, truncated: false
+    };
+    httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/v1/run`)
+      .flush({ success: true, data: result, message: null, errors: [] });
+    fixture.detectChanges();
+
+    expect(component['rows']().length).toBe(1);
+    expect(component['truncated']()).toBeTrue();
+    expect(fixture.debugElement.query(By.css('.runner-banner'))).not.toBeNull();
+  });
+
+  it('annule une requête /run en vol quand une nouvelle sélection survient (réponse en retard ignorée)', () => {
+    setInputs();
+    const first = httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/v1/run`);
+
+    // Changement de vue avant la réponse : le switchMap annule la première requête.
+    fixture.componentRef.setInput('view', { ...view, id: 'v2', key: 'v2', displayName: 'Autre' });
+    fixture.detectChanges();
+    expect(first.cancelled).toBeTrue();
+    const second = httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/v2/run`);
+
+    // La seconde répond : seule elle doit apparaître.
+    second.flush({ success: true, data: { mode: 'List', items: [], total: 7, page: 1, pageSize: 25, truncated: false }, message: null, errors: [] });
+    fixture.detectChanges();
+    expect(component['result']()?.total).toBe(7);
+  });
+
+  it('reload() relance depuis la page 1 en transmettant le search courant', () => {
+    fixture.componentRef.setInput('entityKey', 'interventions');
+    fixture.componentRef.setInput('allFields', fields);
+    fixture.componentRef.setInput('view', view);
+    fixture.componentRef.setInput('search', '  pompe  ');
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/v1/run`)
+      .flush({ success: true, data: { mode: 'List', items: [], total: 0, page: 1, pageSize: 25, truncated: false }, message: null, errors: [] });
+
+    component.reload();
+    const req = httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/v1/run`);
+    expect(req.request.body.page).toBe(1);
+    expect(req.request.body.search).toBe('pompe');
+    req.flush({ success: true, data: { mode: 'List', items: [], total: 0, page: 1, pageSize: 25, truncated: false }, message: null, errors: [] });
+  });
+
+  it('émet le total serveur vers le parent', () => {
+    const totals: number[] = [];
+    component.total.subscribe(t => totals.push(t));
+    setInputs();
+    httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/v1/run`)
+      .flush({ success: true, data: { mode: 'List', items: [], total: 42, page: 1, pageSize: 25, truncated: false }, message: null, errors: [] });
+
+    expect(totals).toEqual([42]);
   });
 });

@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -40,7 +40,7 @@ import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
     @if (entity(); as e) {
       <app-studio-page-shell
         [title]="e.displayNamePlural"
-        [subtitle]="total() + ' enregistrement(s)'"
+        [subtitle]="subtitleTotal() + ' enregistrement(s)'"
         [breadcrumbs]="breadcrumbs()">
         <div studioActions class="studio-head-actions">
           @if (showViewButton()) {
@@ -64,27 +64,35 @@ import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
             <input pInputText [(ngModel)]="search" (keyup.enter)="reload()" placeholder="Rechercher…" class="studio-search-input" />
             <button pButton type="button" icon="fa-solid fa-magnifying-glass" label="Rechercher" class="p-button-sm" (click)="reload()"></button>
             <span class="studio-toolbar__spacer"></span>
-            <button pButton type="button" icon="fa-solid fa-download" label="Exporter" class="p-button-sm p-button-outlined"
-              [disabled]="total() === 0" (click)="exportMenu.toggle($event)"></button>
-            <p-menu #exportMenu [popup]="true" [model]="exportItems" appendTo="body" styleClass="studio-theme"></p-menu>
+            @if (!activeView()) {
+              <!-- Export masqué quand une vue enregistrée est active : il porterait sur les enregistrements
+                   bruts (hors filtres de la vue). -->
+              <button pButton type="button" icon="fa-solid fa-download" label="Exporter" class="p-button-sm p-button-outlined"
+                [disabled]="total() === 0" (click)="exportMenu.toggle($event)"></button>
+              <p-menu #exportMenu [popup]="true" [model]="exportItems" appendTo="body" styleClass="studio-theme"></p-menu>
+            }
           </div>
         </div>
 
         @if (showSwitcher()) {
-          <app-studio-view-switcher [views]="views()" [activeId]="activeViewId()" (activeIdChange)="onSwitchView($event)" />
+          <app-studio-view-switcher [views]="views()" [activeId]="activeView()?.id ?? null" (activeIdChange)="onSwitchView($event)" />
         }
 
         @if (schemaLoading()) {
           <app-skeleton-table [columns]="skeletonCols" [rows]="5" />
         } @else {
           @if (activeView(); as v) {
-            <app-studio-record-view-runner
-              [entityKey]="entityKey"
-              [view]="v"
-              [allFields]="allFields()"
-              [showActions]="canWrite()"
-              (editRow)="edit($event)"
-              (deleteRow)="remove($event)" />
+            <div id="studio-view-panel" role="tabpanel" aria-label="Vue active">
+              <app-studio-record-view-runner
+                [entityKey]="entityKey"
+                [view]="v"
+                [allFields]="allFields()"
+                [search]="search"
+                [showActions]="canWrite()"
+                (editRow)="edit($event)"
+                (deleteRow)="remove($event)"
+                (total)="onRunnerTotal($event)" />
+            </div>
           } @else {
             <app-dynamic-table
               [entityKey]="entityKey"
@@ -152,8 +160,18 @@ export class StudioRecordListComponent implements OnInit {
   readonly activeViewId = computed(() => this.activeViewIdParam());
 
   readonly views = computed(() => this.schema()?.views ?? []);
-  readonly activeView = computed(() => this.views().find(v => v.id === this.activeViewId()) ?? null);
-  readonly recordViewsEnabled = computed(() => this.capabilities.capabilities().recordViewsEnabled === true);
+  // Repli strict : tant que les capacités ne sont pas confirmées (`ready`), la page ignore `?view=`
+  // et se comporte exactement comme avant 2.5a (zéro régression). La course « schéma arrivé avant
+  // les capacités » ne doit jamais déclencher un `/run` ni monter le runner.
+  readonly recordViewsEnabled = computed(() =>
+    this.capabilities.state() === 'ready' && this.capabilities.capabilities().recordViewsEnabled === true);
+  // Vue effective : `?view=<id>` si présente, sinon la vue `isDefault`, sinon la « Liste » brute.
+  readonly activeView = computed(() => {
+    if (!this.recordViewsEnabled()) return null;
+    const views = this.views();
+    const fromParam = views.find(v => v.id === this.activeViewId());
+    return fromParam ?? views.find(v => v.isDefault) ?? null;
+  });
   readonly showSwitcher = computed(() => this.recordViewsEnabled() && this.views().length > 0);
   readonly showViewButton = computed(() => this.recordViewsEnabled() && this.canDesignForms());
 
@@ -197,6 +215,15 @@ export class StudioRecordListComponent implements OnInit {
     this.router.navigate(segments);
   }
 
+  private readonly runner = viewChild(StudioRecordViewRunnerComponent);
+  /** Total rapporté par le runner (vue active) ; pris en compte par le sous-titre. */
+  private readonly runnerTotal = signal<number | null>(null);
+  readonly subtitleTotal = computed(() => this.activeView() ? (this.runnerTotal() ?? 0) : this.total());
+
+  onRunnerTotal(total: number): void {
+    this.runnerTotal.set(total);
+  }
+
   onLazy(event: TableLazyLoadEvent): void {
     const first = event.first ?? 0;
     const rows = event.rows ?? this.pageSize;
@@ -208,9 +235,14 @@ export class StudioRecordListComponent implements OnInit {
     this.fetch();
   }
 
+  // Vue active ⇒ la recherche opère sur le `/run` du runner (pas sur la liste brute masquée).
   reload(): void {
-    this.page = 1;
-    this.fetch();
+    const runner = this.runner();
+    if (runner) runner.reload();
+    else {
+      this.page = 1;
+      this.fetch();
+    }
   }
 
   private fetch(): void {
@@ -278,7 +310,7 @@ export class StudioRecordListComponent implements OnInit {
           next: res => {
             if (res.success) {
               this.toast.add({ severity: 'success', summary: 'Supprimé' });
-              this.fetch();
+              this.reload();
             }
           },
           error: () => this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Suppression impossible.' })
