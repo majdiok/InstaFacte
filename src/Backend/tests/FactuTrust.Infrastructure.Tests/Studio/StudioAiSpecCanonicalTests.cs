@@ -151,10 +151,10 @@ public sealed class StudioAiSpecCanonicalTests
         Assert.Equal("decimal", ops[1]!["type"]!.GetValue<string>());
         Assert.Equal("h", ops[1]!["options"]!.AsArray()[0]!["value"]!.GetValue<string>());
         Assert.Equal("true", ops[1]!["config"]!["custom"]!.ToString());
-        // Relation : kind canonique, cible slugifiée.
+        // Relation : kind canonique, cible et clé de jonction slugifiées.
         Assert.Equal("many_to_many", ops[2]!["kind"]!.GetValue<string>());
         Assert.Equal("competences", ops[2]!["target"]!.GetValue<string>());
-        Assert.Equal("Affectations", ops[2]!["junctionName"]!.GetValue<string>());
+        Assert.Equal("affectations", ops[2]!["junctionName"]!.GetValue<string>());
         Assert.Equal("gestion_interventions", ops[3]!["system"]!.GetValue<string>());
         // Vue : jamais de clé « entity » dans un amendement (la table cible est implicite).
         Assert.Equal("set_view", ops[4]!["op"]!.GetValue<string>());

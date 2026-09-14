@@ -101,17 +101,6 @@ public static class StudioAiAmendmentSpec
 {
     public const int MaxOperations = 20;
 
-    private static readonly HashSet<string> KnownOps = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "add_field", "update_field", "remove_field", "update_entity", "set_form", "set_report",
-        "reorder_fields", "reorder", "reordonner_champs", "reorganiser_champs",
-        "change_field_type", "change_type", "changer_type", "convertir_champ",
-        "add_relation", "ajouter_relation",
-        "assign_system", "assigner_systeme", "rattacher_systeme",
-        "set_view", "definir_vue", "creer_vue",
-        "set_automation", "definir_automatisation"
-    };
-
     private static readonly HashSet<string> ManyToOneAliases = new(StringComparer.OrdinalIgnoreCase)
     {
         "many_to_one", "manytoone", "many-to-one", "n_1", "n-1", "plusieurs_a_un", "plusieurs-a-un"
@@ -168,12 +157,9 @@ public static class StudioAiAmendmentSpec
             if (node is not JsonObject obj) continue;
 
             var op = (Str(obj["op"]) ?? Str(obj["action"]) ?? string.Empty).Trim();
-            if (!KnownOps.Contains(op))
-            {
-                warnings.Add($"Opération « {(string.IsNullOrEmpty(op) ? "?" : op)} » non prise en charge : ignorée.");
-                continue;
-            }
 
+            // Liste blanche = les cas du switch (source unique) : toute opération inconnue est
+            // écartée AVEC avertissement par le default de ParseOperation, jamais silencieusement.
             var parsed = ParseOperation(op, obj, warnings);
             if (parsed is not null) operations.Add(parsed);
         }
@@ -332,12 +318,12 @@ public static class StudioAiAmendmentSpec
                         $"Ajout de relation ignoré : type « {kindRaw} » non pris en charge (many_to_one ou many_to_many).");
                     return null;
                 }
-                // Clé normalisée comme les autres références de table (vue, cible du plan) ; le
-                // libellé brut resterait introuvable si le modèle l'a écrit avec des majuscules.
-                var targetSlug = StudioAiAppSpec.SlugKey(targetRef);
-                return new AddRelationOp(kind,
-                    string.IsNullOrEmpty(targetSlug) ? targetRef.Trim() : targetSlug,
-                    Str(obj["label"]), Str(obj["junctionName"]) ?? Str(obj["junctionKey"]));
+                // Clés normalisées (slug) comme les autres références de table (vue, cible du plan,
+                // jonction) : une valeur brute avec majuscules/espaces resterait introuvable ou
+                // deviendrait une erreur d'exécution que l'aperçu n'annonçait pas.
+                var junctionRaw = Str(obj["junctionName"]) ?? Str(obj["junctionKey"]);
+                return new AddRelationOp(kind, SlugOrRaw(targetRef), Str(obj["label"]),
+                    junctionRaw is null ? null : SlugOrRaw(junctionRaw));
             }
             case "assign_system":
             case "assigner_systeme":
@@ -354,8 +340,7 @@ public static class StudioAiAmendmentSpec
                 var raw = Str(obj["system"]) ?? Str(obj["systemKey"]);
                 var detach = raw is null || DetachSystemAliases.Contains(raw.Trim());
                 if (detach) return new AssignSystemOp(null);
-                var systemSlug = StudioAiAppSpec.SlugKey(raw!);
-                return new AssignSystemOp(string.IsNullOrEmpty(systemSlug) ? raw!.Trim() : systemSlug);
+                return new AssignSystemOp(SlugOrRaw(raw!));
             }
             case "set_view":
             case "definir_vue":
@@ -374,6 +359,7 @@ public static class StudioAiAmendmentSpec
             case "definir_automatisation":
                 return new SetAutomationOp((JsonObject)obj.DeepClone());
             default:
+                warnings.Add($"Opération « {(string.IsNullOrEmpty(op) ? "?" : op)} » non prise en charge : ignorée.");
                 return null;
         }
     }
@@ -417,8 +403,7 @@ public static class StudioAiAmendmentSpec
                 label = value;
             }
             if (string.IsNullOrWhiteSpace(value)) continue;
-            var slug = StudioAiAppSpec.SlugKey(value);
-            if (string.IsNullOrEmpty(slug)) slug = value!.Trim();
+            var slug = SlugOrRaw(value);
             if (!seen.Add(slug)) continue;
             result.Add(new SelectOptionDto(slug, (label ?? value)!.Trim()));
         }
@@ -431,8 +416,7 @@ public static class StudioAiAmendmentSpec
         var kind = Str(obj["kind"]);
         var refKey = Str(obj["ref"]) ?? Str(obj["target"]) ?? Str(obj["entityKey"]);
         if (kind is null || refKey is null) return null;
-        var slug = StudioAiAppSpec.SlugKey(refKey);
-        return new RelationRefDto(kind.Trim().ToLowerInvariant(), string.IsNullOrEmpty(slug) ? refKey.Trim() : slug);
+        return new RelationRefDto(kind.Trim().ToLowerInvariant(), SlugOrRaw(refKey));
     }
 
     private static Dictionary<string, JsonNode?>? ParseConfigPassthrough(JsonNode? node)
@@ -442,6 +426,16 @@ public static class StudioAiAmendmentSpec
         foreach (var kvp in obj)
             dict[kvp.Key] = kvp.Value?.DeepClone();
         return dict.Count > 0 ? dict : null;
+    }
+
+    /// <summary>
+    /// Clé normalisée (slug) d'une référence écrite par le modèle ; si l'entrée ne produit rien
+    /// d'exploitable (que des caractères filtrés), le brut élagué est conservé.
+    /// </summary>
+    private static string SlugOrRaw(string raw)
+    {
+        var slug = StudioAiAppSpec.SlugKey(raw);
+        return string.IsNullOrEmpty(slug) ? raw.Trim() : slug;
     }
 
     private static string? Str(JsonNode? n)

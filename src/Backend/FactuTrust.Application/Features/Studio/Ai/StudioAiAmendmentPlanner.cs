@@ -418,7 +418,8 @@ public static class StudioAiAmendmentPlanner
         return string.Join(", ", parts);
     }
 
-    private static string TypeLabel(CustomFieldType type) => type switch
+    /// <summary>Libellé français d'un type de champ (aperçu ET messages d'exécution).</summary>
+    public static string TypeLabel(CustomFieldType type) => type switch
     {
         CustomFieldType.Text => "texte",
         CustomFieldType.MultilineText => "texte long",
