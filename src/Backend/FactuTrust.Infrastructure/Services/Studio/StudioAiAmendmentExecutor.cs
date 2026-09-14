@@ -6,6 +6,8 @@ using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Entities;
 using FactuTrust.Application.Features.Studio.Fields;
 using FactuTrust.Application.Features.Studio.Forms;
+using FactuTrust.Application.Features.Studio.RecordViews;
+using FactuTrust.Application.Features.Studio.Relations;
 using FactuTrust.Application.Features.Studio.Reports;
 using FactuTrust.Application.Features.Studio.Systems;
 using FactuTrust.Domain.Enums;
@@ -106,17 +108,29 @@ public sealed class StudioAiAmendmentExecutor
                 case AssignSystemOp assign:
                     await ApplyAssignSystemAsync(assign, schema.Entity, applied, warnings, Report, ct);
                     break;
-                default:
+                case AddRelationOp relation:
+                    await ApplyAddRelationAsync(relation, schema, usedKeys, applied, warnings, Report, ct);
+                    break;
+                case SetViewOp view:
+                    await ApplySetViewAsync(view, schema, applied, warnings, Report, ct);
+                    break;
+                case SetAutomationOp:
                 {
-                    // Ops connues de la spec depuis la PR 3.1b (add_relation, set_view, set_automation)
-                    // mais pas encore exécutables (tranche 3.1d) : JAMAIS silencieux — étape « skipped »
-                    // + avertissement, et le plan échoue en « Aucune modification applicable » si rien
-                    // d'autre n'est appliqué.
-                    warnings.Add($"Opération « {op.Op} » non encore exécutable par l'assistant : ignorée.");
-                    Report("skipped_operation", $"Opération « {op.Op} »", "skipped",
-                        "Cette opération n'est pas encore exécutable par l'assistant.");
+                    // Automatisations : toujours non exécutables (phase 4 du programme) — JAMAIS
+                    // silencieux : étape « skipped » explicite + avertissement, et le plan échoue en
+                    // « Aucune modification applicable » si rien d'autre n'est appliqué.
+                    warnings.Add($"Opération « set_automation » ignorée : les automatisations ne sont pas encore créées par l'assistant.");
+                    Report("skipped_automation", "Automatisation", "skipped",
+                        "Les automatisations ne sont pas encore créées par l'assistant : étape ignorée.");
                     break;
                 }
+                default:
+                    // Défensif : le parseur (liste blanche stricte) ne produit que les ops ci-dessus ;
+                    // atteindre ce cas signifie qu'une opération a été ajoutée à la spec SANS son
+                    // exécution. Erreur de programmation : échec bruyant, jamais un saut silencieux
+                    // d'une modification pourtant validée par l'utilisateur.
+                    throw new InvalidOperationException(
+                        $"Opération d'amendement « {op.Op} » ({op.GetType().Name}) sans exécution implémentée.");
             }
         }
 
@@ -443,6 +457,125 @@ public sealed class StudioAiAmendmentExecutor
         {
             warnings.Add($"Rattachement au système non appliqué : {result.Error.Description}");
             report("assigning_system", label, "error", result.Error.Description);
+        }
+    }
+
+    // ---- PR 3.1d : ajout de relation, vue enregistrée (automatisation : toujours ignorée) ----
+
+    private async Task ApplyAddRelationAsync(
+        AddRelationOp op, CustomEntitySchemaDto schema, HashSet<string> usedKeys, List<string> applied,
+        List<string> warnings, Action<string, string, string, string?> report, CancellationToken ct)
+    {
+        var label = $"Relation vers « {op.TargetRef} »";
+
+        // Drapeau plusieurs-à-plusieurs coupé (ou settings absents) ⇒ « skipped » SANS lecture ni
+        // envoi (fail-closed) — même garde que l'aperçu (StudioAiAmendmentPlanner).
+        if (op.Kind == EntityRelationKinds.ManyToMany && _settings?.EnableStudioManyToMany != true)
+        {
+            warnings.Add($"Relation vers « {op.TargetRef} » ignorée : les relations plusieurs-à-plusieurs ne sont pas activées.");
+            report("adding_relation", label, "skipped",
+                "Les relations plusieurs-à-plusieurs ne sont pas activées.");
+            return;
+        }
+
+        // La cible est résolue contre le dépôt RÉEL : l'aperçu (planificateur pur) ne pouvait pas
+        // vérifier son existence ni son caractère « standard ». Dépôt ou tenant indisponible ⇒
+        // fail-closed : étape « skipped », aucun envoi.
+        var target = _entities is null || _currentUser.TenantId is not { } tenantId
+            ? null
+            : await _entities.GetByKeyAsync(tenantId, op.TargetRef, ct);
+        if (target is null)
+        {
+            var why = _entities is null
+                ? "dépôt des tables indisponible"
+                : $"table « {op.TargetRef} » introuvable";
+            warnings.Add($"Relation vers « {op.TargetRef} » ignorée : {why}.");
+            report("adding_relation", label, "skipped", $"Relation ignorée : {why}.");
+            return;
+        }
+        if (target.Kind == CustomEntityKind.Junction)
+        {
+            // Même refus que CreateManyToManyRelationCommand / le concepteur : une jonction ne se relie pas.
+            warnings.Add($"Relation vers « {op.TargetRef} » ignorée : une table de jonction ne peut pas être reliée.");
+            report("adding_relation", label, "skipped", "La table cible est une table de jonction.");
+            return;
+        }
+
+        if (op.Kind == EntityRelationKinds.ManyToMany)
+        {
+            report("adding_relation", label, "running", null);
+            var m2m = await _mediator.Send(new CreateManyToManyRelationCommand(schema.Entity.Id,
+                new CreateManyToManyRelationRequest(target.Id, op.Label, op.JunctionName, null)), ct);
+            if (m2m.IsSuccess)
+            {
+                applied.Add($"Relation plusieurs-à-plusieurs avec « {target.DisplayName} » créée.");
+                report("adding_relation", label, "done", null);
+            }
+            else
+            {
+                warnings.Add($"Relation vers « {op.TargetRef} » non créée : {m2m.Error.Description}");
+                report("adding_relation", label, "error", m2m.Error.Description);
+            }
+            return;
+        }
+
+        // N-1 : un champ RelationCustom porté par la table modifiée — la MÊME commande que
+        // l'ajout de champ du concepteur (validation, quotas, audit mutualisés).
+        report("adding_relation", label, "running", null);
+        var fieldLabel = string.IsNullOrWhiteSpace(op.Label) ? target.DisplayName : op.Label!.Trim();
+        var key = UniqueKey(StudioAiAppSpec.SlugKey(fieldLabel), usedKeys);
+        var request = new CreateCustomFieldRequest(key, fieldLabel, CustomFieldType.RelationCustom,
+            false, false, null, null, new RelationRefDto("custom", target.Key), null);
+
+        var result = await _mediator.Send(new CreateCustomFieldCommand(schema.Entity.Id, request), ct);
+        if (result.IsSuccess)
+        {
+            usedKeys.Add(key);
+            applied.Add($"Relation plusieurs-à-un vers « {target.DisplayName} » ajoutée (champ « {fieldLabel} »).");
+            report("adding_relation", label, "done", null);
+        }
+        else
+        {
+            warnings.Add($"Relation vers « {op.TargetRef} » non ajoutée : {result.Error.Description}");
+            report("adding_relation", label, "error", result.Error.Description);
+        }
+    }
+
+    private async Task ApplySetViewAsync(
+        SetViewOp op, CustomEntitySchemaDto schema, List<string> applied, List<string> warnings,
+        Action<string, string, string, string?> report, CancellationToken ct)
+    {
+        var spec = op.View;
+        var label = $"Vue « {spec.DisplayName} »";
+
+        // Drapeau coupé (ou settings absents) ⇒ « skipped » SANS envoi (fail-closed).
+        if (_settings?.EnableStudioRecordViews != true)
+        {
+            warnings.Add($"Vue « {spec.DisplayName} » ignorée : les vues enregistrées ne sont pas activées.");
+            report("creating_record_view", label, "skipped", "Les vues enregistrées ne sont pas activées.");
+            return;
+        }
+
+        // MÊME séquence que StudioAiPlanExecutor.ExecuteRecordViewAsync : la spec est RERÉSOLUE
+        // contre le schéma réel (l'aperçu a pu vieillir), les dégradations restent des
+        // avertissements, et la clé sluguée ne percute aucune vue existante.
+        var (mode, definition, viewWarnings) = StudioAiRecordViewSpec.ResolveAgainstSchema(spec, schema.Fields);
+        foreach (var viewWarning in viewWarnings) warnings.Add(viewWarning);
+        var key = StudioAiRecordViewSpec.SlugKey(
+            spec.DisplayName, schema.Views.Select(v => v.Key).ToHashSet(StringComparer.Ordinal));
+
+        report("creating_record_view", label, "running", null);
+        var result = await _mediator.Send(new CreateCustomRecordViewCommand(schema.Entity.Key,
+            new SaveCustomRecordViewRequest(key, spec.DisplayName, mode, definition, spec.IsDefault)), ct);
+        if (result.IsSuccess)
+        {
+            applied.Add($"Vue « {spec.DisplayName} » créée.");
+            report("creating_record_view", label, "done", null);
+        }
+        else
+        {
+            warnings.Add($"Vue « {spec.DisplayName} » non créée : {result.Error.Description}");
+            report("creating_record_view", label, "error", result.Error.Description);
         }
     }
 
