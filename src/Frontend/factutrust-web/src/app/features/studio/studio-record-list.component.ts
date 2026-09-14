@@ -159,20 +159,23 @@ export class StudioRecordListComponent implements OnInit {
   );
   readonly activeViewId = computed(() => this.activeViewIdParam());
 
+  // Runtime piloté par le SCHÉMA (décision A-Q1, 2.5c) : `schema.views` est servi sous
+  // `custom_records:read` et vide quand `EnableStudioRecordViews` est coupé (fail-closed côté
+  // serveur, `StudioRecordViewsController.Unavailable()`). Un rôle « données » sans permission Studio
+  // voit donc le sélecteur, le kanban et le calendrier ; `GET api/ai/studio/capabilities` (policy
+  // `StudioDesignEntities`, 403 pour lui) ne conditionne que les écrans de CONCEPTION.
   readonly views = computed(() => this.schema()?.views ?? []);
-  // Repli strict : tant que les capacités ne sont pas confirmées (`ready`), la page ignore `?view=`
-  // et se comporte exactement comme avant 2.5a (zéro régression). La course « schéma arrivé avant
-  // les capacités » ne doit jamais déclencher un `/run` ni monter le runner.
   readonly recordViewsEnabled = computed(() =>
     this.capabilities.state() === 'ready' && this.capabilities.capabilities().recordViewsEnabled === true);
   // Vue effective : `?view=<id>` si présente, sinon la vue `isDefault`, sinon la « Liste » brute.
+  // Sans vue dans le schéma, l'écran est strictement celui d'avant 2.5a (zéro régression).
   readonly activeView = computed(() => {
-    if (!this.recordViewsEnabled()) return null;
     const views = this.views();
     const fromParam = views.find(v => v.id === this.activeViewId());
     return fromParam ?? views.find(v => v.isDefault) ?? null;
   });
-  readonly showSwitcher = computed(() => this.recordViewsEnabled() && this.views().length > 0);
+  readonly showSwitcher = computed(() => this.views().length > 0);
+  // Boutons « Nouvelle vue » / « Modifier la vue » : conception ⇒ capacités (A-Q2, fail-closed).
   readonly showViewButton = computed(() => this.recordViewsEnabled() && this.canDesignForms());
 
   canWrite = () => this.auth.hasPermission(PERMISSIONS.customData.recordsWrite);

@@ -52,5 +52,32 @@ export const STUDIO_RUNTIME_LABELS = {
     remove: 'Retirer',
     duplicate: 'Lien déjà existant.',
     truncated: 'Certaines fiches liées ne sont pas affichées.'
+  },
+  entities: {
+    junctionBadge: 'Jonction',
+    hideJunctions: 'Masquer les jonctions'
+  },
+  filters: {
+    title: 'Filtres',
+    add: 'Ajouter un filtre',
+    remove: 'Retirer ce filtre',
+    field: 'Champ',
+    operator: 'Opérateur',
+    value: 'Valeur',
+    empty: 'Aucun filtre.',
+    limitReached: 'Nombre maximal de filtres atteint.',
+    ops: {
+      eq: 'est égal à',
+      neq: 'est différent de',
+      contains: 'contient',
+      gt: 'est supérieur à',
+      gte: 'est supérieur ou égal à',
+      lt: 'est inférieur à',
+      lte: 'est inférieur ou égal à',
+      in: 'est parmi',
+      is_empty: 'est vide',
+      is_not_empty: 'n’est pas vide',
+      between: 'est compris entre'
+    }
   }
 } as const;
