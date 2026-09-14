@@ -61,7 +61,10 @@ public sealed partial class AiToolExecutor
         if (!schemaResult.IsSuccess)
             return AiToolResult.Error($"Table « {spec.TargetEntityRef} » introuvable. Vérifiez son nom avec studio_get_table_schema.");
 
-        var preview = StudioAiAmendmentPlanner.BuildPreview(spec, schemaResult.Value);
+        // Les ops add_relation (N-N) et set_view sont en plus sous leurs drapeaux fonctionnels :
+        // drapeau coupé ⇒ op écartée de l'aperçu avec un avertissement explicite.
+        var preview = StudioAiAmendmentPlanner.BuildPreview(spec, schemaResult.Value,
+            _ollamaSettings.EnableStudioManyToMany, _ollamaSettings.EnableStudioRecordViews);
         if (preview.Items.Count == 0)
         {
             var reason = preview.Warnings.Count > 0

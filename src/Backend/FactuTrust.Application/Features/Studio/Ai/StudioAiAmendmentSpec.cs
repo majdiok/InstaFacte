@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.Relations;
+using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Application.Features.Studio.Ai;
 
@@ -37,6 +39,51 @@ public sealed record SetFormOp(JsonNode FormNode) : ParsedAmendmentOp("set_form"
 /// <summary>Création/remplacement d'un état. Résolu contre les champs réels.</summary>
 public sealed record SetReportOp(string? DisplayName, JsonNode ReportNode) : ParsedAmendmentOp("set_report");
 
+/// <summary>
+/// Réordonne les champs (PR 3.1b). Références BRUTES (clé ou libellé), résolues contre le schéma
+/// réel à l'aperçu/l'exécution ; toute référence introuvable est retirée avec un avertissement. Les
+/// champs non cités conservent leur position relative existante (l'exécuteur complète la liste).
+/// </summary>
+public sealed record ReorderFieldsOp(IReadOnlyList<string> FieldRefs) : ParsedAmendmentOp("reorder_fields");
+
+/// <summary>
+/// Change le type d'un champ existant (PR 3.1b). La classification Lossless / RequiresEmptyTable /
+/// Forbidden n'est PAS appliquée ici (matrice D4 — <see cref="FieldTypeConversionPolicy"/>) : cette
+/// spec accepte n'importe quel type d'énumération valide, y compris les cibles interdites, pour que
+/// l'aperçu puisse les signaler explicitement en erreur plutôt que les faire disparaître au parsing.
+/// </summary>
+public sealed record ChangeFieldTypeOp(
+    string FieldRef,
+    CustomFieldType FieldType,
+    IReadOnlyList<SelectOptionDto>? Options,
+    RelationRefDto? Relation,
+    IReadOnlyDictionary<string, JsonNode?>? Config) : ParsedAmendmentOp("change_field_type");
+
+/// <summary>
+/// Ajoute une relation vers une autre table (PR 3.1b). <c>Kind</c> est déjà normalisé vers
+/// <see cref="EntityRelationKinds.ManyToOne"/> ou <see cref="EntityRelationKinds.ManyToMany"/> ;
+/// <c>TargetRef</c> est la clé normalisée (slug) de la table cible — son existence et son type
+/// (standard, pas jonction) sont revérifiés à l'exécution, contre le schéma réel.
+/// </summary>
+public sealed record AddRelationOp(
+    string Kind, string TargetRef, string? Label, string? JunctionName) : ParsedAmendmentOp("add_relation");
+
+/// <summary>
+/// Rattache (ou détache si <c>SystemRef</c> est null) la table à un système (PR 3.1b). Clé de
+/// système normalisée (slug), résolue à l'exécution via <c>GetCustomSystemByKeyQuery</c>.
+/// </summary>
+public sealed record AssignSystemOp(string? SystemRef) : ParsedAmendmentOp("assign_system");
+
+/// <summary>Ajoute une vue enregistrée sur la table (PR 3.1b) — enveloppe une spec de vue déjà parsée.</summary>
+public sealed record SetViewOp(ParsedRecordViewSpec View) : ParsedAmendmentOp("set_view");
+
+/// <summary>
+/// Automatisation demandée (PR 3.1b) — PAS ENCORE prise en charge : l'exécuteur ignore toujours cette
+/// étape (statut « skipped ») et avertit l'utilisateur. Le nœud brut est conservé pour un round-trip
+/// canonique stable, indépendamment de son contenu.
+/// </summary>
+public sealed record SetAutomationOp(JsonObject Node) : ParsedAmendmentOp("set_automation");
+
 public sealed record ParsedAmendmentSpec(
     string TargetEntityRef,
     IReadOnlyList<ParsedAmendmentOp> Operations,
@@ -56,7 +103,29 @@ public static class StudioAiAmendmentSpec
 
     private static readonly HashSet<string> KnownOps = new(StringComparer.OrdinalIgnoreCase)
     {
-        "add_field", "update_field", "remove_field", "update_entity", "set_form", "set_report"
+        "add_field", "update_field", "remove_field", "update_entity", "set_form", "set_report",
+        "reorder_fields", "reorder", "reordonner_champs", "reorganiser_champs",
+        "change_field_type", "change_type", "changer_type", "convertir_champ",
+        "add_relation", "ajouter_relation",
+        "assign_system", "assigner_systeme", "rattacher_systeme",
+        "set_view", "definir_vue", "creer_vue",
+        "set_automation", "definir_automatisation"
+    };
+
+    private static readonly HashSet<string> ManyToOneAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "many_to_one", "manytoone", "many-to-one", "n_1", "n-1", "plusieurs_a_un", "plusieurs-a-un"
+    };
+
+    private static readonly HashSet<string> ManyToManyAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "many_to_many", "manytomany", "many-to-many", "n_n", "nn", "n-n", "plusieurs_a_plusieurs",
+        "plusieurs-a-plusieurs", "m2m"
+    };
+
+    private static readonly HashSet<string> DetachSystemAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "none", "aucun", "aucune", "retirer", "detacher", "détacher", "null"
     };
 
     public static bool TryParse(string? specJson, out ParsedAmendmentSpec? spec, out string? error)
@@ -202,6 +271,108 @@ public static class StudioAiAmendmentSpec
                 }
                 return new SetReportOp(Str(obj["displayName"]) ?? Str(obj["title"]), report.DeepClone());
             }
+            case "reorder_fields":
+            case "reorder":
+            case "reordonner_champs":
+            case "reorganiser_champs":
+            {
+                var refs = new List<string>();
+                var seenRefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in (obj["fields"] ?? obj["order"] ?? obj["ordre"])?.AsArray() ?? new JsonArray())
+                {
+                    var raw = Str(item)?.Trim();
+                    // Déduplication dès le parsing (forme canonique propre) ; la résolution au
+                    // schéma réel déduplique aussi les alias pointant vers le même champ.
+                    if (raw is not null && seenRefs.Add(raw)) refs.Add(raw);
+                }
+                if (refs.Count == 0)
+                {
+                    warnings.Add("Réorganisation des champs ignorée : aucune référence de champ fournie.");
+                    return null;
+                }
+                return new ReorderFieldsOp(refs);
+            }
+            case "change_field_type":
+            case "change_type":
+            case "changer_type":
+            case "convertir_champ":
+            {
+                var fieldRef = FieldRef(obj);
+                if (fieldRef is null)
+                {
+                    warnings.Add("Changement de type ignoré : champ cible non précisé.");
+                    return null;
+                }
+                var rawType = Str(obj["type"]) ?? Str(obj["fieldType"]) ?? Str(obj["to"]);
+                if (!StudioAiAppSpec.TryMapType(rawType, out var fieldType))
+                {
+                    warnings.Add($"Changement de type ignoré : type « {rawType ?? "?"} » inconnu.");
+                    return null;
+                }
+                return new ChangeFieldTypeOp(
+                    fieldRef, fieldType, ParseOptions(obj["options"]), ParseRelationRef(obj["relation"]),
+                    ParseConfigPassthrough(obj["config"]));
+            }
+            case "add_relation":
+            case "ajouter_relation":
+            {
+                var targetRef = Str(obj["target"]) ?? Str(obj["entityKey"]) ?? Str(obj["table"]) ?? Str(obj["ref"]);
+                if (targetRef is null)
+                {
+                    warnings.Add("Ajout de relation ignoré : table cible non précisée.");
+                    return null;
+                }
+                var kindRaw = (Str(obj["kind"]) ?? EntityRelationKinds.ManyToOne).Trim();
+                string? kind = ManyToOneAliases.Contains(kindRaw) ? EntityRelationKinds.ManyToOne
+                    : ManyToManyAliases.Contains(kindRaw) ? EntityRelationKinds.ManyToMany
+                    : null;
+                if (kind is null)
+                {
+                    warnings.Add(
+                        $"Ajout de relation ignoré : type « {kindRaw} » non pris en charge (many_to_one ou many_to_many).");
+                    return null;
+                }
+                // Clé normalisée comme les autres références de table (vue, cible du plan) ; le
+                // libellé brut resterait introuvable si le modèle l'a écrit avec des majuscules.
+                var targetSlug = StudioAiAppSpec.SlugKey(targetRef);
+                return new AddRelationOp(kind,
+                    string.IsNullOrEmpty(targetSlug) ? targetRef.Trim() : targetSlug,
+                    Str(obj["label"]), Str(obj["junctionName"]) ?? Str(obj["junctionKey"]));
+            }
+            case "assign_system":
+            case "assigner_systeme":
+            case "rattacher_systeme":
+            {
+                // Clé ABSENTE = oubli du modèle (avertissement, op ignorée) ; clé présente mais
+                // nulle/vide/alias (« none », « aucun »…) = détachement explicite. Distinction
+                // nécessaire à l'aller-retour canonique (un détachement se réécrit « none »).
+                if (!obj.ContainsKey("system") && !obj.ContainsKey("systemKey"))
+                {
+                    warnings.Add("Rattachement au système ignoré : système non précisé (« none » pour détacher).");
+                    return null;
+                }
+                var raw = Str(obj["system"]) ?? Str(obj["systemKey"]);
+                var detach = raw is null || DetachSystemAliases.Contains(raw.Trim());
+                if (detach) return new AssignSystemOp(null);
+                var systemSlug = StudioAiAppSpec.SlugKey(raw!);
+                return new AssignSystemOp(string.IsNullOrEmpty(systemSlug) ? raw!.Trim() : systemSlug);
+            }
+            case "set_view":
+            case "definir_vue":
+            case "creer_vue":
+            {
+                if (!StudioAiRecordViewSpec.TryParseNode(obj, out var viewSpec, out var viewError) || viewSpec is null)
+                {
+                    warnings.Add($"Vue enregistrée ignorée : {viewError ?? "spécification invalide"}.");
+                    return null;
+                }
+                // Dans un amendement, la vue porte TOUJOURS sur la table cible du plan : toute clé
+                // « entity » écrite par le modèle est écartée (la forme canonique n'en porte pas).
+                return new SetViewOp(viewSpec with { EntityKey = null });
+            }
+            case "set_automation":
+            case "definir_automatisation":
+                return new SetAutomationOp((JsonObject)obj.DeepClone());
             default:
                 return null;
         }
@@ -252,6 +423,25 @@ public static class StudioAiAmendmentSpec
             result.Add(new SelectOptionDto(slug, (label ?? value)!.Trim()));
         }
         return result.Count > 0 ? result : null;
+    }
+
+    private static RelationRefDto? ParseRelationRef(JsonNode? node)
+    {
+        if (node is not JsonObject obj) return null;
+        var kind = Str(obj["kind"]);
+        var refKey = Str(obj["ref"]) ?? Str(obj["target"]) ?? Str(obj["entityKey"]);
+        if (kind is null || refKey is null) return null;
+        var slug = StudioAiAppSpec.SlugKey(refKey);
+        return new RelationRefDto(kind.Trim().ToLowerInvariant(), string.IsNullOrEmpty(slug) ? refKey.Trim() : slug);
+    }
+
+    private static Dictionary<string, JsonNode?>? ParseConfigPassthrough(JsonNode? node)
+    {
+        if (node is not JsonObject obj) return null;
+        var dict = new Dictionary<string, JsonNode?>();
+        foreach (var kvp in obj)
+            dict[kvp.Key] = kvp.Value?.DeepClone();
+        return dict.Count > 0 ? dict : null;
     }
 
     private static string? Str(JsonNode? n)

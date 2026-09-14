@@ -77,6 +77,17 @@ public sealed class StudioAiAmendmentExecutor
                 case SetReportOp report:
                     await ApplySetReportAsync(report, schema.Entity.Key, fields, applied, warnings, Report, ct);
                     break;
+                default:
+                {
+                    // Ops connues de la spec depuis la PR 3.1b (reorder_fields, change_field_type,
+                    // add_relation, assign_system, set_view, set_automation) mais pas encore
+                    // exécutables : JAMAIS silencieux — étape « skipped » + avertissement, et le
+                    // plan échoue en « Aucune modification applicable » si rien d'autre n'est appliqué.
+                    warnings.Add($"Opération « {op.Op} » non encore exécutable par l'assistant : ignorée.");
+                    Report("skipped_operation", $"Opération « {op.Op} »", "skipped",
+                        "Cette opération n'est pas encore exécutable par l'assistant.");
+                    break;
+                }
             }
         }
 

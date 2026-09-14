@@ -219,6 +219,57 @@ public static class StudioAiSpecCanonical
                     operations.Add(node);
                     break;
                 }
+                case ReorderFieldsOp reorder:
+                    operations.Add(new JsonObject { ["op"] = "reorder_fields", ["fields"] = StringArray(reorder.FieldRefs) });
+                    break;
+                case ChangeFieldTypeOp changeType:
+                {
+                    var node = new JsonObject
+                    {
+                        ["op"] = "change_field_type",
+                        ["field"] = changeType.FieldRef,
+                        ["type"] = CanonicalChangeFieldTypeName(changeType.FieldType)
+                    };
+                    if (changeType.Options is { Count: > 0 }) node["options"] = OptionsJson(changeType.Options);
+                    if (changeType.Relation is not null)
+                        node["relation"] = new JsonObject { ["kind"] = changeType.Relation.Kind, ["ref"] = changeType.Relation.Ref };
+                    if (changeType.Config is { Count: > 0 }) node["config"] = RawConfigJson(changeType.Config);
+                    operations.Add(node);
+                    break;
+                }
+                case AddRelationOp addRelation:
+                {
+                    var node = new JsonObject { ["op"] = "add_relation", ["kind"] = addRelation.Kind, ["target"] = addRelation.TargetRef };
+                    if (addRelation.Label is not null) node["label"] = addRelation.Label;
+                    if (addRelation.JunctionName is not null) node["junctionName"] = addRelation.JunctionName;
+                    operations.Add(node);
+                    break;
+                }
+                case AssignSystemOp assignSystem:
+                {
+                    // Détachement émis « none » (jamais de clé absente : au re-parse une clé absente
+                    // est une OUBLI du modèle ⇒ op ignorée — l'aller-retour ne serait pas stable).
+                    var node = new JsonObject { ["op"] = "assign_system" };
+                    node["system"] = assignSystem.SystemRef ?? "none";
+                    operations.Add(node);
+                    break;
+                }
+                case SetViewOp setView:
+                {
+                    var node = new JsonObject { ["op"] = "set_view" };
+                    foreach (var kv in RecordViewJson(setView.View))
+                        node[kv.Key] = kv.Value?.DeepClone();
+                    operations.Add(node);
+                    break;
+                }
+                case SetAutomationOp setAutomation:
+                {
+                    var node = new JsonObject { ["op"] = "set_automation" };
+                    foreach (var kv in setAutomation.Node)
+                        if (kv.Key != "op") node[kv.Key] = kv.Value?.DeepClone();
+                    operations.Add(node);
+                    break;
+                }
             }
         }
 
@@ -385,6 +436,22 @@ public static class StudioAiSpecCanonical
         foreach (var key in new[] { "currency", "max", "format" })
             if (config.TryGetValue(key, out var value))
                 node[key] = value?.DeepClone();
+        return node;
+    }
+
+    /// <summary>
+    /// Nom EXACT de l'énumération (minuscule) — round-trippable via <c>StudioAiAppSpec.TryMapType</c>,
+    /// y compris les types interdits en cible (Formula/Lookup/Rollup/…) que <c>change_field_type</c>
+    /// doit pouvoir désigner pour être classé Forbidden par la matrice D4, jamais collapsés vers
+    /// "text" comme le fait <see cref="CanonicalTypeName"/> (réservé à add_field).
+    /// </summary>
+    private static string CanonicalChangeFieldTypeName(CustomFieldType type) => type.ToString().ToLowerInvariant();
+
+    /// <summary>Repasse un config arbitraire (change_field_type) tel que reçu, sans en filtrer les clés.</summary>
+    private static JsonObject RawConfigJson(IReadOnlyDictionary<string, JsonNode?> config)
+    {
+        var node = new JsonObject();
+        foreach (var kv in config) node[kv.Key] = kv.Value?.DeepClone();
         return node;
     }
 
