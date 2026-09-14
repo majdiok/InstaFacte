@@ -1,14 +1,18 @@
 using System.Text.Json;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Fields;
 using FactuTrust.Application.Features.Studio.RecordViews;
+using FactuTrust.Application.Features.Studio.Relations;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Studio;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Services.Studio;
 using MediatR;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -147,6 +151,56 @@ public sealed class StudioAiPlanExecutorTests
 
         Assert.True(success, error);
         _mediator.Verify(m => m.Send(It.Is<ReorderCustomFieldsCommand>(c => c.Request.OrderedFieldIds.Count == 2),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ---- PR 3.1d : le case Amendment transmet les drapeaux et le dépôt à l'exécuteur ----
+
+    [Fact]
+    public async Task Amendment_plan_forwards_the_flags_and_the_repository_to_the_amendment_executor()
+    {
+        // Sans transmission, add_relation N-N et set_view seraient « skipped » (fail-closed) et le
+        // plan échouerait faute de modification applicable : le succès prouve le câblage.
+        SetupInterventionsSchema();
+        var entities = new Mock<ICustomEntityRepository>();
+        var target = CustomEntityDefinition.Create(TenantId, "clients", "Client", "Clients", null, null, UserId);
+        entities.Setup(r => r.GetByKeyAsync(TenantId, "clients", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(target);
+        _mediator.Setup(m => m.Send(It.IsAny<CreateManyToManyRelationCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new ManyToManyRelationDto(
+                new CustomEntityDto(Guid.NewGuid(), "interventions_clients", "Intervention – Client",
+                    "Intervention – Client", "link", null, true, 2, null, DateTime.UtcNow, DateTime.UtcNow,
+                    CustomEntityKind.Junction),
+                new CustomFieldDto(Guid.NewGuid(), "interventions", "Interventions",
+                    CustomFieldType.RelationCustom, true, false, 0, null, null, null, true),
+                new CustomFieldDto(Guid.NewGuid(), "clients", "Clients",
+                    CustomFieldType.RelationCustom, true, false, 1, null, null, null, true))));
+        _mediator.Setup(m => m.Send(It.IsAny<CreateCustomRecordViewCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CreateCustomRecordViewCommand c, CancellationToken _) =>
+                Result.Success(new CustomRecordViewDto(Guid.NewGuid(), c.Request.Key, c.Request.DisplayName,
+                    c.Request.Mode, c.Request.Definition, c.Request.IsDefault, true, "AAAA", DateTime.UtcNow)));
+
+        var executor = new StudioAiPlanExecutor(_mediator.Object, _currentUser.Object,
+            settings: Options.Create(new OllamaSettings
+            {
+                EnableStudioManyToMany = true,
+                EnableStudioRecordViews = true
+            }),
+            entities: entities.Object);
+        var plan = StudioAiBuildPlan.Create(TenantId, StudioAiPlanKind.Amendment, """
+            { "target": { "entityKey": "interventions" }, "operations": [
+              { "op": "add_relation", "kind": "many_to_many", "target": "clients" },
+              { "op": "set_view", "mode": "list", "displayName": "Toutes", "columns": [ "titre" ] } ] }
+            """, "{}", UserId, StudioAiPlanDefaults.Lifetime);
+
+        var (success, error, _) = await executor.ExecuteAsync(plan, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        _mediator.Verify(m => m.Send(It.Is<CreateManyToManyRelationCommand>(c =>
+                c.Request.TargetEntityId == target.Id),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _mediator.Verify(m => m.Send(It.Is<CreateCustomRecordViewCommand>(c =>
+                c.EntityKey == "interventions" && c.Request.Key == "vue_toutes"),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

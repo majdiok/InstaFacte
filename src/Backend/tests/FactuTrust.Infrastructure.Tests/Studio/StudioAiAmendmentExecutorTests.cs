@@ -1,12 +1,17 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Entities;
 using FactuTrust.Application.Features.Studio.Fields;
 using FactuTrust.Application.Features.Studio.Forms;
+using FactuTrust.Application.Features.Studio.RecordViews;
+using FactuTrust.Application.Features.Studio.Relations;
 using FactuTrust.Application.Features.Studio.Reports;
 using FactuTrust.Application.Features.Studio.Systems;
 using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Entities.Studio;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Services.Studio;
 using MediatR;
@@ -24,12 +29,15 @@ public sealed class StudioAiAmendmentExecutorTests
 {
     private readonly Mock<IMediator> _mediator = new();
     private readonly Mock<ICurrentUser> _currentUser = new();
+    private readonly Mock<ICustomEntityRepository> _entities = new();
+    private static readonly Guid TenantId = Guid.NewGuid();
     private static readonly Guid EntityId = Guid.NewGuid();
     private static readonly Guid StatutFieldId = Guid.NewGuid();
     private static readonly Guid NomFieldId = Guid.NewGuid();
 
     public StudioAiAmendmentExecutorTests()
     {
+        _currentUser.Setup(x => x.TenantId).Returns(TenantId);
         _currentUser.Setup(x => x.HasPermission(It.IsAny<string>())).Returns(true);
         _mediator.Setup(m => m.Send(It.IsAny<GetCustomEntitySchemaQuery>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(Schema()));
@@ -46,6 +54,16 @@ public sealed class StudioAiAmendmentExecutorTests
         _mediator.Setup(m => m.Send(It.IsAny<UpsertCustomReportCommand>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(new CustomReportDto(Guid.NewGuid(), "r", "R",
                 CustomReportDataSourceKind.CustomEntity, "contrats", new ReportDefinition(), true)));
+        _mediator.Setup(m => m.Send(It.IsAny<CreateManyToManyRelationCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new ManyToManyRelationDto(
+                new CustomEntityDto(Guid.NewGuid(), "contrats_clients", "Contrat – Client", "Contrat – Client",
+                    "link", null, true, 2, null, DateTime.UtcNow, DateTime.UtcNow, CustomEntityKind.Junction),
+                Field("contrats", "Contrats", CustomFieldType.RelationCustom),
+                Field("clients", "Clients", CustomFieldType.RelationCustom))));
+        _mediator.Setup(m => m.Send(It.IsAny<CreateCustomRecordViewCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CreateCustomRecordViewCommand c, CancellationToken _) => Result.Success(
+                new CustomRecordViewDto(Guid.NewGuid(), c.Request.Key, c.Request.DisplayName, c.Request.Mode,
+                    c.Request.Definition, c.Request.IsDefault, true, "AAAA", DateTime.UtcNow)));
     }
 
     [Fact]
@@ -182,10 +200,10 @@ public sealed class StudioAiAmendmentExecutorTests
         Assert.Contains(steps, s => s.Phase == "completed");
     }
 
-    // ---- PR 3.1b : garde anti-échec-silencieux pour les ops pas encore exécutables ----
+    // ---- PR 3.1b : garde anti-échec-silencieux pour l'automatisation (toujours non exécutable) ----
 
     [Fact]
-    public async Task An_operation_the_executor_does_not_know_is_skipped_with_a_warning()
+    public async Task Set_automation_is_reported_skipped_with_a_warning()
     {
         var steps = new List<StudioBuildStep>();
         var progress = new Mock<IStudioBuildProgress>();
@@ -200,8 +218,8 @@ public sealed class StudioAiAmendmentExecutorTests
         var (success, error, payload) = await new StudioAiAmendmentExecutor(_mediator.Object, _currentUser.Object)
             .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
 
-        Assert.True(success, error); // l'ajout de champ est appliqué, l'op inconnue est signalée
-        Assert.Contains(steps, s => s.Phase == "skipped_operation" && s.Status == "skipped");
+        Assert.True(success, error); // l'ajout de champ est appliqué, l'automatisation est signalée
+        Assert.Contains(steps, s => s.Phase == "skipped_automation" && s.Status == "skipped");
         var warnings = payload!.GetType().GetProperty("warnings")!.GetValue(payload) as IEnumerable<string>;
         Assert.Contains(warnings!, w => w.Contains("set_automation"));
     }
@@ -220,29 +238,21 @@ public sealed class StudioAiAmendmentExecutorTests
     }
 
     [Fact]
-    public async Task Operations_not_yet_executable_report_a_skipped_step_instead_of_nothing()
+    public async Task An_operation_without_executor_support_fails_loudly()
     {
-        var steps = new List<StudioBuildStep>();
-        var progress = new Mock<IStudioBuildProgress>();
-        progress.Setup(p => p.Report(It.IsAny<StudioBuildStep>())).Callback((StudioBuildStep s) => steps.Add(s));
+        // Défensif : une op produite par la spec mais sans cas dans l'exécuteur est une erreur de
+        // programmation — elle doit ÉCHOUER BRUYANTEMENT (exception), jamais sauter en silence.
+        var spec = new ParsedAmendmentSpec("contrats",
+            new ParsedAmendmentOp[] { new FutureOp() }, Array.Empty<string>());
 
-        Assert.True(StudioAiAmendmentSpec.TryParse("""
-        { "target": { "entityKey": "contrats" }, "operations": [
-          { "op": "add_relation", "kind": "many_to_one", "target": "clients" },
-          { "op": "set_view", "mode": "list", "displayName": "Toutes" },
-          { "op": "set_automation", "trigger": "on_create" } ] }
-        """, out var spec, out var err), err);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new StudioAiAmendmentExecutor(_mediator.Object, _currentUser.Object)
+                .ExecuteAsync(spec, null, CancellationToken.None));
 
-        var (success, error, _) = await new StudioAiAmendmentExecutor(_mediator.Object, _currentUser.Object)
-            .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
-
-        Assert.False(success); // rien d'appliqué, mais chaque op a produit une étape « skipped »
-        var skipped = steps.Where(s => s.Status == "skipped").ToList();
-        Assert.Equal(3, skipped.Count);
-        Assert.All(new[] { "add_relation", "set_view", "set_automation" },
-            op => Assert.Contains(skipped, s => s.Label.Contains(op)));
-        Assert.NotNull(error);
+        Assert.Contains("future_op", ex.Message);
     }
+
+    private sealed record FutureOp() : ParsedAmendmentOp("future_op");
 
     // ---- PR 3.1c : réorganisation, changement de type, rattachement à un système ----
 
@@ -381,14 +391,237 @@ public sealed class StudioAiAmendmentExecutorTests
         _mediator.Verify(m => m.Send(It.IsAny<AssignEntityToSystemCommand>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    private async Task<(bool Success, string? Error, object? Payload)> Execute(string json)
+    // ---- PR 3.1d : add_relation, set_view exécutés ; drapeaux coupés ⇒ skipped SANS envoi ----
+
+    private static readonly OllamaSettings FlagsOn =
+        new() { EnableStudioManyToMany = true, EnableStudioRecordViews = true };
+
+    [Fact]
+    public async Task Many_to_many_relation_without_the_flag_is_skipped_and_sends_nothing()
+    {
+        var steps = new List<StudioBuildStep>();
+        var progress = new Mock<IStudioBuildProgress>();
+        progress.Setup(p => p.Report(It.IsAny<StudioBuildStep>())).Callback((StudioBuildStep s) => steps.Add(s));
+
+        Assert.True(StudioAiAmendmentSpec.TryParse("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "add_relation", "kind": "many_to_many", "target": "clients" } ] }
+        """, out var spec, out var err), err);
+
+        // Drapeau coupé explicitement ; le dépôt est prêt mais ne doit même pas être sollicité.
+        var (success, error, _) = await new StudioAiAmendmentExecutor(
+                _mediator.Object, _currentUser.Object, new OllamaSettings(), _entities.Object)
+            .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
+
+        Assert.False(success); // rien d'appliqué
+        Assert.Contains(steps, s => s.Phase == "adding_relation" && s.Status == "skipped");
+        Assert.Contains("plusieurs-à-plusieurs ne sont pas activées", error);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateManyToManyRelationCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomFieldCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        // Seul envoi : la lecture du schéma.
+        Assert.Single(_mediator.Invocations);
+        _entities.Verify(r => r.GetByKeyAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Set_view_without_the_flag_is_skipped_and_sends_nothing()
+    {
+        var steps = new List<StudioBuildStep>();
+        var progress = new Mock<IStudioBuildProgress>();
+        progress.Setup(p => p.Report(It.IsAny<StudioBuildStep>())).Callback((StudioBuildStep s) => steps.Add(s));
+
+        Assert.True(StudioAiAmendmentSpec.TryParse("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "set_view", "mode": "list", "displayName": "Toutes" } ] }
+        """, out var spec, out var err), err);
+
+        var (success, error, _) = await new StudioAiAmendmentExecutor(
+                _mediator.Object, _currentUser.Object, new OllamaSettings(), _entities.Object)
+            .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
+
+        Assert.False(success);
+        Assert.Contains(steps, s => s.Phase == "creating_record_view" && s.Status == "skipped");
+        Assert.Contains("vues enregistrées ne sont pas activées", error);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomRecordViewCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Single(_mediator.Invocations); // lecture du schéma uniquement
+    }
+
+    [Fact]
+    public async Task Guarded_operations_execute_in_order_when_the_flags_are_on()
+    {
+        _entities.Setup(r => r.GetByKeyAsync(TenantId, "clients", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TargetEntity());
+
+        var (success, error, _) = await Execute("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "add_relation", "kind": "many_to_one", "target": "clients" },
+          { "op": "add_relation", "kind": "many_to_many", "target": "clients", "label": "Liés", "junctionName": "contrats_clients" },
+          { "op": "set_view", "mode": "list", "displayName": "Toutes", "columns": [ "nom" ] } ] }
+        """, FlagsOn, _entities.Object);
+
+        Assert.True(success, error);
+        var sent = _mediator.Invocations.Select(i => i.Arguments[0].GetType()).ToList();
+        var field = sent.IndexOf(typeof(CreateCustomFieldCommand));
+        var m2m = sent.IndexOf(typeof(CreateManyToManyRelationCommand));
+        var view = sent.IndexOf(typeof(CreateCustomRecordViewCommand));
+        Assert.True(field >= 0 && m2m > field && view > m2m,
+            $"Ordre attendu champ N-1 → jonction N-N → vue ; reçu : {string.Join(", ", sent.Select(t => t.Name))}");
+    }
+
+    [Fact]
+    public async Task Many_to_one_relation_creates_a_relation_field_towards_the_target()
+    {
+        var target = TargetEntity();
+        _entities.Setup(r => r.GetByKeyAsync(TenantId, "clients", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(target);
+
+        CreateCustomFieldRequest? sent = null;
+        _mediator.Setup(m => m.Send(It.IsAny<CreateCustomFieldCommand>(), It.IsAny<CancellationToken>()))
+            .Callback((IRequest<Result<CustomFieldDto>> c, CancellationToken _) =>
+                sent = ((CreateCustomFieldCommand)c).Request)
+            .ReturnsAsync(Result.Success(Field("client", "Client", CustomFieldType.RelationCustom)));
+
+        var (success, error, _) = await Execute("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "add_relation", "kind": "many_to_one", "target": "clients" } ] }
+        """, FlagsOn, _entities.Object);
+
+        Assert.True(success, error);
+        Assert.NotNull(sent);
+        Assert.Equal(CustomFieldType.RelationCustom, sent!.FieldType);
+        Assert.Equal("custom", sent.Relation!.Kind);
+        Assert.Equal("clients", sent.Relation.Ref);
+        // Sans libellé fourni, le champ prend le nom d'affichage de la cible.
+        Assert.Equal("Client", sent.Label);
+    }
+
+    [Fact]
+    public async Task Many_to_many_relation_uses_the_dedicated_command_with_the_resolved_target()
+    {
+        var target = TargetEntity();
+        _entities.Setup(r => r.GetByKeyAsync(TenantId, "clients", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(target);
+
+        CreateManyToManyRelationCommand? sent = null;
+        _mediator.Setup(m => m.Send(It.IsAny<CreateManyToManyRelationCommand>(), It.IsAny<CancellationToken>()))
+            .Callback((IRequest<Result<ManyToManyRelationDto>> c, CancellationToken _) =>
+                sent = (CreateManyToManyRelationCommand)c)
+            .ReturnsAsync(Result.Success(new ManyToManyRelationDto(
+                new CustomEntityDto(Guid.NewGuid(), "contrats_clients", "Contrat – Client", "Contrat – Client",
+                    "link", null, true, 2, null, DateTime.UtcNow, DateTime.UtcNow, CustomEntityKind.Junction),
+                Field("contrats", "Contrats", CustomFieldType.RelationCustom),
+                Field("clients", "Clients", CustomFieldType.RelationCustom))));
+
+        var (success, error, _) = await Execute("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "add_relation", "kind": "many_to_many", "target": "clients", "label": "Liés", "junctionName": "contrats_clients" } ] }
+        """, FlagsOn, _entities.Object);
+
+        Assert.True(success, error);
+        Assert.NotNull(sent);
+        Assert.Equal(EntityId, sent!.SourceEntityId);
+        Assert.Equal(target.Id, sent.Request.TargetEntityId);
+        Assert.Equal("Liés", sent.Request.Label);
+        Assert.Equal("contrats_clients", sent.Request.JunctionKey);
+    }
+
+    [Fact]
+    public async Task Set_view_creates_the_view_with_a_slugged_key_free_of_collisions()
+    {
+        // La table a déjà une vue « vue_toutes » : la clé proposée doit être suffixée.
+        _mediator.Setup(m => m.Send(It.IsAny<GetCustomEntitySchemaQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(Schema(views: new[] { ExistingView("vue_toutes") })));
+
+        CreateCustomRecordViewCommand? sent = null;
+        _mediator.Setup(m => m.Send(It.IsAny<CreateCustomRecordViewCommand>(), It.IsAny<CancellationToken>()))
+            .Callback((IRequest<Result<CustomRecordViewDto>> c, CancellationToken _) =>
+                sent = (CreateCustomRecordViewCommand)c)
+            .ReturnsAsync((CreateCustomRecordViewCommand c, CancellationToken _) => Result.Success(
+                new CustomRecordViewDto(Guid.NewGuid(), c.Request.Key, c.Request.DisplayName, c.Request.Mode,
+                    c.Request.Definition, c.Request.IsDefault, true, "AAAA", DateTime.UtcNow)));
+
+        var (success, error, _) = await Execute("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "set_view", "mode": "list", "displayName": "Toutes", "columns": [ "nom" ] } ] }
+        """, FlagsOn, _entities.Object);
+
+        Assert.True(success, error);
+        Assert.NotNull(sent);
+        Assert.Equal("contrats", sent!.EntityKey);
+        Assert.Equal("vue_toutes_2", sent.Request.Key);
+        Assert.Equal("Toutes", sent.Request.DisplayName);
+        Assert.Equal(CustomRecordViewMode.List, sent.Request.Mode);
+    }
+
+    [Fact]
+    public async Task Relation_to_an_unknown_target_is_skipped_with_a_warning()
+    {
+        _entities.Setup(r => r.GetByKeyAsync(TenantId, "inconnue", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CustomEntityDefinition?)null);
+
+        var steps = new List<StudioBuildStep>();
+        var progress = new Mock<IStudioBuildProgress>();
+        progress.Setup(p => p.Report(It.IsAny<StudioBuildStep>())).Callback((StudioBuildStep s) => steps.Add(s));
+
+        Assert.True(StudioAiAmendmentSpec.TryParse("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "add_relation", "kind": "many_to_one", "target": "inconnue" } ] }
+        """, out var spec, out var err), err);
+
+        var (success, error, _) = await new StudioAiAmendmentExecutor(
+                _mediator.Object, _currentUser.Object, FlagsOn, _entities.Object)
+            .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
+
+        Assert.False(success); // rien d'appliqué : la seule op a été sautée
+        Assert.Contains(steps, s => s.Phase == "adding_relation" && s.Status == "skipped");
+        Assert.Contains("inconnue", error);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomFieldCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Relation_to_a_junction_target_is_refused_with_a_warning()
+    {
+        _entities.Setup(r => r.GetByKeyAsync(TenantId, "contrats_clients", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TargetEntity("contrats_clients", CustomEntityKind.Junction));
+
+        var steps = new List<StudioBuildStep>();
+        var progress = new Mock<IStudioBuildProgress>();
+        progress.Setup(p => p.Report(It.IsAny<StudioBuildStep>())).Callback((StudioBuildStep s) => steps.Add(s));
+
+        Assert.True(StudioAiAmendmentSpec.TryParse("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "add_relation", "kind": "many_to_one", "target": "contrats_clients" } ] }
+        """, out var spec, out var err), err);
+
+        var (success, error, _) = await new StudioAiAmendmentExecutor(
+                _mediator.Object, _currentUser.Object, FlagsOn, _entities.Object)
+            .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
+
+        Assert.False(success);
+        Assert.Contains(steps, s => s.Phase == "adding_relation" && s.Status == "skipped");
+        Assert.Contains("jonction", error);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomFieldCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private async Task<(bool Success, string? Error, object? Payload)> Execute(
+        string json, OllamaSettings? settings = null, ICustomEntityRepository? entities = null)
     {
         Assert.True(StudioAiAmendmentSpec.TryParse(json, out var spec, out var err), err);
-        return await new StudioAiAmendmentExecutor(_mediator.Object, _currentUser.Object)
+        return await new StudioAiAmendmentExecutor(_mediator.Object, _currentUser.Object, settings, entities)
             .ExecuteAsync(spec!, null, CancellationToken.None);
     }
 
-    private static CustomEntitySchemaDto Schema() => new(
+    private static CustomEntityDefinition TargetEntity(
+        string key = "clients", CustomEntityKind kind = CustomEntityKind.Standard) =>
+        CustomEntityDefinition.Create(TenantId, key, "Client", "Clients", null, null, null, null, kind);
+
+    private static CustomRecordViewDto ExistingView(string key) => new(
+        Guid.NewGuid(), key, key, CustomRecordViewMode.List,
+        new RecordViewDefinition(new[] { new RecordViewColumn("nom") }, Array.Empty<RecordViewFilter>(),
+            Array.Empty<RecordViewSort>(), null, null),
+        false, true, "AAAA", DateTime.UtcNow);
+
+    private static CustomEntitySchemaDto Schema(IReadOnlyList<CustomRecordViewDto>? views = null) => new(
         new CustomEntityDto(EntityId, "contrats", "Contrat", "Contrats", null, null, true, 2, null,
             DateTime.UtcNow, DateTime.UtcNow),
         new[]
@@ -397,7 +630,8 @@ public sealed class StudioAiAmendmentExecutorTests
             Field("statut", "Statut", CustomFieldType.Select,
                 options: new[] { new SelectOptionDto("actif", "Actif") }, id: StatutFieldId, sortOrder: 1)
         },
-        new FormLayout());
+        new FormLayout(),
+        Views: views);
 
     private static CustomFieldDto Field(
         string key, string label, CustomFieldType type,
