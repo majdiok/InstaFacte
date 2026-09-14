@@ -5,6 +5,7 @@ using FactuTrust.Application.Features.Studio.Entities;
 using FactuTrust.Application.Features.Studio.Fields;
 using FactuTrust.Application.Features.Studio.Forms;
 using FactuTrust.Application.Features.Studio.Reports;
+using FactuTrust.Application.Features.Studio.Systems;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Services.Studio;
@@ -25,6 +26,7 @@ public sealed class StudioAiAmendmentExecutorTests
     private readonly Mock<ICurrentUser> _currentUser = new();
     private static readonly Guid EntityId = Guid.NewGuid();
     private static readonly Guid StatutFieldId = Guid.NewGuid();
+    private static readonly Guid NomFieldId = Guid.NewGuid();
 
     public StudioAiAmendmentExecutorTests()
     {
@@ -192,7 +194,7 @@ public sealed class StudioAiAmendmentExecutorTests
         Assert.True(StudioAiAmendmentSpec.TryParse("""
         { "target": { "entityKey": "contrats" }, "operations": [
           { "op": "add_field", "label": "Note", "type": "text" },
-          { "op": "reorder_fields", "fields": [ "note", "nom" ] } ] }
+          { "op": "set_automation", "trigger": "on_create", "action": "notify" } ] }
         """, out var spec, out var err), err);
 
         var (success, error, payload) = await new StudioAiAmendmentExecutor(_mediator.Object, _currentUser.Object)
@@ -201,7 +203,7 @@ public sealed class StudioAiAmendmentExecutorTests
         Assert.True(success, error); // l'ajout de champ est appliqué, l'op inconnue est signalée
         Assert.Contains(steps, s => s.Phase == "skipped_operation" && s.Status == "skipped");
         var warnings = payload!.GetType().GetProperty("warnings")!.GetValue(payload) as IEnumerable<string>;
-        Assert.Contains(warnings!, w => w.Contains("reorder_fields"));
+        Assert.Contains(warnings!, w => w.Contains("set_automation"));
     }
 
     [Fact]
@@ -218,7 +220,7 @@ public sealed class StudioAiAmendmentExecutorTests
     }
 
     [Fact]
-    public async Task Every_pr31b_operation_reports_a_skipped_step_instead_of_nothing()
+    public async Task Operations_not_yet_executable_report_a_skipped_step_instead_of_nothing()
     {
         var steps = new List<StudioBuildStep>();
         var progress = new Mock<IStudioBuildProgress>();
@@ -226,10 +228,7 @@ public sealed class StudioAiAmendmentExecutorTests
 
         Assert.True(StudioAiAmendmentSpec.TryParse("""
         { "target": { "entityKey": "contrats" }, "operations": [
-          { "op": "reorder_fields", "fields": [ "nom" ] },
-          { "op": "change_field_type", "key": "nom", "type": "multilinetext" },
           { "op": "add_relation", "kind": "many_to_one", "target": "clients" },
-          { "op": "assign_system", "system": "rh" },
           { "op": "set_view", "mode": "list", "displayName": "Toutes" },
           { "op": "set_automation", "trigger": "on_create" } ] }
         """, out var spec, out var err), err);
@@ -239,10 +238,147 @@ public sealed class StudioAiAmendmentExecutorTests
 
         Assert.False(success); // rien d'appliqué, mais chaque op a produit une étape « skipped »
         var skipped = steps.Where(s => s.Status == "skipped").ToList();
-        Assert.Equal(6, skipped.Count);
-        Assert.All(new[] { "reorder_fields", "change_field_type", "add_relation", "assign_system", "set_view", "set_automation" },
+        Assert.Equal(3, skipped.Count);
+        Assert.All(new[] { "add_relation", "set_view", "set_automation" },
             op => Assert.Contains(skipped, s => s.Label.Contains(op)));
         Assert.NotNull(error);
+    }
+
+    // ---- PR 3.1c : réorganisation, changement de type, rattachement à un système ----
+
+    [Fact]
+    public async Task Reorder_sends_the_complete_order_cited_fields_first_then_the_others()
+    {
+        ReorderCustomFieldsRequest? sent = null;
+        _mediator.Setup(m => m.Send(It.IsAny<ReorderCustomFieldsCommand>(), It.IsAny<CancellationToken>()))
+            .Callback((IRequest<Result> c, CancellationToken _) => sent = ((ReorderCustomFieldsCommand)c).Request)
+            .ReturnsAsync(Result.Success());
+
+        var steps = new List<StudioBuildStep>();
+        var progress = new Mock<IStudioBuildProgress>();
+        progress.Setup(p => p.Report(It.IsAny<StudioBuildStep>())).Callback((StudioBuildStep s) => steps.Add(s));
+
+        Assert.True(StudioAiAmendmentSpec.TryParse("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "reorder_fields", "fields": [ "Statut", "fantome" ] } ] }
+        """, out var spec, out var err), err);
+
+        var (success, error, payload) = await new StudioAiAmendmentExecutor(_mediator.Object, _currentUser.Object)
+            .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
+
+        Assert.True(success, error);
+        // « Statut » (résolu par libellé) passe en tête ; « nom », non cité, garde sa place ensuite.
+        Assert.Equal(new[] { StatutFieldId, NomFieldId }, sent!.OrderedFieldIds);
+        Assert.Contains(steps, s => s.Phase == "reordering_fields" && s.Status == "done");
+        Assert.Contains("fantome", System.Text.Json.JsonSerializer.Serialize(payload));
+    }
+
+    [Fact]
+    public async Task Reorder_with_no_known_field_sends_nothing()
+    {
+        var (success, _, _) = await Execute("""
+        { "target": { "entityKey": "contrats" }, "operations": [ { "op": "reorder_fields", "fields": [ "x", "y" ] } ] }
+        """);
+
+        Assert.False(success);
+        _mediator.Verify(m => m.Send(It.IsAny<ReorderCustomFieldsCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Change_field_type_targets_the_resolved_field_and_forwards_options()
+    {
+        ChangeCustomFieldTypeCommand? sent = null;
+        _mediator.Setup(m => m.Send(It.IsAny<ChangeCustomFieldTypeCommand>(), It.IsAny<CancellationToken>()))
+            .Callback((IRequest<Result<CustomFieldDto>> c, CancellationToken _) => sent = (ChangeCustomFieldTypeCommand)c)
+            .ReturnsAsync(Result.Success(Field("nom", "Nom", CustomFieldType.Select)));
+
+        var (success, error, _) = await Execute("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "change_field_type", "key": "nom", "type": "select", "options": [ "A", "B" ] } ] }
+        """);
+
+        Assert.True(success, error);
+        Assert.Equal(EntityId, sent!.EntityId);
+        Assert.Equal(NomFieldId, sent.FieldId);
+        Assert.Equal(CustomFieldType.Select, sent.Request.FieldType);
+        Assert.Equal(2, sent.Request.Options!.Count);
+        Assert.Null(sent.Request.Rules);
+    }
+
+    [Fact]
+    public async Task Change_field_type_refused_by_the_policy_is_reported_and_does_not_abort()
+    {
+        _mediator.Setup(m => m.Send(It.IsAny<ChangeCustomFieldTypeCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<CustomFieldDto>(Error.Validation("fieldType", "conversion interdite")));
+
+        var steps = new List<StudioBuildStep>();
+        var progress = new Mock<IStudioBuildProgress>();
+        progress.Setup(p => p.Report(It.IsAny<StudioBuildStep>())).Callback((StudioBuildStep s) => steps.Add(s));
+
+        Assert.True(StudioAiAmendmentSpec.TryParse("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "change_field_type", "key": "nom", "type": "number" },
+          { "op": "remove_field", "key": "statut" } ] }
+        """, out var spec, out var err), err);
+
+        var (success, error, payload) = await new StudioAiAmendmentExecutor(_mediator.Object, _currentUser.Object)
+            .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
+
+        Assert.True(success, error);
+        Assert.Contains(steps, s => s.Phase == "changing_field_type" && s.Status == "error");
+        Assert.Contains("conversion interdite", System.Text.Json.JsonSerializer.Serialize(payload));
+        _mediator.Verify(m => m.Send(It.IsAny<DeleteCustomFieldCommand>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Assign_system_resolves_the_key_then_assigns_the_entity()
+    {
+        var systemId = Guid.NewGuid();
+        _mediator.Setup(m => m.Send(It.Is<GetCustomSystemByKeyQuery>(q => q.Key == "rh"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new CustomSystemDetailDto(
+                new CustomSystemDto(systemId, "rh", "RH", null, null, null, true, 0, DateTime.UtcNow, DateTime.UtcNow),
+                Array.Empty<CustomEntityDto>())));
+        _mediator.Setup(m => m.Send(It.IsAny<AssignEntityToSystemCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(Schema().Entity));
+
+        var (success, error, _) = await Execute("""
+        { "target": { "entityKey": "contrats" }, "operations": [ { "op": "assign_system", "system": "rh" } ] }
+        """);
+
+        Assert.True(success, error);
+        _mediator.Verify(m => m.Send(It.Is<AssignEntityToSystemCommand>(c => c.EntityId == EntityId && c.SystemId == systemId),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Assign_system_none_detaches_without_looking_up_a_system()
+    {
+        _mediator.Setup(m => m.Send(It.IsAny<AssignEntityToSystemCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(Schema().Entity));
+
+        var (success, error, _) = await Execute("""
+        { "target": { "entityKey": "contrats" }, "operations": [ { "op": "assign_system", "system": "none" } ] }
+        """);
+
+        Assert.True(success, error);
+        _mediator.Verify(m => m.Send(It.IsAny<GetCustomSystemByKeyQuery>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mediator.Verify(m => m.Send(It.Is<AssignEntityToSystemCommand>(c => c.EntityId == EntityId && c.SystemId == null),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Assign_system_with_unknown_key_is_reported_and_assigns_nothing()
+    {
+        _mediator.Setup(m => m.Send(It.IsAny<GetCustomSystemByKeyQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<CustomSystemDetailDto>(new Error("CustomSystem.NotFound", "introuvable")));
+
+        var (success, error, _) = await Execute("""
+        { "target": { "entityKey": "contrats" }, "operations": [ { "op": "assign_system", "system": "inconnu" } ] }
+        """);
+
+        Assert.False(success);
+        Assert.Contains("inconnu", error);
+        _mediator.Verify(m => m.Send(It.IsAny<AssignEntityToSystemCommand>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private async Task<(bool Success, string? Error, object? Payload)> Execute(string json)
@@ -257,14 +393,14 @@ public sealed class StudioAiAmendmentExecutorTests
             DateTime.UtcNow, DateTime.UtcNow),
         new[]
         {
-            Field("nom", "Nom", CustomFieldType.Text),
+            Field("nom", "Nom", CustomFieldType.Text, id: NomFieldId, sortOrder: 0),
             Field("statut", "Statut", CustomFieldType.Select,
-                options: new[] { new SelectOptionDto("actif", "Actif") }, id: StatutFieldId)
+                options: new[] { new SelectOptionDto("actif", "Actif") }, id: StatutFieldId, sortOrder: 1)
         },
         new FormLayout());
 
     private static CustomFieldDto Field(
         string key, string label, CustomFieldType type,
-        IReadOnlyList<SelectOptionDto>? options = null, Guid? id = null) =>
-        new(id ?? Guid.NewGuid(), key, label, type, false, false, 0, null, options, null, true);
+        IReadOnlyList<SelectOptionDto>? options = null, Guid? id = null, int sortOrder = 0) =>
+        new(id ?? Guid.NewGuid(), key, label, type, false, false, sortOrder, null, options, null, true);
 }
