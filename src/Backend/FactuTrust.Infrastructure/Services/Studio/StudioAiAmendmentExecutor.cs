@@ -10,6 +10,7 @@ using FactuTrust.Application.Features.Studio.RecordViews;
 using FactuTrust.Application.Features.Studio.Relations;
 using FactuTrust.Application.Features.Studio.Reports;
 using FactuTrust.Application.Features.Studio.Systems;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 using MediatR;
 
@@ -163,38 +164,23 @@ public sealed class StudioAiAmendmentExecutor
         Action<string, string, string, string?> report, CancellationToken ct)
     {
         var label = add.Field.Label;
-        report("adding_field", $"Champ « {label} »", "running", null);
-
         var key = UniqueKey(add.Field.Key, usedKeys);
         var request = new CreateCustomFieldRequest(key, label, add.Field.FieldType,
             add.Field.Required, add.Field.Unique, null, add.Field.Options, null, add.Field.Config);
 
-        var result = await _mediator.Send(new CreateCustomFieldCommand(entityId, request), ct);
-        if (result.IsSuccess)
-        {
-            usedKeys.Add(key);
-            applied.Add($"Champ « {label} » ajouté.");
-            report("adding_field", $"Champ « {label} »", "done", null);
-        }
-        else
-        {
-            warnings.Add($"Champ « {label} » non ajouté : {result.Error.Description}");
-            report("adding_field", $"Champ « {label} »", "error", result.Error.Description);
-        }
+        await RunStepAsync("adding_field", $"Champ « {label} »",
+            () => _mediator.Send(new CreateCustomFieldCommand(entityId, request), ct),
+            applied, warnings, report,
+            $"Champ « {label} » ajouté.", $"Champ « {label} » non ajouté",
+            onSuccess: () => usedKeys.Add(key));
     }
 
     private async Task ApplyUpdateFieldAsync(
         UpdateFieldOp op, IReadOnlyList<CustomFieldDto> fields, List<string> applied, List<string> warnings,
         Action<string, string, string, string?> report, CancellationToken ct)
     {
-        var target = StudioAiAmendmentPlanner.ResolveField(op.FieldRef, fields);
-        if (target is null)
-        {
-            warnings.Add($"Champ « {op.FieldRef} » introuvable : modification ignorée.");
-            return;
-        }
-
-        report("updating_field", $"Champ « {target.Label} »", "running", null);
+        var target = ResolveOrWarn(op.FieldRef, fields, warnings, "modification ignorée");
+        if (target is null) return;
 
         // Les options ajoutées complètent la liste existante (jamais de remplacement destructif :
         // une valeur déjà saisie dans un enregistrement doit rester interprétable).
@@ -209,52 +195,30 @@ public sealed class StudioAiAmendmentExecutor
             IsActive: true,
             Config: null);
 
-        var result = await _mediator.Send(new UpdateCustomFieldCommand(target.Id, request), ct);
-        if (result.IsSuccess)
-        {
-            applied.Add($"Champ « {target.Label} » modifié.");
-            report("updating_field", $"Champ « {target.Label} »", "done", null);
-        }
-        else
-        {
-            warnings.Add($"Champ « {target.Label} » non modifié : {result.Error.Description}");
-            report("updating_field", $"Champ « {target.Label} »", "error", result.Error.Description);
-        }
+        await RunStepAsync("updating_field", $"Champ « {target.Label} »",
+            () => _mediator.Send(new UpdateCustomFieldCommand(target.Id, request), ct),
+            applied, warnings, report,
+            $"Champ « {target.Label} » modifié.", $"Champ « {target.Label} » non modifié");
     }
 
     private async Task ApplyRemoveFieldAsync(
         RemoveFieldOp op, IReadOnlyList<CustomFieldDto> fields, List<string> applied, List<string> warnings,
         Action<string, string, string, string?> report, CancellationToken ct)
     {
-        var target = StudioAiAmendmentPlanner.ResolveField(op.FieldRef, fields);
-        if (target is null)
-        {
-            warnings.Add($"Champ « {op.FieldRef} » introuvable : retrait ignoré.");
-            return;
-        }
-
-        report("removing_field", $"Champ « {target.Label} »", "running", null);
+        var target = ResolveOrWarn(op.FieldRef, fields, warnings, "retrait ignoré");
+        if (target is null) return;
 
         // La commande désactive le champ sans toucher aux données déjà saisies.
-        var result = await _mediator.Send(new DeleteCustomFieldCommand(target.Id), ct);
-        if (result.IsSuccess)
-        {
-            applied.Add($"Champ « {target.Label} » retiré (données conservées).");
-            report("removing_field", $"Champ « {target.Label} »", "done", null);
-        }
-        else
-        {
-            warnings.Add($"Champ « {target.Label} » non retiré : {result.Error.Description}");
-            report("removing_field", $"Champ « {target.Label} »", "error", result.Error.Description);
-        }
+        await RunStepAsync("removing_field", $"Champ « {target.Label} »",
+            () => _mediator.Send(new DeleteCustomFieldCommand(target.Id), ct),
+            applied, warnings, report,
+            $"Champ « {target.Label} » retiré (données conservées).", $"Champ « {target.Label} » non retiré");
     }
 
     private async Task ApplyUpdateEntityAsync(
         UpdateEntityOp op, CustomEntitySchemaDto schema, List<string> applied, List<string> warnings,
         Action<string, string, string, string?> report, CancellationToken ct)
     {
-        report("updating_entity", "Propriétés de la table", "running", null);
-
         var entity = schema.Entity;
         var request = new UpdateCustomEntityRequest(
             op.DisplayName?.Trim() is { Length: > 0 } name ? name : entity.DisplayName,
@@ -263,17 +227,10 @@ public sealed class StudioAiAmendmentExecutor
             op.Description?.Trim() is { Length: > 0 } desc ? desc : entity.Description,
             IsActive: true);
 
-        var result = await _mediator.Send(new UpdateCustomEntityCommand(entity.Id, request), ct);
-        if (result.IsSuccess)
-        {
-            applied.Add("Propriétés de la table mises à jour.");
-            report("updating_entity", "Propriétés de la table", "done", null);
-        }
-        else
-        {
-            warnings.Add($"Table non modifiée : {result.Error.Description}");
-            report("updating_entity", "Propriétés de la table", "error", result.Error.Description);
-        }
+        await RunStepAsync("updating_entity", "Propriétés de la table",
+            () => _mediator.Send(new UpdateCustomEntityCommand(entity.Id, request), ct),
+            applied, warnings, report,
+            "Propriétés de la table mises à jour.", "Table non modifiée");
     }
 
     private async Task ApplySetFormAsync(
@@ -296,18 +253,10 @@ public sealed class StudioAiAmendmentExecutor
             return;
         }
 
-        report("updating_form", "Formulaire", "running", null);
-        var result = await _mediator.Send(new UpsertDefaultFormCommand(entityId, new SaveFormLayoutRequest(layout, null)), ct);
-        if (result.IsSuccess)
-        {
-            applied.Add("Formulaire réorganisé.");
-            report("updating_form", "Formulaire", "done", null);
-        }
-        else
-        {
-            warnings.Add($"Formulaire non modifié : {result.Error.Description}");
-            report("updating_form", "Formulaire", "error", result.Error.Description);
-        }
+        await RunStepAsync("updating_form", "Formulaire",
+            () => _mediator.Send(new UpsertDefaultFormCommand(entityId, new SaveFormLayoutRequest(layout, null)), ct),
+            applied, warnings, report,
+            "Formulaire réorganisé.", "Formulaire non modifié");
     }
 
     private async Task ApplySetReportAsync(
@@ -328,20 +277,12 @@ public sealed class StudioAiAmendmentExecutor
         }
 
         var displayName = string.IsNullOrWhiteSpace(op.DisplayName) ? "Rapport" : op.DisplayName!.Trim();
-        report("updating_report", $"État « {displayName} »", "running", null);
 
-        var result = await _mediator.Send(new UpsertCustomReportCommand(null,
-            new SaveCustomReportRequest(null, displayName, CustomReportDataSourceKind.CustomEntity, entityKey, definition)), ct);
-        if (result.IsSuccess)
-        {
-            applied.Add($"État « {displayName} » créé.");
-            report("updating_report", $"État « {displayName} »", "done", null);
-        }
-        else
-        {
-            warnings.Add($"État « {displayName} » non créé : {result.Error.Description}");
-            report("updating_report", $"État « {displayName} »", "error", result.Error.Description);
-        }
+        await RunStepAsync("updating_report", $"État « {displayName} »",
+            () => _mediator.Send(new UpsertCustomReportCommand(null,
+                new SaveCustomReportRequest(null, displayName, CustomReportDataSourceKind.CustomEntity, entityKey, definition)), ct),
+            applied, warnings, report,
+            $"État « {displayName} » créé.", $"État « {displayName} » non créé");
     }
 
     // ---- PR 3.1c : réorganisation, changement de type, rattachement à un système ----
@@ -374,33 +315,18 @@ public sealed class StudioAiAmendmentExecutor
         foreach (var f in fields.OrderBy(f => f.SortOrder))
             if (!ordered.Contains(f.Id)) ordered.Add(f.Id);
 
-        report("reordering_fields", "Ordre des champs", "running", null);
-        var result = await _mediator.Send(new ReorderCustomFieldsCommand(entityId, new ReorderCustomFieldsRequest(ordered)), ct);
-        if (result.IsSuccess)
-        {
-            applied.Add("Champs réorganisés.");
-            report("reordering_fields", "Ordre des champs", "done", null);
-        }
-        else
-        {
-            warnings.Add($"Champs non réorganisés : {result.Error.Description}");
-            report("reordering_fields", "Ordre des champs", "error", result.Error.Description);
-        }
+        await RunStepAsync("reordering_fields", "Ordre des champs",
+            () => _mediator.Send(new ReorderCustomFieldsCommand(entityId, new ReorderCustomFieldsRequest(ordered)), ct),
+            applied, warnings, report,
+            "Champs réorganisés.", "Champs non réorganisés");
     }
 
     private async Task ApplyChangeFieldTypeAsync(
         ChangeFieldTypeOp op, Guid entityId, IReadOnlyList<CustomFieldDto> fields, List<string> applied, List<string> warnings,
         Action<string, string, string, string?> report, CancellationToken ct)
     {
-        var target = StudioAiAmendmentPlanner.ResolveField(op.FieldRef, fields);
-        if (target is null)
-        {
-            warnings.Add($"Champ « {op.FieldRef} » introuvable : changement de type ignoré.");
-            return;
-        }
-
-        var label = $"Type de « {target.Label} »";
-        report("changing_field_type", label, "running", null);
+        var target = ResolveOrWarn(op.FieldRef, fields, warnings, "changement de type ignoré");
+        if (target is null) return;
 
         // La politique Lossless / RequiresEmptyTable / Forbidden (matrice D4) est appliquée par le
         // handler, qui recompte les enregistrements au moment réel : un refus remonte ici comme une
@@ -412,17 +338,11 @@ public sealed class StudioAiAmendmentExecutor
             op.Relation,
             op.Config is null ? null : new Dictionary<string, System.Text.Json.Nodes.JsonNode?>(op.Config));
 
-        var result = await _mediator.Send(new ChangeCustomFieldTypeCommand(entityId, target.Id, request), ct);
-        if (result.IsSuccess)
-        {
-            applied.Add($"Champ « {target.Label} » converti en {StudioAiAmendmentPlanner.TypeLabel(op.FieldType)}.");
-            report("changing_field_type", label, "done", null);
-        }
-        else
-        {
-            warnings.Add($"Type de « {target.Label} » non modifié : {result.Error.Description}");
-            report("changing_field_type", label, "error", result.Error.Description);
-        }
+        await RunStepAsync("changing_field_type", $"Type de « {target.Label} »",
+            () => _mediator.Send(new ChangeCustomFieldTypeCommand(entityId, target.Id, request), ct),
+            applied, warnings, report,
+            $"Champ « {target.Label} » converti en {StudioAiAmendmentPlanner.TypeLabel(op.FieldType)}.",
+            $"Type de « {target.Label} » non modifié");
     }
 
     private async Task ApplyAssignSystemAsync(
@@ -445,19 +365,12 @@ public sealed class StudioAiAmendmentExecutor
             systemId = system.Value.System.Id;
         }
 
-        var result = await _mediator.Send(new AssignEntityToSystemCommand(entity.Id, systemId), ct);
-        if (result.IsSuccess)
-        {
-            applied.Add(op.SystemRef is null
+        ReportOutcome(await _mediator.Send(new AssignEntityToSystemCommand(entity.Id, systemId), ct),
+            "assigning_system", label, applied, warnings, report,
+            op.SystemRef is null
                 ? "Table détachée de son système."
-                : $"Table rattachée au système « {op.SystemRef} ».");
-            report("assigning_system", label, "done", null);
-        }
-        else
-        {
-            warnings.Add($"Rattachement au système non appliqué : {result.Error.Description}");
-            report("assigning_system", label, "error", result.Error.Description);
-        }
+                : $"Table rattachée au système « {op.SystemRef} ».",
+            "Rattachement au système non appliqué");
     }
 
     // ---- PR 3.1d : ajout de relation, vue enregistrée (automatisation : toujours ignorée) ----
@@ -503,42 +416,28 @@ public sealed class StudioAiAmendmentExecutor
 
         if (op.Kind == EntityRelationKinds.ManyToMany)
         {
-            report("adding_relation", label, "running", null);
-            var m2m = await _mediator.Send(new CreateManyToManyRelationCommand(schema.Entity.Id,
-                new CreateManyToManyRelationRequest(target.Id, op.Label, op.JunctionName, null)), ct);
-            if (m2m.IsSuccess)
-            {
-                applied.Add($"Relation plusieurs-à-plusieurs avec « {target.DisplayName} » créée.");
-                report("adding_relation", label, "done", null);
-            }
-            else
-            {
-                warnings.Add($"Relation vers « {op.TargetRef} » non créée : {m2m.Error.Description}");
-                report("adding_relation", label, "error", m2m.Error.Description);
-            }
+            await RunStepAsync("adding_relation", label,
+                () => _mediator.Send(new CreateManyToManyRelationCommand(schema.Entity.Id,
+                    new CreateManyToManyRelationRequest(target.Id, op.Label, op.JunctionName, null)), ct),
+                applied, warnings, report,
+                $"Relation plusieurs-à-plusieurs avec « {target.DisplayName} » créée.",
+                $"Relation vers « {op.TargetRef} » non créée");
             return;
         }
 
         // N-1 : un champ RelationCustom porté par la table modifiée — la MÊME commande que
         // l'ajout de champ du concepteur (validation, quotas, audit mutualisés).
-        report("adding_relation", label, "running", null);
         var fieldLabel = string.IsNullOrWhiteSpace(op.Label) ? target.DisplayName : op.Label!.Trim();
         var key = UniqueKey(StudioAiAppSpec.SlugKey(fieldLabel), usedKeys);
         var request = new CreateCustomFieldRequest(key, fieldLabel, CustomFieldType.RelationCustom,
             false, false, null, null, new RelationRefDto("custom", target.Key), null);
 
-        var result = await _mediator.Send(new CreateCustomFieldCommand(schema.Entity.Id, request), ct);
-        if (result.IsSuccess)
-        {
-            usedKeys.Add(key);
-            applied.Add($"Relation plusieurs-à-un vers « {target.DisplayName} » ajoutée (champ « {fieldLabel} »).");
-            report("adding_relation", label, "done", null);
-        }
-        else
-        {
-            warnings.Add($"Relation vers « {op.TargetRef} » non ajoutée : {result.Error.Description}");
-            report("adding_relation", label, "error", result.Error.Description);
-        }
+        await RunStepAsync("adding_relation", label,
+            () => _mediator.Send(new CreateCustomFieldCommand(schema.Entity.Id, request), ct),
+            applied, warnings, report,
+            $"Relation plusieurs-à-un vers « {target.DisplayName} » ajoutée (champ « {fieldLabel} »).",
+            $"Relation vers « {op.TargetRef} » non ajoutée",
+            onSuccess: () => usedKeys.Add(key));
     }
 
     private async Task ApplySetViewAsync(
@@ -573,19 +472,55 @@ public sealed class StudioAiAmendmentExecutor
         var key = StudioAiRecordViewSpec.SlugKey(
             spec.DisplayName, schema.Views.Select(v => v.Key).ToHashSet(StringComparer.Ordinal));
 
-        report("creating_record_view", label, "running", null);
-        var result = await _mediator.Send(new CreateCustomRecordViewCommand(schema.Entity.Key,
-            new SaveCustomRecordViewRequest(key, spec.DisplayName, mode, definition, spec.IsDefault)), ct);
+        await RunStepAsync("creating_record_view", label,
+            () => _mediator.Send(new CreateCustomRecordViewCommand(schema.Entity.Key,
+                new SaveCustomRecordViewRequest(key, spec.DisplayName, mode, definition, spec.IsDefault)), ct),
+            applied, warnings, report,
+            $"Vue « {spec.DisplayName} » créée.", $"Vue « {spec.DisplayName} » non créée");
+    }
+
+    // ---- Ossature partagée des étapes ----
+
+    /// <summary>
+    /// Exécute une étape « running → done/error » : succès ⇒ <paramref name="onSuccess"/> puis message
+    /// dans <paramref name="applied"/> ; échec ⇒ avertissement « {failurePrefix} : … » et étape
+    /// « error » — sans interrompre les opérations suivantes.
+    /// </summary>
+    private static async Task RunStepAsync<T>(
+        string phase, string label, Func<Task<T>> send,
+        List<string> applied, List<string> warnings, Action<string, string, string, string?> report,
+        string appliedMessage, string failurePrefix, Action? onSuccess = null) where T : Result
+    {
+        report(phase, label, "running", null);
+        ReportOutcome(await send(), phase, label, applied, warnings, report, appliedMessage, failurePrefix, onSuccess);
+    }
+
+    /// <summary>Conclusion d'une étape déjà annoncée (ex. après une résolution préalable).</summary>
+    private static void ReportOutcome(
+        Result result, string phase, string label,
+        List<string> applied, List<string> warnings, Action<string, string, string, string?> report,
+        string appliedMessage, string failurePrefix, Action? onSuccess = null)
+    {
         if (result.IsSuccess)
         {
-            applied.Add($"Vue « {spec.DisplayName} » créée.");
-            report("creating_record_view", label, "done", null);
+            onSuccess?.Invoke();
+            applied.Add(appliedMessage);
+            report(phase, label, "done", null);
         }
         else
         {
-            warnings.Add($"Vue « {spec.DisplayName} » non créée : {result.Error.Description}");
-            report("creating_record_view", label, "error", result.Error.Description);
+            warnings.Add($"{failurePrefix} : {result.Error.Description}");
+            report(phase, label, "error", result.Error.Description);
         }
+    }
+
+    /// <summary>Résout une référence brute de champ ; introuvable ⇒ avertissement « … : {action}. » et null.</summary>
+    private static CustomFieldDto? ResolveOrWarn(
+        string fieldRef, IReadOnlyList<CustomFieldDto> fields, List<string> warnings, string action)
+    {
+        var target = StudioAiAmendmentPlanner.ResolveField(fieldRef, fields);
+        if (target is null) warnings.Add($"Champ « {fieldRef} » introuvable : {action}.");
+        return target;
     }
 
     private static IReadOnlyList<SelectOptionDto>? MergeOptions(
