@@ -129,6 +129,27 @@ public sealed class StudioAiPlanExecutorTests
         Assert.Contains("non pris en charge", error);
     }
 
+    // ---- PR 3.1c : aiguillage d'un plan Amendment vers StudioAiAmendmentExecutor ----
+
+    [Fact]
+    public async Task Amendment_plan_is_routed_to_the_amendment_executor()
+    {
+        SetupInterventionsSchema();
+        _mediator.Setup(m => m.Send(It.IsAny<ReorderCustomFieldsCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var executor = new StudioAiPlanExecutor(_mediator.Object, _currentUser.Object);
+        var plan = StudioAiBuildPlan.Create(TenantId, StudioAiPlanKind.Amendment, """
+            { "target": { "entityKey": "interventions" }, "operations": [ { "op": "reorder_fields", "fields": [ "Statut" ] } ] }
+            """, "{}", UserId, StudioAiPlanDefaults.Lifetime);
+
+        var (success, error, _) = await executor.ExecuteAsync(plan, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        _mediator.Verify(m => m.Send(It.Is<ReorderCustomFieldsCommand>(c => c.Request.OrderedFieldIds.Count == 2),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     private static StudioAiBuildPlan Plan(string specJson) =>
         StudioAiBuildPlan.Create(TenantId, StudioAiPlanKind.RecordView, specJson, "{}", UserId,
             StudioAiPlanDefaults.Lifetime);

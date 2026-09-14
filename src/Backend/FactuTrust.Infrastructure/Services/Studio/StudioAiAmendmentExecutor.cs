@@ -1,10 +1,13 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Entities;
 using FactuTrust.Application.Features.Studio.Fields;
 using FactuTrust.Application.Features.Studio.Forms;
 using FactuTrust.Application.Features.Studio.Reports;
+using FactuTrust.Application.Features.Studio.Systems;
 using FactuTrust.Domain.Enums;
 using MediatR;
 
@@ -25,11 +28,28 @@ public sealed class StudioAiAmendmentExecutor
 {
     private readonly IMediator _mediator;
     private readonly ICurrentUser _currentUser;
+    private readonly OllamaSettings? _settings;
+    private readonly ICustomEntityRepository? _entities;
 
-    public StudioAiAmendmentExecutor(IMediator mediator, ICurrentUser currentUser)
+    /// <param name="settings">
+    /// Drapeaux Studio (<see cref="OllamaSettings.EnableStudioManyToMany"/>,
+    /// <see cref="OllamaSettings.EnableStudioRecordViews"/>) lus par les opérations gardées (3.1d).
+    /// <see langword="null"/> ⇒ drapeaux considérés coupés (fail-closed).
+    /// </param>
+    /// <param name="entities">
+    /// Dépôt des tables, utilisé pour résoudre la cible d'une relation (3.1d). <see langword="null"/> ⇒
+    /// l'ajout de relation est rapporté « skipped ».
+    /// </param>
+    public StudioAiAmendmentExecutor(
+        IMediator mediator,
+        ICurrentUser currentUser,
+        OllamaSettings? settings = null,
+        ICustomEntityRepository? entities = null)
     {
         _mediator = mediator;
         _currentUser = currentUser;
+        _settings = settings;
+        _entities = entities;
     }
 
     public async Task<(bool Success, string? Error, object? Payload)> ExecuteAsync(
@@ -77,12 +97,21 @@ public sealed class StudioAiAmendmentExecutor
                 case SetReportOp report:
                     await ApplySetReportAsync(report, schema.Entity.Key, fields, applied, warnings, Report, ct);
                     break;
+                case ReorderFieldsOp reorder:
+                    await ApplyReorderFieldsAsync(reorder, entityId, fields, applied, warnings, Report, ct);
+                    break;
+                case ChangeFieldTypeOp changeType:
+                    await ApplyChangeFieldTypeAsync(changeType, entityId, fields, applied, warnings, Report, ct);
+                    break;
+                case AssignSystemOp assign:
+                    await ApplyAssignSystemAsync(assign, schema.Entity, applied, warnings, Report, ct);
+                    break;
                 default:
                 {
-                    // Ops connues de la spec depuis la PR 3.1b (reorder_fields, change_field_type,
-                    // add_relation, assign_system, set_view, set_automation) mais pas encore
-                    // exécutables : JAMAIS silencieux — étape « skipped » + avertissement, et le
-                    // plan échoue en « Aucune modification applicable » si rien d'autre n'est appliqué.
+                    // Ops connues de la spec depuis la PR 3.1b (add_relation, set_view, set_automation)
+                    // mais pas encore exécutables (tranche 3.1d) : JAMAIS silencieux — étape « skipped »
+                    // + avertissement, et le plan échoue en « Aucune modification applicable » si rien
+                    // d'autre n'est appliqué.
                     warnings.Add($"Opération « {op.Op} » non encore exécutable par l'assistant : ignorée.");
                     Report("skipped_operation", $"Opération « {op.Op} »", "skipped",
                         "Cette opération n'est pas encore exécutable par l'assistant.");
@@ -298,6 +327,122 @@ public sealed class StudioAiAmendmentExecutor
         {
             warnings.Add($"État « {displayName} » non créé : {result.Error.Description}");
             report("updating_report", $"État « {displayName} »", "error", result.Error.Description);
+        }
+    }
+
+    // ---- PR 3.1c : réorganisation, changement de type, rattachement à un système ----
+
+    private async Task ApplyReorderFieldsAsync(
+        ReorderFieldsOp op, Guid entityId, IReadOnlyList<CustomFieldDto> fields, List<string> applied, List<string> warnings,
+        Action<string, string, string, string?> report, CancellationToken ct)
+    {
+        // Même règle que l'aperçu (StudioAiAmendmentPlanner) : les champs cités d'abord, dans l'ordre
+        // demandé, puis les champs non cités dans leur ordre actuel ; une référence introuvable est
+        // retirée avec un avertissement. La commande exige la liste COMPLÈTE des ids actifs.
+        var ordered = new List<Guid>();
+        foreach (var raw in op.FieldRefs)
+        {
+            var target = StudioAiAmendmentPlanner.ResolveField(raw, fields);
+            if (target is null)
+            {
+                warnings.Add($"Champ « {raw} » introuvable : retiré de la réorganisation.");
+                continue;
+            }
+            if (!ordered.Contains(target.Id)) ordered.Add(target.Id);
+        }
+
+        if (ordered.Count == 0)
+        {
+            warnings.Add("Réorganisation des champs ignorée : aucun champ reconnu.");
+            return;
+        }
+
+        foreach (var f in fields.OrderBy(f => f.SortOrder))
+            if (!ordered.Contains(f.Id)) ordered.Add(f.Id);
+
+        report("reordering_fields", "Ordre des champs", "running", null);
+        var result = await _mediator.Send(new ReorderCustomFieldsCommand(entityId, new ReorderCustomFieldsRequest(ordered)), ct);
+        if (result.IsSuccess)
+        {
+            applied.Add("Champs réorganisés.");
+            report("reordering_fields", "Ordre des champs", "done", null);
+        }
+        else
+        {
+            warnings.Add($"Champs non réorganisés : {result.Error.Description}");
+            report("reordering_fields", "Ordre des champs", "error", result.Error.Description);
+        }
+    }
+
+    private async Task ApplyChangeFieldTypeAsync(
+        ChangeFieldTypeOp op, Guid entityId, IReadOnlyList<CustomFieldDto> fields, List<string> applied, List<string> warnings,
+        Action<string, string, string, string?> report, CancellationToken ct)
+    {
+        var target = StudioAiAmendmentPlanner.ResolveField(op.FieldRef, fields);
+        if (target is null)
+        {
+            warnings.Add($"Champ « {op.FieldRef} » introuvable : changement de type ignoré.");
+            return;
+        }
+
+        var label = $"Type de « {target.Label} »";
+        report("changing_field_type", label, "running", null);
+
+        // La politique Lossless / RequiresEmptyTable / Forbidden (matrice D4) est appliquée par le
+        // handler, qui recompte les enregistrements au moment réel : un refus remonte ici comme une
+        // étape « error » sans interrompre les opérations suivantes.
+        var request = new ChangeCustomFieldTypeRequest(
+            op.FieldType,
+            op.Options,
+            Rules: null,
+            op.Relation,
+            op.Config is null ? null : new Dictionary<string, System.Text.Json.Nodes.JsonNode?>(op.Config));
+
+        var result = await _mediator.Send(new ChangeCustomFieldTypeCommand(entityId, target.Id, request), ct);
+        if (result.IsSuccess)
+        {
+            applied.Add($"Champ « {target.Label} » converti en {op.FieldType}.");
+            report("changing_field_type", label, "done", null);
+        }
+        else
+        {
+            warnings.Add($"Type de « {target.Label} » non modifié : {result.Error.Description}");
+            report("changing_field_type", label, "error", result.Error.Description);
+        }
+    }
+
+    private async Task ApplyAssignSystemAsync(
+        AssignSystemOp op, CustomEntityDto entity, List<string> applied, List<string> warnings,
+        Action<string, string, string, string?> report, CancellationToken ct)
+    {
+        var label = op.SystemRef is null ? "Détachement du système" : $"Système « {op.SystemRef} »";
+        report("assigning_system", label, "running", null);
+
+        Guid? systemId = null;
+        if (op.SystemRef is not null)
+        {
+            var system = await _mediator.Send(new GetCustomSystemByKeyQuery(op.SystemRef), ct);
+            if (!system.IsSuccess)
+            {
+                warnings.Add($"Système « {op.SystemRef} » introuvable : rattachement ignoré.");
+                report("assigning_system", label, "error", system.Error.Description);
+                return;
+            }
+            systemId = system.Value.System.Id;
+        }
+
+        var result = await _mediator.Send(new AssignEntityToSystemCommand(entity.Id, systemId), ct);
+        if (result.IsSuccess)
+        {
+            applied.Add(op.SystemRef is null
+                ? "Table détachée de son système."
+                : $"Table rattachée au système « {op.SystemRef} ».");
+            report("assigning_system", label, "done", null);
+        }
+        else
+        {
+            warnings.Add($"Rattachement au système non appliqué : {result.Error.Description}");
+            report("assigning_system", label, "error", result.Error.Description);
         }
     }
 
