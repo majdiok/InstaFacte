@@ -335,9 +335,15 @@ public static class StudioAiAmendmentSpec
                 // Clé normalisée comme les autres références de table (vue, cible du plan) ; le
                 // libellé brut resterait introuvable si le modèle l'a écrit avec des majuscules.
                 var targetSlug = StudioAiAppSpec.SlugKey(targetRef);
+                var junctionRaw = Str(obj["junctionName"]) ?? Str(obj["junctionKey"]);
+                // La clé de jonction est normalisée comme les autres références (slug), sinon une
+                // valeur brute avec majuscules/espaces deviendrait une erreur d'exécution que
+                // l'aperçu n'annonçait pas.
+                var junctionSlug = junctionRaw is null ? null : StudioAiAppSpec.SlugKey(junctionRaw);
                 return new AddRelationOp(kind,
                     string.IsNullOrEmpty(targetSlug) ? targetRef.Trim() : targetSlug,
-                    Str(obj["label"]), Str(obj["junctionName"]) ?? Str(obj["junctionKey"]));
+                    Str(obj["label"]),
+                    string.IsNullOrEmpty(junctionSlug) ? junctionRaw?.Trim() : junctionSlug);
             }
             case "assign_system":
             case "assigner_systeme":

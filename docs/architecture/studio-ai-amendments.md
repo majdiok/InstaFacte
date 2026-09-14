@@ -170,7 +170,17 @@ Garde-fous transverses :
   `ICustomEntityRepository` (paramètres optionnels en queue — les constructions à deux arguments
   existantes continuent de compiler ; la DI les résout automatiquement).
 - **Défaut bruyant** : toute op inconnue du sélecteur lève `InvalidOperationException` au lieu
-  d'être ignorée silencieusement (couvert par `StudioSilentFailureGuardsTests`).
+  d'être ignorée silencieusement (couvert par `StudioSilentFailureGuardsTests`) ; le handler de
+  confirmation rattrape toute exception échappant à l'exécuteur pour marquer le plan `Failed` au
+  lieu de le figer en `Executing` (inannulable, inconfirmable) — l'erreur est ensuite relancée.
+- **Fenêtre aperçu → confirmation** : les drapeaux sont relus à l'exécution ; si un drapeau est
+  *réactivé* entre l'aperçu (qui avait écarté l'op avec avertissement) et la confirmation, l'op
+  s'applique. Fenêtre étroite (changement de configuration entre deux clics), assumée : la source de
+  vérité est l'état au moment de l'application.
+- **Permission de conception des vues** : `set_view` revérifie `studio:design_forms` à l'exécution —
+  un plan Amendment n'exige que `studio:design_entities` (même règle que `set_form` et `set_report`,
+  qui revérifient leurs droits propres) ; la vue est sinon ignorée avec avertissement, sans étape
+  annoncée.
 - **Un échec n'interrompt pas les ops suivantes** : une étape `error` est consignée et l'exécution
   se poursuit ; le plan se termine par `completed` (« Modifications appliquées »), ou par `failed`
   (« Aucune modification appliquée ») si rien n'a abouti.

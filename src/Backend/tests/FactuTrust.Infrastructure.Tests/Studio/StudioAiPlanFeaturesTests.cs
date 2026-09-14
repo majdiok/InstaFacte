@@ -126,6 +126,22 @@ public sealed class StudioAiPlanFeaturesTests
     }
 
     [Fact]
+    public async Task An_exception_escaping_the_executor_marks_the_plan_failed_instead_of_wedging_it_executing()
+    {
+        var plan = PendingPlan();
+        SetupGet(plan);
+        _executor.Setup(e => e.ExecuteAsync(plan, It.IsAny<IStudioBuildProgress?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("op inconnue"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ConfirmHandler().Handle(new ConfirmStudioAiPlanCommand(plan.Id), CancellationToken.None));
+
+        // Le plan est marqué Failed (et donc ni annulable à tort ni figé) malgré l'exception.
+        Assert.Equal(StudioAiPlanStatus.Failed, plan.Status);
+        _plans.Verify(p => p.TryUpdateAsync(plan, It.IsAny<CancellationToken>(), It.IsAny<byte[]?>()), Times.Exactly(2));
+    }
+
+    [Fact]
     public async Task Failed_execution_marks_the_plan_failed_and_surfaces_the_real_error()
     {
         var plan = PendingPlan();

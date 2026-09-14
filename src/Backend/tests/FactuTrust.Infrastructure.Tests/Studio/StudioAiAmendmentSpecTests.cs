@@ -283,7 +283,8 @@ public sealed class StudioAiAmendmentSpecTests
         var many = Assert.IsType<AddRelationOp>(spec.Operations[1]);
         Assert.Equal("many_to_many", many.Kind);
         Assert.Equal("competences", many.TargetRef);
-        Assert.Equal("Affectations", many.JunctionName);
+        // Clé de jonction normalisée en slug au parsing, comme la cible (alignement aperçu/exécution).
+        Assert.Equal("affectations", many.JunctionName);
     }
 
     [Fact]

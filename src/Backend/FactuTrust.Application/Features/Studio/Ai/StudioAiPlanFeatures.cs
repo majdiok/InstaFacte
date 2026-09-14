@@ -210,7 +210,19 @@ public sealed class ConfirmStudioAiPlanCommandHandler
         if (!await _plans.TryUpdateAsync(plan, cancellationToken))
             return Result.Failure<StudioAiPlanDto>(Error.Conflict("Ce plan est déjà en cours d'exécution."));
 
-        var (success, error, payload) = await _executor.ExecuteAsync(plan, command.Progress, cancellationToken);
+        // Une exception qui s'échappe de l'exécuteur (défaut bruyant, erreur d'infrastructure) ne
+        // doit pas laisser le plan figé en Executing — il deviendrait inannulable et inconfirmable.
+        bool success; string? error; object? payload;
+        try
+        {
+            (success, error, payload) = await _executor.ExecuteAsync(plan, command.Progress, cancellationToken);
+        }
+        catch (Exception)
+        {
+            plan.MarkFailed("Échec inattendu de l'exécution du plan.");
+            await _plans.TryUpdateAsync(plan, cancellationToken);
+            throw;
+        }
         if (success)
             plan.MarkCompleted(payload is null ? null : System.Text.Json.JsonSerializer.Serialize(payload));
         else

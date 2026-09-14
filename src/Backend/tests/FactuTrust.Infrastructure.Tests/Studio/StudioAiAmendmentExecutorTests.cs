@@ -603,6 +603,84 @@ public sealed class StudioAiAmendmentExecutorTests
         _mediator.Verify(m => m.Send(It.IsAny<CreateCustomFieldCommand>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    // ---- Revue 3.1 : garde design_forms sur set_view, échec du handler, dépôt absent ----
+
+    [Fact]
+    public async Task Set_view_without_the_design_forms_permission_is_ignored_without_a_step()
+    {
+        _currentUser.Setup(x => x.HasPermission(Permissions.Studio.DesignForms)).Returns(false);
+
+        var steps = new List<StudioBuildStep>();
+        var progress = new Mock<IStudioBuildProgress>();
+        progress.Setup(p => p.Report(It.IsAny<StudioBuildStep>())).Callback((StudioBuildStep st) => steps.Add(st));
+
+        Assert.True(StudioAiAmendmentSpec.TryParse("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "set_view", "mode": "list", "displayName": "Toutes" } ] }
+        """, out var spec, out var err), err);
+
+        var (success, error, _) = await new StudioAiAmendmentExecutor(
+                _mediator.Object, _currentUser.Object, FlagsOn, _entities.Object)
+            .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
+
+        Assert.False(success);
+        Assert.Contains("permission de conception des formulaires absente", error);
+        // Aucune étape annoncée (même règle que set_form) et aucun envoi au-delà de la lecture du schéma.
+        Assert.DoesNotContain(steps, st => st.Phase == "creating_record_view");
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomRecordViewCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Single(_mediator.Invocations);
+    }
+
+    [Fact]
+    public async Task Set_view_refused_by_the_handler_is_reported_and_does_not_abort_the_following_ops()
+    {
+        _mediator.Setup(m => m.Send(It.IsAny<CreateCustomRecordViewCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<CustomRecordViewDto>(Error.Conflict("Cette clé de vue est déjà utilisée.")));
+        _mediator.Setup(m => m.Send(It.IsAny<ReorderCustomFieldsCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var steps = new List<StudioBuildStep>();
+        var progress = new Mock<IStudioBuildProgress>();
+        progress.Setup(p => p.Report(It.IsAny<StudioBuildStep>())).Callback((StudioBuildStep st) => steps.Add(st));
+
+        Assert.True(StudioAiAmendmentSpec.TryParse("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "set_view", "mode": "list", "displayName": "Toutes", "columns": [ "nom" ] },
+          { "op": "reorder_fields", "fields": [ "statut", "nom" ] } ] }
+        """, out var spec, out var err), err);
+
+        var (success, error, _) = await new StudioAiAmendmentExecutor(
+                _mediator.Object, _currentUser.Object, FlagsOn, _entities.Object)
+            .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
+
+        Assert.True(success, error); // l'op suivante a abouti malgré le refus de la vue
+        Assert.Contains(steps, st => st.Phase == "creating_record_view" && st.Status == "error");
+        Assert.Contains(steps, st => st.Phase == "reordering_fields" && st.Status == "done");
+        Assert.Contains(steps, st => st.Phase == "completed" && st.Status == "done");
+    }
+
+    [Fact]
+    public async Task Relation_without_an_entity_repository_is_skipped_fail_closed()
+    {
+        var steps = new List<StudioBuildStep>();
+        var progress = new Mock<IStudioBuildProgress>();
+        progress.Setup(p => p.Report(It.IsAny<StudioBuildStep>())).Callback((StudioBuildStep st) => steps.Add(st));
+
+        Assert.True(StudioAiAmendmentSpec.TryParse("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "add_relation", "kind": "many_to_one", "target": "clients" } ] }
+        """, out var spec, out var err), err);
+
+        // Dépôt absent (câblage dégradé) : la relation est sautée plutôt que d'échouer ou d'envoyer.
+        var (success, error, _) = await new StudioAiAmendmentExecutor(
+                _mediator.Object, _currentUser.Object, FlagsOn, entities: null)
+            .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
+
+        Assert.False(success);
+        Assert.Contains(steps, st => st.Phase == "adding_relation" && st.Status == "skipped");
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomFieldCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private async Task<(bool Success, string? Error, object? Payload)> Execute(
         string json, OllamaSettings? settings = null, ICustomEntityRepository? entities = null)
     {

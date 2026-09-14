@@ -415,7 +415,7 @@ public sealed class StudioAiAmendmentExecutor
         var result = await _mediator.Send(new ChangeCustomFieldTypeCommand(entityId, target.Id, request), ct);
         if (result.IsSuccess)
         {
-            applied.Add($"Champ « {target.Label} » converti en {op.FieldType}.");
+            applied.Add($"Champ « {target.Label} » converti en {StudioAiAmendmentPlanner.TypeLabel(op.FieldType)}.");
             report("changing_field_type", label, "done", null);
         }
         else
@@ -547,6 +547,15 @@ public sealed class StudioAiAmendmentExecutor
     {
         var spec = op.View;
         var label = $"Vue « {spec.DisplayName} »";
+
+        // Un plan Amendment n'exige que `design_entities` : la création d'une vue relève de
+        // `design_forms` (policy StudioRecordViewsController / plan RecordView). Même règle que
+        // `set_form` : on évite d'annoncer une étape qui sera refusée.
+        if (!_currentUser.HasPermission(Permissions.Studio.DesignForms))
+        {
+            warnings.Add($"Vue « {spec.DisplayName} » ignorée : permission de conception des formulaires absente.");
+            return;
+        }
 
         // Drapeau coupé (ou settings absents) ⇒ « skipped » SANS envoi (fail-closed).
         if (_settings?.EnableStudioRecordViews != true)
