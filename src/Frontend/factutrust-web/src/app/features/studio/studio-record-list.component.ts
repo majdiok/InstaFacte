@@ -1,7 +1,9 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { map } from 'rxjs';
 import { TableLazyLoadEvent } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
@@ -14,19 +16,24 @@ import { PERMISSIONS } from '@core/config/permission-keys';
 import { DynamicTableComponent, DynamicRow } from '@shared/studio-runtime/dynamic-table.component';
 import { exportRowsCsv, exportRowsXlsx } from '@shared/studio-runtime/studio-export.util';
 import { StudioService } from './studio.service';
-import { CustomEntity, CustomField, CustomRecord } from './studio.models';
+import { CustomEntity, CustomEntitySchema, CustomField, CustomRecord } from './studio.models';
 import { StudioPageShellComponent } from './shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
 import { BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-table.component';
+import { StudioAiCapabilitiesService } from './ai/studio-ai-capabilities.service';
+import { StudioViewSwitcherComponent } from './views/studio-view-switcher.component';
+import { StudioRecordViewRunnerComponent } from './views/studio-record-view-runner.component';
+import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
 
 @Component({
   selector: 'app-studio-record-list',
   standalone: true,
   imports: [
     CommonModule, FormsModule, RouterModule, ButtonModule, InputTextModule, ToastModule, MenuModule,
-    DynamicTableComponent, StudioPageShellComponent, ButtonComponent, SkeletonTableComponent
+    DynamicTableComponent, StudioPageShellComponent, ButtonComponent, SkeletonTableComponent,
+    StudioViewSwitcherComponent, StudioRecordViewRunnerComponent
   ],
   template: `
     <p-toast></p-toast>
@@ -36,6 +43,11 @@ import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-tab
         [subtitle]="total() + ' enregistrement(s)'"
         [breadcrumbs]="breadcrumbs()">
         <div studioActions class="studio-head-actions">
+          @if (showViewButton()) {
+            <app-button variant="outline" icon="pi-sliders-h" (click)="onNewOrEditView()">
+              {{ activeView() ? labels.views.editView : labels.views.newView }}
+            </app-button>
+          }
           @if (canDesign()) {
             <app-button variant="outline" icon="pi-wrench" routerLink="/studio/{{ e.id }}">Concevoir</app-button>
           }
@@ -58,21 +70,35 @@ import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-tab
           </div>
         </div>
 
+        @if (showSwitcher()) {
+          <app-studio-view-switcher [views]="views()" [activeId]="activeViewId()" (activeIdChange)="onSwitchView($event)" />
+        }
+
         @if (schemaLoading()) {
           <app-skeleton-table [columns]="skeletonCols" [rows]="5" />
         } @else {
-          <app-dynamic-table
-            [entityKey]="entityKey"
-            [allFields]="allFields()"
-            [columns]="allFields()"
-            [value]="records()"
-            [total]="total()"
-            [pageSize]="pageSize"
-            [loading]="loading()"
-            [showActions]="canWrite()"
-            (lazyLoad)="onLazy($event)"
-            (editRow)="edit($event)"
-            (deleteRow)="remove($event)" />
+          @if (activeView(); as v) {
+            <app-studio-record-view-runner
+              [entityKey]="entityKey"
+              [view]="v"
+              [allFields]="allFields()"
+              [showActions]="canWrite()"
+              (editRow)="edit($event)"
+              (deleteRow)="remove($event)" />
+          } @else {
+            <app-dynamic-table
+              [entityKey]="entityKey"
+              [allFields]="allFields()"
+              [columns]="allFields()"
+              [value]="records()"
+              [total]="total()"
+              [pageSize]="pageSize"
+              [loading]="loading()"
+              [showActions]="canWrite()"
+              (lazyLoad)="onLazy($event)"
+              (editRow)="edit($event)"
+              (deleteRow)="remove($event)" />
+          }
         }
       </app-studio-page-shell>
     }
@@ -89,8 +115,12 @@ export class StudioRecordListComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
+  private readonly capabilities = inject(StudioAiCapabilitiesService);
+
+  protected readonly labels = STUDIO_RUNTIME_LABELS;
 
   readonly entity = signal<CustomEntity | null>(null);
+  readonly schema = signal<CustomEntitySchema | null>(null);
   readonly allFields = signal<CustomField[]>([]);
   readonly records = signal<CustomRecord[]>([]);
   readonly total = signal(0);
@@ -113,16 +143,33 @@ export class StudioRecordListComponent implements OnInit {
   pageSize = 25;
   private fetched = false;
 
+  // `?view=` lu de façon réactive (queryParamMap) : la navigation via le switcher ne recrée pas le
+  // composant (V14/E14), un `route.snapshot` figé au premier chargement ne verrait jamais le changement.
+  private readonly activeViewIdParam = toSignal(
+    this.route.queryParamMap.pipe(map(params => params.get('view'))),
+    { initialValue: null }
+  );
+  readonly activeViewId = computed(() => this.activeViewIdParam());
+
+  readonly views = computed(() => this.schema()?.views ?? []);
+  readonly activeView = computed(() => this.views().find(v => v.id === this.activeViewId()) ?? null);
+  readonly recordViewsEnabled = computed(() => this.capabilities.capabilities().recordViewsEnabled === true);
+  readonly showSwitcher = computed(() => this.recordViewsEnabled() && this.views().length > 0);
+  readonly showViewButton = computed(() => this.recordViewsEnabled() && this.canDesignForms());
+
   canWrite = () => this.auth.hasPermission(PERMISSIONS.customData.recordsWrite);
   canDesign = () => this.auth.hasPermission(PERMISSIONS.studio.designEntities);
+  canDesignForms = () => this.auth.hasPermission(PERMISSIONS.studio.designForms);
 
   ngOnInit(): void {
     this.entityKey = this.route.snapshot.paramMap.get('key') ?? '';
+    this.capabilities.ensureLoaded();
     this.studio.getSchema(this.entityKey).subscribe({
       next: res => {
         this.schemaLoading.set(false);
         if (res.success) {
           this.entity.set(res.data.entity);
+          this.schema.set(res.data);
           this.allFields.set(res.data.fields.filter(f => f.isActive));
           this.breadcrumbs.set(STUDIO_BREADCRUMBS.records(res.data.entity.displayNamePlural, this.entityKey));
           // Load the first page explicitly so data never depends on the child table's lazy event firing.
@@ -134,6 +181,20 @@ export class StudioRecordListComponent implements OnInit {
         this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Schéma introuvable.' });
       }
     });
+  }
+
+  onSwitchView(viewId: string | null): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { view: viewId },
+      queryParamsHandling: 'merge'
+    });
+  }
+
+  onNewOrEditView(): void {
+    const v = this.activeView();
+    const segments = v ? ['/studio/d', this.entityKey, 'views', v.id] : ['/studio/d', this.entityKey, 'views', 'new'];
+    this.router.navigate(segments);
   }
 
   onLazy(event: TableLazyLoadEvent): void {
