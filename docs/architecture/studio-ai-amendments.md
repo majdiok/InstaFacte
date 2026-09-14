@@ -80,28 +80,28 @@ le code) : si un champ `IsUnique` change vers un type absent de cet ensemble, la
 Allowed }` — `Allowed` est vrai pour `Lossless`, et pour `RequiresEmptyTable` seulement si
 `RecordCount == 0`.
 
-## 4. Index JSON : suppression avant recréation (`IJsonIndexManager.DropFieldIndexAsync`)
+## 4. Index JSON : colonne partagée, jamais supprimée lors d'un changement de type
 
-La colonne calculée `jx_<clé>` (et son index filtré `IX_CustomRecords_jx_<clé>`) sont **typées par la
-valeur JSON de l'ancien type de champ** (`JSON_VALUE(...)` avec une conversion implicite). Un
-changement de type doit donc :
+La colonne calculée `jx_<clé>` est un `CAST(JSON_VALUE([DataJson], '$.<clé>') AS nvarchar(…))` :
+elle est **indépendante du type de champ** et **partagée par toutes les tables du tenant** qui
+utilisent la même clé (l'index filtré `IX_CustomRecords_jx_<clé>` porte `TenantId`,
+`EntityDefinitionId`, `jx_<clé>`). Un changement de type ne la supprime donc **jamais** : la
+supprimer casserait les requêtes concurrentes qui s'appuient encore sur le cache positif
+`IndexedColumnExistsAsync` (local à chaque instance, TTL 10 min) et retirerait l'accélération aux
+autres tables partageant la clé.
 
-1. **Supprimer** l'index puis la colonne calculée existants (`DropFieldIndexAsync`), avant toute
-   nouvelle écriture typée différemment — sinon `Ensure*FieldIndexAsync` échouerait à recréer une
-   colonne du même nom avec un type incompatible, ou pire, lirait des valeurs mal converties.
-2. **Recréer** l'index seulement si le champ reste `IsUnique` après le changement
-   (`EnsureUniqueFieldIndexAsync`) — jamais pour un champ non unique : les recherches non uniques
-   (`filterField`/`filterValue`) n'ont pas besoin d'un index dédié à la volée.
+Comportement de `ChangeCustomFieldTypeCommand` :
 
-`DropFieldIndexAsync` est **idempotent et best-effort** (jamais d'exception, même sur une clé jamais
-indexée) : `DROP INDEX IF EXISTS` puis `DROP COLUMN` (dans cet ordre — l'index dépend de la colonne),
-et invalide le cache de `IndexedColumnExistsAsync`. Contrairement à ce qu'on pourrait supposer, il
-n'existe **qu'un seul nom d'index partagé** (`IX_CustomRecords_jx_<clé>`) pour les champs uniques et
-non uniques — `EnsureUniqueFieldIndexAsync` délègue à `EnsureFieldIndexAsync` avec le même DDL — donc
-`DropFieldIndexAsync` ne supprime qu'une seule colonne et un seul index, jamais deux paires
-hypothétiques `ux_<clé>` / `ix_jx_<clé>`.
+1. Si le champ reste `IsUnique` après le changement, `EnsureUniqueFieldIndexAsync` est rappelé
+   (idempotent) ; sinon rien n'est touché côté SQL.
+2. `IJsonIndexManager.DropFieldIndexAsync` existe (idempotent, best-effort, testé contre SQL réel)
+   pour les opérations de maintenance explicites — il n'est **pas** appelé par le changement de type.
 
-Cette suppression **ne touche jamais** `DataJson` (la colonne source, jamais recalculée) : en cas
-d'échec de la recréation de l'index, les données restent lisibles via `DataJson`, seule
-l'accélération de recherche est temporairement perdue — cohérent avec le principe « l'indexation est
-une optimisation, jamais une exigence de correction » déjà énoncé par `IJsonIndexManager`.
+### Fenêtre de course sur « table vide »
+
+Aucune transaction n'englobe le comptage et la mise à jour de la définition. Pour une conversion
+`RequiresEmptyTable`, le handler **recompte après la persistance** : si des enregistrements sont
+apparus entre-temps, le champ est ramené à son ancien type (options, règles, valeur par défaut et
+unicité restaurés) et l'appel renvoie `Validation.fieldType`. Le risque résiduel se limite à une
+insertion survenant entre le second comptage et la lecture qui suit ; la lecture des enregistrements
+reste tolérante (`TRY_CONVERT`) et n'échoue pas sur une valeur incompatible.

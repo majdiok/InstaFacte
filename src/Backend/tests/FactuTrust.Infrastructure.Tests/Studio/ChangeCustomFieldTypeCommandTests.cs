@@ -51,7 +51,7 @@ public sealed class ChangeCustomFieldTypeCommandTests
         _fields.Setup(f => f.GetByIdAsync(Tid, field.Id, It.IsAny<CancellationToken>())).ReturnsAsync(field);
 
     [Fact]
-    public async Task Lossless_on_non_empty_table_succeeds_drops_index_and_audits()
+    public async Task Lossless_on_non_empty_table_succeeds_keeps_index_and_audits()
     {
         var field = MakeField(CustomFieldType.Number);
         SetupField(field);
@@ -62,7 +62,7 @@ public sealed class ChangeCustomFieldTypeCommandTests
         Assert.True(result.IsSuccess);
         Assert.Equal(CustomFieldType.Decimal, result.Value.FieldType);
         _fields.Verify(f => f.UpdateAsync(It.IsAny<CustomFieldDefinition>(), It.IsAny<CancellationToken>()), Times.Once);
-        _jsonIndex.Verify(j => j.DropFieldIndexAsync(Tid, "champ", It.IsAny<CancellationToken>()), Times.Once);
+        _jsonIndex.Verify(j => j.DropFieldIndexAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         _audit.Verify(a => a.LogAsync("Studio.Field.TypeChanged", "CustomField", field.Id, It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
         // CountAsync ne doit jamais être appelé pour une conversion sans perte.
         _records.Verify(r => r.CountAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -136,11 +136,11 @@ public sealed class ChangeCustomFieldTypeCommandTests
         Assert.True(result.IsSuccess);
         Assert.False(result.Value.IsUnique);
         _jsonIndex.Verify(j => j.EnsureUniqueFieldIndexAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        _jsonIndex.Verify(j => j.DropFieldIndexAsync(Tid, "champ", It.IsAny<CancellationToken>()), Times.Once);
+        _jsonIndex.Verify(j => j.DropFieldIndexAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task Unique_field_staying_unique_capable_reindexes_after_drop()
+    public async Task Unique_field_staying_unique_capable_reensures_unique_index()
     {
         var field = MakeField(CustomFieldType.Text, isUnique: true);
         SetupField(field);
@@ -150,8 +150,30 @@ public sealed class ChangeCustomFieldTypeCommandTests
 
         Assert.True(result.IsSuccess);
         Assert.True(result.Value.IsUnique);
-        _jsonIndex.Verify(j => j.DropFieldIndexAsync(Tid, "champ", It.IsAny<CancellationToken>()), Times.Once);
+        _jsonIndex.Verify(j => j.DropFieldIndexAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         _jsonIndex.Verify(j => j.EnsureUniqueFieldIndexAsync(Tid, "champ", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RequiresEmptyTable_records_appearing_after_first_count_revert_the_change()
+    {
+        var field = MakeField(CustomFieldType.Text);
+        SetupField(field);
+        // Premier comptage : table vide ; second comptage (après persistance) : 3 enregistrements
+        // insérés entre-temps => le changement doit être annulé.
+        _records.SetupSequence(r => r.CountAsync(Tid, EntityId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0)
+            .ReturnsAsync(3);
+
+        var result = await Handler().Handle(new ChangeCustomFieldTypeCommand(EntityId, field.Id, new ChangeCustomFieldTypeRequest(CustomFieldType.Number)), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.fieldType", result.Error.Code);
+        Assert.Contains("3", result.Error.Description);
+        Assert.Equal(CustomFieldType.Text, field.FieldType);
+        // Une écriture pour appliquer, une seconde pour revenir en arrière.
+        _fields.Verify(f => f.UpdateAsync(It.IsAny<CustomFieldDefinition>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        _audit.Verify(a => a.LogAsync("Studio.Field.TypeChanged", It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

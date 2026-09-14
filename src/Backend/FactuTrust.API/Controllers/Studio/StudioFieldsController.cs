@@ -72,12 +72,13 @@ public sealed class StudioFieldsController : ControllerBase
     [HttpGet("{fieldId:guid}/type-check")]
     public async Task<IActionResult> TypeCheck(Guid entityId, Guid fieldId, [FromQuery] string? to, CancellationToken cancellationToken)
     {
-        // Analysé par NOM d'énumération uniquement (jamais par valeur numérique) : un « to=42 »
-        // n'est pas ambigu avec un futur nom de type, il est simplement rejeté.
-        if (string.IsNullOrWhiteSpace(to) || !Enum.TryParse<CustomFieldType>(to, ignoreCase: true, out var type) || !Enum.IsDefined(typeof(CustomFieldType), type))
+        // Analysé par NOM d'énumération uniquement (jamais par valeur numérique, même définie :
+        // « to=3 » est rejeté au même titre que « to=42 »).
+        var type = ParseFieldTypeByName(to);
+        if (type is null)
             return StudioErrorMapping.Map(this, Error.Validation("to", "Type de champ cible invalide ou absent."));
 
-        var result = await _mediator.Send(new CheckCustomFieldTypeChangeQuery(entityId, fieldId, type), cancellationToken);
+        var result = await _mediator.Send(new CheckCustomFieldTypeChangeQuery(entityId, fieldId, type.Value), cancellationToken);
         return StudioErrorMapping.ToActionResult(this, result, value => Ok(ApiResponse<FieldTypeChangeCheckDto>.Ok(value)));
     }
 
@@ -86,5 +87,16 @@ public sealed class StudioFieldsController : ControllerBase
     {
         var result = await _mediator.Send(new ChangeCustomFieldTypeCommand(entityId, fieldId, request), cancellationToken);
         return StudioErrorMapping.ToActionResult(this, result, value => Ok(ApiResponse<CustomFieldDto>.Ok(value)));
+    }
+
+    /// <summary>Correspondance stricte sur les noms de <see cref="CustomFieldType"/> (insensible à la casse) ; les valeurs numériques sont refusées.</summary>
+    internal static CustomFieldType? ParseFieldTypeByName(string? to)
+    {
+        if (string.IsNullOrWhiteSpace(to))
+            return null;
+
+        var name = Enum.GetNames<CustomFieldType>()
+            .FirstOrDefault(n => string.Equals(n, to.Trim(), StringComparison.OrdinalIgnoreCase));
+        return name is null ? null : Enum.Parse<CustomFieldType>(name);
     }
 }

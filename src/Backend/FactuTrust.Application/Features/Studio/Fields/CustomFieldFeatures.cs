@@ -548,6 +548,9 @@ public sealed class ChangeCustomFieldTypeCommandHandler : IRequestHandler<Change
 
         var oldType = field.FieldType;
         var wasUnique = field.IsUnique;
+        var oldOptionsJson = field.OptionsJson;
+        var oldRulesJson = field.ValidationRulesJson;
+        var oldDefaultJson = field.DefaultValueJson;
 
         field.ChangeType(req.FieldType, optionsJson, StudioFieldJson.SerializeRules(req.Rules), userId);
         if (wasUnique && !FieldTypeConversionPolicy.UniqueCapable.Contains(req.FieldType))
@@ -558,9 +561,25 @@ public sealed class ChangeCustomFieldTypeCommandHandler : IRequestHandler<Change
 
         await _fields.UpdateAsync(field, cancellationToken);
 
-        // La colonne calculée jx_<clé> est typée par l'ANCIEN type de champ : elle doit disparaître
-        // avant qu'un nouvel index (si le type reste/devient unique) ne la recrée avec le bon type.
-        await _jsonIndex.DropFieldIndexAsync(tenantId, field.Key, cancellationToken);
+        // Fenêtre de course (table vide exigée) : aucune transaction n'englobe le comptage et la
+        // mise à jour. On recompte APRÈS la persistance ; si des enregistrements sont apparus entre
+        // les deux, le changement est annulé (retour à l'ancien type) et refusé.
+        if (policy == FieldTypeConversion.RequiresEmptyTable)
+        {
+            var afterCount = await _records.CountAsync(tenantId, command.EntityId, cancellationToken);
+            if (afterCount > 0)
+            {
+                field.ChangeType(oldType, oldOptionsJson, oldRulesJson, userId);
+                field.Update(field.Label, field.IsRequired, wasUnique,
+                    oldRulesJson, oldOptionsJson, oldDefaultJson, field.IsActive, userId);
+                await _fields.UpdateAsync(field, cancellationToken);
+                return Result.Failure<CustomFieldDto>(Error.Validation("fieldType", FieldTypeConversionPolicy.Describe(oldType, req.FieldType, afterCount)));
+            }
+        }
+
+        // La colonne calculée jx_<clé> est un CAST(JSON_VALUE(...) AS nvarchar) indépendant du type
+        // de champ et partagée par toutes les tables du tenant utilisant la même clé : elle n'est
+        // jamais supprimée ici. Seul l'index d'unicité est (ré)assuré si le champ reste unique.
         if (field.IsUnique)
             await _jsonIndex.EnsureUniqueFieldIndexAsync(tenantId, field.Key, cancellationToken);
 

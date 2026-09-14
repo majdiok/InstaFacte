@@ -56,6 +56,9 @@ public sealed class StudioFieldsControllerContractTests
     [InlineData("")]
     [InlineData("  ")]
     [InlineData("42")]
+    [InlineData("0")]
+    [InlineData("3")]
+    [InlineData("-1")]
     [InlineData("NotAType")]
     public async Task TypeCheck_returns_400_Validation_to_for_missing_or_unparseable_to(string? to)
     {
