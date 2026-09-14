@@ -1674,7 +1674,13 @@ public static class AiToolRegistry
                 + "{ \"op\": \"remove_field\", \"key\": clé } | "
                 + "{ \"op\": \"update_entity\", \"displayName\"?: string, \"icon\"?: string, \"description\"?: string } | "
                 + "{ \"op\": \"set_form\", \"sections\": [ { \"title\"?: string, \"fields\": [ clé | { \"field\": clé, \"width\": \"half|full\" } ] } ] } | "
-                + "{ \"op\": \"set_report\", \"displayName\": string, \"definition\": { \"groupBy\"?, \"measures\"?, \"columns\"?, \"filters\"?, \"sort\"? } } ] }. "
+                + "{ \"op\": \"set_report\", \"displayName\": string, \"definition\": { \"groupBy\"?, \"measures\"?, \"columns\"?, \"filters\"?, \"sort\"? } } | "
+                + "{ \"op\": \"reorder_fields\", \"fields\": [ clé… ] } | "
+                + "{ \"op\": \"change_field_type\", \"key\": clé, \"type\": string, \"options\"?: [...] } (refusé si des données seraient perdues) | "
+                + "{ \"op\": \"add_relation\", \"kind\": \"many_to_one\"|\"many_to_many\", \"target\": clé, \"label\"?: string, \"junctionName\"?: string } | "
+                + "{ \"op\": \"assign_system\", \"system\": clé | \"none\" } | "
+                + "{ \"op\": \"set_view\", \"mode\": \"list\"|\"kanban\"|\"calendar\", \"displayName\": string, \"columns\"?: [...], \"groupBy\"?: clé Select, \"start\"?: clé Date } | "
+                + "{ \"op\": \"set_automation\", … } (acceptée mais ignorée : non prise en charge en v1) ] }. "
                 + "Maximum 20 opérations. La SUPPRESSION d'une table ou d'un système est IMPOSSIBLE par cet outil. "
                 + "Retirer un champ le masque seulement : les données saisies sont conservées.",
             Parameters = new Dictionary<string, AiToolParameter>

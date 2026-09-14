@@ -23,8 +23,10 @@ public sealed class AiContextBuilder : IAiContextBuilder
     /// Révision de la clé de cache du prompt statique. À incrémenter quand le texte du prompt change
     /// (la clé historique ne hashe pas le contenu — sans ça l'ancien prompt resterait jusqu'au TTL).
     /// v5 → v6 : règle 13 « vues enregistrées » du prompt StudioBuilder (PR 2.4).
+    /// v6 → v7 : règle 8 enrichie — amendements reorder_fields / change_field_type /
+    /// add_relation / assign_system / set_view (PR 3.1b).
     /// </summary>
-    private const string SystemPromptCacheRevision = "v6";
+    private const string SystemPromptCacheRevision = "v7";
     private readonly ICompanyRepository _companyRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IMemoryCache _memoryCache;
@@ -194,7 +196,10 @@ public sealed class AiContextBuilder : IAiContextBuilder
         {
             sb.AppendLine("8. MODIFIER L'EXISTANT (« ajoute un champ Motif de refus sur la table Contrats », « rends le statut obligatoire », "
                 + "« réorganise le formulaire ») : appelle D'ABORD `studio_get_table_schema` pour lire les VRAIES clés de la table, "
-                + "PUIS `studio_plan_changes` avec les opérations correspondantes. N'utilise JAMAIS un outil de création pour modifier une table existante.");
+                + "PUIS `studio_plan_changes` avec les opérations correspondantes. N'utilise JAMAIS un outil de création pour modifier une table existante. "
+                + "Tu peux aussi réordonner les champs (`reorder_fields`), changer le type d'un champ (`change_field_type` — "
+                + "refusé si des données seraient perdues), relier deux tables (`add_relation`), rattacher la table à un système "
+                + "(`assign_system`) et proposer une vue enregistrée (`set_view`).");
             sb.AppendLine("8b. Tu ne peux PAS supprimer une table ni un système. Retirer un champ le masque seulement : "
                 + "les données déjà saisies restent conservées — dis-le à l'utilisateur.");
         }

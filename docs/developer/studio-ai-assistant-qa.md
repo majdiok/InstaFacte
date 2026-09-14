@@ -429,3 +429,63 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     `planPreviewEnabled = false` ⇒ carte Historique absente, aucun appel `GET api/studio/ai/plans`.
     Sans `systemExportEnabled`, **Exporter le système (JSON)** et **Partager** sont grisés « Bientôt » ;
     Importer / Dupliquer n'apparaissent qu'avec l'export activé (toast « arrive dans une prochaine version »).
+
+## Amendements enrichis et changement de type (PR 3.1)
+
+> Architecture : [`docs/architecture/studio-ai-amendments.md`](../architecture/studio-ai-amendments.md).
+> Prérequis : une table Studio `interventions` (champs `nom` Text, `statut` Select avec options,
+> `debut` Date, `montant` Money) alimentée d'enregistrements, un compte avec `studio:design_entities` ;
+> pour les cas IA : `Ollama:EnableStudioAiPlanPreview=true` + `Ollama:EnableStudioAiModifyTools=true`
+> (+ `EnableStudioManyToMany` / `EnableStudioRecordViews` selon le cas).
+> **Smoke chat non exécuté** : le parcours conversationnel complet exige un modèle Ollama (absent de
+> l'environnement de vérification) — les cas 64–66 vérifient donc la chaîne serveur via
+> `POST api/studio/ai/plans/validate` (kind `Amendment` : parsing + canonicalisation, alias absorbés)
+> et renvoient aux tests automatisés (`StudioAiAmendmentSpecTests` / `StudioAiAmendmentPlannerTests` /
+> `StudioAiSpecCanonicalTests` / `StudioAiAmendmentExecutorTests`) pour le contenu de l'aperçu
+> (étapes, sévérités, avertissements), `studio_plan_changes` partageant le même parseur et le même
+> planificateur. Avec un modèle branché, rejouer ces demandes en langage naturel dans l'atelier.
+
+63. **Changement de type : vérification puis application** — avec 3 enregistrements dans
+    `interventions`, `GET api/studio/entities/{idEntite}/fields/{idMontant}/type-check?to=Number` ⇒
+    `200` `{ from: "Money", to: "Number", policy: "requires_empty_table", recordCount: 3, allowed: false }`
+    avec le message « Ce changement exige une table vide (3 enregistrement(s))… » ;
+    `PATCH …/type` corps `{ "fieldType": "Number" }` ⇒ `400 Validation.fieldType` (même message, aucune
+    écriture). Vider la table puis rejouer ⇒ `200`, `data.fieldType = "Number"` ; audit
+    `Studio.Field.TypeChanged` présent. `to=wizard` ou `to=42` ⇒ `400 Validation.to` ;
+    `?to=Formula` ⇒ `200` `policy: "forbidden"` (« Ce type se crée comme un nouveau champ… ») ;
+    `PATCH` vers le même type ⇒ `400` « Le champ est déjà de ce type. ». Cas sans perte :
+    `type-check?to=Decimal` ⇒ `policy: "lossless", allowed: true`, et le `PATCH` réussit même table
+    non vide ; la colonne calculée `jx_montant` est conservée (partagée, indépendante du type).
+64. **Réordonnancement et changement de type (DSL d'amendement)** — `POST api/studio/ai/plans/validate`
+    corps `{ "kind": "Amendment", "specJson": "{\"target\":{\"entityKey\":\"Interventions\"},\"operations\":[{\"op\":\"reordonner_champs\",\"fields\":[\"montant\",\"Nom\",\"fantome\"]},{\"op\":\"change_field_type\",\"key\":\"montant\",\"type\":\"decimal\"}]}" }`
+    ⇒ `200`, spec canonique retournée avec `target.entityKey = "interventions"` (slugifié), l'alias
+    `reordonner_champs` absorbé en `reorder_fields` et le type en `"decimal"` ; à l'aperçu (outil chat
+    / tests) : étape « Réordonner les champs » promettant l'ordre effectif complet (`montant, nom,
+    statut, debut` — « Nom » résolu par libellé, champs non cités conservés à la suite) et avertissement
+    « Champ « fantome » introuvable : retiré de la réorganisation. » ; l'étape `change_field_type`
+    annonce `montant` → `décimal` « sans perte ». `"type": "number"` sur une table non vide ⇒ étape en
+    **avertissement** « table vide » SANS nombre fabriqué (le compte est revérifié à l'application) ;
+    `"type": "formula"` ⇒ étape **en erreur** « Ce type se crée comme un nouveau champ… » ;
+    `"type": "3"` (valeur numérique d'énumération) ⇒ op écartée « type inconnu ».
+65. **Relation, système et vue (DSL d'amendement), drapeaux fonctionnels** — même appel avec
+    `{ "op": "add_relation", "kind": "many_to_many", "target": "Compétences", "label": "Compétences requises" }`,
+    `{ "op": "assign_system", "system": "Gestion Interventions" }` et
+    `{ "op": "set_view", "mode": "kanban", "displayName": "Par statut", "groupBy": "statut" }` ⇒ `200`,
+    forme canonique `kind: "many_to_many"`, `target: "competences"` (slugifiée),
+    `system: "gestion_interventions"`, vue sans clé `entity` (table du plan implicite). Aperçu (flag
+    `EnableStudioManyToMany` on) : étape « Relier à « Compétences requises » » ; `"target":
+    "interventions"` (la table elle-même) ⇒ étape **en erreur** « La table cible doit être différente
+    de la table source. ». Flag off ⇒ l'op est écartée avec avertissement « … relations
+    plusieurs-à-plusieurs ne sont pas activées » (plan refusé si c'était la seule op) — idem
+    `set_view` avec `EnableStudioRecordViews=false`. Flag views on : la vue est résolue contre le
+    schéma réel — `"groupBy": "nom"` (Text) ⇒ l'étape annonce « Liste » + avertissement « Kanban
+    impossible… » (dégradation, jamais d'échec). Détachement : `{ "op": "assign_system", "system":
+    "none" }` ⇒ aperçu « Détacher la table de son système ».
+66. **Automatisation déclarée, jamais appliquée, aucune op silencieuse** — une spec `Amendment`
+    contenant `{ "op": "set_automation", "trigger": "on_create", "action": "notify" }` seul est valide
+    au parsing (`validate` ⇒ `200`) mais l'aperçu la présente « Automatisation (non appliquée) » avec
+    l'avertissement « Les automatisations ne sont pas encore créées par l'assistant : étape ignorée. » ;
+    à l'exécution, chaque opération non encore exécutable remonte une étape au statut `skipped` avec
+    avertissement, et un plan sans rien d'applicable échoue explicitement (jamais de succès muet).
+    Le prompt système StudioBuilder porte la règle 8 enrichie (cinq opérations actionnables listées,
+    révision de cache « v7 » — `AiContextBuilderStudioDigestTests`).

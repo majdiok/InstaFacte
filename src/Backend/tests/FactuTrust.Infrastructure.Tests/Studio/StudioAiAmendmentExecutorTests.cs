@@ -180,6 +180,71 @@ public sealed class StudioAiAmendmentExecutorTests
         Assert.Contains(steps, s => s.Phase == "completed");
     }
 
+    // ---- PR 3.1b : garde anti-échec-silencieux pour les ops pas encore exécutables ----
+
+    [Fact]
+    public async Task An_operation_the_executor_does_not_know_is_skipped_with_a_warning()
+    {
+        var steps = new List<StudioBuildStep>();
+        var progress = new Mock<IStudioBuildProgress>();
+        progress.Setup(p => p.Report(It.IsAny<StudioBuildStep>())).Callback((StudioBuildStep s) => steps.Add(s));
+
+        Assert.True(StudioAiAmendmentSpec.TryParse("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "add_field", "label": "Note", "type": "text" },
+          { "op": "reorder_fields", "fields": [ "note", "nom" ] } ] }
+        """, out var spec, out var err), err);
+
+        var (success, error, payload) = await new StudioAiAmendmentExecutor(_mediator.Object, _currentUser.Object)
+            .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
+
+        Assert.True(success, error); // l'ajout de champ est appliqué, l'op inconnue est signalée
+        Assert.Contains(steps, s => s.Phase == "skipped_operation" && s.Status == "skipped");
+        var warnings = payload!.GetType().GetProperty("warnings")!.GetValue(payload) as IEnumerable<string>;
+        Assert.Contains(warnings!, w => w.Contains("reorder_fields"));
+    }
+
+    [Fact]
+    public async Task A_plan_with_only_not_yet_executable_operations_fails_loudly()
+    {
+        var (success, error, _) = await Execute("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "set_automation", "trigger": "on_create", "action": "notify" } ] }
+        """);
+
+        Assert.False(success);
+        Assert.Contains("set_automation", error);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateCustomFieldCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Every_pr31b_operation_reports_a_skipped_step_instead_of_nothing()
+    {
+        var steps = new List<StudioBuildStep>();
+        var progress = new Mock<IStudioBuildProgress>();
+        progress.Setup(p => p.Report(It.IsAny<StudioBuildStep>())).Callback((StudioBuildStep s) => steps.Add(s));
+
+        Assert.True(StudioAiAmendmentSpec.TryParse("""
+        { "target": { "entityKey": "contrats" }, "operations": [
+          { "op": "reorder_fields", "fields": [ "nom" ] },
+          { "op": "change_field_type", "key": "nom", "type": "multilinetext" },
+          { "op": "add_relation", "kind": "many_to_one", "target": "clients" },
+          { "op": "assign_system", "system": "rh" },
+          { "op": "set_view", "mode": "list", "displayName": "Toutes" },
+          { "op": "set_automation", "trigger": "on_create" } ] }
+        """, out var spec, out var err), err);
+
+        var (success, error, _) = await new StudioAiAmendmentExecutor(_mediator.Object, _currentUser.Object)
+            .ExecuteAsync(spec!, progress.Object, CancellationToken.None);
+
+        Assert.False(success); // rien d'appliqué, mais chaque op a produit une étape « skipped »
+        var skipped = steps.Where(s => s.Status == "skipped").ToList();
+        Assert.Equal(6, skipped.Count);
+        Assert.All(new[] { "reorder_fields", "change_field_type", "add_relation", "assign_system", "set_view", "set_automation" },
+            op => Assert.Contains(skipped, s => s.Label.Contains(op)));
+        Assert.NotNull(error);
+    }
+
     private async Task<(bool Success, string? Error, object? Payload)> Execute(string json)
     {
         Assert.True(StudioAiAmendmentSpec.TryParse(json, out var spec, out var err), err);
