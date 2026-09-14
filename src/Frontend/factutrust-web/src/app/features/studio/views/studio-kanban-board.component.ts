@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, ViewChild, computed, effect, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ViewChild, computed, effect, inject, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { ButtonModule } from 'primeng/button';
@@ -123,6 +124,7 @@ export class StudioKanbanBoardComponent {
   private readonly viewsService = inject(StudioRecordViewsService);
   private readonly auth = inject(AuthService);
   private readonly toast = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly entityKey = input('');
   readonly kanban = input<RecordViewKanban | null>(null);
@@ -139,7 +141,11 @@ export class StudioKanbanBoardComponent {
 
   private readonly localGroups = signal<RecordViewKanbanGroupDto[]>([]);
   private readonly revealed = signal<Record<string, number>>({});
-  private snapshot: RecordViewKanbanGroupDto[] | null = null;
+  // Rollback scopé par déplacement (et non un snapshot unique) : deux moves en vol restent
+  // indépendants — l'échec de A ne restaure jamais un état « post-B » ni n'efface un rechargement
+  // survenu entre-temps (le rollback chirurgical ne touche que si la carte est encore à son
+  // emplacement optimiste).
+  private readonly pendingMoves = new Map<string, { sourceValue: string | null; record: CustomRecord }>();
 
   protected readonly moveMenuItems = signal<MenuItem[]>([]);
 
@@ -222,8 +228,13 @@ export class StudioKanbanBoardComponent {
     const sourceValue = this.findSourceValue(item);
     if (event.previousContainer === event.container) {
       // Réordonnancement visuel uniquement (aucun ordre persisté côté backend) : pas d'appel réseau.
+      // Mise à jour immuable : muter `group.items` en place laisserait le signal non invalidé.
       const group = this.localGroups().find(g => (g.value ?? NULL_KEY) === (sourceValue ?? NULL_KEY));
-      if (group) moveItemInArray(group.items, event.previousIndex, event.currentIndex);
+      if (group) {
+        const items = [...group.items];
+        moveItemInArray(items, event.previousIndex, event.currentIndex);
+        this.localGroups.update(gs => gs.map(g => g === group ? { ...g, items } : g));
+      }
       return;
     }
     if (sourceValue === targetValue) return;
@@ -243,7 +254,7 @@ export class StudioKanbanBoardComponent {
     const kanban = this.kanban();
     const key = this.entityKey();
     if (!kanban || !key) return;
-    this.snapshot = this.localGroups().map(g => ({ ...g, items: [...g.items] }));
+    this.pendingMoves.set(item.id, { sourceValue, record: item });
 
     const groups = this.localGroups().map(g => ({ ...g, items: [...g.items] }));
     const source = groups.find(g => (g.value ?? NULL_KEY) === (sourceValue ?? NULL_KEY));
@@ -260,25 +271,50 @@ export class StudioKanbanBoardComponent {
     this.liveMessage.set(this.labels.kanban.moved.replace('{column}', target?.label ?? this.labels.kanban.emptyGroup));
 
     const rowVersion = item.rowVersion ?? '';
-    this.viewsService.patchRecord(key, item.id, { [kanban.groupByFieldKey]: targetValue }, rowVersion).subscribe({
-      next: res => {
-        if (res.success) {
-          this.replaceCard(targetValue, item.id, res.data);
-        } else {
-          this.rollback();
-          this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.labels.kanban.genericError });
+    this.viewsService.patchRecord(key, item.id, { [kanban.groupByFieldKey]: targetValue }, rowVersion)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: res => {
+          if (res.success) {
+            this.pendingMoves.delete(item.id);
+            this.replaceCard(targetValue, item.id, res.data);
+          } else {
+            this.rollbackMove(item.id, targetValue);
+            this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.labels.kanban.genericError });
+          }
+        },
+        error: (err: { status?: number }) => {
+          this.rollbackMove(item.id, targetValue);
+          if (err?.status === 409) {
+            this.toast.add({ severity: 'warn', summary: 'Conflit', detail: this.labels.kanban.conflict });
+            this.reload.emit();
+          } else {
+            this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.labels.kanban.genericError });
+          }
         }
-      },
-      error: (err: { status?: number }) => {
-        this.rollback();
-        if (err?.status === 409) {
-          this.toast.add({ severity: 'warn', summary: 'Conflit', detail: this.labels.kanban.conflict });
-          this.reload.emit();
-        } else {
-          this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.labels.kanban.genericError });
-        }
-      }
-    });
+      });
+  }
+
+  /**
+   * Restaure UNIQUEMENT la carte `recordId` vers sa colonne d'origine, et seulement si elle est
+   * encore à l'emplacement optimiste (sinon un rechargement externe a déjà resynchronisé l'état —
+   * on n'écrase pas les données fraîches).
+   */
+  private rollbackMove(recordId: string, targetValue: string | null): void {
+    const pending = this.pendingMoves.get(recordId);
+    this.pendingMoves.delete(recordId);
+    const groups = this.localGroups().map(g => ({ ...g, items: [...g.items] }));
+    const target = groups.find(g => (g.value ?? NULL_KEY) === (targetValue ?? NULL_KEY));
+    const moved = target?.items.find(i => i.id === recordId);
+    if (!target || !moved) return; // resynchronisé entre-temps : ne rien écraser
+    target.items = target.items.filter(i => i.id !== recordId);
+    target.count = Math.max(0, target.count - 1);
+    const source = groups.find(g => (g.value ?? NULL_KEY) === (pending?.sourceValue ?? NULL_KEY));
+    if (source) {
+      source.items = [pending?.record ?? moved, ...source.items];
+      source.count = source.count + 1;
+    }
+    this.localGroups.set(groups);
   }
 
   private replaceCard(targetValue: string | null, recordId: string, record: CustomRecord): void {
@@ -291,10 +327,6 @@ export class StudioKanbanBoardComponent {
     this.localGroups.set(groups);
   }
 
-  private rollback(): void {
-    if (this.snapshot) this.localGroups.set(this.snapshot);
-    this.snapshot = null;
-  }
 
   private formatValue(value: unknown, field?: CustomField): string {
     if (value === null || value === undefined || value === '') return '—';

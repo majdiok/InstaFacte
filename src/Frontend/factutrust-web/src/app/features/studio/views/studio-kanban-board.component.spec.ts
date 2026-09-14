@@ -115,6 +115,50 @@ describe('StudioKanbanBoardComponent', () => {
     expect(reloaded).toBe(false);
   });
 
+  it('deux déplacements en vol : l’échec du premier ne restaure que sa propre fiche', () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [StudioKanbanBoardComponent, HttpClientTestingModule],
+      providers: [
+        MessageService,
+        provideNoopAnimations(),
+        { provide: AuthService, useValue: { hasPermission: () => true } }
+      ]
+    });
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture = TestBed.createComponent(StudioKanbanBoardComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('entityKey', 'interventions');
+    fixture.componentRef.setInput('kanban', kanban);
+    fixture.componentRef.setInput('groups', [
+      { value: 'a', label: 'À planifier', count: 2, items: [record('r1', 'Fiche 1', 'a'), record('r2', 'Fiche 2', 'a')] },
+      { value: 'b', label: 'Terminé', count: 0, items: [] },
+      { value: null, label: 'Sans valeur', count: 0, items: [] }
+    ]);
+    fixture.componentRef.setInput('allFields', fields);
+    fixture.detectChanges();
+
+    // Deux déplacements rapides a → b, le premier PATCH échoue (500) pendant que le second est en vol.
+    component['moveCard'](record('r1', 'Fiche 1', 'a'), 'a', 'b');
+    component['moveCard'](record('r2', 'Fiche 2', 'a'), 'a', 'b');
+    httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/r1`)
+      .flush({ message: 'boom' }, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+
+    let text = fixture.debugElement.queryAll(By.css('.kanban-col')).map(c => c.nativeElement.textContent);
+    expect(text[0]).toContain('Fiche 1');   // r1 restaurée dans « À planifier »
+    expect(text[0]).not.toContain('Fiche 2'); // r2 reste dans « Terminé » (move B intact)
+    expect(text[1]).toContain('Fiche 2');
+
+    // Le second déplacement aboutit ensuite normalement.
+    httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/r2`)
+      .flush({ success: true, data: record('r2', 'Fiche 2', 'b', 'R2'), message: null, errors: [] });
+    fixture.detectChanges();
+    text = fixture.debugElement.queryAll(By.css('.kanban-col')).map(c => c.nativeElement.textContent);
+    expect(text[1]).toContain('Fiche 2');
+    expect(text[0]).toContain('Fiche 1');
+  });
+
   it('le menu « Déplacer vers… » déclenche le même PATCH que le glisser-déposer', () => {
     setup(true);
     component.openMoveMenu(new Event('click'), record('r1', 'Fiche 1', 'a'), 'a');
