@@ -481,11 +481,21 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     schéma réel — `"groupBy": "nom"` (Text) ⇒ l'étape annonce « Liste » + avertissement « Kanban
     impossible… » (dégradation, jamais d'échec). Détachement : `{ "op": "assign_system", "system":
     "none" }` ⇒ aperçu « Détacher la table de son système ».
-66. **Automatisation déclarée, jamais appliquée, aucune op silencieuse** — une spec `Amendment`
-    contenant `{ "op": "set_automation", "trigger": "on_create", "action": "notify" }` seul est valide
-    au parsing (`validate` ⇒ `200`) mais l'aperçu la présente « Automatisation (non appliquée) » avec
-    l'avertissement « Les automatisations ne sont pas encore créées par l'assistant : étape ignorée. » ;
-    à l'exécution, chaque opération non encore exécutable remonte une étape au statut `skipped` avec
-    avertissement, et un plan sans rien d'applicable échoue explicitement (jamais de succès muet).
-    Le prompt système StudioBuilder porte la règle 8 enrichie (cinq opérations actionnables listées,
-    révision de cache « v7 » — `AiContextBuilderStudioDigestTests`).
+66. **Exécution réelle des amendements (3.1c/3.1d) — chaque op laisse une étape** — à l'application
+    d'un plan `Amendment` confirmé, le suivi affiche une étape par opération au statut `done`,
+    `skipped` ou `error` (jamais de succès muet) : `reorder_fields` applique l'ordre promis à
+    l'aperçu (les champs de `interventions` sont réordonnés en base, visibles au rechargement du
+    concepteur) ; `change_field_type` applique les conversions permises et remonte une étape en
+    erreur non bloquante quand le handler refuse (`Forbidden` / table non vide) ; `assign_system`
+    rattache la table (rechargée sous le bon système) et `system: "none"` la détache ; `add_relation`
+    `many_to_one` crée le champ relation, `many_to_many` crée la table de jonction — avec
+    `EnableStudioManyToMany=false` l'étape est `skipped` et **aucune** écriture n'a lieu (vérifier
+    l'absence de jonction en base) ; `set_view` crée la vue enregistrée (clé dédupliquée si le nom
+    existe déjà) — avec `EnableStudioRecordViews=false` ⇒ `skipped`, aucune écriture ; une cible de
+    relation inconnue ou de type jonction ⇒ `skipped` + avertissement. `set_automation` reste valide
+    au parsing (`validate` ⇒ `200`), est présenté « Automatisation (non appliquée) » à l'aperçu et
+    remonte `skipped_automation` à l'exécution ; un plan sans rien d'applicable échoue explicitement
+    (« Aucune modification appliquée »). Une op inconnue de l'exécuteur lève (défaut bruyant, couvert
+    par `StudioSilentFailureGuardsTests`). Le prompt système StudioBuilder porte la règle 8 enrichie
+    (cinq opérations actionnables listées, révision de cache « v7 » —
+    `AiContextBuilderStudioDigestTests`).

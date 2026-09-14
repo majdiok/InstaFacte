@@ -141,11 +141,39 @@ Points de conception :
   `reorder_fields` est l'ordre effectif complet (cités puis non cités), et la description d'un
   `set_view` reflète la résolution réelle (mode dégradé inclus). Le planificateur reste pur : il
   reçoit les drapeaux `EnableStudioManyToMany` / `EnableStudioRecordViews` en paramètres.
-- **Exécution** : les six ops sont reconnues de la spec et de l'aperçu mais pas encore appliquées —
-  `StudioAiAmendmentExecutor` les signale explicitement (étape `skipped_operation` / statut
-  `skipped` + avertissement, et le plan échoue en « aucune modification applicable » si rien d'autre
-  n'est appliqué) plutôt que de les passer sous silence. Leur application effective arrive avec
-  l'exécuteur enrichi (hors périmètre 3.1b).
+- **Exécution** : en 3.1b, les six ops étaient reconnues de la spec et de l'aperçu mais pas encore
+  appliquées — l'exécuteur les signalait explicitement (étape `skipped` + avertissement). Elles sont
+  appliquées depuis 3.1c/3.1d ; voir §6.
+
+## 6. Exécution des amendements (PR 3.1c/3.1d)
+
+`StudioAiAmendmentExecutor` applique désormais chaque opération confirmée au moment de la validation
+du plan. Chaque op laisse une étape visible dans le suivi (phase → statut `running` puis
+`done` / `skipped` / `error`) — aucune op n'est passée sous silence :
+
+| Op | Phase | Commande appliquée | `skipped` quand… | `error` quand… |
+| --- | --- | --- | --- | --- |
+| `reorder_fields` | `reordering_fields` | `ReorderCustomFieldsCommand` (cités résolus par clé/libellé, puis non cités dans l'ordre `SortOrder`) | — | aucun champ reconnu ⇒ avertissement, pas d'appel ; échec du handler |
+| `change_field_type` | `changing_field_type` | `ChangeCustomFieldTypeCommand` (options/relation/config mappées, règles à null) | — | `Forbidden` / `RequiresEmptyTable` du handler (matrice D4) — non bloquant pour les ops suivantes |
+| `assign_system` | `assigning_system` | `GetCustomSystemByKeyQuery` puis `AssignEntityToSystemCommand` ; `system: "none"` ⇒ détachement sans requête | — | clé de système inconnue ⇒ avertissement + étape en erreur, rien n'est rattaché |
+| `add_relation` | `adding_relation` | N-1 ⇒ `CreateCustomFieldCommand` (`RelationCustom` + `RelationRefDto("custom", cible)`) ; N-N ⇒ `CreateManyToManyRelationCommand` | drapeau `EnableStudioManyToMany` coupé (N-N, aucun appel) ; dépôt indisponible / cible introuvable / cible jonction | échec du handler |
+| `set_view` | `creating_record_view` | `ResolveAgainstSchema` (avertissements propagés) + `SlugKey` dédupliqué + `CreateCustomRecordViewCommand` — séquence identique à `ExecuteRecordViewAsync` | drapeau `EnableStudioRecordViews` coupé (aucun appel) | échec du handler |
+| `set_automation` | `skipped_automation` | aucune (pas de backend d'automatisation IA en v1) | **toujours** | — |
+
+Garde-fous transverses :
+
+- **Drapeaux lus à l'exécution, pas seulement à l'aperçu** : le planificateur écarte déjà les ops
+  N-N / vues quand les drapeaux sont coupés, mais l'exécuteur revérifie `EnableStudioManyToMany` /
+  `EnableStudioRecordViews` juste avant l'appel (un plan confirmé ne dépend plus de l'état du cache
+  d'aperçu). Le drapeau N-N est testé **avant** la lecture du dépôt d'entités, comme au planning.
+- **Câblage** : `StudioAiPlanExecutor` construit l'exécuteur avec `OllamaSettings` et
+  `ICustomEntityRepository` (paramètres optionnels en queue — les constructions à deux arguments
+  existantes continuent de compiler ; la DI les résout automatiquement).
+- **Défaut bruyant** : toute op inconnue du sélecteur lève `InvalidOperationException` au lieu
+  d'être ignorée silencieusement (couvert par `StudioSilentFailureGuardsTests`).
+- **Un échec n'interrompt pas les ops suivantes** : une étape `error` est consignée et l'exécution
+  se poursuit ; le plan se termine par `completed` (« Modifications appliquées »), ou par `failed`
+  (« Aucune modification appliquée ») si rien n'a abouti.
 - **Prompt** : la règle 8 du prompt StudioBuilder liste les cinq opérations actionnables et
   `SystemPromptCacheRevision` passe de « v6 » à « v7 » (convention de projet à tout changement de
   prompt, même si le prompt StudioBuilder est reconstruit à chaque appel).
