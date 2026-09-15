@@ -913,6 +913,60 @@ describe('StudioAiSessionStore', () => {
     }));
   });
 
+  describe('mode Personnaliser : mutations du brouillon (3.4g1)', () => {
+    /** Plan ouvert avec la spec chargée (`GET {id}/spec` répond immédiatement avec `spec()`). */
+    function openPlan(): void {
+      store.openPlan('p-1', 'CreateSystem', summary());
+    }
+
+    it('updateField/addField/removeField mutent le brouillon et changeCount suit', () => {
+      openPlan();
+      store.setMode('customize');
+      expect(store.changeCount()).toBe(0);
+
+      // Renommage inline : la clé ne change jamais, le diff compte un « changed ».
+      store.updateField('employe', 'nom', { label: 'Nom complet' });
+      expect(store.draft()?.entities[0].fields[0]).toEqual(jasmine.objectContaining({ key: 'nom', label: 'Nom complet' }));
+      expect(store.changeCount()).toBe(1);
+      expect(store.changes()[0].kind).toBe('changed');
+
+      // Ajout explicite : la clé fournie est conservée (sans doublon), le diff compte un « added ».
+      store.addField('employe', { key: 'email', label: 'E-mail', type: 'text', required: false, unique: false });
+      expect(store.draft()?.entities[0].fields.map(f => f.key)).toEqual(['nom', 'email']);
+      expect(store.changeCount()).toBe(2);
+
+      // « Retirer » un champ connu du serveur : marqué removed (restaurable), le rename disparaît du diff.
+      store.removeField('employe', 'nom');
+      expect(store.draft()?.entities[0].fields.map(f => f.key)).toEqual(['email']);
+      expect(store.changeCount()).toBe(2);
+      expect(store.changes().map(c => c.kind).sort()).toEqual(['added', 'removed']);
+
+      // « Rétablir » : le champ revient à sa position d'origine, avec son renommage (« changed » à nouveau).
+      store.removeField('employe', 'nom');
+      expect(store.draft()?.entities[0].fields.map(f => f.key)).toEqual(['nom', 'email']);
+      expect(store.draft()?.entities[0].fields[0].label).toBe('Nom complet');
+      expect(store.changeCount()).toBe(2);
+
+      // Un champ ajouté pendant cette session est supprimé définitivement (rien à rétablir).
+      store.removeField('employe', 'email');
+      expect(store.draft()?.entities[0].fields.map(f => f.key)).toEqual(['nom']);
+      expect(store.changeCount()).toBe(1);
+
+      // Sans champ fourni, « Ajouter un champ » crée « Nouveau champ » avec une clé slugifiée unique.
+      store.addField('employe');
+      store.addField('employe');
+      expect(store.draft()?.entities[0].fields.map(f => f.key)).toEqual(['nom', 'nouveau_champ', 'nouveau_champ_2']);
+      expect(store.draft()?.entities[0].fields[1]).toEqual(jasmine.objectContaining({
+        label: STUDIO_AI_LABELS.customize.newField, type: 'text', required: false, unique: false
+      }));
+
+      // Une table existante (`existingKey`) est verrouillée : aucune mutation n'aboutit.
+      const before = store.draft();
+      store.updateField('inconnue', 'nom', { label: 'X' });
+      expect(store.draft()).toBe(before);
+    });
+  });
+
   describe('pure helpers', () => {
     it('normalizeSummary fills the missing collections', () => {
       const normalized = normalizeSummary({ title: 'X' } as StudioPlanSummary);

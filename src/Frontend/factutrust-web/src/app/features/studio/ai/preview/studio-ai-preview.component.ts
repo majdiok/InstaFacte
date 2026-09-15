@@ -6,7 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { ReportResult } from '@shared/studio-runtime/studio-runtime.models';
 import { StudioAiCapabilitiesService } from '../studio-ai-capabilities.service';
-import { STUDIO_AI_LABELS } from '../studio-ai-labels';
+import { STUDIO_AI_LABELS, formatLabel } from '../studio-ai-labels';
 import { StudioAiSessionStore } from '../studio-ai-session.store';
 import { StudioAiPreviewTab } from '../studio-ai.models';
 import { counterChips } from '../studio-ai-spec.util';
@@ -32,6 +32,9 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
  * `POST {id}/confirm`. La barre de modes (Aperçu / Tester / Personnaliser, 3.4c) remplace l'ancien
  * bouton « Modifier » ; « Personnaliser » démarre l'édition dans le store. En mode « Tester » (3.4f1),
  * les onglets sont remplacés par le panneau de simulation (`app-studio-ai-test-panel`, 0 écriture).
+ * En mode « Personnaliser » (3.4g1), l'onglet Tables devient éditable (mutations `updateField` /
+ * `addField` / `removeField` du store) et un pied collant affiche le compteur de modifications et
+ * l'action « Enregistrer le brouillon » (`saveDraft` existant).
  */
 @Component({
   selector: 'app-studio-ai-preview',
@@ -176,7 +179,16 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
                 (openEntity)="selectEntity($event)" />
             </p-tabpanel>
             <p-tabpanel value="tables">
-              <app-studio-ai-tables-tab [spec]="spec()!" [selectedRef]="selectedRef()" [highlightedRef]="store.highlightedEntityRef()" />
+              <!-- 3.4g1 : en mode Personnaliser, l'onglet Tables devient éditable (mutations du store). -->
+              <app-studio-ai-tables-tab
+                [spec]="spec()!"
+                [selectedRef]="selectedRef()"
+                [highlightedRef]="store.highlightedEntityRef()"
+                [editable]="store.mode() === 'customize'"
+                [changes]="store.changes()"
+                (fieldChange)="store.updateField($event.ref, $event.key, $event.patch)"
+                (fieldAdd)="store.addField($event)"
+                (fieldRemove)="store.removeField($event.ref, $event.key)" />
             </p-tabpanel>
             <p-tabpanel value="relations">
               <app-studio-ai-relations-tab [spec]="spec()!" />
@@ -203,6 +215,25 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
         </p-tabs>
           }
         }
+
+        @if (store.mode() === 'customize') {
+          <!-- Pied collant du mode Personnaliser (3.4g1) : compteur de modifications + sauvegarde. -->
+          <footer class="sai-changes-footer" data-component-id="sai-changes-footer">
+            @if (store.changeCount() > 0) {
+              <span class="sai-changes-badge" data-component-id="sai-changes-badge">
+                <span class="sai-changes-badge__dot" aria-hidden="true"></span>{{ changesBadge() }}
+              </span>
+            } @else {
+              <span class="sai-hint">{{ customizeLabels.noChanges }}</span>
+            }
+            <span class="sai-changes-footer__spacer"></span>
+            <p-button
+              [label]="modeLabels.saveDraft"
+              icon="fa-solid fa-floppy-disk"
+              [disabled]="store.changeCount() === 0 || store.validation().pending"
+              (onClick)="store.saveDraft()" />
+          </footer>
+        }
       }
     </section>
   `
@@ -222,6 +253,8 @@ export class StudioAiPreviewComponent {
   readonly capabilityLabels = STUDIO_AI_LABELS.capabilities;
   readonly soon = STUDIO_AI_LABELS.soon;
   readonly tabs = STUDIO_AI_LABELS.tabs;
+  readonly customizeLabels = STUDIO_AI_LABELS.customize;
+  readonly modeLabels = STUDIO_AI_LABELS.modes;
 
   /** Table à mettre en avant dans l'onglet Tables (clic dans la Vue d'ensemble). */
   readonly selectedRef = signal<string | null>(null);
@@ -248,6 +281,10 @@ export class StudioAiPreviewComponent {
   });
 
   readonly chips = computed(() => counterChips(this.store.counters()));
+
+  /** Badge « n modifications » du pied Personnaliser (3.4g1). */
+  readonly changesBadge = computed(() =>
+    formatLabel(STUDIO_AI_LABELS.customize.changes, { count: this.store.changeCount() }));
 
   /** Compteur affiché dans l'onglet ; `null` = pas de compteur (Vue d'ensemble, Pages, Workflow sans workflow). */
   tabCount(id: StudioAiPreviewTab): number | null {

@@ -19,7 +19,7 @@ import {
 } from '../studio-ai-build.service';
 import { stripStudioAssistantText } from '../studio-ai-builder.component';
 import { STUDIO_AI_LABELS, formatLabel } from './studio-ai-labels';
-import { cloneSpec, diffSpec, parseSpecPayload, serializeSpec, studioAiHttpError } from './studio-ai-spec.util';
+import { cloneSpec, diffSpec, parseSpecPayload, serializeSpec, slugify, studioAiHttpError, uniqueKey } from './studio-ai-spec.util';
 import {
   ImportCustomSystemRequest,
   StudioAiIntent,
@@ -34,7 +34,9 @@ import {
   StudioSpecChange,
   StudioSpecCounters,
   StudioSpecEntity,
+  StudioSpecField,
   StudioSystemSpec,
+  STUDIO_SPEC_LIMITS,
   countSpec,
   isSystemBuildResult,
   specPayloadForKind,
@@ -167,6 +169,13 @@ export class StudioAiSessionStore implements OnDestroy {
   readonly previewUnavailable = signal(false);
   /** Secondes restantes avant expiration du plan ; `null` sans `expiresAt`. Recalculé à chaque tick. */
   readonly expiresInSeconds = signal<number | null>(null);
+  /**
+   * Champs connus du serveur retirés du brouillon en mode Personnaliser (3.4g1), avec leur position
+   * d'origine (`<ref>.<key>` → champ + index) : « Rétablir » les réinsère tant que le brouillon
+   * n'est pas enregistré. Hors du brouillon pour que `diffSpec` les compte `removed` (absents de
+   * `fields`) et que `saveDraft` ne les renvoie jamais au serveur.
+   */
+  private readonly removedFields = signal<ReadonlyMap<string, { field: StudioSpecField; index: number }>>(new Map());
 
   // ---- Dérivés ------------------------------------------------------------------------------------
   readonly busy = computed(() => {
@@ -536,6 +545,7 @@ export class StudioAiSessionStore implements OnDestroy {
         const view = toSystemSpecView(parsed);
         this.spec.set(view);
         this.draft.set(cloneSpec(view));
+        this.removedFields.set(new Map());
         this.plan.update(p => p
           ? { ...p, kind: res.data.kind || p.kind, rowVersion: res.data.rowVersion, expiresAt: res.data.expiresAt }
           : p);
@@ -604,10 +614,114 @@ export class StudioAiSessionStore implements OnDestroy {
     this.draft.set(next);
   }
 
+  // ---- Mode Personnaliser : mutations de champs du brouillon (3.4g1) -------------------------------
+
+  /**
+   * Édition inline d'un champ (onglet Tables) : renommage, type, requis/unique, options. La clé ne
+   * change jamais — elle sert d'ancre au diff (`diffSpec`) et au suivi visuel de la ligne.
+   */
+  updateField(ref: string, key: string, patch: Partial<StudioSpecField>): void {
+    this.mutateDraftEntity(ref, entity => {
+      if (entity.existingKey) return entity;
+      const index = entity.fields.findIndex(f => f.key === key);
+      if (index < 0) return entity;
+      const fields = [...entity.fields];
+      fields[index] = { ...fields[index], ...patch, key };
+      return { ...entity, fields };
+    });
+  }
+
+  /**
+   * « Ajouter un champ » : sans `field` explicite, crée un champ texte « Nouveau champ » dont la clé
+   * est slugifiée puis rendue unique (`uniqueKey`) parmi les clés de la table ; une clé fournie déjà
+   * prise est suffixée de la même façon. Bloqué à `STUDIO_SPEC_LIMITS.maxFields` (40, borne serveur).
+   */
+  addField(ref: string, field?: StudioSpecField): void {
+    this.mutateDraftEntity(ref, entity => {
+      if (entity.existingKey || entity.fields.length >= STUDIO_SPEC_LIMITS.maxFields) return entity;
+      const taken = entity.fields.map(f => f.key);
+      const label = field?.label || STUDIO_AI_LABELS.customize.newField;
+      const next: StudioSpecField = {
+        required: false,
+        unique: false,
+        type: 'text',
+        ...field,
+        label,
+        key: uniqueKey(field?.key || slugify(label), taken)
+      };
+      return { ...entity, fields: [...entity.fields, next] };
+    });
+  }
+
+  /**
+   * « Retirer » / « Rétablir » un champ (bascule) : un champ connu du serveur est sorti du brouillon
+   * et conservé dans `removedFields` (ligne barrée restaurable) ; un champ ajouté pendant cette
+   * session d'édition est supprimé définitivement ; rappeler `removeField` sur un champ marqué le
+   * réinsère à sa position d'origine avec ses éventuelles modifications.
+   */
+  removeField(ref: string, key: string): void {
+    const id = `${ref}.${key}`;
+    const logged = this.removedFields().get(id);
+    if (logged) {
+      const restored = this.mutateDraftEntity(ref, entity => {
+        if (entity.fields.some(f => f.key === key)) return entity;
+        const fields = [...entity.fields];
+        fields.splice(Math.min(logged.index, fields.length), 0, logged.field);
+        return { ...entity, fields };
+      });
+      if (restored) {
+        this.removedFields.update(map => {
+          const next = new Map(map);
+          next.delete(id);
+          return next;
+        });
+      }
+      return;
+    }
+    const entity = this.draft()?.entities.find(e => e.ref === ref);
+    const index = entity?.fields.findIndex(f => f.key === key) ?? -1;
+    if (!entity || entity.existingKey || index < 0) return;
+    const field = entity.fields[index];
+    const removed = this.mutateDraftEntity(ref, current => ({
+      ...current,
+      fields: current.fields.filter(f => f.key !== key)
+    }));
+    // Seuls les champs connus du serveur sont restaurables ; un champ ajouté dans cette session
+    // disparaît sans trace (rien à « rétablir » : il n'existe pas dans la spec de base).
+    const knownToServer = this.spec()?.entities.find(e => e.ref === ref)?.fields.some(f => f.key === key) ?? false;
+    if (removed && knownToServer) {
+      this.removedFields.update(map => new Map(map).set(id, { field, index }));
+    }
+  }
+
+  /**
+   * Mutation immuable d'une entité du brouillon, sur le modèle d'`applyDuplicateDecision` (copie des
+   * tableaux, no-op si la table est absente ou inchangée). Repasse en édition si le mode
+   * Personnaliser est encore actif après un « Enregistrer le brouillon » (phase retombée à
+   * `awaiting_confirmation`). Renvoie `true` quand le brouillon a été remplacé.
+   */
+  private mutateDraftEntity(ref: string, mutate: (entity: StudioSpecEntity) => StudioSpecEntity): boolean {
+    const draft = this.draft();
+    if (!draft || this.busy() || this.validation().pending) return false;
+    if (this.phase() !== 'editing') {
+      if (!this.canEdit()) return false;
+      this.startEditing();
+    }
+    const index = draft.entities.findIndex(e => e.ref === ref);
+    if (index < 0) return false;
+    const next = mutate(draft.entities[index]);
+    if (next === draft.entities[index]) return false;
+    const entities = [...draft.entities];
+    entities[index] = next;
+    this.updateDraft({ ...draft, entities });
+    return true;
+  }
+
   /** Abandonne les modifications locales et revient à la spec serveur. */
   resetDraft(): void {
     const base = this.spec();
     this.draft.set(base ? cloneSpec(base) : null);
+    this.removedFields.set(new Map());
     this.validation.set({ warnings: [], errors: [], pending: false });
     if (this.phase() === 'editing') this.phase.set('awaiting_confirmation');
   }
@@ -637,6 +751,8 @@ export class StudioAiSessionStore implements OnDestroy {
         const summary = parsePlanSummary(res.data.plan?.summaryJson) ?? current.summary;
         this.spec.set(view);
         this.draft.set(cloneSpec(view));
+        // Les retraits marqués deviennent définitifs une fois enregistrés (plus rien à rétablir).
+        this.removedFields.set(new Map());
         this.plan.set({
           ...current,
           rowVersion: res.data.spec?.rowVersion ?? current.rowVersion,
@@ -909,6 +1025,7 @@ export class StudioAiSessionStore implements OnDestroy {
     this.validation.set({ warnings: [], errors: [], pending: false });
     this.dismissedDuplicateRefs.set(new Set());
     this.highlightedEntityRef.set(null);
+    this.removedFields.set(new Map());
     this.mode.set('preview');
     this.preview.set(null);
     this.previewLoading.set(false);
