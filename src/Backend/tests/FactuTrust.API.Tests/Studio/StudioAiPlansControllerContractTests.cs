@@ -41,15 +41,53 @@ public sealed class StudioAiPlansControllerContractTests
     }
 
     [Fact]
-    public async Task List_returns_404_and_calls_nothing_when_workbench_disabled()
+    public async Task List_returns_404_and_calls_nothing_when_plan_preview_disabled()
     {
+        // PR 3.2 : l'historique relève du flux d'aperçu, même avec le workbench activé.
         var mediator = new Mock<IMediator>(MockBehavior.Strict);
-        var controller = CreateController(mediator, workbenchEnabled: false);
+        var controller = CreateController(mediator, workbenchEnabled: true, planPreviewEnabled: false);
 
         var result = await controller.List(null, null, 1, 20, CancellationToken.None);
 
-        Assert.IsType<NotFoundObjectResult>(result);
+        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<object>>(notFound.Value);
+        Assert.Equal("Le flux d'aperçu Studio n'est pas activé.", body.Error);
         mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task CancelPending_returns_404_and_calls_nothing_when_plan_preview_disabled()
+    {
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        var controller = CreateController(mediator, workbenchEnabled: true, planPreviewEnabled: false);
+
+        var result = await controller.CancelPending(CancellationToken.None);
+
+        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<object>>(notFound.Value);
+        Assert.Equal("Le flux d'aperçu Studio n'est pas activé.", body.Error);
+        mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task List_and_cancel_pending_work_when_workbench_disabled_but_plan_preview_enabled()
+    {
+        // La bascule 3.2 ne lie plus l'historique au workbench : le workbench peut être coupé seul.
+        var paged = PagedResult<StudioAiPlanListItemDto>.Create(
+            Array.Empty<StudioAiPlanListItemDto>(), page: 1, pageSize: 20, totalCount: 0);
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        mediator.Setup(m => m.Send(It.IsAny<ListStudioAiPlansQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(paged));
+        mediator.Setup(m => m.Send(It.IsAny<CancelPendingStudioAiPlansCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(0));
+        var controller = CreateController(mediator, workbenchEnabled: false, planPreviewEnabled: true);
+
+        Assert.IsType<OkObjectResult>(await controller.List(null, null, 1, 20, CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await controller.CancelPending(CancellationToken.None));
+        mediator.Verify(
+            m => m.Send(It.IsAny<ListStudioAiPlansQuery>(), It.IsAny<CancellationToken>()), Times.Once);
+        mediator.Verify(
+            m => m.Send(It.IsAny<CancelPendingStudioAiPlansCommand>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -62,7 +100,6 @@ public sealed class StudioAiPlansControllerContractTests
         Assert.IsType<NotFoundObjectResult>(await controller.GetSpec(id, CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(
             await controller.UpdateSpec(id, new UpdateStudioAiPlanSpecRequest("{}", ""), CancellationToken.None));
-        Assert.IsType<NotFoundObjectResult>(await controller.CancelPending(CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(
             await controller.ValidateSpec(new ValidateStudioAiSpecRequest("CreateSystem", "{}"), CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(
@@ -84,14 +121,24 @@ public sealed class StudioAiPlansControllerContractTests
         var mediator = new Mock<IMediator>();
         mediator.Setup(m => m.Send(It.IsAny<ListStudioAiPlansQuery>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(paged));
-        var controller = CreateController(mediator, workbenchEnabled: true);
+        var controller = CreateController(mediator, workbenchEnabled: true, planPreviewEnabled: true);
 
         var result = await controller.List("Pending", null, 1, 20, CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<PagedResult<StudioAiPlanListItemDto>>>(ok.Value);
         Assert.True(body.Success);
-        Assert.Single(body.Data!.Items);
+        var item = Assert.Single(body.Data!.Items);
+        // PR 3.2 : les 5 champs ajoutés en fin ont leurs défauts (null/null/0/0/false) quand le
+        // constructeur est appelé avec les 9 positionnels historiques ; viewCount est omis du JSON à 0.
+        Assert.Null(item.ErrorMessage);
+        Assert.Null(item.OpenUrl);
+        Assert.Equal(0, item.RelationCount);
+        Assert.Equal(0, item.ViewCount);
+        Assert.False(item.Replayable);
+        Assert.DoesNotContain("viewCount",
+            JsonSerializer.Serialize(item, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -270,6 +317,11 @@ public sealed class StudioAiPlansControllerContractTests
             Guid.NewGuid(), new UpdateStudioAiPlanSpecRequest("{\"system\":{}}", "AAAA"), CancellationToken.None);
     }
 
-    private static StudioAiPlansController CreateController(Mock<IMediator> mediator, bool workbenchEnabled) =>
-        new(mediator.Object, Options.Create(new OllamaSettings { EnableStudioAiWorkbench = workbenchEnabled }));
+    private static StudioAiPlansController CreateController(
+        Mock<IMediator> mediator, bool workbenchEnabled, bool planPreviewEnabled = false) =>
+        new(mediator.Object, Options.Create(new OllamaSettings
+        {
+            EnableStudioAiWorkbench = workbenchEnabled,
+            EnableStudioAiPlanPreview = planPreviewEnabled
+        }));
 }

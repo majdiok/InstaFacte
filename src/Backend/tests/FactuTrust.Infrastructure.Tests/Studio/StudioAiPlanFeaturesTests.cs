@@ -208,6 +208,33 @@ public sealed class StudioAiPlanFeaturesTests
     public void RequiredPermission_maps_each_plan_kind(StudioAiPlanKind kind, string expected) =>
         Assert.Equal(expected, StudioAiPlanDefaults.RequiredPermission(kind));
 
+    // PR 3.2 : tout état terminal est rejouable ; un Pending échu l'est aussi, un Pending vivant non.
+    [Theory]
+    [InlineData(StudioAiPlanStatus.Completed, false, true)]
+    [InlineData(StudioAiPlanStatus.Failed, false, true)]
+    [InlineData(StudioAiPlanStatus.Cancelled, false, true)]
+    [InlineData(StudioAiPlanStatus.Expired, false, true)]
+    [InlineData(StudioAiPlanStatus.Pending, false, false)]
+    [InlineData(StudioAiPlanStatus.Pending, true, true)]
+    [InlineData(StudioAiPlanStatus.Executing, false, false)]
+    [InlineData(StudioAiPlanStatus.Executing, true, false)]
+    public void IsReplayable_follows_status_and_expiry(StudioAiPlanStatus status, bool pastExpiry, bool expected)
+    {
+        var plan = PendingPlan();
+        switch (status)
+        {
+            case StudioAiPlanStatus.Completed: plan.MarkCompleted(null); break;
+            case StudioAiPlanStatus.Failed: plan.MarkFailed("échec"); break;
+            case StudioAiPlanStatus.Cancelled: plan.MarkCancelled(); break;
+            case StudioAiPlanStatus.Expired: plan.MarkExpired(); break;
+            case StudioAiPlanStatus.Executing: plan.MarkExecuting(); break;
+        }
+
+        var utcNow = pastExpiry ? plan.ExpiresAt.AddMinutes(1) : DateTime.UtcNow;
+
+        Assert.Equal(expected, StudioAiPlanDefaults.IsReplayable(plan, utcNow));
+    }
+
     private static StudioAiBuildPlan PendingPlan(TimeSpan? lifetime = null) =>
         StudioAiBuildPlan.Create(TenantId, StudioAiPlanKind.CreateSystem, "{\"system\":{}}", "{}", UserId,
             lifetime ?? StudioAiPlanDefaults.Lifetime);

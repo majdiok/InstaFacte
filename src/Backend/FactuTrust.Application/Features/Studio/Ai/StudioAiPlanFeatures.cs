@@ -36,6 +36,21 @@ public static class StudioAiPlanDefaults
     /// <summary>Durée de vie d'un plan en attente : au-delà, la confirmation est refusée.</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(60);
 
+    /// <summary>Statuts depuis lesquels un plan peut être REJOUÉ (PR 3.2) : tout état terminal.</summary>
+    public static readonly IReadOnlySet<StudioAiPlanStatus> ReplayableStatuses =
+        new HashSet<StudioAiPlanStatus>
+        {
+            StudioAiPlanStatus.Completed, StudioAiPlanStatus.Failed,
+            StudioAiPlanStatus.Cancelled, StudioAiPlanStatus.Expired
+        };
+
+    /// <summary>
+    /// Un plan est rejouable s'il est dans un état terminal (succès, échec, annulation, expiration)
+    /// — y compris un plan Pending échu, présenté « Expired » sans écriture.
+    /// </summary>
+    public static bool IsReplayable(StudioAiBuildPlan plan, DateTime utcNow) =>
+        ReplayableStatuses.Contains(plan.Status) || plan.IsExpired(utcNow);
+
     public static StudioAiPlanDto ToDto(StudioAiBuildPlan plan)
     {
         // Un plan Pending dont l'échéance est passée est présenté « Expired » sans écriture
