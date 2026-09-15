@@ -774,7 +774,49 @@ public sealed class StudioAiSpecCanonicalTests
                 "dir": "desc"
               }
             ]
-          }
+          },
+          "views": [
+            {
+              "name": "Par statut",
+              "mode": "kanban",
+              "columns": [
+                "reference",
+                "client",
+                "priorite"
+              ],
+              "filters": [],
+              "sort": [],
+              "groupBy": "statut",
+              "title": "reference",
+              "isDefault": false
+            },
+            {
+              "name": "Ouvertes",
+              "mode": "list",
+              "columns": [
+                "reference",
+                "client",
+                "motif",
+                "priorite",
+                "statut",
+                "date_d_ouverture"
+              ],
+              "filters": [
+                {
+                  "field": "statut",
+                  "op": "neq",
+                  "value": "cloturee"
+                }
+              ],
+              "sort": [
+                {
+                  "field": "date_d_ouverture",
+                  "desc": true
+                }
+              ],
+              "isDefault": true
+            }
+          ]
         },
         {
           "ref": "actions_correctives",

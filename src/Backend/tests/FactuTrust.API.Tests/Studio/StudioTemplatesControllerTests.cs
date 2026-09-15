@@ -87,6 +87,38 @@ public sealed class StudioTemplatesControllerTests
     }
 
     [Fact]
+    public void List_items_carry_relation_count_and_view_modes()
+    {
+        var controller = CreateController(workbenchEnabled: true, templatesEnabled: false);
+
+        var ok = Assert.IsType<OkObjectResult>(controller.List(null));
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<IReadOnlyList<StudioTemplateListItemDto>>>(ok.Value);
+        Assert.All(body.Data!, item => Assert.NotNull(item.ViewModes));
+
+        var interventions = Assert.Single(body.Data!, item => item.Key == "gestion-interventions");
+        Assert.Equal(3, interventions.EntityCount);
+        Assert.Equal(0, interventions.RelationCount);
+        Assert.Contains("calendar", interventions.ViewModes!);
+
+        var formations = Assert.Single(body.Data!, item => item.Key == "gestion-formations");
+        Assert.Equal(4, formations.EntityCount);
+        Assert.Equal(1, formations.RelationCount);
+    }
+
+    [Fact]
+    public void Detail_carries_relation_count_and_view_modes()
+    {
+        var controller = CreateController(workbenchEnabled: true, templatesEnabled: false);
+
+        var ok = Assert.IsType<OkObjectResult>(controller.GetByKey("suivi-reclamations"));
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<StudioTemplateDetailDto>>(ok.Value);
+        Assert.Equal(3, body.Data!.EntityCount);
+        Assert.Equal(0, body.Data.RelationCount);
+        Assert.Equal(new[] { "kanban", "list" }, body.Data.ViewModes);
+        Assert.Contains("\"views\"", body.Data.SpecJson);
+    }
+
+    [Fact]
     public void GetByKey_returns_404_for_an_unknown_key()
     {
         var controller = CreateController(workbenchEnabled: true, templatesEnabled: false);
