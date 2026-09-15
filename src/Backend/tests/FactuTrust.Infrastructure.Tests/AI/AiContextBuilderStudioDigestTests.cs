@@ -114,6 +114,8 @@ public sealed class AiContextBuilderStudioDigestTests
 
         var prompt = await builder.BuildSystemPromptAsync(
             AssistantMode.StudioBuilder, null, AssistantAgentScope.None, Opts());
+        // StringBuilder.AppendLine émet \r\n sous Windows : les aiguilles multi-lignes sont en LF.
+        prompt = prompt.Replace("\r\n", "\n");
 
         Assert.Contains("11. Le SCHÉMA EXISTANT liste les tables déjà présentes avec leurs VRAIES clés.", prompt);
         Assert.Contains("12. Le DERNIER PLAN décrit ce qui vient d'être préparé ou créé.", prompt);
@@ -135,6 +137,8 @@ public sealed class AiContextBuilderStudioDigestTests
 
         var prompt = await builder.BuildSystemPromptAsync(
             AssistantMode.StudioBuilder, null, AssistantAgentScope.None, Opts());
+        // StringBuilder.AppendLine émet \r\n sous Windows : les aiguilles multi-lignes sont en LF.
+        prompt = prompt.Replace("\r\n", "\n");
 
         Assert.Contains("SCHÉMA EXISTANT (tables Studio de ce client) :\nAucune table Studio pour l'instant.", prompt);
         Assert.Contains("11. Le SCHÉMA EXISTANT", prompt);
