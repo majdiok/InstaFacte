@@ -571,7 +571,8 @@ export const STUDIO_AI_LABELS = {
     saved: 'Enregistrement simulé : aucune donnée écrite.',
     reportUnavailable: 'Rapport indisponible : aucune donnée d’exemple.',
     sampleFromSeed: 'Calculé sur les données de départ',
-    sampleFromServer: 'Échantillon fourni par le serveur'
+    sampleFromServer: 'Échantillon fourni par le serveur',
+    exportUnavailable: 'Export indisponible en simulation.'
   },
 
   /** Mode Personnaliser : édition inline des champs (3.4g). */

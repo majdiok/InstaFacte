@@ -284,3 +284,21 @@
   background: var(--surface-card, #fff);
 }
 .sai-test__report { border-top: 1px solid var(--surface-border, #e5e7eb); padding-top: var(--spacing-3, 0.75rem); }
+.sai-test__report-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2, 0.5rem);
+  margin: 0 0 var(--spacing-2, 0.5rem);
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-neutral-700, #374151);
+}
+.sai-test__report-title i { color: var(--color-primary-600, #2563eb); }
+.sai-test__report-source { margin-bottom: var(--spacing-2, 0.5rem); }
+.sai-test__export-hint { margin-top: var(--spacing-2, 0.5rem); }
+/* D21 : en simulation, le bouton « Exporter » du rapport est masqué (composant partagé inchangé). */
+.sai-test-report--noexport { display: block; }
+:host ::ng-deep .sai-test-report--noexport .dr-bar > button {
+  pointer-events: none;
+  opacity: 0.55;
+}

@@ -4,6 +4,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TabsModule } from 'primeng/tabs';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
+import { ReportResult } from '@shared/studio-runtime/studio-runtime.models';
 import { StudioAiCapabilitiesService } from '../studio-ai-capabilities.service';
 import { STUDIO_AI_LABELS } from '../studio-ai-labels';
 import { StudioAiSessionStore } from '../studio-ai-session.store';
@@ -139,7 +140,8 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
             <app-studio-ai-test-panel
               [spec]="spec()!"
               [preview]="store.preview()"
-              [previewUnavailable]="store.previewUnavailable()" />
+              [previewUnavailable]="store.previewUnavailable()"
+              [sample]="reportSample()" />
           }
           @default {
         <p-tabs [value]="activeTab()" [scrollable]="true" (valueChange)="onTabChange($event)">
@@ -226,6 +228,8 @@ export class StudioAiPreviewComponent {
 
   readonly spec = computed(() => this.store.draft() ?? this.store.spec());
   readonly previewEnabled = computed(() => this.capabilitiesService.capabilities().planPreviewEnabled);
+  /** Échantillon de rapport calculé par le serveur (`summary.sample`, P5) pour le mode Tester. */
+  readonly reportSample = computed<ReportResult | null>(() => this.store.plan()?.summary.sample ?? null);
 
   readonly headerTitle = computed(
     () => this.spec()?.system?.displayName || this.store.plan()?.summary.title || this.labels.title

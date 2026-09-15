@@ -3,10 +3,12 @@ import { FormsModule } from '@angular/forms';
 import { MessageModule } from 'primeng/message';
 import { SelectModule } from 'primeng/select';
 import { DynamicFormComponent } from '@shared/studio-runtime/dynamic-form.component';
-import { CustomField, FormLayout } from '@shared/studio-runtime/studio-runtime.models';
+import { DynamicReportComponent } from '@shared/studio-runtime/dynamic-report.component';
+import { CustomField, FormLayout, ReportResult } from '@shared/studio-runtime/studio-runtime.models';
 import { STUDIO_AI_LABELS } from '../studio-ai-labels';
-import { StudioAiPlanPreviewDto, StudioSpecEntity, StudioSystemSpec } from '../studio-ai.models';
+import { StudioAiPlanPreviewDto, StudioSpecEntity, StudioSpecReport, StudioSystemSpec } from '../studio-ai.models';
 import { specEntityToCustomFields, specFormToLayout } from '../studio-ai-spec.util';
+import { sampleFromSeed } from './studio-ai-test-report.util';
 
 /**
  * Panneau « Tester » de l'aperçu (M5, 3.4f1) : le formulaire d'une table de la spec, rendu par le
@@ -20,12 +22,16 @@ import { specEntityToCustomFields, specFormToLayout } from '../studio-ai-spec.ut
  *
  * « Enregistrer » (bouton du formulaire dynamique) se contente d'afficher `simulation.saved` en ligne
  * ; les erreurs de validation sont celles du `DynamicFormComponent` (maquette « erreurs »).
- * La carte « Rapport » simulé arrive en 3.4f2 : zone réservée en bas du panneau.
+ *
+ * Carte « Rapport » (M6, 3.4f2) : quand la table choisie déclare un `report`, le résultat est
+ * l'échantillon serveur (`summary.sample`, P5) s'il est fourni, sinon l'agrégation locale
+ * `sampleFromSeed` sur les données de départ ; le bouton « Exporter » du `DynamicReportComponent`
+ * partagé (jamais modifié) est masqué par le conteneur `.sai-test-report--noexport` (D21).
  */
 @Component({
   selector: 'app-studio-ai-test-panel',
   standalone: true,
-  imports: [FormsModule, MessageModule, SelectModule, DynamicFormComponent],
+  imports: [FormsModule, MessageModule, SelectModule, DynamicFormComponent, DynamicReportComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './studio-ai-preview.scss',
   template: `
@@ -65,9 +71,23 @@ import { specEntityToCustomFields, specFormToLayout } from '../studio-ai-spec.ut
         }
       }
 
-      <!-- 3.4f2 : la carte « Rapport » simulé (sampleFromSeed / échantillon serveur) remplacera ce placeholder. -->
       <div class="sai-test__report" data-component-id="sai-test-report">
-        <p class="sai-hint">{{ labels.reportUnavailable }}</p>
+        @if (report(); as report) {
+          <h3 class="sai-test__report-title">
+            <i class="fa-solid fa-chart-column" aria-hidden="true"></i>
+            {{ report.displayName || selectedEntity()?.displayName }}
+          </h3>
+        }
+        @if (reportResult(); as result) {
+          <p class="sai-hint sai-test__report-source" data-component-id="sai-test-report-source">{{ reportSourceLabel() }}</p>
+          <!-- D21 : export masqué en simulation — le composant partagé n'est pas modifié. -->
+          <div class="sai-test-report--noexport" [attr.aria-disabled]="true">
+            <app-dynamic-report [result]="result" exportName="simulation" />
+          </div>
+          <p class="sai-hint sai-test__export-hint">{{ labels.exportUnavailable }}</p>
+        } @else {
+          <p class="sai-hint">{{ labels.reportUnavailable }}</p>
+        }
       </div>
     </div>
   `
@@ -79,6 +99,11 @@ export class StudioAiTestPanelComponent {
   readonly preview = input<StudioAiPlanPreviewDto | null>(null);
   /** Vrai quand l'aperçu serveur est indisponible (404) : mode dégradé local, toujours utilisable. */
   readonly previewUnavailable = input(false);
+  /**
+   * Échantillon de rapport calculé par le serveur (`summary.sample`, P5 — présent pour un plan
+   * d'état) : préféré à l'agrégation locale sur les données de départ quand il est fourni.
+   */
+  readonly sample = input<ReportResult | null>(null);
 
   readonly labels = STUDIO_AI_LABELS.simulation;
   readonly previewUnavailableLabel = STUDIO_AI_LABELS.modes.previewUnavailable;
@@ -131,6 +156,28 @@ export class StudioAiTestPanelComponent {
     const entity = this.selectedEntity();
     return entity ? specFormToLayout(entity) : null;
   });
+
+  /** Rapport déclaré sur la table choisie (`entity.report` — un rapport par table). */
+  readonly report = computed<StudioSpecReport | null>(() => this.selectedEntity()?.report ?? null);
+
+  /**
+   * Résultat affiché (P5) : échantillon serveur si fourni, sinon agrégation locale
+   * `sampleFromSeed` sur les données de départ (locales, complétées du `seedSample` serveur).
+   */
+  readonly reportResult = computed<ReportResult | null>(() => {
+    const report = this.report();
+    const entity = this.selectedEntity();
+    if (!report || !entity) return null;
+    const server = this.sample();
+    if (server) return server;
+    const seed = (this.specWithServerSeed().seed ?? []).find(s => s.entityRef === entity.ref)?.records ?? [];
+    return sampleFromSeed(report, entity, seed);
+  });
+
+  /** Provenance de l'échantillon affiché : serveur, ou calcul local sur les données de départ. */
+  readonly reportSourceLabel = computed<string>(() =>
+    this.sample() ? this.labels.sampleFromServer : this.labels.sampleFromSeed
+  );
 
   onEntityChange(ref: string): void {
     this.selectedRef.set(ref);
