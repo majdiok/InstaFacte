@@ -369,7 +369,7 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
 - Historique/aperçu/rejeu (PR 3.2) : `--filter "FullyQualifiedName~StudioAiSeedSampler|FullyQualifiedName~StudioAiPlanPreviewBuilder|FullyQualifiedName~StudioAiPlanPreviewFeatures"`,
   contrat `StudioAiPlansControllerContractTests` (filtre `FactuTrust.API.Tests.Studio`) et
   compteurs de liste dans `StudioAiPlanWorkbenchFeaturesTests` / `StudioAiPlanFeaturesTests`.
-- Export / duplication / import + modèles enrichis (PR 3.3) : `--filter "FullyQualifiedName~StudioSystemSpecExporter|FullyQualifiedName~CustomSystemExportFeatures|FullyQualifiedName~StudioTemplateCatalog|FullyQualifiedName~StudioAiSpecCanonical|FullyQualifiedName~StudioKey"`
+- Export / duplication / import + modèles enrichis (PR 3.3) : `--filter "FullyQualifiedName~StudioSystemSpecExporter|FullyQualifiedName~CustomSystemExportFeatures|FullyQualifiedName~StudioTemplateCatalog|FullyQualifiedName~StudioAiSpecCanonical|FullyQualifiedName~StudioKey|FullyQualifiedName~CustomSystemFeatures"`
   (aller-retour export → `TryParse`, dégradations et warnings, bornes de seed, gardes des deux drapeaux, nom
   « (copie) », import chaîne/objet/`specVersion`, 10 modèles et `StudioTemplateStats`, test d'or, clé réservée
   `import`) ; contrats API `StudioSystemsControllerContractTests` et `StudioTemplatesControllerTests`
@@ -585,7 +585,7 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     `specVersion: 1`, `includesSeed: false`, `entityCount`/`relationCount`/`viewCount` cohérents avec
     le concepteur ; la `spec` porte `specVersion`, `exportedFrom { tenantSystemKey, exportedAt }`,
     `system`, `entities[]`, `relations[]` (présent seulement si le système porte des relations
-    N-N — ex. `gestion_projets`) et ne contient ni `seed`, ni identifiant (`Guid`), ni
+    N-N — ex. `gestion_de_projets`, clé du système créé depuis le modèle « Gestion de projets ») et ne contient ni `seed`, ni identifiant (`Guid`), ni
     `tenantId`. Avec `?download=true`, le navigateur télécharge `studio-system-{key}.json` (spec
     seule, indentée, accents lisibles). Drapeau `EnableStudioSystemExport=false` ⇒ `404`
     « L'export de systèmes Studio n'est pas activé. » sans appel côté application ; clé avec tiret
