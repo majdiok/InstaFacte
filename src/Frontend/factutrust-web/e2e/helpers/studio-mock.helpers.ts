@@ -539,9 +539,8 @@ export async function installStudioRuntimeMocks(
     record_(route);
     await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   };
-  const okBody = <T>(data: T) => ({ success: true, data, message: null, errors: [] });
   const paged = (items: unknown[], totalCount = items.length) =>
-    okBody({ items, page: 1, pageSize: items.length || 10, totalCount, totalPages: 1, hasNextPage: false, hasPreviousPage: false });
+    ok({ items, page: 1, pageSize: items.length || 10, totalCount, totalPages: 1, hasNextPage: false, hasPreviousPage: false });
 
   // Ordre = priorité croissante (Playwright évalue la route la plus récente d'abord) : les motifs
   // génériques sont enregistrés AVANT les motifs précis ; les listes paginées portent un `?**`
@@ -554,32 +553,32 @@ export async function installStudioRuntimeMocks(
         await fulfil(route, { success: false, data: null, message: 'Conflit de version.', errors: [], code: 'record.stale' }, 409);
         return;
       }
-      await fulfil(route, okBody(RUNTIME_RECORDS[0]));
+      await fulfil(route, ok(RUNTIME_RECORDS[0]));
       return;
     }
-    await fulfil(route, okBody(RUNTIME_RECORDS[0]));
+    await fulfil(route, ok(RUNTIME_RECORDS[0]));
   });
   await page.route(`**/api/studio/records/${key}?**`, route => fulfil(route, paged(RUNTIME_RECORDS)));
   await page.route(`**/api/studio/records/${key}`, route => fulfil(route, paged(RUNTIME_RECORDS)));
-  await page.route(`**/api/studio/records/${key}/schema`, route => fulfil(route, okBody(schema)));
+  await page.route(`**/api/studio/records/${key}/schema`, route => fulfil(route, ok(schema)));
 
   // — Vues enregistrées : run + CRUD.
   await page.route(`**/api/studio/records/${key}/views/*/run`, route =>
-    fulfil(route, okBody(options.runResult ?? runResultFor(route.request().url().split('/views/')[1].split('/run')[0]))));
-  await page.route(`**/api/studio/records/${key}/views/*/default`, route => fulfil(route, okBody(null)));
+    fulfil(route, ok(options.runResult ?? runResultFor(route.request().url().split('/views/')[1].split('/run')[0]))));
+  await page.route(`**/api/studio/records/${key}/views/*/default`, route => fulfil(route, ok(null)));
   await page.route(`**/api/studio/records/${key}/views/*`, async route => {
     const method = route.request().method();
     if (method === 'DELETE') { record_(route); await route.fulfill({ status: 204, body: '' }); return; }
-    if (method === 'PUT') { await fulfil(route, okBody({ ...LIST_VIEW, ...(safeJson(route.request().postData()) as object) })); return; }
-    await fulfil(route, okBody(LIST_VIEW));
+    if (method === 'PUT') { await fulfil(route, ok({ ...LIST_VIEW, ...(safeJson(route.request().postData()) as object) })); return; }
+    await fulfil(route, ok(LIST_VIEW));
   });
   await page.route(`**/api/studio/records/${key}/views`, async route => {
     if (route.request().method() === 'POST') {
       const body = (safeJson(route.request().postData()) ?? {}) as Record<string, unknown>;
-      await fulfil(route, okBody({ ...LIST_VIEW, id: 'v-new', key: body['key'] ?? 'v_new', displayName: body['displayName'] ?? 'Nouvelle vue', mode: body['mode'] ?? 'List', definition: body['definition'] ?? LIST_VIEW.definition }), 201);
+      await fulfil(route, ok({ ...LIST_VIEW, id: 'v-new', key: body['key'] ?? 'v_new', displayName: body['displayName'] ?? 'Nouvelle vue', mode: body['mode'] ?? 'List', definition: body['definition'] ?? LIST_VIEW.definition }), 201);
       return;
     }
-    await fulfil(route, okBody([LIST_VIEW, KANBAN_VIEW]));
+    await fulfil(route, ok([LIST_VIEW, KANBAN_VIEW]));
   });
 
   // — Jonction : retrait (DELETE {id}), liste des liens (GET ?…), ajout (POST).
@@ -595,7 +594,7 @@ export async function installStudioRuntimeMocks(
         await fulfil(route, { success: false, data: null, message: 'Lien déjà existant.', errors: [], code: 'record.duplicate_link' }, 409);
         return;
       }
-      await fulfil(route, okBody({ id: 'j-rec-2', data: {}, createdAt: '2026-09-03T01:00:00Z', updatedAt: '', rowVersion: 'J2' }), 201);
+      await fulfil(route, ok({ id: 'j-rec-2', data: {}, createdAt: '2026-09-03T01:00:00Z', updatedAt: '', rowVersion: 'J2' }), 201);
       return;
     }
     await fulfil(route, paged([]));
@@ -607,10 +606,10 @@ export async function installStudioRuntimeMocks(
 
   // — Entités + relations (concepteur de table, page Relations, liste des tables).
   await page.route(`**/api/studio/entities/*/relations/many-to-many`, route =>
-    fulfil(route, okBody({ junction: RUNTIME_ENTITIES[2], sourceField: RUNTIME_FIELDS[0], targetField: RUNTIME_FIELDS[1] }), 201));
-  await page.route(`**/api/studio/entities/*/relations`, route => fulfil(route, okBody([RUNTIME_M2M])));
-  await page.route(`**/api/studio/entities/*/fields?**`, route => fulfil(route, okBody(RUNTIME_FIELDS)));
-  await page.route(`**/api/studio/entities/*`, route => fulfil(route, okBody(RUNTIME_ENTITIES[0])));
-  await page.route(`**/api/studio/entities?**`, route => fulfil(route, okBody(RUNTIME_ENTITIES)));
-  await page.route(`**/api/studio/entities`, route => fulfil(route, okBody(RUNTIME_ENTITIES)));
+    fulfil(route, ok({ junction: RUNTIME_ENTITIES[2], sourceField: RUNTIME_FIELDS[0], targetField: RUNTIME_FIELDS[1] }), 201));
+  await page.route(`**/api/studio/entities/*/relations`, route => fulfil(route, ok([RUNTIME_M2M])));
+  await page.route(`**/api/studio/entities/*/fields?**`, route => fulfil(route, ok(RUNTIME_FIELDS)));
+  await page.route(`**/api/studio/entities/*`, route => fulfil(route, ok(RUNTIME_ENTITIES[0])));
+  await page.route(`**/api/studio/entities?**`, route => fulfil(route, ok(RUNTIME_ENTITIES)));
+  await page.route(`**/api/studio/entities`, route => fulfil(route, ok(RUNTIME_ENTITIES)));
 }

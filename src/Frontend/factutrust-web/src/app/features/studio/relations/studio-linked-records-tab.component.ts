@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { DatePipe } from '@angular/common';
@@ -19,6 +19,17 @@ interface TargetOption { id: string; label: string; }
  * une paire existante ⇒ 409 `record.duplicate_link` rendu en ligne). Le libellé cible est résolu
  * en une passe par `searchTargets` (les records de jonction ne portent que les ids).
  */
+/** Projection jonction → ligne affichée (libellé résolu ou repli sur l'id tronqué). */
+function toRow(p: { junction: CustomRecord; targetId: string }, targetLabel: string): LinkedRecordRow {
+  return {
+    junctionRecordId: p.junction.id,
+    targetId: p.targetId,
+    targetLabel,
+    rowVersion: p.junction.rowVersion,
+    createdAt: p.junction.createdAt
+  };
+}
+
 @Component({
   selector: 'app-studio-linked-records-tab',
   standalone: true,
@@ -62,6 +73,9 @@ interface TargetOption { id: string; label: string; }
       }
     </section>
   `,
+  // studio-layout.scss fournit .studio-row / .studio-row-section / .studio-grow / .studio-muted
+  // (encapsulation émulée : sans styleUrl ici, les lignes « Liés » n'étaient pas stylées).
+  styleUrl: '../shared/studio-layout.scss',
   styles: [`
     .slinked__addbar { display: flex; gap: var(--spacing-2); margin-bottom: var(--spacing-3); }
     .slinked__search { flex: 1; max-width: 24rem; }
@@ -81,7 +95,6 @@ export class StudioLinkedRecordsTabComponent implements OnInit {
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
   readonly rows = signal<LinkedRecordRow[]>([]);
-  readonly createdAt = signal<Record<string, string>>({});
   readonly options = signal<TargetOption[]>([]);
   readonly selectedTarget = signal<string | null>(null);
   readonly truncated = signal(false);
@@ -96,13 +109,12 @@ export class StudioLinkedRecordsTabComponent implements OnInit {
     this.linked.listLinks(this.relation(), this.recordId(), 1, this.pageSize).subscribe({
       next: res => {
         this.loading.set(false);
-        if (!res.success) { this.error.set(res.message || this.labels.views.error); return; }
+        if (!res.success) { this.error.set(res.message || this.labels.linked.error); return; }
         const junctions = res.data.items ?? [];
         this.truncated.set((res.data.totalCount ?? 0) > this.pageSize);
-        this.createdAt.set(Object.fromEntries(junctions.map(j => [j.id, j.createdAt])));
         this.resolveLabels(junctions);
       },
-      error: () => { this.loading.set(false); this.error.set(this.labels.views.error); }
+      error: () => { this.loading.set(false); this.error.set(this.labels.linked.error); }
     });
   }
 
@@ -113,22 +125,13 @@ export class StudioLinkedRecordsTabComponent implements OnInit {
     const targetIds = junctions
       .map(j => ({ junction: j, targetId: String(j.data?.[targetField] ?? '') }))
       .filter(p => p.targetId.length > 0);
-    this.linked.searchTargets(this.relation(), null).subscribe({
+    this.linked.searchTargets(this.relation(), null, 200).subscribe({
       next: res => {
         const labelsById = new Map<string, string>();
         if (res.success) for (const r of res.data.items ?? []) labelsById.set(r.id, primaryLabel(r, []));
-        this.rows.set(targetIds.map(p => ({
-          junctionRecordId: p.junction.id,
-          targetId: p.targetId,
-          targetLabel: labelsById.get(p.targetId) ?? p.targetId.slice(0, 8),
-          rowVersion: p.junction.rowVersion,
-          createdAt: p.junction.createdAt
-        })));
+        this.rows.set(targetIds.map(p => toRow(p, labelsById.get(p.targetId) ?? p.targetId.slice(0, 8))));
       },
-      error: () => this.rows.set(targetIds.map(p => ({
-        junctionRecordId: p.junction.id, targetId: p.targetId, targetLabel: p.targetId.slice(0, 8),
-        rowVersion: p.junction.rowVersion, createdAt: p.junction.createdAt
-      })))
+      error: () => this.rows.set(targetIds.map(p => toRow(p, p.targetId.slice(0, 8))))
     });
   }
 
@@ -154,7 +157,7 @@ export class StudioLinkedRecordsTabComponent implements OnInit {
     this.linked.link(this.relation(), this.recordId(), targetId).subscribe({
       next: res => {
         this.saving.set(false);
-        if (!res.success) { this.error.set(res.message || this.labels.views.error); return; }
+        if (!res.success) { this.error.set(res.message || this.labels.linked.error); return; }
         this.selectedTarget.set(null);
         this.refresh();
       },
@@ -162,7 +165,7 @@ export class StudioLinkedRecordsTabComponent implements OnInit {
         this.saving.set(false);
         this.error.set(err.status === 409 && err.error?.code === 'record.duplicate_link'
           ? this.labels.linked.duplicate
-          : (typeof err.error?.message === 'string' ? err.error.message : this.labels.views.error));
+          : (typeof err.error?.message === 'string' ? err.error.message : this.labels.linked.error));
       }
     });
   }
@@ -179,7 +182,7 @@ export class StudioLinkedRecordsTabComponent implements OnInit {
       },
       error: (err: HttpErrorResponse) => {
         this.saving.set(false);
-        this.error.set(typeof err.error?.message === 'string' ? err.error.message : this.labels.views.error);
+        this.error.set(typeof err.error?.message === 'string' ? err.error.message : this.labels.linked.error);
       }
     });
   }

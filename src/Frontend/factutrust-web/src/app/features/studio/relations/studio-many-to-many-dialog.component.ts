@@ -57,6 +57,9 @@ import { slugifyViewKey } from '../views/studio-record-view-designer.component';
       </ng-template>
     </p-dialog>
   `,
+  // studio-layout.scss fournit .studio-row / .studio-row-section / .studio-grow utilisés par le
+  // bloc « Bientôt » et les alertes d'erreur (encapsulation émulée : styleUrl requis ici).
+  styleUrl: '../shared/studio-layout.scss',
   styles: [`.m2m-soon { opacity: .75; }`]
 })
 export class StudioManyToManyDialogComponent {

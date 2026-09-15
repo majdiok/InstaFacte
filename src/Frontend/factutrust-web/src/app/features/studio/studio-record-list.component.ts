@@ -61,8 +61,10 @@ import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
             <h3 class="ft-filters__title"><i class="pi pi-search"></i> Recherche</h3>
           </div>
           <div class="studio-toolbar">
-            <input pInputText [(ngModel)]="search" (keyup.enter)="reload()" placeholder="Rechercher…" class="studio-search-input" />
-            <button pButton type="button" icon="fa-solid fa-magnifying-glass" label="Rechercher" class="p-button-sm" (click)="reload()"></button>
+            <input pInputText [(ngModel)]="search" (keyup.enter)="reload()" placeholder="Rechercher…" class="studio-search-input"
+              [disabled]="searchDisabled()" [title]="searchDisabled() ? labels.views.searchDisabled : ''" />
+            <button pButton type="button" icon="fa-solid fa-magnifying-glass" label="Rechercher" class="p-button-sm" (click)="reload()"
+              [disabled]="searchDisabled()"></button>
             <span class="studio-toolbar__spacer"></span>
             @if (!activeView()) {
               <!-- Export masqué quand une vue enregistrée est active : il porterait sur les enregistrements
@@ -205,6 +207,7 @@ export class StudioRecordListComponent implements OnInit {
   }
 
   onSwitchView(viewId: string | null): void {
+    this.runnerTotal.set(null); // ne pas afficher l'ancien total pendant le run de la nouvelle vue
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { view: viewId },
@@ -222,6 +225,8 @@ export class StudioRecordListComponent implements OnInit {
   /** Total rapporté par le runner (vue active) ; pris en compte par le sous-titre. */
   private readonly runnerTotal = signal<number | null>(null);
   readonly subtitleTotal = computed(() => this.activeView() ? (this.runnerTotal() ?? 0) : this.total());
+  /** Vue active avec recherche désactivée ⇒ champ grisé (le serveur répondrait 400 « recherche désactivée »). */
+  readonly searchDisabled = computed(() => this.activeView()?.definition.searchEnabled === false);
 
   onRunnerTotal(total: number): void {
     this.runnerTotal.set(total);
@@ -313,6 +318,8 @@ export class StudioRecordListComponent implements OnInit {
           next: res => {
             if (res.success) {
               this.toast.add({ severity: 'success', summary: 'Supprimé' });
+              // Suppression via une vue : la liste brute (onglet « Liste ») doit être re-lue au retour.
+              this.fetched = false;
               this.reload();
             }
           },

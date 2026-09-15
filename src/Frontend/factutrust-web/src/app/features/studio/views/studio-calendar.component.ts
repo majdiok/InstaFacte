@@ -132,14 +132,14 @@ interface LegendItem {
           }
         </div>
       } @else {
-        <div class="week-grid">
+        <div class="week-grid" role="grid" [attr.aria-label]="'Grille de la semaine, ' + title()">
           @for (day of weekDays(); track day.iso) {
-            <div class="week-day" [class.week-day--weekend]="day.isWeekend" [class.week-day--today]="day.isToday">
-              <div class="week-day__head">
+            <div class="week-day" role="row" [class.week-day--weekend]="day.isWeekend" [class.week-day--today]="day.isToday">
+              <div class="week-day__head" role="columnheader">
                 <span class="week-day__dow">{{ dowLabels[($index)] }}</span>
                 <span class="week-day__date">{{ day.date.getDate() }}</span>
               </div>
-              <div class="week-day__body">
+              <div class="week-day__body" role="gridcell">
                 @for (ev of day.visibleEvents; track ev.recordId) {
                   <button
                     type="button"

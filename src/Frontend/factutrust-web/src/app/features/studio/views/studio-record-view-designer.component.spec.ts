@@ -176,26 +176,49 @@ describe('StudioRecordViewDesignerComponent', () => {
     expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).toBeNull();
   });
 
-  it('édition : l’aperçu R3 rend le runner avec la définition courante et « Actualiser » poste /run', async () => {
+  it('édition : l’aperçu R3 rend le runner et « Actualiser » poste /run (une frappe ne redispatche pas)', async () => {
     setup('v1');
     await fixture.whenStable();
     fixture.detectChanges();
     expect(component.previewView()?.id).toBe('v1');
     const refresh = fixture.debugElement.query(By.css('[data-testid="designer-preview-refresh"]'));
     expect(refresh).not.toBeNull();
+    // Montage : un seul /run automatique (le brouillon initial).
+    drainPreviewRun();
 
-    component.onModeChange('Kanban');
-    component.patchKanban({ groupByFieldKey: 'statut' });
+    // Modifier le brouillon ne relance PAS /run (seul « Actualiser l’aperçu » le fait).
+    component.onNameChange('Actives (brouillon)');
     fixture.detectChanges();
     await fixture.whenStable();
-    refresh.triggerEventHandler('click', null);
+    expect(httpMock.match(`${API}/views/v1/run`).length).toBe(0);
+
+    component.refreshPreview(); // (le clic synthétique n'atteint pas l'output `onClick` du p-button)
     const runs = httpMock.match(`${API}/views/v1/run`);
-    expect(runs.length).toBeGreaterThan(0);
-    const req = runs[runs.length - 1];
+    expect(runs.length).toBe(1);
+    const req = runs[0];
     expect(req.request.method).toBe('POST');
-    expect(req.request.body.pageSize).toBe(RECORD_VIEW_LIMITS.maxKanbanCards);
-    runs.slice(0, -1).forEach(r => { if (!r.cancelled) r.flush({ success: true, data: { mode: 'List', items: [], total: 0, page: 1, pageSize: 25, groups: null, events: null, truncated: false }, message: null, errors: [] }); });
-    req.flush({ success: true, data: { mode: 'Kanban', items: [], total: 0, page: 1, pageSize: 500, groups: [{ value: 'a', label: 'A', count: 0, items: [] }], events: null, truncated: false }, message: null, errors: [] });
+    expect(req.request.body.pageSize).toBe(50); // mode Liste : pageSize du brouillon
+    req.flush({ success: true, data: { mode: 'List', items: [], total: 0, page: 1, pageSize: 50, groups: null, events: null, truncated: false }, message: null, errors: [] });
+  });
+
+  it('édition : changer de mode masque l’aperçu (le run exécute la définition enregistrée) avec un hint', async () => {
+    setup('v1');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    drainPreviewRun();
+    expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).not.toBeNull();
+
+    component.onModeChange('Kanban');
+    fixture.detectChanges();
+    expect(component.previewModeChanged()).toBeTrue();
+    expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).toBeNull();
+    expect(fixture.debugElement.nativeElement.textContent).toContain('reflète la version enregistrée');
+
+    component.onModeChange('List');
+    fixture.detectChanges();
+    expect(component.previewModeChanged()).toBeFalse();
+    expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).not.toBeNull();
+    drainPreviewRun();
   });
 
   it('POST /views en création puis navigue vers la liste avec ?view=<id>', () => {

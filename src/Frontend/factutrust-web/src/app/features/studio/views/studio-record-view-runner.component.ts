@@ -240,6 +240,9 @@ export class StudioRecordViewRunnerComponent {
       untracked(() => {
         this.page = 1;
         this.pageSize.set(v.definition.pageSize || 25);
+        // Aperçu du concepteur (`previewLimit` défini) : le brouillon change à chaque frappe —
+        // ne pas relancer `/run` à chaque émission ; seul « Actualiser l'aperçu » (`reload()`) redispatche.
+        if (this.previewLimit() !== null && this.fetched) return;
         this.fetched = false;
         // Mode Calendar sans plage connue (1er montage) : `dispatch()` n'émet rien, la requête
         // partira à la réception du `rangeChange` initial du calendrier.
@@ -287,14 +290,16 @@ export class StudioRecordViewRunnerComponent {
     let rangeStart: string | null = null;
     let rangeEnd: string | null = null;
     if (v.mode === 'Kanban') {
-      // Pas de pagination kanban : le serveur plafonne à 500 cartes (bandeau `truncated`).
+      // Pas de pagination kanban. Le serveur borne `pageSize` à 200 AVANT le dispatch par mode puis
+      // l'ignore en Kanban (plafond settings 500, bandeau `truncated`) : envoyer 200, la borne haute acceptée.
       page = 1;
-      pageSize = RECORD_VIEW_LIMITS.maxKanbanCards;
+      pageSize = RECORD_VIEW_LIMITS.maxPageSize;
     } else if (v.mode === 'Calendar') {
       // La plage est calculée par le calendrier (mois/semaine) ; tant qu'elle est inconnue, aucune requête.
+      // Même borne que Kanban : le serveur ignore `pageSize` en Calendar (plafond settings 1000).
       if (!this.calendarRange) return;
       page = 1;
-      pageSize = RECORD_VIEW_LIMITS.maxCalendarEvents;
+      pageSize = RECORD_VIEW_LIMITS.maxPageSize;
       rangeStart = this.calendarRange.rangeStart;
       rangeEnd = this.calendarRange.rangeEnd;
     }

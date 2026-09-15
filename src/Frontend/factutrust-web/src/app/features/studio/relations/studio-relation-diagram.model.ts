@@ -24,9 +24,15 @@ export interface DiagramModel {
   height: number;
 }
 
-const COL_WIDTH = 220;
+// ≥ largeur nœud entité (140) + ~largeur d'un libellé de jonction (« Intervention × Technicien »
+// ≈ 170px à 12px) + marge : la jonction est placée au milieu de deux colonnes adjacentes et son
+// libellé ne doit empiéter sur aucune des deux boîtes.
+const COL_WIDTH = 340;
 const ROW_HEIGHT = 120;
-const PADDING = 40;
+// ≥ demi-largeur d'un nœud entité (140/2 = 70) pour que la première colonne ne soit pas
+// rognée par le bord gauche du viewBox (les coordonnées sont des centres, voir le rendu
+// `translate(x, y)` + `rect x="-70"` du composant).
+const PADDING = 80;
 
 /**
  * Modèle de diagramme des relations Studio (contrat consommé par 3.4e : `specToDiagram` produit le
@@ -65,7 +71,10 @@ export function toDiagram(entities: CustomEntity[], relations: EntityRelationDto
       id: nodeId,
       label: junctionEntity?.displayName ?? rel.junctionEntityKey ?? 'Jonction',
       kind: 'junction',
-      x: (sx + tx) / 2 + COL_WIDTH / 2,
+      // x/y sont des coordonnées de CENTRE (rendu `translate` + rect centré) : la jonction se
+      // place au milieu exact de ses deux extrémités. Ne pas ajouter COL_WIDTH/2 — cela la
+      // superposait à la cible quand source et cible sont sur des colonnes adjacentes.
+      x: (sx + tx) / 2,
       y: (sy + ty) / 2
     });
     edges.push({ from: rel.sourceEntityId, to: nodeId, kind: 'many_to_many' });

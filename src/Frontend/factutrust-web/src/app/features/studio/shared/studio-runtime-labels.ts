@@ -11,6 +11,7 @@ export const STUDIO_RUNTIME_LABELS = {
     truncatedGeneric: 'Affichage limité ; affinez les filtres.',
     empty: 'Aucun enregistrement.',
     error: 'Chargement de la vue impossible.',
+    searchDisabled: 'La recherche est désactivée pour cette vue.',
     soon: 'Bientôt'
   },
   kanban: {
@@ -31,6 +32,8 @@ export const STUDIO_RUNTIME_LABELS = {
   designer: {
     title: 'Concepteur de vue',
     previewHint: 'Enregistrez pour voir l’aperçu.',
+    previewSaved: 'Aperçu calculé sur la version enregistrée (20 premiers enregistrements).',
+    previewStale: 'L’aperçu reflète la version enregistrée : enregistrez la vue pour prévisualiser ce mode.',
     setDefault: 'Vue par défaut',
     delete: 'Supprimer',
     save: 'Enregistrer',
@@ -65,7 +68,8 @@ export const STUDIO_RUNTIME_LABELS = {
     add: 'Ajouter',
     remove: 'Retirer',
     duplicate: 'Lien déjà existant.',
-    truncated: 'Certaines fiches liées ne sont pas affichées.'
+    truncated: 'Certaines fiches liées ne sont pas affichées.',
+    error: 'Chargement des fiches liées impossible.'
   },
   entities: {
     junctionBadge: 'Jonction',

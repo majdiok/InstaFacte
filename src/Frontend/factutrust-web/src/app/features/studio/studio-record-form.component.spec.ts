@@ -98,7 +98,7 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
     // L'onglet Liés monte ses requêtes : on les vide (jonction + cibles ×2).
     httpMock.expectOne(`${API.replace('/interventions','')}/intervention_technicien?page=1&pageSize=50&filterField=intervention_id&filterValue=r1`)
       .flush({ success: true, data: { items: [], page: 1, pageSize: 50, totalCount: 0, totalPages: 0 }, message: null, errors: [] });
-    httpMock.match(`${API.replace('/interventions','')}/techniciens?page=1&pageSize=20`).forEach(req => {
+    httpMock.match(r => r.urlWithParams.startsWith(`${API.replace('/interventions','')}/techniciens?page=1`)).forEach(req => {
       if (!req.cancelled) req.flush({ success: true, data: { items: [], page: 1, pageSize: 20, totalCount: 0, totalPages: 0 }, message: null, errors: [] });
     });
   });

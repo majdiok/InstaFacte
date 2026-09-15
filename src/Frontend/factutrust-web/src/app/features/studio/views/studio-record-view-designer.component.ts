@@ -217,8 +217,13 @@ const PERSISTED_LABELS: Readonly<Record<string, string>> = { createdAt: 'Créé 
               }
             </div>
             @if (editing) {
-              <app-studio-record-view-runner [entityKey]="entityKey" [view]="previewView()" [allFields]="fields()"
-                [showActions]="false" [previewLimit]="20" />
+              @if (previewModeChanged()) {
+                <p class="studio-muted">{{ labels.designer.previewStale }}</p>
+              } @else {
+                <app-studio-record-view-runner [entityKey]="entityKey" [view]="previewView()" [allFields]="fields()"
+                  [showActions]="false" [previewLimit]="20" />
+                <p class="studio-muted">{{ labels.designer.previewSaved }}</p>
+              }
             } @else {
               <p class="studio-muted">{{ labels.designer.previewHint }}</p>
             }
@@ -267,8 +272,6 @@ export class StudioRecordViewDesignerComponent implements OnInit {
   readonly kanban = signal<RecordViewKanban>({ groupByFieldKey: '', titleFieldKey: null, cardFieldKeys: [], showEmptyGroup: true });
   readonly calendar = signal<RecordViewCalendar>({ startFieldKey: '', endFieldKey: null, titleFieldKey: null, colorFieldKey: null });
   private keyTouched = false;
-  /** Change-detection on-push : remet à jour les `p-select` de mode après `applyView()`. */
-  private modeChangeTick = 0;
 
   readonly canDesign = computed(() => this.auth.hasPermission(PERMISSIONS.studio.designForms));
   readonly activeFields = computed(() => this.fields().filter(f => f.isActive));
@@ -347,6 +350,8 @@ export class StudioRecordViewDesignerComponent implements OnInit {
       updatedAt: current?.updatedAt ?? new Date(0).toISOString()
     };
   });
+  /** Le `run` exécute la définition persistée : changer de mode rend l'aperçu trompeur ⇒ masqué + hint. */
+  readonly previewModeChanged = computed(() => this.editing && this.view()?.mode !== this.mode());
   readonly previewRunner = viewChild(StudioRecordViewRunnerComponent);
 
   ngOnInit(): void {
@@ -386,7 +391,7 @@ export class StudioRecordViewDesignerComponent implements OnInit {
     this.view.set(v);
     this.displayName.set(v.displayName);
     this.key.set(v.key);
-    if (++this.modeChangeTick > 1) this.mode.update(() => v.mode); else this.mode.set(v.mode);
+    this.mode.set(v.mode);
     this.columns.set([...(v.definition.columns ?? [])]);
     this.filters.set([...(v.definition.filters ?? [])]);
     this.sort.set([...(v.definition.sort ?? [])]);
