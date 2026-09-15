@@ -74,7 +74,15 @@ describe('StudioRecordViewDesignerComponent', () => {
     fixture.detectChanges();
   }
 
-  afterEach(() => httpMock.verify());
+  /** Vide la requête /run automatique de l'aperçu R3 quand le runner est monté (édition). */
+  function drainPreviewRun(): void {
+    httpMock.match(req => req.url.endsWith('/run')).forEach(req => {
+      if (!req.cancelled) req.flush(
+        { success: true, data: { mode: 'List', items: [], total: 0, page: 1, pageSize: 25, groups: null, events: null, truncated: false }, message: null, errors: [] });
+    });
+  }
+
+  afterEach(() => { drainPreviewRun(); httpMock.verify(); });
 
   it('création : charge le schéma, propose les champs actifs et désactive Enregistrer tant que nom/clé sont invalides', () => {
     setup(null);
@@ -126,6 +134,68 @@ describe('StudioRecordViewDesignerComponent', () => {
 
     component.pageSize.set(RECORD_VIEW_LIMITS.maxPageSize + 1);
     expect(component.pageSizeValid()).toBeFalse();
+  });
+
+  it('mode Kanban : exige un champ de regroupement ; mode Calendrier : exige un champ de début ; aperçu en édition', () => {
+    setup(null);
+    component.onNameChange('Par statut');
+    expect(component.modeValid()).toBeTrue();
+
+    component.mode.set('Kanban');
+    fixture.detectChanges();
+    expect(component.modeValid()).toBeFalse();
+    expect(component.canSave()).toBeFalse();
+    expect(fixture.debugElement.query(By.css('[data-testid="designer-kanban"]'))).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('[data-testid="designer-calendar"]'))).toBeNull();
+    expect(component.kanbanGroupByOptions().map(o => o.key)).toEqual(['statut']);
+    expect(component.definition().kanban).not.toBeNull();
+    expect(component.definition().calendar).toBeNull();
+
+    component.onModeChange('List');
+    component.mode.set('Kanban');
+    component.patchKanban({ groupByFieldKey: 'statut', titleFieldKey: 'nom', cardFieldKeys: ['nom', 'debut'], showEmptyGroup: false });
+    expect(component.modeValid()).toBeTrue();
+    expect(component.canSave()).toBeTrue();
+    component.patchKanban({ cardFieldKeys: ['nom', 'debut', 'nom', 'debut', 'nom', 'debut', 'nom'] });
+    expect(component.kanban().cardFieldKeys?.length).toBe(RECORD_VIEW_LIMITS.maxCardFields);
+
+    component.mode.set('Calendar');
+    fixture.detectChanges();
+    expect(component.modeValid()).toBeFalse();
+    expect(component.definition().kanban).toBeNull();
+    expect(component.dateOptions().map(o => o.key)).toEqual(['debut']);
+    component.onModeChange('List');
+    component.patchCalendar({ startFieldKey: '' });
+    component.onModeChange('Calendar');
+    expect(component.modeValid()).toBeTrue();
+    expect(component.calendar().startFieldKey).toBe('debut');
+    component.patchCalendar({ endFieldKey: 'debut', titleFieldKey: 'nom', colorFieldKey: 'statut' });
+    expect(component.modeValid()).toBeTrue();
+    expect(component.definition().calendar?.startFieldKey).toBe('debut');
+    expect(component.previewView()).toBeNull();
+    expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).toBeNull();
+  });
+
+  it('édition : l’aperçu R3 rend le runner avec la définition courante et « Actualiser » poste /run', async () => {
+    setup('v1');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component.previewView()?.id).toBe('v1');
+    const refresh = fixture.debugElement.query(By.css('[data-testid="designer-preview-refresh"]'));
+    expect(refresh).not.toBeNull();
+
+    component.onModeChange('Kanban');
+    component.patchKanban({ groupByFieldKey: 'statut' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    refresh.triggerEventHandler('click', null);
+    const runs = httpMock.match(`${API}/views/v1/run`);
+    expect(runs.length).toBeGreaterThan(0);
+    const req = runs[runs.length - 1];
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body.pageSize).toBe(RECORD_VIEW_LIMITS.maxKanbanCards);
+    runs.slice(0, -1).forEach(r => { if (!r.cancelled) r.flush({ success: true, data: { mode: 'List', items: [], total: 0, page: 1, pageSize: 25, groups: null, events: null, truncated: false }, message: null, errors: [] }); });
+    req.flush({ success: true, data: { mode: 'Kanban', items: [], total: 0, page: 1, pageSize: 500, groups: [{ value: 'a', label: 'A', count: 0, items: [] }], events: null, truncated: false }, message: null, errors: [] });
   });
 
   it('POST /views en création puis navigue vers la liste avec ?view=<id>', () => {
