@@ -3,7 +3,7 @@ import { ButtonModule } from 'primeng/button';
 import { StudioAiNavAction } from '../studio-ai-session.store';
 import { STUDIO_AI_LABELS, formatLabel } from '../studio-ai-labels';
 import {
-  StudioAppBuildResult, StudioBuildResult, StudioSystemBuildResult, isSystemBuildResult
+  StudioAppBuildResult, StudioBuildResult, StudioSpecCounters, StudioSystemBuildResult, isSystemBuildResult
 } from '../studio-ai.models';
 
 /**
@@ -29,6 +29,19 @@ import {
           @if (subtitle(); as sub) { <p class="sair__meta">{{ sub }}</p> }
         </div>
       </header>
+
+      @if (counters(); as c) {
+        <ul class="sair__counters" [attr.aria-label]="labels.result.counters">
+          <li>{{ c.entities }} {{ labels.preview.tables }}</li>
+          <li>{{ c.fields }} {{ labels.preview.fields }}</li>
+          <li>{{ c.relations }} {{ labels.preview.relations }}</li>
+          <li>{{ c.forms }} {{ labels.preview.forms }}</li>
+          <li>{{ c.reports }} {{ labels.preview.reports }}</li>
+          <li>{{ c.views }} {{ labels.result.views }}</li>
+          <li>{{ c.seedRecords }} {{ labels.preview.seedRecords }}</li>
+          <li>{{ c.workflows }} {{ labels.result.workflows }}</li>
+        </ul>
+      }
 
       @if (entities().length) {
         <ul class="sair__entities">
@@ -65,6 +78,34 @@ import {
             icon="fa-solid fa-arrow-up-right-from-square"
             [label]="primaryLabel()"
             (click)="open.emit(url)"></button>
+        }
+        @if (exportKey(); as key) {
+          <button
+            pButton
+            type="button"
+            class="p-button-sm p-button-outlined"
+            icon="fa-solid fa-file-export"
+            data-action="export"
+            [label]="labels.result.exportJson"
+            (click)="exportSystem.emit(key)"></button>
+          <button
+            pButton
+            type="button"
+            class="p-button-sm p-button-outlined"
+            icon="fa-solid fa-copy"
+            data-action="duplicate"
+            [label]="labels.result.duplicate"
+            (click)="duplicate.emit(key)"></button>
+        }
+        @if (replayable()) {
+          <button
+            pButton
+            type="button"
+            class="p-button-sm p-button-outlined"
+            icon="fa-solid fa-rotate-right"
+            data-action="replay"
+            [label]="labels.result.replay"
+            (click)="replay.emit()"></button>
         }
         @for (action of actions(); track action.route) {
           <button
@@ -106,6 +147,17 @@ import {
       color: var(--color-neutral-800, #1e293b);
     }
     .sair__meta { margin: 2px 0 0; font-size: var(--font-size-sm); color: var(--color-neutral-500); }
+    .sair__counters {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: var(--spacing-1) var(--spacing-3);
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      font-size: var(--font-size-sm);
+      color: var(--color-neutral-700);
+    }
+    .sair__counters li::before { content: '✓ '; color: var(--color-success-600, #16a34a); }
     .sair__entities { display: flex; flex-wrap: wrap; gap: var(--spacing-2); margin: 0; padding: 0; list-style: none; }
     .sair__chip {
       display: inline-flex;
@@ -137,11 +189,20 @@ export class StudioAiResultCardComponent {
   readonly result = input<StudioBuildResult | null>(null);
   /** Liens proposés par l'assistant (`client_actions`) rendus à côté du bouton principal. */
   readonly actions = input<StudioAiNavAction[]>([]);
+  /** Compteurs de la spec appliquée (8 puces) ; `null` ⇒ aucune puce. */
+  readonly counters = input<StudioSpecCounters | null>(null);
+  /** Export/duplication : fail-closed sur le flag `systemExportEnabled` (fourni par la page). */
+  readonly exportEnabled = input(false);
+  readonly replayable = input(false);
 
   /** URL à ouvrir (système, table ou entité) — la page navigue. */
   readonly open = output<string>();
   readonly navigate = output<StudioAiNavAction>();
   readonly newRequest = output<void>();
+  /** Clé du système créé — la page ouvre le dialog Exporter / Dupliquer. */
+  readonly exportSystem = output<string>();
+  readonly duplicate = output<string>();
+  readonly replay = output<void>();
 
   protected readonly labels = STUDIO_AI_LABELS;
 
@@ -179,6 +240,9 @@ export class StudioAiResultCardComponent {
     const fields = app.fieldsCreated ?? 0;
     return fields ? `${fields} ${STUDIO_AI_LABELS.preview.fields}` : app.message;
   });
+
+  /** Clé exportable : flag actif ET résultat système avec clé (fail-closed). */
+  protected readonly exportKey = computed(() => (this.exportEnabled() && this.systemResult()?.systemKey) || null);
 
   protected readonly entities = computed(() => this.systemResult()?.entities ?? []);
   protected readonly warnings = computed(() => this.result()?.warnings ?? []);

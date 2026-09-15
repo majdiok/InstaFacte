@@ -18,6 +18,7 @@ import { StudioAiIntent, StudioAiPlanListItemDto, StudioAiPreviewTab, StudioTemp
 import { StudioAiComposerComponent } from './composer/studio-ai-composer.component';
 import { StudioAiIntentCardsComponent } from './composer/studio-ai-intent-cards.component';
 import { StudioAiConversationComponent } from './conversation/studio-ai-conversation.component';
+import { StudioAiExportDialogComponent } from './import-export/studio-ai-export-dialog.component';
 import { StudioAiConfirmDialogComponent } from './preview/studio-ai-confirm-dialog.component';
 import { StudioAiPreviewComponent } from './preview/studio-ai-preview.component';
 import { StudioAiProgressComponent } from './preview/studio-ai-progress.component';
@@ -60,6 +61,7 @@ const INTENT_TO_TAB: Partial<Record<StudioAiIntent, StudioAiPreviewTab>> = {
     StudioAiIntentCardsComponent,
     StudioAiConversationComponent,
     StudioAiConfirmDialogComponent,
+    StudioAiExportDialogComponent,
     StudioAiPreviewComponent,
     StudioAiProgressComponent,
     StudioAiResultCardComponent
@@ -88,6 +90,9 @@ export class StudioAiPageComponent {
   readonly previewTab = signal<StudioAiPreviewTab>('overview');
   readonly confirmVisible = signal(false);
   readonly conversationCollapsed = signal(false);
+  /** Dialog Exporter (JSON) : clé préréglée depuis la carte résultat, `null` depuis le rail (p-select). */
+  readonly exportVisible = signal(false);
+  readonly exportKey = signal<string | null>(null);
 
   /** Modèles du catalogue pour le rail (chargés une fois si `templatesEnabled`). */
   readonly templates = signal<StudioTemplateListItemDto[]>([]);
@@ -296,7 +301,20 @@ export class StudioAiPageComponent {
     });
   }
 
-  /** Actions rapides Import / Dupliquer / Exporter : câblées en PR 3.4, simple rappel « Bientôt » d'ici là. */
+  /** Ouvre le dialog Exporter (JSON) ; `key` null ⇒ choix du système dans le dialog (Q2 a). */
+  openExport(key: string | null): void {
+    this.exportKey.set(key);
+    this.exportVisible.set(true);
+  }
+
+  /** « Rejouer » depuis la carte résultat : nouveau plan à partir de la spec du plan courant. */
+  replayCurrent(): void {
+    const plan = this.store.plan();
+    if (!plan || this.store.busy()) return;
+    this.store.replay(plan.planId);
+  }
+
+  /** Actions rapides Import / Dupliquer : câblées en 3.4j, simple rappel « Bientôt » d'ici là. */
   comingSoon(): void {
     this.toast.add({ severity: 'info', summary: this.labels.soon, detail: this.labels.rail.comingSoon });
   }
