@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -8,10 +8,11 @@ import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { SelectModule } from 'primeng/select';
+import { MultiSelectModule } from 'primeng/multiselect';
 import { AuthService } from '@core/services/auth.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { ConfirmationService } from '@core/services/confirmation.service';
-import { CustomField } from '@shared/studio-runtime/studio-runtime.models';
+import { CustomField, CustomFieldType } from '@shared/studio-runtime/studio-runtime.models';
 import { BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { StudioService } from '../studio.service';
 import { StudioPageShellComponent } from '../shared/studio-page-shell.component';
@@ -19,6 +20,7 @@ import { StudioFilterBuilderComponent } from '../shared/studio-filter-builder.co
 import { STUDIO_RUNTIME_LABELS } from '../shared/studio-runtime-labels';
 import { STUDIO_BREADCRUMBS } from '../shared/studio-breadcrumb.util';
 import { StudioRecordViewsService } from './studio-record-views.service';
+import { StudioRecordViewRunnerComponent } from './studio-record-view-runner.component';
 import {
   CustomRecordViewDto, RECORD_VIEW_LIMITS, RECORD_VIEW_PERSISTED_KEYS, RecordViewCalendar, RecordViewColumn,
   RecordViewDefinition, RecordViewFilter, RecordViewKanban, RecordViewMode, RecordViewSort, SaveCustomRecordViewRequest
@@ -34,10 +36,11 @@ const PERSISTED_LABELS: Readonly<Record<string, string>> = { createdAt: 'Créé 
 
 /**
  * Concepteur de vue enregistrée (2.5d) : routes `d/:key/views/new` (création) et
- * `d/:key/views/:viewId` (édition). Le mode Liste (colonnes, filtres, tris, pagination, recherche,
- * vue par défaut) est complet ici ; les sections Kanban / Calendrier et l'aperçu R3 arrivent en 2.5d2.
- * Les bornes `RECORD_VIEW_LIMITS` sont appliquées côté client par confort ; le serveur reste l'autorité
- * (toute erreur 400/409 est rendue en ligne, jamais via le toast global).
+ * `d/:key/views/:viewId` (édition). Mode Liste complet (colonnes, filtres, tris, pagination,
+ * recherche) + sections Kanban / Calendrier (2.5d2) et aperçu R3 en édition (colonne collante,
+ * `previewLimit=20`, bouton « Actualiser l'aperçu »). Les bornes `RECORD_VIEW_LIMITS` sont
+ * appliquées côté client par confort ; le serveur reste l'autorité (toute erreur 400/409 est rendue
+ * en ligne, jamais via le toast global).
  */
 @Component({
   selector: 'app-studio-record-view-designer',
@@ -45,7 +48,7 @@ const PERSISTED_LABELS: Readonly<Record<string, string>> = { createdAt: 'Créé 
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule, ButtonModule, InputTextModule, InputNumberModule, InputSwitchModule, SelectModule,
-    StudioPageShellComponent, StudioFilterBuilderComponent
+    MultiSelectModule, StudioPageShellComponent, StudioFilterBuilderComponent, StudioRecordViewRunnerComponent
   ],
   template: `
     <app-studio-page-shell [title]="labels.designer.title" [subtitle]="subtitle()" [breadcrumbs]="breadcrumbs()">
@@ -89,8 +92,54 @@ const PERSISTED_LABELS: Readonly<Record<string, string>> = { createdAt: 'Créé 
             }
 
             <label class="studio-lbl" for="rvd-mode">{{ labels.designer.mode }}</label>
-            <p-select inputId="rvd-mode" [options]="modeOptions" [ngModel]="mode()" (ngModelChange)="mode.set($event)"
+            <p-select inputId="rvd-mode" [options]="modeOptions" [ngModel]="mode()" (ngModelChange)="onModeChange($event)"
               optionLabel="label" optionValue="value" [disabled]="!canDesign()" appendTo="body" panelStyleClass="studio-theme" />
+
+            @if (mode() === 'Kanban') {
+              <div class="studio-row-section rvd-mode-section" data-testid="designer-kanban">
+                <h3 class="studio-section-title">Kanban</h3>
+                <label class="studio-lbl" for="rvd-kanban-group">{{ labels.designer.kanbanGroupBy }} *</label>
+                <p-select inputId="rvd-kanban-group" class="studio-w-full" [options]="kanbanGroupByOptions()" [ngModel]="kanban().groupByFieldKey"
+                  (ngModelChange)="patchKanban({ groupByFieldKey: $event })" optionLabel="label" optionValue="key"
+                  [disabled]="!canDesign()" appendTo="body" panelStyleClass="studio-theme" data-testid="designer-kanban-group" />
+                <label class="studio-lbl" for="rvd-kanban-title">Champ de titre</label>
+                <p-select inputId="rvd-kanban-title" class="studio-w-full" [options]="fieldOptions()" [ngModel]="kanban().titleFieldKey"
+                  (ngModelChange)="patchKanban({ titleFieldKey: $event })" optionLabel="label" optionValue="key" [showClear]="true"
+                  [disabled]="!canDesign()" appendTo="body" panelStyleClass="studio-theme" />
+                <label class="studio-lbl">Champs de la carte ({{ kanban().cardFieldKeys?.length ?? 0 }}/{{ limits.maxCardFields }})</label>
+                <p-multiSelect class="studio-w-full" [options]="fieldOptions()" [ngModel]="kanban().cardFieldKeys ?? []"
+                  (ngModelChange)="patchKanban({ cardFieldKeys: ($event ?? []).slice(0, limits.maxCardFields) })"
+                  optionLabel="label" optionValue="key" [maxSelectedLabels]="3" [selectedItemsLabel]="'{0} champs'"
+                  [disabled]="!canDesign()" appendTo="body" panelStyleClass="studio-theme" data-testid="designer-kanban-cards" />
+                <div class="studio-line">
+                  <p-inputSwitch inputId="rvd-kanban-empty" [ngModel]="kanban().showEmptyGroup"
+                    (ngModelChange)="patchKanban({ showEmptyGroup: $event })" [disabled]="!canDesign()" />
+                  <label for="rvd-kanban-empty">Afficher la colonne « {{ labels.kanban.emptyGroup }} »</label>
+                </div>
+              </div>
+            }
+
+            @if (mode() === 'Calendar') {
+              <div class="studio-row-section rvd-mode-section" data-testid="designer-calendar">
+                <h3 class="studio-section-title">Calendrier</h3>
+                <label class="studio-lbl" for="rvd-cal-start">{{ labels.designer.calendarStart }} *</label>
+                <p-select inputId="rvd-cal-start" class="studio-w-full" [options]="dateOptions()" [ngModel]="calendar().startFieldKey"
+                  (ngModelChange)="patchCalendar({ startFieldKey: $event })" optionLabel="label" optionValue="key"
+                  [disabled]="!canDesign()" appendTo="body" panelStyleClass="studio-theme" data-testid="designer-calendar-start" />
+                <label class="studio-lbl" for="rvd-cal-end">Champ de fin</label>
+                <p-select inputId="rvd-cal-end" class="studio-w-full" [options]="dateOptions()" [ngModel]="calendar().endFieldKey"
+                  (ngModelChange)="patchCalendar({ endFieldKey: $event })" optionLabel="label" optionValue="key" [showClear]="true"
+                  [disabled]="!canDesign()" appendTo="body" panelStyleClass="studio-theme" />
+                <label class="studio-lbl" for="rvd-cal-title">Champ de titre</label>
+                <p-select inputId="rvd-cal-title" class="studio-w-full" [options]="fieldOptions()" [ngModel]="calendar().titleFieldKey"
+                  (ngModelChange)="patchCalendar({ titleFieldKey: $event })" optionLabel="label" optionValue="key" [showClear]="true"
+                  [disabled]="!canDesign()" appendTo="body" panelStyleClass="studio-theme" />
+                <label class="studio-lbl" for="rvd-cal-color">Champ de couleur</label>
+                <p-select inputId="rvd-cal-color" class="studio-w-full" [options]="optionColorOptions()" [ngModel]="calendar().colorFieldKey"
+                  (ngModelChange)="patchCalendar({ colorFieldKey: $event })" optionLabel="label" optionValue="key" [showClear]="true"
+                  [disabled]="!canDesign()" appendTo="body" panelStyleClass="studio-theme" />
+              </div>
+            }
 
             <div class="studio-block-head">
               <span class="studio-lbl">{{ labels.designer.columns }} ({{ columns().length }}/{{ limits.maxColumns }})</span>
@@ -159,15 +208,26 @@ const PERSISTED_LABELS: Readonly<Record<string, string>> = { createdAt: 'Créé 
             </div>
           </section>
 
-          <aside class="studio-preview">
-            <h3 class="studio-preview-title">Aperçu</h3>
-            <p class="studio-muted">{{ labels.designer.previewHint }}</p>
+          <aside class="studio-preview rvd-preview">
+            <div class="studio-block-head">
+              <h3 class="studio-preview-title">Aperçu</h3>
+              @if (editing) {
+                <p-button label="Actualiser l’aperçu" icon="pi pi-refresh" [text]="true" size="small"
+                  [disabled]="saving()" (onClick)="refreshPreview()" data-testid="designer-preview-refresh" />
+              }
+            </div>
+            @if (editing) {
+              <app-studio-record-view-runner [entityKey]="entityKey" [view]="previewView()" [allFields]="fields()"
+                [showActions]="false" [previewLimit]="20" />
+            } @else {
+              <p class="studio-muted">{{ labels.designer.previewHint }}</p>
+            }
           </aside>
         </div>
       }
     </app-studio-page-shell>
   `,
-  styleUrl: '../shared/studio-layout.scss'
+  styleUrls: ['../shared/studio-layout.scss', './studio-record-view-designer.component.scss']
 })
 export class StudioRecordViewDesignerComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
@@ -207,9 +267,25 @@ export class StudioRecordViewDesignerComponent implements OnInit {
   readonly kanban = signal<RecordViewKanban>({ groupByFieldKey: '', titleFieldKey: null, cardFieldKeys: [], showEmptyGroup: true });
   readonly calendar = signal<RecordViewCalendar>({ startFieldKey: '', endFieldKey: null, titleFieldKey: null, colorFieldKey: null });
   private keyTouched = false;
+  /** Change-detection on-push : remet à jour les `p-select` de mode après `applyView()`. */
+  private modeChangeTick = 0;
 
   readonly canDesign = computed(() => this.auth.hasPermission(PERMISSIONS.studio.designForms));
   readonly activeFields = computed(() => this.fields().filter(f => f.isActive));
+  readonly fieldOptions = computed<FieldOption[]>(() => this.activeFields().map(f => ({ key: f.key, label: f.label })));
+  /** Regroupement Kanban : champs Select actifs avec options (miroir `RecordViewDefinitionValidator`). */
+  readonly kanbanGroupByOptions = computed<FieldOption[]>(() =>
+    this.activeFields()
+      .filter(f => f.fieldType === CustomFieldType.Select && (f.options?.length ?? 0) > 0)
+      .map(f => ({ key: f.key, label: f.label })));
+  readonly dateOptions = computed<FieldOption[]>(() =>
+    this.activeFields()
+      .filter(f => f.fieldType === CustomFieldType.Date || f.fieldType === CustomFieldType.DateTime)
+      .map(f => ({ key: f.key, label: f.label })));
+  readonly optionColorOptions = computed<FieldOption[]>(() =>
+    this.activeFields()
+      .filter(f => f.fieldType === CustomFieldType.Select || f.fieldType === CustomFieldType.MultiSelect)
+      .map(f => ({ key: f.key, label: f.label })));
   readonly subtitle = computed(() => this.entityName() ? `Table « ${this.entityName()} »` : null);
   readonly breadcrumbs = computed<BreadcrumbItem[]>(() => this.editing
     ? STUDIO_BREADCRUMBS.recordViewEdit(this.entityName(), this.entityKey, this.view()?.displayName)
@@ -255,8 +331,30 @@ export class StudioRecordViewDesignerComponent implements OnInit {
     pageSize: this.pageSize()
   }));
 
+  /** Brouillon DTO de la définition courante, utilisé par l'aperçu R3 (édition seulement). */
+  readonly previewView = computed<CustomRecordViewDto | null>(() => {
+    if (!this.editing) return null;
+    const current = this.view();
+    return {
+      id: this.viewId!,
+      key: this.key() || current?.key || 'apercu',
+      displayName: this.displayName().trim() || current?.displayName || 'Aperçu',
+      mode: this.mode(),
+      definition: this.definition(),
+      isDefault: this.isDefault(),
+      isActive: true,
+      rowVersion: current?.rowVersion ?? '',
+      updatedAt: current?.updatedAt ?? new Date(0).toISOString()
+    };
+  });
+  readonly previewRunner = viewChild(StudioRecordViewRunnerComponent);
+
   ngOnInit(): void {
     this.reload();
+  }
+
+  refreshPreview(): void {
+    this.previewRunner()?.reload();
   }
 
   reload(): void {
@@ -288,7 +386,7 @@ export class StudioRecordViewDesignerComponent implements OnInit {
     this.view.set(v);
     this.displayName.set(v.displayName);
     this.key.set(v.key);
-    this.mode.set(v.mode);
+    if (++this.modeChangeTick > 1) this.mode.update(() => v.mode); else this.mode.set(v.mode);
     this.columns.set([...(v.definition.columns ?? [])]);
     this.filters.set([...(v.definition.filters ?? [])]);
     this.sort.set([...(v.definition.sort ?? [])]);
@@ -349,6 +447,31 @@ export class StudioRecordViewDesignerComponent implements OnInit {
 
   toggleSortDirection(index: number): void {
     this.sort.update(list => list.map((s, i) => i === index ? { ...s, descending: !s.descending } : s));
+  }
+
+  /** Troncature appliquée au moment du patch (le `p-multiSelect` émet son modèle non borné). */
+  patchKanban(patch: Partial<RecordViewKanban>): void {
+    this.kanban.update(k => {
+      const next = { ...k, ...patch };
+      if (next.cardFieldKeys && next.cardFieldKeys.length > RECORD_VIEW_LIMITS.maxCardFields) {
+        next.cardFieldKeys = next.cardFieldKeys.slice(0, RECORD_VIEW_LIMITS.maxCardFields);
+      }
+      return next;
+    });
+  }
+
+  patchCalendar(patch: Partial<RecordViewCalendar>): void {
+    this.calendar.update(c => ({ ...c, ...patch }));
+  }
+
+  onModeChange(value: RecordViewMode): void {
+    this.mode.set(value);
+    if (value === 'Kanban' && !this.kanbanGroupByOptions().some(o => o.key === this.kanban().groupByFieldKey)) {
+      this.patchKanban({ groupByFieldKey: this.kanbanGroupByOptions()[0]?.key ?? '' });
+    }
+    if (value === 'Calendar' && !this.dateOptions().some(o => o.key === this.calendar().startFieldKey)) {
+      this.patchCalendar({ startFieldKey: this.dateOptions()[0]?.key ?? '' });
+    }
   }
 
   buildRequest(): SaveCustomRecordViewRequest {
