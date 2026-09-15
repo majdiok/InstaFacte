@@ -8,7 +8,7 @@ import { ChatAttachment, ChatStreamEvent } from '@features/ai-assistant/models/a
 import { StudioAiBuildService, StudioPlanSummary } from '../studio-ai-build.service';
 import { StudioNavService } from '../studio-nav.service';
 import { STUDIO_AI_LABELS } from './studio-ai-labels';
-import { StudioAppSpec, StudioDuplicateHint, StudioSystemSpec } from './studio-ai.models';
+import { STUDIO_SPEC_LIMITS, StudioAppSpec, StudioDuplicateHint, StudioSystemSpec } from './studio-ai.models';
 import { studioAiPlanPreviewFixture } from './preview/testing/studio-ai-spec.fixture';
 import {
   STUDIO_AI_ADVANCED_MODEL_STORAGE_KEY,
@@ -1009,6 +1009,47 @@ describe('StudioAiSessionStore', () => {
       store.reorderFields('inconnue', 0, 1);
       expect(store.draft()).toBe(before);
       expect(store.changeCount()).toBe(2);
+    });
+  });
+
+  describe('mode Personnaliser : import CSV des données de départ (3.4h)', () => {
+    /** Plan ouvert avec la spec chargée (`GET {id}/spec` répond immédiatement avec `spec()`). */
+    function openPlan(): void {
+      store.openPlan('p-1', 'CreateSystem', summary());
+    }
+
+    it('replaceSeed remplace le bloc seed et changeCount suit', () => {
+      // Spec dédiée : un bloc seed existant sur la table « employe ».
+      const custom = spec();
+      custom.seed = [{ entityRef: 'employe', records: [{ nom: 'Dupont' }] }];
+      builds.getPlanSpec.and.returnValue(of({
+        success: true,
+        data: { id: 'p-1', kind: 'CreateSystem', status: 'Pending', expiresAt: '2026-09-09T10:00:00Z', rowVersion: 'rv-1', spec: custom },
+        message: null,
+        errors: []
+      }) as never);
+      openPlan();
+      store.setMode('customize');
+      expect(store.changeCount()).toBe(0);
+
+      // Remplacement : l'ancien bloc est retiré, le nouveau ajouté ; le diff voit « seed.employe »,
+      // ce qui alimente le compteur du pied et « Enregistrer le brouillon ».
+      store.replaceSeed('employe', [{ nom: 'Martin' }, { nom: 'Bernard' }]);
+      expect(store.draft()?.seed).toEqual([{ entityRef: 'employe', records: [{ nom: 'Martin' }, { nom: 'Bernard' }] }]);
+      expect(store.changeCount()).toBe(1);
+      expect(store.changes()[0].path).toBe('seed.employe');
+      // La spec de base (serveur) n'est jamais touchée.
+      expect(store.spec()?.seed).toEqual([{ entityRef: 'employe', records: [{ nom: 'Dupont' }] }]);
+
+      // Table inconnue : aucun effet (même référence de brouillon).
+      const before = store.draft();
+      store.replaceSeed('inconnue', [{ nom: 'X' }]);
+      expect(store.draft()).toBe(before);
+
+      // Borne serveur : au-delà de `maxSeedRecords`, le bloc est tronqué.
+      const many = Array.from({ length: STUDIO_SPEC_LIMITS.maxSeedRecords + 50 }, (_, i) => ({ nom: `N${i}` }));
+      store.replaceSeed('employe', many);
+      expect(store.draft()?.seed?.[0].records.length).toBe(STUDIO_SPEC_LIMITS.maxSeedRecords);
     });
   });
 

@@ -729,6 +729,31 @@ export class StudioAiSessionStore implements OnDestroy {
     });
   }
 
+  // ---- Mode Personnaliser : données de départ (3.4h) -------------------------------------------------
+
+  /**
+   * Remplacement des données de départ d'une table (onglet Données de référence, import CSV) :
+   * immuable, le bloc `seed` existant pour `ref` est retiré puis le nouveau est ajouté en fin de
+   * liste, borné à `STUDIO_SPEC_LIMITS.maxSeedRecords` (200, borne serveur) ; une liste vide retire
+   * le bloc sans en recréer. Mêmes gardes que `mutateDraftEntity` (brouillon présent, pas occupé,
+   * table générée — jamais `existingKey`). `diffSpec` compare déjà les blocs `seed.<ref>` : le
+   * compteur de modifications et « Enregistrer le brouillon » suivent sans adaptation.
+   */
+  replaceSeed(ref: string, records: Record<string, unknown>[]): void {
+    const draft = this.draft();
+    if (!draft || this.busy() || this.validation().pending) return;
+    if (this.phase() !== 'editing') {
+      if (!this.canEdit()) return;
+      this.startEditing();
+    }
+    const entity = draft.entities.find(e => e.ref === ref);
+    if (!entity || entity.existingKey) return;
+    const clamped = records.slice(0, STUDIO_SPEC_LIMITS.maxSeedRecords);
+    const kept = (draft.seed ?? []).filter(block => block.entityRef !== ref);
+    const seed = clamped.length ? [...kept, { entityRef: ref, records: clamped }] : kept;
+    this.updateDraft({ ...draft, seed });
+  }
+
   /**
    * Mutation immuable d'une entité du brouillon, sur le modèle d'`applyDuplicateDecision` (copie des
    * tableaux, no-op si la table est absente ou inchangée). Repasse en édition si le mode
