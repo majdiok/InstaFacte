@@ -66,6 +66,9 @@ describe('StudioCalendarComponent', () => {
 
   it('bascule entre mois et semaine', () => {
     setup();
+    // Le headless CI peut avoir une fenêtre < 768px (matchMedia ⇒ narrow) : on fige le contexte,
+    // la bascule forcée « narrow » étant couverte par le test dédié ci-dessous.
+    component['narrow'].set(false);
     expect(component['effectiveMode']()).toBe('month');
     component.setMode('week');
     fixture.detectChanges();
