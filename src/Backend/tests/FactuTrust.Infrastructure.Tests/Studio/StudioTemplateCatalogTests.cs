@@ -20,16 +20,17 @@ public sealed class StudioTemplateCatalogTests
     private static readonly string[] ExpectedKeys =
     {
         "gestion-conges", "gestion-contrats", "suivi-equipements", "gestion-interventions",
-        "gestion-leads", "catalogue-produits", "gestion-formations", "suivi-reclamations"
+        "gestion-leads", "catalogue-produits", "gestion-formations", "suivi-reclamations",
+        "gestion-projets", "gestion-evenements"
     };
 
     public static IEnumerable<object[]> TemplateKeys =>
         StudioTemplateCatalog.All.Select(t => new object[] { t.Key });
 
     [Fact]
-    public void Catalog_lists_exactly_the_eight_builtin_templates()
+    public void Catalog_lists_exactly_the_ten_builtin_templates()
     {
-        Assert.Equal(8, StudioTemplateCatalog.All.Count);
+        Assert.Equal(10, StudioTemplateCatalog.All.Count);
         Assert.Equal(
             ExpectedKeys.OrderBy(k => k, StringComparer.Ordinal).ToArray(),
             StudioTemplateCatalog.All.Select(t => t.Key).OrderBy(k => k, StringComparer.Ordinal).ToArray());
@@ -157,6 +158,82 @@ public sealed class StudioTemplateCatalogTests
                     Assert.Contains(recordKey, fieldKeys);
             }
         }
+    }
+
+    [Theory]
+    [MemberData(nameof(TemplateKeys))]
+    public void Builtin_templates_stay_under_relation_and_view_bounds(string key)
+    {
+        var template = StudioTemplateCatalog.TryGet(key);
+        Assert.NotNull(template);
+        Assert.True(StudioAiSystemSpec.TryParse(template!.SpecJson, out var spec, out var error), error);
+
+        Assert.InRange(spec!.Relations.Count, 0, StudioAiSystemSpec.MaxRelations);
+        foreach (var entity in spec.Entities)
+            Assert.InRange(entity.Views.Count, 0, StudioAiSystemSpec.MaxViewsPerEntity);
+
+        // Un avertissement = alias non résolu, relation ou vue ignorée : le JSON du modèle doit être corrigé.
+        Assert.Empty(spec.Warnings ?? Array.Empty<string>());
+    }
+
+    [Fact]
+    public void Gestion_projets_template_declares_team_relation_and_kanban_calendar_list_views()
+    {
+        var template = StudioTemplateCatalog.TryGet("gestion-projets");
+        Assert.NotNull(template);
+        Assert.True(StudioAiSystemSpec.TryParse(template!.SpecJson, out var spec, out var error), error);
+
+        Assert.Equal(4, spec!.Entities.Count);
+        var relation = Assert.Single(spec.Relations);
+        Assert.Equal("many_to_many", relation.Kind);
+        Assert.Equal("membres", relation.FromRef);
+        Assert.Equal("projets", relation.ToRef);
+        Assert.Equal("Équipe", relation.Label);
+        Assert.Equal("Équipe projet", relation.JunctionName);
+
+        var modes = spec.Entities.SelectMany(e => e.Views)
+            .Select(v => v.Mode).ToHashSet(StringComparer.Ordinal);
+        Assert.Superset(new HashSet<string> { "kanban", "calendar", "list" }, modes);
+        Assert.Equal(4, spec.Entities.Sum(e => e.Views.Count));
+
+        var taches = spec.Entities.Single(e => e.Ref == "taches");
+        Assert.Equal(2, taches.Views.Count);
+        Assert.NotNull(taches.Report);
+
+        var jalons = spec.Entities.Single(e => e.Ref == "jalons");
+        var calendar = Assert.Single(jalons.Views);
+        Assert.Equal("calendar", calendar.Mode);
+        Assert.Equal("date_prevue", calendar.StartFieldKey);
+        Assert.Equal("titre", calendar.TitleFieldKey);
+
+        // Seed sans valeur de relation : « client » (relation ERP) n'est jamais préchargé.
+        Assert.Equal(5, spec.Seed.Sum(s => s.Records.Count));
+        Assert.DoesNotContain(spec.Seed.Single(s => s.EntityRef == "projets").Records, r => r.ContainsKey("client"));
+    }
+
+    [Fact]
+    public void Gestion_evenements_template_declares_inscriptions_relation_and_agenda_view()
+    {
+        var template = StudioTemplateCatalog.TryGet("gestion-evenements");
+        Assert.NotNull(template);
+        Assert.True(StudioAiSystemSpec.TryParse(template!.SpecJson, out var spec, out var error), error);
+
+        Assert.Equal(3, spec!.Entities.Count);
+        var relation = Assert.Single(spec.Relations);
+        Assert.Equal("participants", relation.FromRef);
+        Assert.Equal("evenements", relation.ToRef);
+        Assert.Equal("Inscriptions", relation.Label);
+        Assert.Equal("Inscriptions", relation.JunctionName);
+
+        var evenements = spec.Entities.Single(e => e.Ref == "evenements");
+        var agenda = Assert.Single(evenements.Views, v => v.Mode == "calendar");
+        Assert.Equal("Agenda", agenda.DisplayName);
+        Assert.Equal("date_debut", agenda.StartFieldKey);
+        Assert.Equal("date_fin", agenda.EndFieldKey);
+        Assert.Equal("titre", agenda.TitleFieldKey);
+        Assert.True(agenda.IsDefault);
+        Assert.NotNull(evenements.Report);
+        Assert.Equal(3, spec.Entities.Sum(e => e.Views.Count));
     }
 
     [Fact]

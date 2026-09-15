@@ -37,6 +37,8 @@ public static class StudioTemplateCatalog
         ("catalogue-produits", "Achats", "Achats / Stock"),
         ("gestion-formations", "RH", "RH & Compétences"),
         ("suivi-reclamations", "Services", "Services / Support"),
+        ("gestion-projets", "Projets", "Projets / Services"),
+        ("gestion-evenements", "Événements", "Marketing / Événements"),
     };
 
     private static readonly IReadOnlyList<StudioBuiltinTemplate> Catalog = Load();

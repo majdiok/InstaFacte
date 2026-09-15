@@ -41,7 +41,7 @@ public sealed class StudioTemplatesControllerTests
         var ok = Assert.IsType<OkObjectResult>(controller.List(null));
         var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<IReadOnlyList<StudioTemplateListItemDto>>>(ok.Value);
         Assert.True(body.Success);
-        Assert.Equal(8, body.Data!.Count);
+        Assert.Equal(10, body.Data!.Count);
         Assert.All(body.Data, item =>
         {
             Assert.Equal("builtin", item.Source);
