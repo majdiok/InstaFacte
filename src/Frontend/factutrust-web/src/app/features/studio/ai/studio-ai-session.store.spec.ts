@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { TestBed, discardPeriodicTasks, fakeAsync, tick } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subject, of, throwError } from 'rxjs';
@@ -9,6 +9,7 @@ import { StudioAiBuildService, StudioPlanSummary } from '../studio-ai-build.serv
 import { StudioNavService } from '../studio-nav.service';
 import { STUDIO_AI_LABELS } from './studio-ai-labels';
 import { StudioAppSpec, StudioDuplicateHint, StudioSystemSpec } from './studio-ai.models';
+import { studioAiPlanPreviewFixture } from './preview/testing/studio-ai-spec.fixture';
 import {
   STUDIO_AI_ADVANCED_MODEL_STORAGE_KEY,
   StudioAiSessionStore,
@@ -66,7 +67,8 @@ describe('StudioAiSessionStore', () => {
   beforeEach(() => {
     stream = jasmine.createSpyObj<AiStreamService>('AiStreamService', ['streamChat']);
     builds = jasmine.createSpyObj<StudioAiBuildService>('StudioAiBuildService', [
-      'confirm', 'cancel', 'cancelPending', 'getPlanSpec', 'updatePlanSpec', 'listPlans', 'createFromTemplate', 'getPlan'
+      'confirm', 'cancel', 'cancelPending', 'getPlanSpec', 'updatePlanSpec', 'listPlans', 'createFromTemplate', 'getPlan',
+      'getPlanPreview', 'replayPlan', 'importSystem', 'duplicateSystem'
     ]);
     nav = jasmine.createSpyObj<StudioNavService>('StudioNavService', ['refresh']);
     chat = jasmine.createSpyObj<AiChatService>('AiChatService', ['deleteConversation']);
@@ -772,6 +774,143 @@ describe('StudioAiSessionStore', () => {
     expect(store.plan()?.planId).toBe('p-2');
     expect(builds.getPlanSpec.calls.count()).toBe(3);
     expect(store.draft()?.entities.length).toBe(1);
+  });
+
+  describe('aperçu enrichi (3.4b) : mode, aperçu serveur, compte à rebours, rejeu', () => {
+    const previewResponse = () => ({ success: true, data: studioAiPlanPreviewFixture(), message: null, errors: [] });
+    const creationResponse = (planId = 'p-r') => ({
+      success: true, message: null, errors: [],
+      data: {
+        plan: { id: planId, kind: 'CreateSystem', status: 'Pending', summaryJson: JSON.stringify(summary({ title: 'Rejoué' })), expiresAt: '2026-09-16T10:00:00Z', createdAt: '2026-09-15T10:00:00Z' },
+        spec: { id: planId, kind: 'CreateSystem', status: 'Pending', expiresAt: '2026-09-16T10:00:00Z', rowVersion: 'rv-r', spec: spec() }
+      }
+    });
+    /** Plan ouvert depuis « Mes projets » : `GET {id}/spec` répond immédiatement avec `spec()`. */
+    function openPlan(expiresAt: string | null = null): void {
+      store.openPlan('p-1', 'CreateSystem', summary(), expiresAt);
+    }
+
+    it('setMode(customize) démarre l’édition et changeCount suit diffSpec', () => {
+      openPlan();
+      expect(store.mode()).toBe('preview');
+      expect(store.changeCount()).toBe(0);
+
+      store.setMode('customize');
+      expect(store.mode()).toBe('customize');
+      expect(store.phase()).toBe('editing');
+
+      const draft = structuredClone(store.draft()!);
+      draft.entities[0].fields.push({ key: 'email', label: 'E-mail', type: 'text', required: false, unique: false });
+      store.updateDraft(draft);
+      expect(store.changeCount()).toBe(1);
+      expect(store.changes()[0].kind).toBe('added');
+
+      // Revenir à « Aperçu » conserve le brouillon : le badge `dirty` reste visible.
+      store.setMode('preview');
+      expect(store.mode()).toBe('preview');
+      expect(store.dirty()).toBeTrue();
+      expect(store.changeCount()).toBe(1);
+    });
+
+    it('setMode(test) charge l’aperçu serveur une seule fois', () => {
+      builds.getPlanPreview.and.returnValue(of(previewResponse()) as never);
+      openPlan();
+
+      store.setMode('test');
+      store.setMode('preview');
+      store.setMode('test');
+
+      expect(builds.getPlanPreview).toHaveBeenCalledTimes(1);
+      expect(builds.getPlanPreview).toHaveBeenCalledWith('p-1');
+      expect(store.preview()?.planId).toBe('p-preview-1');
+      expect(store.previewLoading()).toBeFalse();
+      expect(store.previewUnavailable()).toBeFalse();
+    });
+
+    it('aperçu 404 ⇒ previewUnavailable sans erreur globale', () => {
+      builds.getPlanPreview.and.returnValue(throwError(() => new HttpErrorResponse({ status: 404 })) as never);
+      openPlan();
+
+      store.setMode('test');
+      store.setMode('test');
+
+      expect(builds.getPlanPreview).toHaveBeenCalledTimes(1);
+      expect(store.mode()).toBe('test');
+      expect(store.previewUnavailable()).toBeTrue();
+      expect(store.preview()).toBeNull();
+      expect(store.previewLoading()).toBeFalse();
+      expect(store.error()).toBeNull();
+    });
+
+    it('le compte à rebours décroît depuis expiresAt et expired passe à vrai à 0', fakeAsync(() => {
+      openPlan(new Date(Date.now() + 3000).toISOString());
+
+      expect(store.expiresInSeconds()).toBe(3);
+      expect(store.expired()).toBeFalse();
+
+      tick(1000);
+      expect(store.expiresInSeconds()).toBe(2);
+      tick(2000);
+      expect(store.expiresInSeconds()).toBe(0);
+      expect(store.expired()).toBeTrue();
+      // Jamais négatif : la valeur est recalculée depuis l'échéance, pas décrémentée.
+      tick(5000);
+      expect(store.expiresInSeconds()).toBe(0);
+
+      discardPeriodicTasks();
+    }));
+
+    it('un plan expiré ne peut plus être validé', fakeAsync(() => {
+      openPlan(new Date(Date.now() + 1000).toISOString());
+      expect(store.canConfirm()).toBeTrue();
+
+      tick(1000);
+
+      expect(store.expired()).toBeTrue();
+      expect(store.canConfirm()).toBeFalse();
+      discardPeriodicTasks();
+    }));
+
+    it('replay 201 ouvre le nouveau plan comme un modèle', () => {
+      builds.replayPlan.and.returnValue(of(creationResponse('p-r')) as never);
+
+      store.replay('p-old');
+
+      expect(builds.replayPlan).toHaveBeenCalledWith('p-old');
+      expect(store.phase()).toBe('awaiting_confirmation');
+      expect(store.plan()?.planId).toBe('p-r');
+      expect(store.plan()?.rowVersion).toBe('rv-r');
+      expect(store.spec()?.entities.length).toBe(1);
+      expect(store.timeline().pop()).toEqual({ kind: 'system', text: STUDIO_AI_LABELS.replay.done });
+    });
+
+    it('replay 409 affiche le message de conflit', () => {
+      builds.replayPlan.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409 })) as never);
+
+      store.replay('p-old');
+
+      expect(store.phase()).toBe('idle');
+      expect(store.plan()).toBeNull();
+      expect(store.error()).toBe(STUDIO_AI_LABELS.replay.conflict);
+    });
+
+    it('clearPlanState arrête le compte à rebours', fakeAsync(() => {
+      builds.getPlanPreview.and.returnValue(of(previewResponse()) as never);
+      openPlan(new Date(Date.now() + 60_000).toISOString());
+      store.setMode('test');
+      expect(store.expiresInSeconds()).toBe(60);
+
+      // `cancelPlan` passe par `clearPlanState()` : plus de plan, plus d'échéance, mode et aperçu remis à zéro.
+      store.cancelPlan();
+
+      expect(store.expiresInSeconds()).toBeNull();
+      expect(store.expired()).toBeFalse();
+      expect(store.mode()).toBe('preview');
+      expect(store.preview()).toBeNull();
+      tick(2000);
+      expect(store.expiresInSeconds()).toBeNull();
+      discardPeriodicTasks();
+    }));
   });
 
   describe('pure helpers', () => {

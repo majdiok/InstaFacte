@@ -1,6 +1,7 @@
 import { Injectable, OnDestroy, computed, inject, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { Observable, Subscription, interval } from 'rxjs';
 import { AiStreamService } from '@features/ai-assistant/services/ai-stream.service';
 import { AiChatService } from '@features/ai-assistant/services/ai-chat.service';
 import {
@@ -10,6 +11,7 @@ import {
   buildAttachmentRequests,
   composeBackendMessage
 } from '@features/ai-assistant/utils/chat-attachment-payload.util';
+import { ApiResponse } from '@core/services/client.service';
 import { StudioNavService } from '../studio-nav.service';
 import {
   StudioAiBuildService, StudioPlanEvent, StudioPlanSummary,
@@ -17,14 +19,19 @@ import {
 } from '../studio-ai-build.service';
 import { stripStudioAssistantText } from '../studio-ai-builder.component';
 import { STUDIO_AI_LABELS, formatLabel } from './studio-ai-labels';
-import { cloneSpec, parseSpecPayload, serializeSpec, studioAiHttpError } from './studio-ai-spec.util';
+import { cloneSpec, diffSpec, parseSpecPayload, serializeSpec, studioAiHttpError } from './studio-ai-spec.util';
 import {
+  ImportCustomSystemRequest,
   StudioAiIntent,
+  StudioAiPlanCreationResponse,
   StudioAiPlanListItemDto,
+  StudioAiPlanPreviewDto,
+  StudioAiPreviewMode,
   StudioAiSessionPhase,
   StudioBuildResult,
   StudioBuildStep,
   StudioDuplicateHint,
+  StudioSpecChange,
   StudioSpecCounters,
   StudioSpecEntity,
   StudioSystemSpec,
@@ -106,6 +113,7 @@ export class StudioAiSessionStore implements OnDestroy {
   private failureReported = false;
   private streamSub: Subscription | null = null;
   private confirmSub: Subscription | null = null;
+  private countdownSub: Subscription | null = null;
   /** Pièces jointes de la dernière demande, pour que « Réessayer » les renvoie aussi. */
   private lastAttachments: ChatAttachment[] = [];
   /** `true` dès que la page a demandé un premier `loadHistory()` (workbench actif) : les rafraîchissements internes en dépendent. */
@@ -150,6 +158,16 @@ export class StudioAiSessionStore implements OnDestroy {
   /** Entité renommée « (2) » à mettre en évidence dans l'aperçu jusqu'au prochain plan. */
   readonly highlightedEntityRef = signal<string | null>(null);
 
+  // ---- Aperçu enrichi (3.4) : mode, aperçu serveur, compte à rebours ------------------------------
+  readonly mode = signal<StudioAiPreviewMode>('preview');
+  /** Aperçu structuré `GET {id}/preview` ; `null` tant qu'il n'a pas été chargé (mode Tester). */
+  readonly preview = signal<StudioAiPlanPreviewDto | null>(null);
+  readonly previewLoading = signal(false);
+  /** 404 sur l'aperçu (serveur non mis à jour) : le panneau Tester reste utilisable en mode dégradé local (Q1 b). */
+  readonly previewUnavailable = signal(false);
+  /** Secondes restantes avant expiration du plan ; `null` sans `expiresAt`. Recalculé à chaque tick. */
+  readonly expiresInSeconds = signal<number | null>(null);
+
   // ---- Dérivés ------------------------------------------------------------------------------------
   readonly busy = computed(() => {
     const p = this.phase();
@@ -163,9 +181,17 @@ export class StudioAiSessionStore implements OnDestroy {
     if (!base || !draft) return false;
     return serializeSpec(base) !== serializeSpec(draft);
   });
+  /** Différences spec serveur → brouillon (badge « n modifications » du mode Personnaliser). */
+  readonly changes = computed<StudioSpecChange[]>(() => {
+    const base = this.spec();
+    const draft = this.draft();
+    return base && draft ? diffSpec(base, draft) : [];
+  });
+  readonly changeCount = computed(() => this.changes().length);
+  readonly expired = computed(() => this.expiresInSeconds() === 0);
   readonly canConfirm = computed(() => {
     const p = this.phase();
-    return this.hasPlan() && (p === 'awaiting_confirmation' || p === 'editing') && !this.dirty() && !this.validation().pending;
+    return this.hasPlan() && (p === 'awaiting_confirmation' || p === 'editing') && !this.dirty() && !this.validation().pending && !this.expired();
   });
   readonly canEdit = computed(() => {
     const p = this.phase();
@@ -261,6 +287,7 @@ export class StudioAiSessionStore implements OnDestroy {
     this.confirmSub?.unsubscribe();
     this.streamSub = null;
     this.confirmSub = null;
+    this.stopCountdown();
   }
 
   /**
@@ -356,29 +383,7 @@ export class StudioAiSessionStore implements OnDestroy {
     this.status.set(STUDIO_AI_LABELS.page.templateLoading);
     this.builds.createFromTemplate(templateKey).subscribe({
       next: res => {
-        const plan = res?.success ? res.data?.plan : null;
-        const parsed = plan ? parseSpecPayload(res.data?.spec?.spec) : null;
-        if (!plan || !parsed) {
-          this.phase.set('idle');
-          this.status.set('');
-          this.error.set(STUDIO_AI_LABELS.page.templateFailed);
-          return;
-        }
-        const view = toSystemSpecView(parsed);
-        const summary = parsePlanSummary(plan.summaryJson) ?? normalizeSummary({ kind: plan.kind, title: view.system.displayName } as StudioPlanSummary);
-        this.plan.set({
-          planId: plan.id,
-          kind: res.data.spec?.kind || plan.kind,
-          expiresAt: res.data.spec?.expiresAt ?? plan.expiresAt ?? null,
-          rowVersion: res.data.spec?.rowVersion ?? null,
-          summary
-        });
-        this.spec.set(view);
-        this.draft.set(cloneSpec(view));
-        this.validation.set({ warnings: summary.warnings ?? [], errors: [], pending: false });
-        this.phase.set('awaiting_confirmation');
-        this.status.set(STUDIO_AI_LABELS.status.awaitingValidation);
-        this.timeline.update(l => [...l, { kind: 'system', text: STUDIO_AI_LABELS.templates.opened }]);
+        this.openCreationResponse(res, STUDIO_AI_LABELS.templates.opened);
         this.refreshHistory();
       },
       error: err => {
@@ -387,6 +392,85 @@ export class StudioAiSessionStore implements OnDestroy {
         this.error.set(studioAiHttpError(err, 'workbench'));
       }
     });
+  }
+
+  /**
+   * « Rejouer » (`POST {id}/replay` ⇒ 201, même enveloppe que `from-template`) : le serveur crée un
+   * nouveau plan `Pending` depuis la spec du plan source ; l'atelier l'ouvre comme un modèle.
+   * 409 ⇒ le plan n'est pas rejouable maintenant (message dédié).
+   */
+  replay(planId: string): void {
+    this.startCreation(this.builds.replayPlan(planId), STUDIO_AI_LABELS.replay.done, STUDIO_AI_LABELS.replay.conflict);
+  }
+
+  /** « Importer un système (JSON) » (`POST systems/import` ⇒ 201) : ouvre le plan créé (3.4j). */
+  importSystem(req: ImportCustomSystemRequest): void {
+    this.startCreation(this.builds.importSystem(req), STUDIO_AI_LABELS.importExport.opened);
+  }
+
+  /** « Dupliquer un système » (`POST systems/{key}/duplicate` ⇒ 201) : ouvre le plan « (copie) » (3.4j). */
+  duplicateSystem(key: string, displayName?: string | null): void {
+    this.startCreation(this.builds.duplicateSystem(key, displayName), STUDIO_AI_LABELS.importExport.opened);
+  }
+
+  /** Chemin commun replay / import / duplicate : même cycle `planning` → plan ouvert que `createFromTemplate`. */
+  private startCreation(
+    request: Observable<ApiResponse<StudioAiPlanCreationResponse>>,
+    openedText: string,
+    conflictText?: string
+  ): void {
+    if (this.busy()) return;
+    this.error.set(null);
+    this.result.set(null);
+    this.buildSteps.set([]);
+    this.clearPlanState();
+    this.phase.set('planning');
+    this.status.set(STUDIO_AI_LABELS.page.templateLoading);
+    request.subscribe({
+      next: res => {
+        this.openCreationResponse(res, openedText);
+        this.refreshHistory();
+      },
+      error: (err: unknown) => {
+        this.phase.set('idle');
+        this.status.set('');
+        const status = err instanceof HttpErrorResponse ? err.status : 0;
+        this.error.set(conflictText && status === 409 ? conflictText : studioAiHttpError(err, 'plan'));
+        this.refreshHistory();
+      }
+    });
+  }
+
+  /**
+   * Ouvre le plan renvoyé par une création serveur (`from-template`, `replay`, `duplicate`, `import`) :
+   * plan + spec canonique + résumé, puis attente de validation. Sans plan/spec exploitable ⇒ `idle` + erreur.
+   */
+  private openCreationResponse(res: ApiResponse<StudioAiPlanCreationResponse> | null | undefined, openedText: string): void {
+    const plan = res?.success ? res.data?.plan : null;
+    const parsed = plan ? parseSpecPayload(res?.data?.spec?.spec) : null;
+    if (!res || !plan || !parsed) {
+      this.phase.set('idle');
+      this.status.set('');
+      this.error.set(STUDIO_AI_LABELS.page.templateFailed);
+      return;
+    }
+    const view = toSystemSpecView(parsed);
+    const summary = parsePlanSummary(plan.summaryJson) ?? normalizeSummary({ kind: plan.kind, title: view.system.displayName } as StudioPlanSummary);
+    const expiresAt = res.data.spec?.expiresAt ?? plan.expiresAt ?? null;
+    this.plan.set({
+      planId: plan.id,
+      kind: res.data.spec?.kind || plan.kind,
+      expiresAt,
+      rowVersion: res.data.spec?.rowVersion ?? null,
+      summary
+    });
+    this.startCountdown(expiresAt);
+    this.spec.set(view);
+    this.draft.set(cloneSpec(view));
+    this.validation.set({ warnings: summary.warnings ?? [], errors: [], pending: false });
+    this.phase.set('awaiting_confirmation');
+    this.status.set(STUDIO_AI_LABELS.status.awaitingValidation);
+    this.timeline.update(l => [...l, { kind: 'system', text: openedText }]);
   }
 
   // ---- Doublons (R21) -------------------------------------------------------------------------------
@@ -470,6 +554,7 @@ export class StudioAiSessionStore implements OnDestroy {
     this.result.set(null);
     this.buildSteps.set([]);
     this.plan.set({ planId, kind, expiresAt: expiresAt ?? null, rowVersion: null, summary: normalizeSummary(summary) });
+    this.startCountdown(expiresAt ?? null);
     this.spec.set(null);
     this.draft.set(null);
     this.validation.set({ warnings: [], errors: [], pending: false });
@@ -482,6 +567,35 @@ export class StudioAiSessionStore implements OnDestroy {
   startEditing(): void {
     if (!this.canEdit()) return;
     this.phase.set('editing');
+  }
+
+  /**
+   * Barre de modes de l'aperçu (3.4c) : « Personnaliser » démarre l'édition, « Tester » charge l'aperçu
+   * serveur une seule fois par plan ; revenir à « Aperçu » conserve le brouillon (le badge `dirty` reste).
+   */
+  setMode(mode: StudioAiPreviewMode): void {
+    this.mode.set(mode);
+    if (mode === 'customize' && this.canEdit()) this.startEditing();
+    if (mode === 'test') this.loadPreview();
+  }
+
+  /** `GET {id}/preview` : 404 ⇒ `previewUnavailable` sans erreur globale (Tester en mode dégradé local, Q1 b). */
+  private loadPreview(): void {
+    const current = this.plan();
+    if (!current || this.preview() || this.previewLoading() || this.previewUnavailable()) return;
+    this.previewLoading.set(true);
+    this.builds.getPlanPreview(current.planId).subscribe({
+      next: res => {
+        this.previewLoading.set(false);
+        if (res?.success && res.data) this.preview.set(res.data);
+        else this.previewUnavailable.set(true);
+      },
+      error: (err: unknown) => {
+        this.previewLoading.set(false);
+        if (err instanceof HttpErrorResponse && err.status === 404) this.previewUnavailable.set(true);
+        else this.error.set(studioAiHttpError(err, 'plan'));
+      }
+    });
   }
 
   /** Remplace la copie de travail (les onglets éditables émettent la spec complète mise à jour). */
@@ -692,6 +806,7 @@ export class StudioAiSessionStore implements OnDestroy {
         typeof payload.summary === 'string' ? JSON.parse(payload.summary as unknown as string) : payload.summary
       );
       this.plan.set({ planId: payload.planId, kind: summary.kind, expiresAt: payload.expiresAt ?? null, rowVersion: null, summary });
+      this.startCountdown(payload.expiresAt ?? null);
       this.refreshHistory();
       this.validation.set({ warnings: [], errors: [], pending: false });
       this.phase.set('awaiting_confirmation');
@@ -794,6 +909,33 @@ export class StudioAiSessionStore implements OnDestroy {
     this.validation.set({ warnings: [], errors: [], pending: false });
     this.dismissedDuplicateRefs.set(new Set());
     this.highlightedEntityRef.set(null);
+    this.mode.set('preview');
+    this.preview.set(null);
+    this.previewLoading.set(false);
+    this.previewUnavailable.set(false);
+    this.stopCountdown();
+  }
+
+  // ---- Compte à rebours d'expiration ----------------------------------------------------------------
+
+  /**
+   * Recalcule chaque seconde le temps restant depuis `expiresAt` (jamais de décrément cumulé : un
+   * onglet en arrière-plan retrouve la bonne valeur au réveil). `null` sans échéance.
+   */
+  private startCountdown(expiresAt: string | null): void {
+    this.stopCountdown();
+    if (!expiresAt) return;
+    const target = Date.parse(expiresAt);
+    if (Number.isNaN(target)) return;
+    const tick = (): void => this.expiresInSeconds.set(Math.max(0, Math.floor((target - Date.now()) / 1000)));
+    tick();
+    this.countdownSub = interval(1000).subscribe(tick);
+  }
+
+  private stopCountdown(): void {
+    this.countdownSub?.unsubscribe();
+    this.countdownSub = null;
+    this.expiresInSeconds.set(null);
   }
 
 }
