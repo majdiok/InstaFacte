@@ -150,6 +150,25 @@ L'assistant Studio peut **préparer** des vues enregistrées — jamais les cré
 - Le prompt StudioBuilder gagne la **règle 13 « VUES »** (seulement quand l'outil est exposé) ;
   `SystemPromptCacheRevision = "v6"`.
 
+## Frontend (PR 2.5)
+
+- **Modèles + service** : `views/studio-record-views.models.ts` (`RecordViewDefinition`, DTO,
+  `RECORD_VIEW_LIMITS`, `RECORD_VIEW_PERSISTED_KEYS`, `OPERATORS_BY_TYPE`) et
+  `views/studio-record-views.service.ts` (CRUD + `/{id}/default` + `/{id}/run` + `patchRecord` ;
+  écritures avec `createHttpContextSkipGlobalErrorUi()`).
+- **Runtime (2.5c)** : piloté par `schema.views` servi sous `custom_records:read` (fail-closed
+  serveur quand le drapeau est coupé) ; `studio-record-list` monte le sélecteur
+  (`studio-view-switcher`) et le `studio-record-view-runner` (`@switch` Liste / Kanban /
+  Calendrier, `previewLimit` pour l'aperçu du concepteur). La conception (« Nouvelle vue » /
+  « Modifier la vue ») exige en plus `recordViewsEnabled` + `studio:design_forms`.
+- **Concepteur (2.5d)** : `views/studio-record-view-designer.component.ts` (routes
+  `d/:key/views/new` et `d/:key/views/:viewId`) — mode Liste (colonnes ≤ 25, filtres via
+  `studio-filter-builder`, tris ≤ 3, pagination 1..200, recherche, vue par défaut), sections
+  Kanban / Calendrier, aperçu R3 en édition. Mapping d'erreurs : 409 création ⇒ clé déjà prise,
+  409 édition ⇒ vue périmée + « Recharger », 400 « Limite du plan… » ⇒ quota, autre 400 ⇒ message
+  serveur, 404 ⇒ retour liste.
+- **E2E (2.5h)** : `e2e/studio-runtime-views.spec.ts` (6 cas, API mockée).
+
 ## Réversibilité
 
 Drapeau coupé ⇒ toutes les routes répondent 404 sans effet de bord et `schema.views = []`. La table est
