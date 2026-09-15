@@ -4,6 +4,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
 import { DynamicFormComponent } from '@shared/studio-runtime/dynamic-form.component';
+import { DynamicReportComponent } from '@shared/studio-runtime/dynamic-report.component';
+import { ReportResult } from '@shared/studio-runtime/studio-runtime.models';
 import { STUDIO_AI_LABELS } from '../studio-ai-labels';
 import { StudioAiTestPanelComponent } from './studio-ai-test-panel.component';
 import { studioAiSpecFixture } from './testing/studio-ai-spec.fixture';
@@ -94,5 +96,77 @@ describe('StudioAiTestPanelComponent', () => {
     const banner = host().querySelector('.p-message-warn');
     expect(banner).withContext('p-message severity="warn"').not.toBeNull();
     expect(banner?.textContent).toContain(STUDIO_AI_LABELS.simulation.banner);
+  });
+
+  it('préfère l’échantillon serveur au calcul local', () => {
+    // « demandes » a un rapport ET des données de départ : le calcul local serait possible…
+    const spec = studioAiSpecFixture();
+    spec.seed = [
+      ...(spec.seed ?? []),
+      { entityRef: 'demandes', records: [{ employe_id: 'E-001', nb_jours: 5 }, { employe_id: 'E-002', nb_jours: 3 }] }
+    ];
+    fixture.componentRef.setInput('spec', spec);
+    // …mais l'échantillon fourni par le serveur (summary.sample, P5) prime.
+    const sample: ReportResult = {
+      columns: [
+        { key: 'employe_id', label: 'Employé', kind: 'dimension' },
+        { key: 'count', label: 'count', kind: 'measure' }
+      ],
+      rows: [{ employe_id: 'Échantillon serveur', count: 99 }],
+      totalRows: 1
+    };
+    fixture.componentRef.setInput('sample', sample);
+    fixture.componentInstance.onEntityChange('demandes');
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.reportResult()).toBe(sample);
+    const source = host().querySelector('[data-component-id="sai-test-report-source"]');
+    expect(source?.textContent).toContain(STUDIO_AI_LABELS.simulation.sampleFromServer);
+    expect(text()).toContain('Échantillon serveur');
+    httpMock.verify();
+  });
+
+  it('affiche « indisponible » sans échantillon', () => {
+    // « demandes » déclare un rapport mais la fixture n'a aucune donnée de départ pour elle.
+    fixture.componentInstance.onEntityChange('demandes');
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.reportResult()).toBeNull();
+    expect(host().querySelector('app-dynamic-report')).toBeNull();
+    const zone = host().querySelector('[data-component-id="sai-test-report"]');
+    expect(zone?.textContent).toContain('État des congés'); // rapport déclaré sur la table
+    expect(zone?.textContent).toContain(STUDIO_AI_LABELS.simulation.reportUnavailable);
+    httpMock.verify();
+  });
+
+  it('aucun appel HTTP pendant l’affichage du rapport', () => {
+    // Données de départ sur « demandes » ⇒ échantillon agrégé localement, sans réseau.
+    const spec = studioAiSpecFixture();
+    spec.seed = [
+      ...(spec.seed ?? []),
+      {
+        entityRef: 'demandes',
+        records: [
+          { employe_id: 'E-001', date_debut: '2026-09-01', nb_jours: 5 },
+          { employe_id: 'E-001', date_debut: '2026-09-03', nb_jours: 3 },
+          { employe_id: 'E-002', date_debut: '2026-09-02', nb_jours: 2 }
+        ]
+      }
+    ];
+    fixture.componentRef.setInput('spec', spec);
+    fixture.componentInstance.onEntityChange('demandes');
+    fixture.detectChanges();
+
+    const report = fixture.debugElement.query(By.directive(DynamicReportComponent));
+    expect(report).withContext('le rapport dynamique est rendu').not.toBeNull();
+    expect((report.componentInstance as DynamicReportComponent).result?.totalRows).toBe(2);
+    expect(text()).toContain('sum (Nombre de jours)');
+    const source = host().querySelector('[data-component-id="sai-test-report-source"]');
+    expect(source?.textContent).toContain(STUDIO_AI_LABELS.simulation.sampleFromSeed);
+    // Export masqué (D21) : conteneur non interactif, `DynamicReportComponent` inchangé.
+    const noexport = host().querySelector('.sai-test-report--noexport');
+    expect(noexport?.getAttribute('aria-disabled')).toBe('true');
+    expect(text()).toContain(STUDIO_AI_LABELS.simulation.exportUnavailable);
+    httpMock.verify();
   });
 });
