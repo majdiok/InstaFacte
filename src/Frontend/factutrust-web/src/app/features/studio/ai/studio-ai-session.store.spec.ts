@@ -965,6 +965,51 @@ describe('StudioAiSessionStore', () => {
       store.updateField('inconnue', 'nom', { label: 'X' });
       expect(store.draft()).toBe(before);
     });
+
+    it('reorderFields et updateView mutent le brouillon', () => {
+      // Spec dédiée : 3 champs et une vue filtrée sur la table « employe ».
+      const custom = spec();
+      custom.entities[0].fields = [
+        { key: 'a', label: 'A', type: 'text', required: false, unique: false },
+        { key: 'b', label: 'B', type: 'text', required: false, unique: false },
+        { key: 'c', label: 'C', type: 'text', required: false, unique: false }
+      ];
+      custom.entities[0].views = [{ name: 'Tout', mode: 'list', filters: [{ field: 'a', op: 'eq', value: 'x' }] }];
+      builds.getPlanSpec.and.returnValue(of({
+        success: true,
+        data: { id: 'p-1', kind: 'CreateSystem', status: 'Pending', expiresAt: '2026-09-09T10:00:00Z', rowVersion: 'rv-1', spec: custom },
+        message: null,
+        errors: []
+      }) as never);
+      openPlan();
+      store.setMode('customize');
+      expect(store.changeCount()).toBe(0);
+
+      // Réordonnancement : déplacement immuable 0 → 2, les clés ne changent pas ; le diff signale
+      // l'ordre des champs (sinon un réordonnancement seul resterait impossible à enregistrer).
+      store.reorderFields('employe', 0, 2);
+      expect(store.draft()?.entities[0].fields.map(f => f.key)).toEqual(['b', 'c', 'a']);
+      expect(store.changes().map(c => c.path)).toEqual(['entities.employe.fields']);
+      expect(store.changeCount()).toBe(1);
+
+      // Patch d'une vue : les clés non visées par le patch sont conservées.
+      store.updateView('employe', 0, { filters: [{ field: 'b', op: 'neq', value: 'y' }] });
+      expect(store.draft()?.entities[0].views?.[0]).toEqual({
+        name: 'Tout', mode: 'list', filters: [{ field: 'b', op: 'neq', value: 'y' }]
+      });
+      expect(store.changes().map(c => c.path).sort()).toEqual(['entities.employe.fields', 'entities.employe.views']);
+      expect(store.changeCount()).toBe(2);
+
+      // Index hors bornes, table inconnue ou positions invalides : aucun effet (même référence).
+      const before = store.draft();
+      store.updateView('employe', 5, { filters: [] });
+      store.updateView('employe', -1, { filters: [] });
+      store.reorderFields('employe', 0, 9);
+      store.reorderFields('employe', 1, 1);
+      store.reorderFields('inconnue', 0, 1);
+      expect(store.draft()).toBe(before);
+      expect(store.changeCount()).toBe(2);
+    });
   });
 
   describe('pure helpers', () => {

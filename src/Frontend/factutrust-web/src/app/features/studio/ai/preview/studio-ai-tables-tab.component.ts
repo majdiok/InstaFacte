@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal } from '@angular/core';
+import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
@@ -33,13 +34,18 @@ const FIELD_CHANGE_PATH = /^entities\.([^.]+)\.fields\.([^.]+)$/;
  * Requis/Unique, puces d'options), avec « Ajouter un champ », « Retirer » (ligne barrée restaurable)
  * et marquage « Ajouté / Modifié / Retiré » déduit de `changes` (le `diffSpec` du store). Une table
  * qui réutilise une table existante (`existingKey`) reste verrouillée en lecture seule. Le mode
- * lecture seule est strictement inchangé. Le réordonnancement arrive en 3.4g2.
+ * lecture seule est strictement inchangé. En 3.4g2, les lignes deviennent réordonnables :
+ * glisser-déposer par la poignée (`cdkDropList`/`cdkDragHandle`) ou boutons Monter/Descendre
+ * (le CDK n'a pas de tri clavier natif), chaque déplacement émettant `fieldReorder`.
  */
 @Component({
   selector: 'app-studio-ai-tables-tab',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, InputTextModule, SelectModule, ToggleSwitchModule, ButtonModule, TagModule, TooltipModule],
+  imports: [
+    CdkDrag, CdkDragHandle, CdkDropList,
+    FormsModule, InputTextModule, SelectModule, ToggleSwitchModule, ButtonModule, TagModule, TooltipModule
+  ],
   styleUrl: './studio-ai-preview.scss',
   template: `
     @if (!entities().length) {
@@ -87,6 +93,7 @@ const FIELD_CHANGE_PATH = /^entities\.([^.]+)\.fields\.([^.]+)$/;
                 <table class="sai-table sai-table--edit">
                   <thead>
                     <tr>
+                      <th scope="col"><span class="sr-only">{{ customize.dragHandle }}</span></th>
                       <th scope="col">{{ customize.fieldLabel }} · {{ labels.colKey }}</th>
                       <th scope="col">{{ customize.fieldType }}</th>
                       <th scope="col">{{ customize.required }}</th>
@@ -95,12 +102,23 @@ const FIELD_CHANGE_PATH = /^entities\.([^.]+)\.fields\.([^.]+)$/;
                       <th scope="col"><span class="sr-only">{{ customize.actions }}</span></th>
                     </tr>
                   </thead>
-                  <tbody>
-                    @for (field of entity.fields; track field.key) {
+                  <!-- 3.4g2 : réordonnancement par glisser-déposer (poignée) et boutons ↑↓. -->
+                  <tbody cdkDropList (cdkDropListDropped)="onDrop(entity, $event)">
+                    @for (field of entity.fields; track field.key; let first = $first, last = $last, i = $index) {
                       <tr
+                        cdkDrag
                         [class.sai-row--added]="changeKind(entity.ref, field.key) === 'added'"
                         [class.sai-row--changed]="changeKind(entity.ref, field.key) === 'changed'"
                         [attr.data-has-options]="hasOptionsEditor(field) ? '' : null">
+                        <td class="sai-cell-grip">
+                          <span
+                            class="sai-grip"
+                            cdkDragHandle
+                            [attr.aria-label]="customize.dragHandle"
+                            [attr.data-component-id]="'sai-field-drag-' + field.key">
+                            <i class="fa-solid fa-grip-vertical" aria-hidden="true"></i>
+                          </span>
+                        </td>
                         <td>
                           <input
                             type="text"
@@ -158,6 +176,26 @@ const FIELD_CHANGE_PATH = /^entities\.([^.]+)\.fields\.([^.]+)$/;
                         </td>
                         <td>
                           <p-button
+                            icon="fa-solid fa-arrow-up"
+                            severity="secondary"
+                            [text]="true"
+                            [pTooltip]="customize.moveUp"
+                            tooltipPosition="top"
+                            [attr.aria-label]="customize.moveUp"
+                            [attr.data-component-id]="'sai-field-up-' + field.key"
+                            [disabled]="first"
+                            (onClick)="onMoveField(entity, i, i - 1)" />
+                          <p-button
+                            icon="fa-solid fa-arrow-down"
+                            severity="secondary"
+                            [text]="true"
+                            [pTooltip]="customize.moveDown"
+                            tooltipPosition="top"
+                            [attr.aria-label]="customize.moveDown"
+                            [attr.data-component-id]="'sai-field-down-' + field.key"
+                            [disabled]="last"
+                            (onClick)="onMoveField(entity, i, i + 1)" />
+                          <p-button
                             icon="fa-solid fa-trash-can"
                             severity="danger"
                             [text]="true"
@@ -173,7 +211,7 @@ const FIELD_CHANGE_PATH = /^entities\.([^.]+)\.fields\.([^.]+)$/;
                           class="sai-options-row"
                           [class.sai-row--added]="changeKind(entity.ref, field.key) === 'added'"
                           [class.sai-row--changed]="changeKind(entity.ref, field.key) === 'changed'">
-                          <td colspan="6">
+                          <td colspan="7">
                             <div class="sai-options">
                               <span class="sai-hint">{{ customize.options }} :</span>
                               @for (option of field.options ?? []; track option.value) {
@@ -202,6 +240,7 @@ const FIELD_CHANGE_PATH = /^entities\.([^.]+)\.fields\.([^.]+)$/;
                     }
                     @for (removed of removedFields(entity.ref); track removed.key) {
                       <tr class="sai-row--removed">
+                        <td></td>
                         <td>
                           <span class="sai-strike">{{ removed.label }}</span>
                           <p-tag severity="secondary" [value]="customize.removedTag" />
@@ -306,6 +345,8 @@ export class StudioAiTablesTabComponent {
   readonly fieldAdd = output<string>();
   /** « Retirer » et « Rétablir » un champ (bascule côté store). */
   readonly fieldRemove = output<{ ref: string; key: string }>();
+  /** Réordonnancement d'un champ (3.4g2) : déplacement de `from` vers `to` dans `entity.fields`. */
+  readonly fieldReorder = output<{ ref: string; from: number; to: number }>();
 
   readonly labels = STUDIO_AI_LABELS.preview;
   readonly customize = STUDIO_AI_LABELS.customize;
@@ -449,5 +490,23 @@ export class StudioAiTablesTabComponent {
   /** « Retirer » et « Rétablir » partagent le même événement : le store bascule l'état du champ. */
   onRemoveField(entity: StudioSpecEntity, field: StudioSpecField): void {
     this.fieldRemove.emit({ ref: entity.ref, key: field.key });
+  }
+
+  // ---- Réordonnancement (3.4g2) ---------------------------------------------------------------------
+
+  /**
+   * Glisser-déposer d'une ligne : le CDK ne trie que les lignes `cdkDrag` (les lignes d'options
+   * et les lignes barrées ne participent pas), les index correspondent donc à `entity.fields`.
+   */
+  onDrop(entity: StudioSpecEntity, event: CdkDragDrop<StudioSpecField[]>): void {
+    this.onMoveField(entity, event.previousIndex, event.currentIndex);
+  }
+
+  /** Déplacement commun (poignée glissée ou boutons ↑↓) : borné, sans émission si inchangé. */
+  onMoveField(entity: StudioSpecEntity, from: number, to: number): void {
+    if (entity.existingKey) return;
+    const last = entity.fields.length - 1;
+    if (from === to || from < 0 || to < 0 || from > last || to > last) return;
+    this.fieldReorder.emit({ ref: entity.ref, from, to });
   }
 }

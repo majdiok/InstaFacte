@@ -1,5 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { TagModule } from 'primeng/tag';
+import { CustomField } from '@shared/studio-runtime/studio-runtime.models';
+import { StudioFilterBuilderComponent } from '../../shared/studio-filter-builder.component';
+import { RecordViewFilter } from '../../views/studio-record-views.models';
 import { STUDIO_AI_LABELS } from '../studio-ai-labels';
 import {
   StudioSpecEntity,
@@ -8,12 +11,19 @@ import {
   normalizeViewMode,
   viewDisplayName
 } from '../studio-ai.models';
+import { specEntityToCustomFields } from '../studio-ai-spec.util';
+import {
+  recordViewFiltersToSpecViewFilters,
+  specViewFiltersToRecordViewFilters
+} from '../studio-ai-view-filters.util';
 import { StudioAiViewMiniatureComponent } from './studio-ai-view-miniature.component';
 
 /** Une vue prête à afficher : mode normalisé, puces déjà résolues en libellés de champ. */
 export interface StudioAiViewCard {
   id: string;
   entity: StudioSpecEntity;
+  /** Position de la vue dans `entity.views` (cible du patch `viewChange`). */
+  index: number;
   entityName: string;
   view: StudioSpecRecordView;
   name: string;
@@ -35,12 +45,15 @@ const MODE_ICONS: Record<StudioAiViewCard['mode'], string> = {
  * statique, le mode (Liste / Kanban / Calendrier), les puces de configuration et « Par défaut ».
  *
  * Les alias français du mode (`liste`, `calendrier`) et du plan maître (`displayName`, `dateField`…)
- * sont tolérés en lecture via `normalizeViewMode` / `viewDisplayName`. L'édition est hors périmètre 3.4d.
+ * sont tolérés en lecture via `normalizeViewMode` / `viewDisplayName`. En mode Personnaliser
+ * (3.4g2, `editable`), chaque carte embarque le constructeur de filtres partagé
+ * (`app-studio-filter-builder`) : les changements sont convertis en `StudioSpecViewFilter[]` et
+ * remontés via `viewChange`. La lecture seule est strictement inchangée.
  */
 @Component({
   selector: 'app-studio-ai-views-tab',
   standalone: true,
-  imports: [TagModule, StudioAiViewMiniatureComponent],
+  imports: [TagModule, StudioAiViewMiniatureComponent, StudioFilterBuilderComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './studio-ai-preview.scss',
   template: `
@@ -75,6 +88,17 @@ const MODE_ICONS: Record<StudioAiViewCard['mode'], string> = {
                     <p-tag severity="info" [value]="labels.isDefault" />
                   }
                 </div>
+                @if (editable()) {
+                  <!-- 3.4g2 : filtres éditables via le constructeur partagé (verrouillé sur une table existante). -->
+                  <div class="sai-view__filters" [attr.data-component-id]="'sai-view-filters-' + card.entity.ref + '-' + card.index">
+                    <span class="sai-hint">{{ labels.addFilter }}</span>
+                    <app-studio-filter-builder
+                      [fields]="fieldsOf(card.entity)"
+                      [filters]="recordViewFiltersOf(card.view)"
+                      (filtersChange)="onViewFiltersChange(card, $event)"
+                      [disabled]="!editable() || !!card.entity.existingKey" />
+                  </div>
+                }
               </div>
             </article>
           }
@@ -85,8 +109,11 @@ const MODE_ICONS: Record<StudioAiViewCard['mode'], string> = {
 })
 export class StudioAiViewsTabComponent {
   readonly spec = input.required<StudioSystemSpec>();
-  /** Réservé à 3.4g+ : l'onglet reste en lecture seule en 3.4d. */
+  /** Mode Personnaliser (3.4g2) : les filtres de chaque vue deviennent éditables. */
   readonly editable = input(false);
+
+  /** Filtres d'une vue modifiés dans le constructeur partagé (convertis en forme spec). */
+  readonly viewChange = output<{ ref: string; index: number; patch: Partial<StudioSpecRecordView> }>();
 
   readonly labels = STUDIO_AI_LABELS.views;
   readonly icons = MODE_ICONS;
@@ -102,6 +129,32 @@ export class StudioAiViewsTabComponent {
   });
 
   readonly countLabel = computed(() => this.labels.count.replace('{count}', String(this.cards().length)));
+
+  /** Champs de chaque entité en `CustomField[]` runtime (références stables pour le constructeur). */
+  private readonly fieldsByRef = computed(() => {
+    const spec = this.spec();
+    return new Map<string, CustomField[]>(spec.entities.map(e => [e.ref, specEntityToCustomFields(e, spec)]));
+  });
+
+  /** Champs de l'entité d'une carte, au format attendu par `app-studio-filter-builder`. */
+  fieldsOf(entity: StudioSpecEntity): CustomField[] {
+    return this.fieldsByRef().get(entity.ref) ?? [];
+  }
+
+  /** Filtres de la vue convertis en `RecordViewFilter[]` (forme du constructeur partagé). */
+  recordViewFiltersOf(view: StudioSpecRecordView): RecordViewFilter[] {
+    return specViewFiltersToRecordViewFilters(view.filters);
+  }
+
+  /** Changement dans le constructeur : reconversion en forme spec puis patch de la vue. */
+  onViewFiltersChange(card: StudioAiViewCard, filters: RecordViewFilter[]): void {
+    if (!this.editable() || card.entity.existingKey) return;
+    this.viewChange.emit({
+      ref: card.entity.ref,
+      index: card.index,
+      patch: { filters: recordViewFiltersToSpecViewFilters(filters) }
+    });
+  }
 
   private toCard(
     entity: StudioSpecEntity,
@@ -136,6 +189,7 @@ export class StudioAiViewsTabComponent {
     return {
       id: `${entity.ref}:${index}`,
       entity,
+      index,
       entityName: entity.displayNamePlural || entity.displayName,
       view,
       name: viewDisplayName(view) || entity.displayName,

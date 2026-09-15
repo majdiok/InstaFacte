@@ -216,7 +216,9 @@ export const STUDIO_AI_LABELS = {
     systemChanged: 'Paramètres du système modifiés',
     seedChanged: 'Données de référence de « {entity} » modifiées',
     formChanged: 'Formulaire de « {entity} » modifié',
-    reportChanged: 'Rapport de « {entity} » modifié'
+    reportChanged: 'Rapport de « {entity} » modifié',
+    fieldsReordered: 'Ordre des champs de « {entity} » modifié',
+    viewsChanged: 'Vues de « {entity} » modifiées'
   },
 
   /** Zone de saisie : pièces jointes et raccourcis clavier. */

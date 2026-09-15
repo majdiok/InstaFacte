@@ -493,6 +493,13 @@ export function diffSpec(base: StudioSystemSpec | StudioAppSpec, draft: StudioSy
         label: formatLabel(labels.reportChanged, { entity: entityLabel(next, ref) }), before: prev.report, after: next.report
       });
     }
+    if (!sameValue(prev.views ?? null, next.views ?? null)) {
+      changes.push({
+        path: `entities.${ref}.views`, kind: 'changed',
+        label: formatLabel(labels.viewsChanged, { entity: entityLabel(next, ref) }),
+        before: prev.views ?? null, after: next.views ?? null
+      });
+    }
   }
 
   const seedBefore = new Map((before.seed ?? []).map(s => [s.entityRef, s.records] as const));
@@ -525,6 +532,19 @@ function diffFields(ref: string, prev: StudioSpecEntity, next: StudioSpecEntity,
     } else if (!sameValue(old, field)) {
       out.push({ path: `entities.${ref}.fields.${key}`, kind: 'changed', label: `${field.label} — ${entity}`, before: old, after: field });
     }
+  }
+
+  // Réordonnancement (3.4g2) : le diff par clé est insensible à l'ordre, or l'ordre de la spec
+  // commande le `sortOrder` des champs créés — un déplacement seul doit rester enregistrable.
+  const prevOrder = (prev.fields ?? []).map(f => f.key);
+  const nextOrder = (next.fields ?? []).map(f => f.key);
+  const sameKeySet = prevOrder.length === nextOrder.length && prevOrder.every(key => nextByKey.has(key));
+  if (sameKeySet && prevOrder.some((key, i) => key !== nextOrder[i])) {
+    out.push({
+      path: `entities.${ref}.fields`, kind: 'changed',
+      label: formatLabel(STUDIO_AI_LABELS.changes.fieldsReordered, { entity }),
+      before: prevOrder, after: nextOrder
+    });
   }
 }
 
