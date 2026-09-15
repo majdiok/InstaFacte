@@ -266,3 +266,21 @@
 .sai-view__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
 .sai-chip--xs { font-size: var(--font-size-xs, 0.75rem); padding: 0.05rem 0.5rem; }
 @media (max-width: 48rem) { .sai-views { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---- Mode Tester : formulaire simulé (3.4f1, M5) ---- */
+.sai-test {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3, 0.75rem);
+  padding: var(--spacing-4, 1rem);
+}
+.sai-test__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-2, 0.5rem); }
+.sai-test__label { font-weight: var(--font-weight-semibold, 600); font-size: var(--font-size-sm, 0.875rem); color: var(--color-neutral-700, #374151); }
+:host ::ng-deep .sai-test__select { min-width: 16rem; }
+.sai-test__form {
+  border: 1px solid var(--surface-border, #e5e7eb);
+  border-radius: 0.75rem;
+  padding: var(--spacing-4, 1rem);
+  background: var(--surface-card, #fff);
+}
+.sai-test__report { border-top: 1px solid var(--surface-border, #e5e7eb); padding-top: var(--spacing-3, 0.75rem); }
