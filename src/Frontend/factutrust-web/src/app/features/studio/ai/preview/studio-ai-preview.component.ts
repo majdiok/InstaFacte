@@ -18,9 +18,11 @@ import { StudioAiRelationsTabComponent } from './studio-ai-relations-tab.compone
 import { StudioAiReportsTabComponent } from './studio-ai-reports-tab.component';
 import { StudioAiSeedTabComponent } from './studio-ai-seed-tab.component';
 import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
+import { StudioAiViewsTabComponent } from './studio-ai-views-tab.component';
+import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.component';
 
 /**
- * Coquille de l'aperçu de la proposition (`/studio/ai`) : en-tête + 9 onglets (P1a, lecture seule).
+ * Coquille de l'aperçu de la proposition (`/studio/ai`) : en-tête + 10 onglets (P1a, lecture seule).
  *
  * Trois états : aucun plan (placeholder), spec en cours de chargement (squelette), proposition
  * chargée (en-tête, compteurs, onglets). Le composant ne crée jamais rien : « Créer maintenant »
@@ -35,7 +37,8 @@ import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
     ButtonModule, SkeletonModule, TabsModule, TagModule, TooltipModule,
     StudioAiOverviewTabComponent, StudioAiTablesTabComponent, StudioAiRelationsTabComponent,
     StudioAiFormsTabComponent, StudioAiSeedTabComponent, StudioAiReportsTabComponent,
-    StudioAiMenuTabComponent, StudioAiDuplicatesBannerComponent, StudioAiModeBarComponent
+    StudioAiMenuTabComponent, StudioAiDuplicatesBannerComponent, StudioAiModeBarComponent,
+    StudioAiViewsTabComponent, StudioAiWorkflowsTabComponent
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './studio-ai-preview.scss',
@@ -174,6 +177,12 @@ import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
             <p-tabpanel value="reports">
               <app-studio-ai-reports-tab [spec]="spec()!" />
             </p-tabpanel>
+            <p-tabpanel value="views">
+              <app-studio-ai-views-tab [spec]="spec()!" />
+            </p-tabpanel>
+            <p-tabpanel value="workflow">
+              <app-studio-ai-workflows-tab [spec]="spec()!" />
+            </p-tabpanel>
             <p-tabpanel value="menu">
               <app-studio-ai-menu-tab [spec]="spec()!" />
             </p-tabpanel>
@@ -223,7 +232,7 @@ export class StudioAiPreviewComponent {
 
   readonly chips = computed(() => counterChips(this.store.counters()));
 
-  /** Compteur affiché dans l'onglet ; `null` = pas de compteur (Vue d'ensemble, Workflow, Pages). */
+  /** Compteur affiché dans l'onglet ; `null` = pas de compteur (Vue d'ensemble, Pages, Workflow sans workflow). */
   tabCount(id: StudioAiPreviewTab): number | null {
     const counters = this.store.counters();
     switch (id) {
@@ -232,6 +241,8 @@ export class StudioAiPreviewComponent {
       case 'forms': return counters.forms;
       case 'seed': return counters.seedRecords;
       case 'reports': return counters.reports;
+      case 'views': return counters.views;
+      case 'workflow': return counters.workflows || null;
       default: return null;
     }
   }
