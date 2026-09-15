@@ -75,7 +75,7 @@ Les **automatisations** demandées à l’assistant sont signalées « non appli
 
 ### Modèles de systèmes
 
-Des systèmes prêts à l’emploi (CRM, gestion de stock, RH…) à adapter à votre activité. **Utiliser** prépare directement une proposition à partir du modèle, sans passer par l’IA : vous la vérifiez et la validez comme n’importe quelle proposition. **Voir tous** ouvre la **Bibliothèque de modèles** (`/studio/ai/templates`), organisée par catégorie ; **Utiliser ce modèle** vous ramène dans l’atelier avec la proposition prête.
+Des systèmes prêts à l’emploi (**dix modèles** : congés, contrats, équipements, interventions, leads, catalogue produits, formations, réclamations, projets, événements) à adapter à votre activité. Chaque carte indique le nombre de tables, de relations et les types de vues proposés (liste, kanban, calendrier). **Utiliser** prépare directement une proposition à partir du modèle, sans passer par l’IA : vous la vérifiez et la validez comme n’importe quelle proposition. **Voir tous** ouvre la **Bibliothèque de modèles** (`/studio/ai/templates`), organisée par catégorie ; **Utiliser ce modèle** vous ramène dans l’atelier avec la proposition prête.
 
 Si une proposition est déjà affichée, une confirmation **« Remplacer la proposition en cours ? »** vous est demandée.
 
@@ -91,9 +91,22 @@ Les cinq dernières générations, avec leur statut : **À valider**, **En cours
 
 Chaque ligne indique aussi les compteurs de la proposition (tables, relations, vues) et, en cas d’échec, la raison. **Aperçu** affiche le détail structuré d’une génération (tables, champs, relations, formulaires, données de départ, avertissements) tel qu’il a été calculé, sans rien modifier. **Rejouer** — proposé sur les générations **Terminé**, **Échec**, **Annulé** ou **Expiré** — recrée une nouvelle proposition **À valider** à partir de la même demande, revérifiée contre l’existant (doublons signalés à nouveau) : la génération d’origine est conservée telle quelle, et rien n’est appliqué tant que vous n’avez pas validé la nouvelle proposition.
 
+### Exporter, dupliquer ou importer un système
+
+**Exporter le système (JSON)** produit un fichier portable décrivant la structure du système (tables, champs, relations, formulaires, vues, rapport) sans aucune donnée personnelle ni identifiant interne. Les données de départ sont optionnelles et limitées (au plus quelques centaines de lignes, sans les valeurs de relation, pièces jointes ni signatures).
+
+**Dupliquer un système** crée une **proposition** nommée « Nom (copie) », à vérifier et valider comme n’importe quelle proposition de l’assistant : rien n’est créé avant votre confirmation, et le système d’origine n’est pas modifié. Les tables qui existent déjà sont signalées dans l’aperçu ; les copies reçoivent une clé distincte.
+
+**Importer un modèle (JSON)** charge un fichier exporté (depuis cette société ou une autre) : l’assistant affiche l’aperçu avant de créer quoi que ce soit. Un fichier d’une version plus récente ou trop volumineux est refusé avec un message explicite.
+
+Ces actions n’apparaissent que si l’administrateur les a activées.
+
 ---
 
 ## Questions fréquentes
+
+**Puis-je copier un système d’une société à une autre ?**
+Oui : **Exporter le système (JSON)** dans la société d’origine, puis **Importer un modèle (JSON)** dans l’autre société et valider la proposition. Les relations vers les clients ou les produits sont conservées comme références (le lien vers la table), pas les enregistrements eux-mêmes.
 
 **Rien n’est créé tant que je n’ai pas validé ?**
 Exact. L’IA ne fait que proposer ; la création n’a lieu qu’au clic sur **Valider**, et un résumé vous indique précisément ce qui a été créé.

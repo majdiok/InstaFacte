@@ -369,6 +369,11 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
 - Historique/aperçu/rejeu (PR 3.2) : `--filter "FullyQualifiedName~StudioAiSeedSampler|FullyQualifiedName~StudioAiPlanPreviewBuilder|FullyQualifiedName~StudioAiPlanPreviewFeatures"`,
   contrat `StudioAiPlansControllerContractTests` (filtre `FactuTrust.API.Tests.Studio`) et
   compteurs de liste dans `StudioAiPlanWorkbenchFeaturesTests` / `StudioAiPlanFeaturesTests`.
+- Export / duplication / import + modèles enrichis (PR 3.3) : `--filter "FullyQualifiedName~StudioSystemSpecExporter|FullyQualifiedName~CustomSystemExportFeatures|FullyQualifiedName~StudioTemplateCatalog|FullyQualifiedName~StudioAiSpecCanonical|FullyQualifiedName~StudioKey"`
+  (aller-retour export → `TryParse`, dégradations et warnings, bornes de seed, gardes des deux drapeaux, nom
+  « (copie) », import chaîne/objet/`specVersion`, 10 modèles et `StudioTemplateStats`, test d'or, clé réservée
+  `import`) ; contrats API `StudioSystemsControllerContractTests` et `StudioTemplatesControllerTests`
+  (filtre `FactuTrust.API.Tests.Studio`).
 - Frontend : `ng test --watch=false --browsers=ChromeHeadless` (service de plans + flux SSE de confirmation).
 - Gate complet : `powershell -File scripts\verify-all.ps1`.
 
@@ -567,3 +572,50 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     expiré peut être rejoué. » ; plan d'un autre utilisateur ⇒ `404` ; flag coupé ⇒ `404`
     « Le flux d'aperçu Studio n'est pas activé. ». Rejouer deux fois le même plan crée deux plans
     distincts (idempotence : aucune écriture de schéma au rejeu).
+
+## Export, duplication et import de systèmes ; modèles enrichis (PR 3.3)
+
+> Architecture : [`docs/architecture/studio-system-export.md`](../architecture/studio-system-export.md).
+> Prérequis : `Ollama:EnableStudioSystemExport=true`, `Ollama:EnableStudioAiPlanPreview=true` ; un
+> système Studio existant (ex. créé depuis le modèle `gestion-conges`) ; un compte avec
+> `studio:design_entities`. AUCUN appel LLM : export, duplication et import ne lisent que le schéma
+> persisté — ces cas s'exécutent contre l'API seule (ou l'atelier une fois le frontend 3.4 livré).
+
+70. **Export sans données de départ** — `GET api/studio/systems/{key}/export` ⇒ `200` avec
+    `specVersion: 1`, `includesSeed: false`, `entityCount`/`relationCount`/`viewCount` cohérents avec
+    le concepteur ; la `spec` porte `specVersion`, `exportedFrom { tenantSystemKey, exportedAt }`,
+    `system`, `entities[]`, `relations[]` et ne contient ni `seed`, ni identifiant (`Guid`), ni
+    `tenantId`. Avec `?download=true`, le navigateur télécharge `studio-system-{key}.json` (spec
+    seule, indentée, accents lisibles). Drapeau `EnableStudioSystemExport=false` ⇒ `404`
+    « L'export de systèmes Studio n'est pas activé. » sans appel côté application ; clé avec tiret
+    ⇒ `400` « Clé système invalide. » ; clé inconnue ⇒ `404` `CustomSystem.NotFound`.
+71. **Export avec données de départ bornées et anonymisées** — `?includeSeed=true` sur un système
+    dont une table compte plus de `StudioExportMaxSeedRows` lignes (baisser le réglage à `2` pour le
+    test) : `includesSeed: true`, au plus 2 lignes par table, warning « Données de départ de « {key} »
+    tronquées à 2 ligne(s). », valeurs des champs relation / pièce jointe / signature / formule à
+    `null`, total ≤ 200 lignes. Réglage à `0` ⇒ `includesSeed: false` et aucune clé `seed`.
+72. **Duplication ⇒ plan ⇒ système copié** — `POST api/studio/systems/{key}/duplicate` (corps vide)
+    ⇒ `201 Created` avec `Location: /api/studio/ai/plans/{id}` et un corps `{ plan, spec }` ; l'aperçu
+    du plan (QA 68) montre « <Nom> (copie) », les tables homonymes dans `duplicates[]` et les
+    warnings d'export dans `warnings[]` ; la confirmation crée un système dont les clés de tables déjà
+    prises sont suffixées `_2` et les relations N-N recréées ; le système source est INCHANGÉ ;
+    audits `Studio.System.Exported` puis `Studio.System.DuplicateRequested` présents. Avec
+    `{ "displayName": "Congés 2027" }`, le nom est repris tel quel ; un nom de 129 caractères ⇒ `400`
+    « Le nom affiché dépasse 128 caractères. ». `EnableStudioAiPlanPreview=false` ⇒ `404`
+    « Le flux d'aperçu Studio n'est pas activé. ».
+73. **Import d'un export** — `POST api/studio/systems/import` avec `{ "spec": <corps de la spec du
+    cas 70> }` ⇒ `201` et plan Pending équivalent (mêmes compteurs) ; `{ "spec": "<le même JSON sous
+    forme de chaîne>" }` accepté ; `"specVersion": 2` ⇒ `400` « Version de spécification non prise en
+    charge : 2. » ; spec > 256 Ko ⇒ `400` « La spec dépasse 256 Ko. » ; corps > 512 Ko ⇒ `413` ;
+    `"spec": "pas du json"` ⇒ `400` « La spécification n'est pas un JSON valide. » ;
+    `"includeSeed": false` sur un export avec seed ⇒ aperçu sans données de départ ;
+    `"displayNameOverride": "Congés importés"` renomme le système du plan ; audit
+    `Studio.System.ImportRequested` présent. Créer un système nommé « Import » ⇒ clé `import_2`
+    (clé réservée par la route).
+74. **Modèle `gestion-projets` de bout en bout** — `GET api/studio/templates` liste **10** modèles
+    avec `relationCount`/`viewModes` (`gestion-projets` : 4 tables, 1 relation,
+    `["list","kanban","calendar"]`) ; créer un système depuis `gestion-projets` : 4 tables + jonction
+    « Équipe projet », vues kanban « Par statut » et liste « Mes tâches » (tâches), calendrier
+    « Jalons », liste « Projets actifs » filtrée `statut = actif`, rapport « Tâches par statut »,
+    5 lignes de départ ; l'export de ce système (cas 70) redonne `relationCount: 1` et
+    `viewCount: 4`, et sa duplication (cas 72) recrée la relation N-N.
