@@ -237,6 +237,100 @@ public sealed class StudioTemplateCatalogTests
     }
 
     [Fact]
+    public void Stats_count_entities_relations_and_distinct_view_modes()
+    {
+        // Spec synthétique : 2 entités, 1 relation, vues kanban + kanban + list ⇒ modes distincts dans l'ordre d'apparition.
+        const string json = """
+        {
+          "system": { "displayName": "Stats" },
+          "entities": [
+            {
+              "ref": "taches", "displayName": "Tâche", "displayNamePlural": "Tâches",
+              "fields": [ { "label": "Nom", "type": "text" }, { "label": "Statut", "type": "select", "options": [ "x", "y" ] } ],
+              "views": [
+                { "name": "K1", "mode": "kanban", "groupBy": "statut" },
+                { "name": "K2", "mode": "kanban", "groupBy": "statut" }
+              ]
+            },
+            {
+              "ref": "projets", "displayName": "Projet", "displayNamePlural": "Projets",
+              "fields": [ { "label": "Titre", "type": "text" } ],
+              "views": [ { "name": "L", "mode": "list", "columns": [ "titre" ] } ]
+            }
+          ],
+          "relations": [ { "kind": "many_to_many", "from": "taches", "to": "projets", "label": "Lien" } ]
+        }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        Assert.Empty(spec!.Warnings ?? Array.Empty<string>());
+
+        var stats = StudioTemplateCatalog.ComputeStats(spec);
+
+        Assert.Equal(2, stats.EntityCount);
+        Assert.Equal(1, stats.RelationCount);
+        Assert.Equal(new[] { "kanban", "list" }, stats.ViewModes);
+    }
+
+    [Fact]
+    public void Enriched_templates_expose_expected_relation_and_view_modes()
+    {
+        var formations = StudioTemplateCatalog.TryGet("gestion-formations");
+        Assert.NotNull(formations);
+        Assert.Equal(4, formations!.Stats.EntityCount);
+        Assert.Equal(1, formations.Stats.RelationCount);
+        Assert.Superset(new HashSet<string> { "kanban", "calendar" }, formations.Stats.ViewModes.ToHashSet(StringComparer.Ordinal));
+        Assert.True(StudioAiSystemSpec.TryParse(formations.SpecJson, out var formationsSpec, out var formationsError), formationsError);
+        var participations = Assert.Single(formationsSpec!.Relations);
+        Assert.Equal("employes", participations.FromRef);
+        Assert.Equal("formations", participations.ToRef);
+        Assert.Equal("Participants", participations.Label);
+        Assert.Equal("Participations", participations.JunctionName);
+        var participant = formationsSpec.Entities.Single(e => e.Ref == "inscriptions").Fields.Single(f => f.Key == "participant");
+        Assert.Equal(CustomFieldType.RelationCustom, participant.FieldType);
+        Assert.Equal("employes", participant.RelationToRef);
+
+        var interventions = StudioTemplateCatalog.TryGet("gestion-interventions");
+        Assert.NotNull(interventions);
+        Assert.Equal(0, interventions!.Stats.RelationCount);
+        Assert.Equal(new[] { "calendar", "kanban" }, interventions.Stats.ViewModes);
+
+        var reclamations = StudioTemplateCatalog.TryGet("suivi-reclamations");
+        Assert.NotNull(reclamations);
+        Assert.Equal(0, reclamations!.Stats.RelationCount);
+        Assert.Equal(new[] { "kanban", "list" }, reclamations.Stats.ViewModes);
+        Assert.True(StudioAiSystemSpec.TryParse(reclamations.SpecJson, out var reclamationsSpec, out var reclamationsError), reclamationsError);
+        var ouvertes = reclamationsSpec!.Entities.Single(e => e.Ref == "reclamations").Views.Single(v => v.DisplayName == "Ouvertes");
+        Assert.Equal("list", ouvertes.Mode);
+        Assert.True(ouvertes.IsDefault);
+        var filter = Assert.Single(ouvertes.Filters);
+        Assert.Equal("statut", filter.FieldKey);
+        Assert.Equal("neq", filter.Op);
+        Assert.Equal("cloturee", filter.Value?.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("gestion-formations")]
+    [InlineData("gestion-interventions")]
+    [InlineData("suivi-reclamations")]
+    [InlineData("gestion-projets")]
+    [InlineData("gestion-evenements")]
+    public void Every_builtin_template_exposes_at_least_one_view_or_relation(string key)
+    {
+        // Périmètre 3.3e1/3.3e2 : les 5 modèles enrichis ou nouveaux ; les 5 autres restent hors périmètre.
+        var template = StudioTemplateCatalog.TryGet(key);
+        Assert.NotNull(template);
+        Assert.True(StudioAiSystemSpec.TryParse(template!.SpecJson, out var spec, out var error), error);
+
+        // Les stats portées par le catalogue sont bien celles recalculées depuis la spec.
+        var recomputed = StudioTemplateCatalog.ComputeStats(spec!);
+        Assert.Equal(recomputed.EntityCount, template.Stats.EntityCount);
+        Assert.Equal(recomputed.RelationCount, template.Stats.RelationCount);
+        Assert.Equal(recomputed.ViewModes, template.Stats.ViewModes);
+        Assert.True(template.Stats.RelationCount > 0 || template.Stats.ViewModes.Count > 0,
+            $"Le modèle « {key} » n'expose ni relation ni vue.");
+    }
+
+    [Fact]
     public void Catalog_is_sorted_by_category_then_display_name()
     {
         var expected = StudioTemplateCatalog.All
