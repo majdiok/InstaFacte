@@ -584,16 +584,19 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
 70. **Export sans données de départ** — `GET api/studio/systems/{key}/export` ⇒ `200` avec
     `specVersion: 1`, `includesSeed: false`, `entityCount`/`relationCount`/`viewCount` cohérents avec
     le concepteur ; la `spec` porte `specVersion`, `exportedFrom { tenantSystemKey, exportedAt }`,
-    `system`, `entities[]`, `relations[]` et ne contient ni `seed`, ni identifiant (`Guid`), ni
+    `system`, `entities[]`, `relations[]` (présent seulement si le système porte des relations
+    N-N — ex. `gestion_projets`) et ne contient ni `seed`, ni identifiant (`Guid`), ni
     `tenantId`. Avec `?download=true`, le navigateur télécharge `studio-system-{key}.json` (spec
     seule, indentée, accents lisibles). Drapeau `EnableStudioSystemExport=false` ⇒ `404`
     « L'export de systèmes Studio n'est pas activé. » sans appel côté application ; clé avec tiret
     ⇒ `400` « Clé système invalide. » ; clé inconnue ⇒ `404` `CustomSystem.NotFound`.
 71. **Export avec données de départ bornées et anonymisées** — `?includeSeed=true` sur un système
     dont une table compte plus de `StudioExportMaxSeedRows` lignes (baisser le réglage à `2` pour le
-    test) : `includesSeed: true`, au plus 2 lignes par table, warning « Données de départ de « {key} »
-    tronquées à 2 ligne(s). », valeurs des champs relation / pièce jointe / signature / formule à
-    `null`, total ≤ 200 lignes. Réglage à `0` ⇒ `includesSeed: false` et aucune clé `seed`.
+    test) : `includesSeed: true`, au plus 2 lignes par table, **aucun** avertissement de troncature
+    par table (la borne est appliquée à la lecture, avant l'exporteur — l'avertissement « Données
+    de départ de « {key} » tronquées à {n} ligne(s). » n'apparaît que si le total de 200 lignes est
+    atteint), valeurs des champs relation / pièce jointe / signature / formule à `null`, total
+    ≤ 200 lignes. Réglage à `0` ⇒ `includesSeed: false` et aucune clé `seed`.
 72. **Duplication ⇒ plan ⇒ système copié** — `POST api/studio/systems/{key}/duplicate` (corps vide)
     ⇒ `201 Created` avec `Location: /api/studio/ai/plans/{id}` et un corps `{ plan, spec }` ; l'aperçu
     du plan (QA 68) montre « <Nom> (copie) », les tables homonymes dans `duplicates[]` et les
@@ -610,8 +613,9 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     `"spec": "pas du json"` ⇒ `400` « La spécification n'est pas un JSON valide. » ;
     `"includeSeed": false` sur un export avec seed ⇒ aperçu sans données de départ ;
     `"displayNameOverride": "Congés importés"` renomme le système du plan ; audit
-    `Studio.System.ImportRequested` présent. Créer un système nommé « Import » ⇒ clé `import_2`
-    (clé réservée par la route).
+    `Studio.System.ImportRequested` présent. Clé réservée par la route : un système « Import »
+    créé via l'assistant ou un modèle reçoit la clé `import_2` ; `POST api/studio/systems` avec
+    `key: "import"` ⇒ `400` « Clé système réservée. ».
 74. **Modèle `gestion-projets` de bout en bout** — `GET api/studio/templates` liste **10** modèles
     avec `relationCount`/`viewModes` (`gestion-projets` : 4 tables, 1 relation,
     `["list","kanban","calendar"]`) ; créer un système depuis `gestion-projets` : 4 tables + jonction

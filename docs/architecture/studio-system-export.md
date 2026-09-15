@@ -68,6 +68,8 @@ Un JSON corrompu (options, vue, ligne) produit un avertissement, jamais une exce
 - `Table de jonction « {key} » ignorée : cible hors système ou structure inattendue.`
 - `Au plus 6 relations plusieurs-à-plusieurs ; {n} non exportée(s).`
 - `Données de départ de « {key} » tronquées à {n} ligne(s).` / `{n} ligne(s) de données de départ illisible(s) ignorée(s).`
+  (la borne par table `StudioExportMaxSeedRows` est appliquée à la lecture par le handler ; l'avertissement de
+  troncature n'est émis que lorsque le total de 200 lignes est atteint)
 
 ### 1.3 Bornes
 
@@ -153,7 +155,7 @@ nouveaux `gestion-projets` (Projets) et `gestion-evenements` (Événements). Cin
 | Flag | Défaut C# / `appsettings` | Effet |
 |---|---|---|
 | `Ollama:EnableStudioSystemExport` | `false` / `true` | les 3 routes (contrôleur **et** handlers) ; capability `systemExportEnabled` |
-| `Ollama:EnableStudioAiPlanPreview` | — / `true` | requis en plus pour `duplicate` et `import` (création de plan) |
+| `Ollama:EnableStudioAiPlanPreview` | `false` / `true` | requis en plus pour `duplicate` et `import` (création de plan) |
 | `Ollama:StudioExportMaxSeedRows` | `200` / `200` | lignes de seed par table, clampé `[0, 200]` |
 
 **Rollback global** = `EnableStudioSystemExport: false` ⇒ les trois routes répondent 404 sans appel côté
@@ -161,40 +163,24 @@ application ; aucun schéma à annuler. `duplicate`/`import` ne dépendent **pas
 
 ## 7. Sécurité
 
-- Fail-closed : drapeaux vérifiés au contrôleur puis au handler ; tenant (`StudioContext.TryGet`) et
-  permission `studio:design_entities` revalidés au handler ; clé normalisée et validée.
-- Ne sortent **jamais** : `Id`/`TenantId` (uniquement des `key`), valeurs des champs relation, pièces
-  jointes, signatures, formules/agrégats (mises à `null` dans la seed), identifiant de tenant dans `exportedFrom`.
-- Bornes d'entrée : corps 512 Ko, spec 256 Ko (avant parse pour une chaîne, avant retrait de `seed`), nom 128,
-  bornes du parseur ; seed ≤ `StudioExportMaxSeedRows` par table et 200 au total.
-- Aucune écriture directe : duplication et import créent un plan Pending soumis aux quotas, doublons et
-  permissions de la confirmation ; le système source n'est jamais modifié.
-- Audits `Studio.System.Exported`, `Studio.System.DuplicateRequested`, `Studio.System.ImportRequested`
-  ne portent que clés et compteurs ; logs idem (jamais le contenu de la spec).
-- Le fichier téléchargé est servi en `application/json` avec `UnsafeRelaxedJsonEscaping` (accents lisibles) :
-  pièce jointe, jamais rendue en HTML.
+Gardes fail-closed (§4), bornes d'entrée (§1.3, §3), contenu exporté (§1) et audits (§2, §3) sont
+décrits ci-dessus. En complément :
+
+- Duplication et import créent un plan Pending soumis aux quotas, doublons et permissions de la
+  confirmation ; le système source n'est jamais modifié.
+- Le fichier téléchargé est servi en `application/json` avec `UnsafeRelaxedJsonEscaping` (accents
+  lisibles) : pièce jointe, jamais rendue en HTML.
 
 ## 8. Écarts par rapport au plan
 
 Les écarts de la pile 3.3 sont consignés dans le Journal des écarts de
 [`docs/plans/2026-09-11-studio-ia-programme-continuation.md`](../plans/2026-09-11-studio-ia-programme-continuation.md)
-(lignes datées 2026-09-15, PR 3.3). En résumé :
+(lignes datées 2026-09-15, PR 3.3). Ceux qui structurent le code ci-dessus :
 
-- Exporteur sur entités de domaine via `CanonicalSystemNode` (pas de réécriture de nœuds, pas d'appel à
-  `EntityRelationResolver` : les N-N sont dérivées des jonctions du système) ; Formula/Lookup/Rollup ⇒ `text` + warning.
-- Réponse de `duplicate`/`import` = `StudioAiPlanCreationResponse` ; corps d'import
-  `{ spec, displayNameOverride?, includeSeed = true }` ; délégation à `CreateStudioAiPlanCommand`
-  (jamais `FromSpecCommand`, gardé Workbench) via le helper `StudioSystemPlanning`.
-- Import sans override et `system.displayName` > 128 ⇒ `Validation.spec` ; borne 256 Ko mesurée sur la
-  chaîne brute avant parse **et** avant retrait de `seed` ; `seed` retirée sur un `DeepClone()` ;
-  `CopyName` ne coupe jamais une paire de substitution.
-- `StudioKey.IsValidShape` refuse les tirets : les clés système utilisent des soulignés ; les clés de modèles
-  (`gestion-conges`…) ne passent jamais par le handler d'export.
-- Seed bornée par table **et** 200 au total ; audit `Studio.System.ImportRequested` ajouté ; clé `import` réservée.
-- Modèles : `gestion-formations` option A (entité `employes`, `sessions.statut`), `gestion-interventions`
-  sur `date_prevue`, test d'or re-capturé ; icônes système des deux nouveaux modèles en `pi pi-*` alors que les
-  huit anciens portent des noms nus (`calendar`, `box`…).
-- Test d'or : comparaison après normalisation CRLF → LF des deux côtés (`WriteIndented` émet
-  `Environment.NewLine`, le workflow `CI` tourne sous Windows).
-- Frontend (V-base) : `ng lint` n'est pas configuré dans le dépôt (script `npm run lint` sans cible `lint`
-  dans `angular.json`).
+- Pas d'appel à `EntityRelationResolver` : les N-N sont dérivées des jonctions du système.
+- `duplicate`/`import` délèguent à `CreateStudioAiPlanCommand` (jamais `FromSpecCommand`, gardé
+  Workbench) via le helper `StudioSystemPlanning`.
+- `StudioKey.IsValidShape` refuse les tirets : les clés système utilisent des soulignés ; les clés de
+  modèles (`gestion-conges`…) ne passent jamais par le handler d'export.
+- Icônes système des deux nouveaux modèles en `pi pi-*` alors que les huit anciens portent des noms nus
+  (`calendar`, `box`…) ; hétérogénéité tolérée, l'icône n'est pas exposée par le catalogue.
