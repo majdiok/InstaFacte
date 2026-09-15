@@ -6,6 +6,7 @@ import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { ApiResponse, PagedResult } from '@core/services/client.service';
 import { parseFieldType } from '@shared/studio-runtime/studio-runtime.models';
 import {
+  ChangeCustomFieldTypeRequest,
   CreateCustomEntityRequest,
   CreateCustomFieldRequest,
   CustomEntity,
@@ -27,6 +28,7 @@ import {
   SqlColumn,
   SqlQueryResult,
   SqlTable,
+  StudioFieldTypeCheckDto,
   CustomSystem,
   CustomSystemDetail,
   StudioNavNode,
@@ -86,6 +88,22 @@ export class StudioService {
 
   reorderFields(entityId: string, orderedFieldIds: string[]): Observable<ApiResponse<unknown>> {
     return this.http.put<ApiResponse<unknown>>(`${this.base}/entities/${entityId}/fields/reorder`, { orderedFieldIds });
+  }
+
+  /**
+   * `GET entities/{id}/fields/{fieldId}/type-check?to=` — `to` est le NOM d'enum (`CustomFieldType[type]`),
+   * jamais la valeur numérique. Lecture seule ; erreurs 400/404/409 gérées par l'appelant.
+   */
+  checkFieldTypeChange(entityId: string, fieldId: string, to: string): Observable<ApiResponse<StudioFieldTypeCheckDto>> {
+    const params = new HttpParams().set('to', to);
+    return this.http.get<ApiResponse<StudioFieldTypeCheckDto>>(
+      `${this.base}/entities/${entityId}/fields/${fieldId}/type-check`, { params, context: createHttpContextSkipGlobalErrorUi() });
+  }
+
+  /** `PATCH entities/{id}/fields/{fieldId}/type` : 400 `Validation` / 404 / 409 via `StudioErrorMapping`. */
+  changeFieldType(entityId: string, fieldId: string, req: ChangeCustomFieldTypeRequest): Observable<ApiResponse<CustomField>> {
+    return this.http.patch<ApiResponse<CustomField>>(
+      `${this.base}/entities/${entityId}/fields/${fieldId}/type`, req, { context: createHttpContextSkipGlobalErrorUi() });
   }
 
   // ---- Relations (PR 2.1/2.2 — plusieurs-à-plusieurs) ----

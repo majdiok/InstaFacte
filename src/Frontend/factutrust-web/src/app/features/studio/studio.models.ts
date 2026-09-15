@@ -147,6 +147,28 @@ export interface UpdateCustomFieldRequest {
   config?: Record<string, unknown> | null;
 }
 
+/** Politique de conversion de type (`FieldTypeConversionPolicy.Classify`). */
+export type StudioFieldTypePolicy = 'lossless' | 'requires_empty_table' | 'forbidden';
+
+/** Miroir de `FieldTypeChangeCheckDto` (`GET entities/{id}/fields/{fieldId}/type-check?to=`) — D18. */
+export interface StudioFieldTypeCheckDto {
+  from: string;
+  to: string;
+  policy: StudioFieldTypePolicy | string;
+  recordCount: number;
+  message: string;
+  allowed: boolean;
+}
+
+/** Miroir de `ChangeCustomFieldTypeRequest` (`PATCH entities/{id}/fields/{fieldId}/type`) ; réponse `CustomField`. */
+export interface ChangeCustomFieldTypeRequest {
+  fieldType: CustomFieldType;
+  options?: SelectOption[] | null;
+  rules?: FieldValidationRules | null;
+  relation?: RelationRef | null;
+  config?: Record<string, unknown> | null;
+}
+
 export interface SaveFormLayoutRequest {
   layout: FormLayout;
   displayName?: string | null;

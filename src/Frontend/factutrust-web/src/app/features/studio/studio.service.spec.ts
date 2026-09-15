@@ -4,6 +4,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { environment } from '@environments/environment';
 import { StudioService } from './studio.service';
 import { CreateManyToManyRelationRequest } from './relations/studio-relations.models';
+import { ChangeCustomFieldTypeRequest, CustomFieldType } from './studio.models';
 
 describe('StudioService — vues/relations (PR 2.5a)', () => {
   let service: StudioService;
@@ -48,6 +49,24 @@ describe('StudioService — vues/relations (PR 2.5a)', () => {
     service.createManyToMany('e1', request).subscribe();
     const req = http.expectOne(`${base}/entities/e1/relations/many-to-many`);
     expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(request);
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
+  it('checkFieldTypeChange envoie le nom d’enum dans to', () => {
+    service.checkFieldTypeChange('e1', 'f1', CustomFieldType[CustomFieldType.Number]).subscribe();
+    const req = http.expectOne(r => r.url === `${base}/entities/e1/fields/f1/type-check`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('to')).toBe('Number');
+    expect(req.request.params.get('to')).not.toBe(String(CustomFieldType.Number));
+    req.flush({ success: true, data: { from: 'Text', to: 'Number', policy: 'lossless', recordCount: 0, message: '', allowed: true }, message: null, errors: [] });
+  });
+
+  it('changeFieldType émet un PATCH …/type', () => {
+    const request: ChangeCustomFieldTypeRequest = { fieldType: CustomFieldType.Select, options: [{ value: 'a', label: 'A' }] };
+    service.changeFieldType('e1', 'f1', request).subscribe();
+    const req = http.expectOne(`${base}/entities/e1/fields/f1/type`);
+    expect(req.request.method).toBe('PATCH');
     expect(req.request.body).toEqual(request);
     req.flush({ success: true, data: null, message: null, errors: [] });
   });
