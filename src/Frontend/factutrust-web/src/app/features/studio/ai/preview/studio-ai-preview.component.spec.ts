@@ -9,7 +9,8 @@ import { StudioNavService } from '../../studio-nav.service';
 import { StudioAiSessionStore } from '../studio-ai-session.store';
 import { STUDIO_AI_LABELS } from '../studio-ai-labels';
 import { StudioAiPreviewComponent } from './studio-ai-preview.component';
-import { studioAiSpecFixture } from './testing/studio-ai-spec.fixture';
+import { studioAiSpecFixture, studioAiSpecWithViewsFixture } from './testing/studio-ai-spec.fixture';
+import { StudioSystemSpec } from '../studio-ai.models';
 
 describe('StudioAiPreviewComponent', () => {
   let fixture: ComponentFixture<StudioAiPreviewComponent>;
@@ -50,8 +51,7 @@ describe('StudioAiPreviewComponent', () => {
   }
 
   /** Amène le store dans l'état « proposition reçue, en attente de validation ». */
-  function loadPlan(): void {
-    const spec = studioAiSpecFixture();
+  function loadPlan(spec: StudioSystemSpec = studioAiSpecFixture()): void {
     store.plan.set({
       planId: 'plan-1',
       kind: 'CreateSystem',
@@ -94,19 +94,42 @@ describe('StudioAiPreviewComponent', () => {
     expect(text()).toContain('devise explicite');
   });
 
-  it('renders the nine tabs with Workflow and Pages disabled and flagged « Bientôt »', () => {
+  it('rend dix onglets dont un seul désactivé (Pages)', () => {
     loadPlan();
 
-    const tabs = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('p-tab'));
-    expect(tabs.length).toBe(9);
+    const tabs = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('p-tab')).map(
+      tab => tab.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+    );
+    expect(tabs.length).toBe(10);
+    expect(tabs.some(l => l.includes('Vues'))).toBeTrue();
+    expect(tabs.indexOf(tabs.find(l => l.includes('Vues'))!))
+      .withContext('« Vues » précède « Workflow »')
+      .toBeLessThan(tabs.indexOf(tabs.find(l => l.includes('Workflow'))!));
 
     const disabled = Array.from(
       (fixture.nativeElement as HTMLElement).querySelectorAll('p-tab.p-disabled')
     ).map(tab => tab.textContent?.replace(/\s+/g, ' ').trim() ?? '');
-    expect(disabled.length).toBe(2);
-    expect(disabled.some(l => l.includes('Workflow'))).toBeTrue();
-    expect(disabled.some(l => l.includes('Pages'))).toBeTrue();
-    expect(disabled.every(l => l.includes(STUDIO_AI_LABELS.soon))).toBeTrue();
+    expect(disabled.length).toBe(1);
+    expect(disabled[0]).toContain('Pages');
+    expect(disabled[0]).toContain(STUDIO_AI_LABELS.soon);
+    expect(tabs.find(l => l.includes('Workflow'))).not.toContain(STUDIO_AI_LABELS.soon);
+  });
+
+  it('compte les vues dans l’onglet et la puce', () => {
+    loadPlan(studioAiSpecWithViewsFixture());
+    const host = fixture.nativeElement as HTMLElement;
+
+    const viewsTab = Array.from(host.querySelectorAll('p-tab'))
+      .map(tab => tab.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+      .find(l => l.includes('Vues'));
+    expect(viewsTab).toContain('2');
+    expect(fixture.componentInstance.tabCount('views')).toBe(2);
+    expect(fixture.componentInstance.tabCount('workflow')).withContext('aucun workflow ⇒ pas de compteur').toBeNull();
+
+    const chips = Array.from(host.querySelectorAll('.sai-chips .sai-chip')).map(
+      el => el.textContent?.replace(/\s+/g, ' ').trim()
+    );
+    expect(chips).toContain(`2 ${STUDIO_AI_LABELS.views.title}`);
   });
 
   it('affiche la barre de modes à la place du bouton Modifier', () => {

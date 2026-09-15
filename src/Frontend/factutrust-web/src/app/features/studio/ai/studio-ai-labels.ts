@@ -187,13 +187,8 @@ export const STUDIO_AI_LABELS = {
     { id: 'forms', label: 'Formulaires', icon: 'fa-solid fa-file-lines', available: true },
     { id: 'seed', label: 'Données de référence', icon: 'fa-solid fa-database', available: true },
     { id: 'reports', label: 'Rapports', icon: 'fa-solid fa-chart-column', available: true },
-    {
-      id: 'workflow',
-      label: 'Workflow',
-      icon: 'fa-solid fa-route',
-      available: false,
-      soonTooltip: 'Disponible dans une prochaine version (workflow de statut).'
-    },
+    { id: 'views', label: 'Vues', icon: 'fa-solid fa-eye', available: true },
+    { id: 'workflow', label: 'Workflow', icon: 'fa-solid fa-route', available: true },
     {
       id: 'pages',
       label: 'Pages',
@@ -562,7 +557,8 @@ export const STUDIO_AI_LABELS = {
   workflows: {
     title: 'Workflows',
     emptyTitle: 'Aucun workflow dans cette proposition',
-    emptyHint: 'Les workflows de statut arrivent avec le programme 4.x ; cette proposition n’en contient pas.'
+    emptyHint: 'Les workflows de statut arrivent avec le programme 4.x ; cette proposition n’en contient pas.',
+    steps: '{count} étapes'
   },
 
   /** Mode Tester : formulaire / rapport simulés, 0 écriture (3.4f). */

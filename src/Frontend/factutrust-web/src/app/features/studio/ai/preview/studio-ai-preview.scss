@@ -249,3 +249,20 @@
   .sai-head__actions { flex-basis: 100%; }
   .sai-modebar-host { flex-basis: 100%; }
 }
+
+/* Onglet « Vues » (3.4d, M3) : grille 2 colonnes de cartes avec miniature. */
+.sai-views { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-3, 0.75rem); margin-top: var(--spacing-3, 0.75rem); }
+.sai-view {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--surface-border, #e5e7eb);
+  border-radius: 0.75rem;
+  background: var(--surface-card, #fff);
+}
+.sai-view__body { display: grid; gap: 0.375rem; padding: 0.625rem 0.75rem 0.75rem; }
+.sai-view__title { display: flex; align-items: center; gap: 0.375rem; font-weight: var(--font-weight-semibold, 600); font-size: var(--font-size-sm, 0.875rem); }
+.sai-view__title i { color: var(--color-primary-600, #2563eb); }
+.sai-view__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+.sai-chip--xs { font-size: var(--font-size-xs, 0.75rem); padding: 0.05rem 0.5rem; }
+@media (max-width: 48rem) { .sai-views { grid-template-columns: minmax(0, 1fr); } }
