@@ -302,3 +302,91 @@
   pointer-events: none;
   opacity: 0.55;
 }
+
+/* ---- Mode Personnaliser : onglet Tables éditable + pied de modifications (3.4g1, M2) ---- */
+.sai-inline { width: 100%; min-width: 10rem; padding: 0.25rem 0.5rem; font-size: var(--font-size-sm, 0.875rem); }
+:host ::ng-deep .sai-type-select { width: 100%; min-width: 9rem; }
+.sai-table--edit td:nth-child(2) { width: 11rem; }
+.sai-cell-center { text-align: center; }
+.sai-field-key { display: inline-flex; align-items: center; gap: 0.35rem; margin-top: 3px; }
+.sai-field-error { display: block; margin-top: 2px; color: var(--color-error-600, #dc2626); font-size: var(--font-size-xs, 0.75rem); }
+.sai-hint--warn { color: var(--color-warning-700, #b45309); }
+.sai-locked { display: flex; align-items: center; gap: 0.35rem; }
+.sai-locked i { color: var(--color-neutral-500, #6b7280); }
+
+.sai-table tr[data-has-options] td { border-bottom: 0; }
+.sai-table tr.sai-row--added td { background: var(--color-success-50, #f0fdf4); }
+.sai-table tr.sai-row--changed td { background: var(--color-primary-50, #eff6ff); }
+.sai-table tr.sai-row--removed td { background: var(--color-neutral-50, #f9fafb); color: var(--color-neutral-500, #6b7280); }
+.sai-strike { text-decoration: line-through; }
+
+.sai-options { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+.sai-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.45rem 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: var(--color-neutral-100, #f3f4f6);
+  color: var(--color-neutral-700, #374151);
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: var(--font-weight-medium, 500);
+}
+.sai-opt__x { display: inline-flex; border: 0; background: none; padding: 0; color: inherit; opacity: 0.7; cursor: pointer; }
+.sai-opt__x:hover { opacity: 1; }
+.sai-opt-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0.1rem 0.5rem;
+  border: 1px dashed var(--color-neutral-300, #d1d5db);
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-primary-600, #2563eb);
+  cursor: pointer;
+}
+.sai-opt-add:focus-visible { outline: 2px solid var(--color-primary-600, #2563eb); outline-offset: 1px; }
+
+.sai-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-primary-600, #2563eb);
+  font-weight: var(--font-weight-medium, 500);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sai-add-field { display: flex; align-items: center; gap: var(--spacing-3, 0.75rem); margin-top: var(--spacing-3, 0.75rem); }
+
+.sai-changes-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3, 0.75rem);
+  padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
+  border-top: 1px solid var(--surface-border, #e5e7eb);
+  background: var(--surface-ground, #f9fafb);
+}
+.sai-changes-footer__spacer { flex: 1; }
+.sai-changes-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--color-primary-200, #bfdbfe);
+  border-radius: 999px;
+  background: var(--color-primary-50, #eff6ff);
+  color: var(--color-primary-700, #1d4ed8);
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: var(--font-weight-semibold, 600);
+  white-space: nowrap;
+}
+.sai-changes-badge__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary-600, #2563eb); }

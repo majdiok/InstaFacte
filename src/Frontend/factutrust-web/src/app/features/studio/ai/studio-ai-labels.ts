@@ -593,7 +593,15 @@ export const STUDIO_AI_LABELS = {
     dragHandle: 'Réordonner',
     locked: 'Table existante : non modifiable',
     keyTaken: 'Cette clé existe déjà.',
-    maxFields: 'Nombre maximal de champs atteint.'
+    maxFields: 'Nombre maximal de champs atteint.',
+    newField: 'Nouveau champ',
+    newOption: 'Option {index}',
+    optionsCount: '{count} options',
+    removeOption: 'Retirer l’option {option}',
+    actions: 'Actions',
+    addedTag: 'Ajouté',
+    changedTag: 'Modifié',
+    removedTag: 'Retiré'
   },
 
   /** Import CSV des données de départ (panneau inline, D20 — 3.4h). */
