@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { STUDIO_AI_LABELS } from '../studio-ai-labels';
 import { STUDIO_SPEC_LIMITS, StudioSpecChange, StudioSpecField } from '../studio-ai.models';
 import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
@@ -175,6 +176,44 @@ describe('StudioAiTablesTabComponent', () => {
     expect(emitted).toEqual([
       { ref: 'employes', key: 'nom' },
       { ref: 'employes', key: 'nom' }
+    ]);
+  });
+
+  it('réordonne les champs par glisser-déposer et par clavier', () => {
+    const host = editMode();
+    const emitted: { ref: string; from: number; to: number }[] = [];
+    fixture.componentInstance.fieldReorder.subscribe(e => emitted.push(e));
+
+    // Chaque ligne de champ a sa poignée et ses boutons Monter / Descendre (labels customize
+    // portés par l'hôte `p-button`, le clic va au bouton natif).
+    expect(host.querySelector('[data-component-id="sai-field-drag-nom"]'))
+      .withContext('poignée cdkDragHandle de la ligne')
+      .toBeTruthy();
+    const up = host.querySelector('[data-component-id="sai-field-up-nom"]') as HTMLElement;
+    const down = host.querySelector('[data-component-id="sai-field-down-nom"]') as HTMLElement;
+    expect(up?.getAttribute('aria-label')).toBe(STUDIO_AI_LABELS.customize.moveUp);
+    expect(down?.getAttribute('aria-label')).toBe(STUDIO_AI_LABELS.customize.moveDown);
+
+    // Clavier : « Descendre » sur « nom » (index 1) émet le déplacement 1 → 2.
+    (down.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(emitted).toEqual([{ ref: 'employes', from: 1, to: 2 }]);
+
+    // Bords : « Monter » sur le premier champ et « Descendre » sur le dernier sont désactivés.
+    const firstUp = host.querySelector('[data-component-id="sai-field-up-matricule"] button') as HTMLButtonElement;
+    const lastDown = host.querySelector('[data-component-id="sai-field-down-statut"] button') as HTMLButtonElement;
+    expect(firstUp.disabled).toBeTrue();
+    expect(lastDown.disabled).toBeTrue();
+    firstUp.click();
+    lastDown.click();
+    expect(emitted.length).withContext('aucune émission aux bornes').toBe(1);
+
+    // Glisser-déposer : l'événement cdkDropListDropped est simulé (index relatifs aux lignes cdkDrag).
+    const entity = fixture.componentInstance.activeEntity()!;
+    fixture.componentInstance.onDrop(entity, { previousIndex: 0, currentIndex: 2 } as CdkDragDrop<StudioSpecField[]>);
+    expect(emitted).toEqual([
+      { ref: 'employes', from: 1, to: 2 },
+      { ref: 'employes', from: 0, to: 2 }
     ]);
   });
 

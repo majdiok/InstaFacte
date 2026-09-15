@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { StudioFilterBuilderComponent } from '../../shared/studio-filter-builder.component';
 import { STUDIO_AI_LABELS } from '../studio-ai-labels';
-import { StudioSystemSpec } from '../studio-ai.models';
+import { StudioSpecRecordView, StudioSystemSpec } from '../studio-ai.models';
 import { StudioAiViewsTabComponent } from './studio-ai-views-tab.component';
 import { studioAiSpecFixture, studioAiSpecWithViewsFixture } from './testing/studio-ai-spec.fixture';
 
@@ -82,5 +84,36 @@ describe('StudioAiViewsTabComponent', () => {
     expect(thumb?.getAttribute('aria-label')).toContain('Par statut');
     expect(host.querySelector('[innerHTML]')).toBeNull();
     expect(text(host)).toContain(STUDIO_AI_LABELS.views.isDefault);
+  });
+
+  it('les filtres de vue passent par le constructeur de filtres partagé', () => {
+    const spec = studioAiSpecWithViewsFixture();
+    const host = load(spec);
+
+    // Lecture seule inchangée : aucun constructeur de filtres tant que l'onglet n'est pas éditable.
+    expect(host.querySelector('app-studio-filter-builder')).toBeNull();
+
+    fixture.componentRef.setInput('editable', true);
+    fixture.detectChanges();
+
+    const emitted: { ref: string; index: number; patch: Partial<StudioSpecRecordView> }[] = [];
+    fixture.componentInstance.viewChange.subscribe(e => emitted.push(e));
+
+    // Un constructeur par carte de vue, alimenté par les champs de l'entité (forme CustomField).
+    const builders = fixture.debugElement.queryAll(By.directive(StudioFilterBuilderComponent));
+    expect(builders.length).toBe(2);
+    const demandes = spec.entities.find(e => e.ref === 'demandes')!;
+    const first = builders[0].componentInstance as StudioFilterBuilderComponent;
+    expect(first.fields().map(f => f.key)).toEqual(demandes.fields.map(f => f.key));
+    expect(first.disabled()).toBeFalse();
+
+    // Une modification dans le constructeur est reconvertie en forme spec ({ field, op, value })
+    // et remontée avec sa cible (table + index de la vue).
+    first.filters.set([{ fieldKey: 'nb_jours', op: 'gte', value: 2 }]);
+    fixture.detectChanges();
+
+    expect(emitted).toEqual([
+      { ref: 'demandes', index: 0, patch: { filters: [{ field: 'nb_jours', op: 'gte', value: 2 }] } }
+    ]);
   });
 });

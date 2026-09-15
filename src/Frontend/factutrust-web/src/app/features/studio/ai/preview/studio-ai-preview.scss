@@ -390,3 +390,33 @@
   white-space: nowrap;
 }
 .sai-changes-badge__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary-600, #2563eb); }
+
+/* ---- Mode Personnaliser : réordonnancement des champs (3.4g2) ---------------------------------- */
+
+.sai-cell-grip { width: 2.5rem; }
+.sai-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--color-neutral-400, #94a3b8);
+  cursor: grab;
+}
+.sai-grip:active { cursor: grabbing; }
+.sai-grip:hover { color: var(--color-neutral-500, #64748b); }
+
+/* Retours visuels du glisser-déposer CDK (placeholder discret, transitions douces). */
+.sai-table--edit .cdk-drag-placeholder { opacity: 0.35; }
+.sai-table--edit .cdk-drag-animating { transition: transform 200ms ease; }
+.sai-table--edit tbody.cdk-drop-list-dragging tr:not(.cdk-drag-placeholder) { transition: transform 200ms ease; }
+
+/* ---- Mode Personnaliser : filtres d'une vue (3.4g2) -------------------------------------------- */
+
+.sai-view__filters {
+  display: grid;
+  gap: var(--spacing-2, 0.5rem);
+  margin-top: var(--spacing-2, 0.5rem);
+  padding-top: var(--spacing-2, 0.5rem);
+  border-top: 1px dashed var(--surface-border, #e5e7eb);
+}

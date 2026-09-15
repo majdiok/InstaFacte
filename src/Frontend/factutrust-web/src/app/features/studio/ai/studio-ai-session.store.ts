@@ -1,6 +1,7 @@
 import { Injectable, OnDestroy, computed, inject, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
+import { moveItemInArray } from '@angular/cdk/drag-drop';
 import { Observable, Subscription, interval } from 'rxjs';
 import { AiStreamService } from '@features/ai-assistant/services/ai-stream.service';
 import { AiChatService } from '@features/ai-assistant/services/ai-chat.service';
@@ -35,6 +36,7 @@ import {
   StudioSpecCounters,
   StudioSpecEntity,
   StudioSpecField,
+  StudioSpecRecordView,
   StudioSystemSpec,
   STUDIO_SPEC_LIMITS,
   countSpec,
@@ -692,6 +694,39 @@ export class StudioAiSessionStore implements OnDestroy {
     if (removed && knownToServer) {
       this.removedFields.update(map => new Map(map).set(id, { field, index }));
     }
+  }
+
+  /**
+   * Réordonnancement des champs (onglet Tables, 3.4g2) : déplacement immuable de `from` vers `to`
+   * (`moveItemInArray` sur une copie) — la clé des champs ne change jamais, le `diffSpec` ne voit
+   * donc aucun changement de contenu. Même verrou que les autres mutations : table existante ou
+   * index hors bornes ⇒ aucun effet.
+   */
+  reorderFields(ref: string, from: number, to: number): void {
+    this.mutateDraftEntity(ref, entity => {
+      if (entity.existingKey) return entity;
+      const last = entity.fields.length - 1;
+      if (from === to || from < 0 || to < 0 || from > last || to > last) return entity;
+      const fields = [...entity.fields];
+      moveItemInArray(fields, from, to);
+      return { ...entity, fields };
+    });
+  }
+
+  /**
+   * Patch immuable de la vue `entity.views[index]` (onglet Vues, 3.4g2 — ex. remplacement des
+   * filtres) : les clés non visées par `patch` sont conservées. Index hors bornes ou table
+   * existante ⇒ aucun effet.
+   */
+  updateView(ref: string, index: number, patch: Partial<StudioSpecRecordView>): void {
+    this.mutateDraftEntity(ref, entity => {
+      if (entity.existingKey) return entity;
+      const views = entity.views ?? [];
+      if (index < 0 || index >= views.length) return entity;
+      const next = [...views];
+      next[index] = { ...next[index], ...patch };
+      return { ...entity, views: next };
+    });
   }
 
   /**

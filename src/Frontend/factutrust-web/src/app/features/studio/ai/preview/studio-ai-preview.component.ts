@@ -34,7 +34,9 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
  * les onglets sont remplacés par le panneau de simulation (`app-studio-ai-test-panel`, 0 écriture).
  * En mode « Personnaliser » (3.4g1), l'onglet Tables devient éditable (mutations `updateField` /
  * `addField` / `removeField` du store) et un pied collant affiche le compteur de modifications et
- * l'action « Enregistrer le brouillon » (`saveDraft` existant).
+ * l'action « Enregistrer le brouillon » (`saveDraft` existant). En 3.4g2, l'onglet Tables permet
+ * en plus le réordonnancement des champs (`reorderFields`) et l'onglet Vues l'édition des filtres
+ * (`updateView`) via le constructeur de filtres partagé.
  */
 @Component({
   selector: 'app-studio-ai-preview',
@@ -179,7 +181,7 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
                 (openEntity)="selectEntity($event)" />
             </p-tabpanel>
             <p-tabpanel value="tables">
-              <!-- 3.4g1 : en mode Personnaliser, l'onglet Tables devient éditable (mutations du store). -->
+              <!-- 3.4g1/g2 : en mode Personnaliser, l'onglet Tables devient éditable et réordonnable. -->
               <app-studio-ai-tables-tab
                 [spec]="spec()!"
                 [selectedRef]="selectedRef()"
@@ -188,7 +190,8 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
                 [changes]="store.changes()"
                 (fieldChange)="store.updateField($event.ref, $event.key, $event.patch)"
                 (fieldAdd)="store.addField($event)"
-                (fieldRemove)="store.removeField($event.ref, $event.key)" />
+                (fieldRemove)="store.removeField($event.ref, $event.key)"
+                (fieldReorder)="store.reorderFields($event.ref, $event.from, $event.to)" />
             </p-tabpanel>
             <p-tabpanel value="relations">
               <app-studio-ai-relations-tab [spec]="spec()!" />
@@ -203,7 +206,11 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
               <app-studio-ai-reports-tab [spec]="spec()!" />
             </p-tabpanel>
             <p-tabpanel value="views">
-              <app-studio-ai-views-tab [spec]="spec()!" />
+              <!-- 3.4g2 : en mode Personnaliser, les filtres de chaque vue sont éditables. -->
+              <app-studio-ai-views-tab
+                [spec]="spec()!"
+                [editable]="store.mode() === 'customize'"
+                (viewChange)="store.updateView($event.ref, $event.index, $event.patch)" />
             </p-tabpanel>
             <p-tabpanel value="workflow">
               <app-studio-ai-workflows-tab [spec]="spec()!" />
