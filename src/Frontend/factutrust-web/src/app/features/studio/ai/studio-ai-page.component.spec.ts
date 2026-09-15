@@ -14,7 +14,7 @@ import { StudioNavService } from '../studio-nav.service';
 import { StudioAiPageComponent } from './studio-ai-page.component';
 import { StudioAiCapabilitiesService } from './studio-ai-capabilities.service';
 import { STUDIO_AI_LABELS } from './studio-ai-labels';
-import { STUDIO_AI_CAPABILITIES_FALLBACK, StudioAiCapabilitiesDto } from './studio-ai.models';
+import { STUDIO_AI_CAPABILITIES_FALLBACK, StudioAiCapabilitiesDto, StudioAiPlanListItemDto } from './studio-ai.models';
 import { studioAiSpecFixture } from './preview/testing/studio-ai-spec.fixture';
 
 const ALL_ENABLED: StudioAiCapabilitiesDto = {
@@ -51,7 +51,7 @@ describe('StudioAiPageComponent', () => {
     stream.streamChat.and.returnValue(of());
     builds = jasmine.createSpyObj<StudioAiBuildService>('StudioAiBuildService', [
       'getPlanSpec', 'confirm', 'cancel', 'cancelPending', 'getCapabilities', 'listPlans', 'listTemplates', 'getPlan', 'createFromTemplate',
-      'importSystem', 'duplicateSystem'
+      'importSystem', 'duplicateSystem', 'replayPlan'
     ]);
     builds.getPlanSpec.and.returnValue(of());
     builds.cancel.and.returnValue(of({ success: true, data: null, message: null, errors: [] }) as never);
@@ -295,6 +295,26 @@ describe('StudioAiPageComponent', () => {
       expect(fixture.componentInstance.store.plan()?.planId).toBe('p-7');
       expect(fixture.componentInstance.store.phase()).toBe('awaiting_confirmation');
       expect(builds.getPlanSpec).toHaveBeenCalledWith('p-7');
+    });
+
+    it('Rejouer depuis le rail ⇒ store.replay ⇒ builds.replayPlan(id)', () => {
+      builds.replayPlan.and.returnValue(of());
+      const item: StudioAiPlanListItemDto = {
+        id: 'p-9', kind: 'CreateSystem', status: 'Completed', title: 'Congés', entityCount: 2,
+        createdAt: '2026-09-12T10:00:00Z', expiresAt: '2026-09-13T10:00:00Z', replayable: true
+      };
+
+      fixture.componentInstance.replayHistoryPlan(item);
+      expect(builds.replayPlan).toHaveBeenCalledWith('p-9');
+      expect(confirmation.confirm).not.toHaveBeenCalled();
+
+      withPendingPlan();
+      fixture.componentInstance.replayHistoryPlan(item);
+      expect(builds.replayPlan).toHaveBeenCalledTimes(1);
+      expect(lastConfirmation().message).toBe(STUDIO_AI_LABELS.rail.replaceCurrent);
+      expect(lastConfirmation().acceptLabel).toBe(STUDIO_AI_LABELS.replay.action);
+      lastConfirmation().accept!();
+      expect(builds.replayPlan).toHaveBeenCalledTimes(2);
     });
   });
 

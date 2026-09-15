@@ -1,7 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
+import { ToastService } from '@core/services/toast.service';
 import { of, throwError } from 'rxjs';
 import { StudioAiBuildService } from '../../studio-ai-build.service';
 import { STUDIO_AI_LABELS } from '../studio-ai-labels';
@@ -23,15 +24,20 @@ function page(items: StudioAiPlanListItemDto[], totalCount = items.length, pageN
 describe('StudioAiProjectsPageComponent', () => {
   let fixture: ComponentFixture<StudioAiProjectsPageComponent>;
   let builds: jasmine.SpyObj<StudioAiBuildService>;
+  let toast: jasmine.SpyObj<ToastService>;
+  let router: Router;
 
   beforeEach(async () => {
-    builds = jasmine.createSpyObj<StudioAiBuildService>('StudioAiBuildService', ['listPlans']);
+    builds = jasmine.createSpyObj<StudioAiBuildService>('StudioAiBuildService', ['listPlans', 'replayPlan']);
     builds.listPlans.and.returnValue(of({ success: true, data: page([]), message: null, errors: [] }) as never);
+    toast = jasmine.createSpyObj<ToastService>('ToastService', ['add']);
 
     await TestBed.configureTestingModule({
       imports: [StudioAiProjectsPageComponent],
-      providers: [provideRouter([]), provideNoopAnimations(), { provide: StudioAiBuildService, useValue: builds }]
+      providers: [provideRouter([]), provideNoopAnimations(), { provide: StudioAiBuildService, useValue: builds }, { provide: ToastService, useValue: toast }]
     }).compileComponents();
+    router = TestBed.inject(Router);
+    spyOn(router, 'navigate').and.returnValue(Promise.resolve(true));
   });
 
   function create(): void {
@@ -119,5 +125,58 @@ describe('StudioAiProjectsPageComponent', () => {
     fixture.detectChanges();
     expect(fixture.componentInstance.error()).toBeNull();
     expect(rows().length).toBe(1);
+  });
+  it('Rejouer ⇒ POST replay puis navigation vers /studio/ai?plan=<nouvel id>', () => {
+    builds.listPlans.and.returnValue(of({
+      success: true, message: null, errors: [],
+      data: page([plan('a', 'Completed', { systemKey: 'conges', replayable: true })])
+    }) as never);
+    builds.replayPlan.and.returnValue(of({
+      success: true, message: null, errors: [],
+      data: { plan: { id: 'p-new', kind: 'CreateSystem', status: 'Pending' }, spec: {} }
+    }) as never);
+    create();
+
+    const button = rows()[0].querySelector('button[data-action="replay"]') as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    expect(button.textContent).toContain(STUDIO_AI_LABELS.history.replay);
+    button.click();
+
+    expect(builds.replayPlan).toHaveBeenCalledWith('a');
+    expect(router.navigate).toHaveBeenCalledWith(['/studio/ai'], { queryParams: { plan: 'p-new' } });
+    expect(toast.add).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.replaying()).toBeNull();
+  });
+
+  it('409 ⇒ toast « conflit », reste sur la page', () => {
+    builds.listPlans.and.returnValue(of({
+      success: true, message: null, errors: [],
+      data: page([plan('a', 'Failed', { replayable: true, errorMessage: 'Quota dépassé' })])
+    }) as never);
+    builds.replayPlan.and.returnValue(throwError(() => new HttpErrorResponse({ status: 409, statusText: 'Conflict' })));
+    create();
+
+    (rows()[0].querySelector('button[data-action="replay"]') as HTMLButtonElement).click();
+
+    expect(builds.replayPlan).toHaveBeenCalledWith('a');
+    expect(toast.add).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'warn', summary: STUDIO_AI_LABELS.replay.conflict }));
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.error()).toBeNull();
+    expect(fixture.componentInstance.replaying()).toBeNull();
+    expect(rows().length).toBe(1);
+  });
+
+  it('Rejouer absent quand replayable est faux', () => {
+    builds.listPlans.and.returnValue(of({
+      success: true, message: null, errors: [],
+      data: page([plan('a', 'Completed', { systemKey: 'conges', replayable: false }), plan('b', 'Cancelled'), plan('c', 'Failed', { replayable: true })])
+    }) as never);
+    create();
+
+    expect(rows()[0].querySelector('[data-action="replay"]')).toBeNull();
+    expect(rows()[0].querySelector('a[data-action="open-system"]')).not.toBeNull();
+    expect(rows()[1].querySelector('[data-action="replay"]')).toBeNull();
+    expect(rows()[2].querySelector('button[data-action="replay"]')).not.toBeNull();
+    expect(builds.replayPlan).not.toHaveBeenCalled();
   });
 });

@@ -404,7 +404,11 @@ export const STUDIO_AI_LABELS = {
     hoursAgo: 'il y a {count} h',
     daysAgo: 'il y a {count} j',
     panelLabel: 'Panneau latéral',
-    comingSoon: 'Cette action arrive dans une prochaine version.'
+    comingSoon: 'Cette action arrive dans une prochaine version.',
+    replay: 'Rejouer',
+    openSystem: 'Ouvrir le système',
+    relationsShort: '{count} rel.',
+    viewsShort: '{count} vues'
   },
 
   /** Page « Mes projets » (`/studio/ai/projects`). */
@@ -431,7 +435,8 @@ export const STUDIO_AI_LABELS = {
     empty: 'Aucun projet pour le moment. Décrivez un besoin dans l’atelier pour démarrer.',
     loadFailed: 'Impossible de charger vos projets.',
     backToStudio: 'Retour à l’atelier',
-    count: '{count} projet(s)'
+    count: '{count} projet(s)',
+    replay: 'Rejouer'
   },
 
   /** Page « Bibliothèque de modèles » (`/studio/ai/templates`). */

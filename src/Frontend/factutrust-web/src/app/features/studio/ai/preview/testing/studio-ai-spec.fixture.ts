@@ -193,7 +193,7 @@ export function studioAiPlanListItemFixture(overrides: Partial<StudioAiPlanListI
     executedAt: '2026-09-15T10:05:00Z',
     systemKey: 'gestion_des_conges',
     errorMessage: null,
-    openUrl: '/studio/s/gestion_des_conges',
+    openUrl: '/studio/systems/gestion_des_conges',
     relationCount: 1,
     viewCount: 2,
     replayable: true,
