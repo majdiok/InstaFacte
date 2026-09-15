@@ -259,6 +259,8 @@ export const STUDIO_AI_LABELS = {
     structure: 'Structure du système',
     diagram: 'Diagramme des relations',
     diagramSoon: 'Le diagramme interactif arrive dans la prochaine livraison ; les relations sont listées dans l’onglet Relations.',
+    diagramMore: '+{n}',
+    diagramEdge: '{from} → {to} ({kind})',
     stepsTitle: 'Étapes prévues',
     unsaved: 'Modifications non enregistrées',
     changes: 'changements',
