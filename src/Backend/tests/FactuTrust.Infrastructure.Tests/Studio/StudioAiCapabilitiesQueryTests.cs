@@ -160,6 +160,26 @@ public sealed class StudioAiCapabilitiesQueryTests
         }
     }
 
+    /// <summary>
+    /// PR 3.3 : <c>SystemExportEnabled</c> suit <c>Ollama:EnableStudioSystemExport</c>
+    /// (indépendant du workbench) — levé ⇒ vrai, coupé ou absent ⇒ faux.
+    /// </summary>
+    [Fact]
+    public async Task SystemExport_follows_its_flag()
+    {
+        var enabled = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioSystemExport = true
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+        Assert.True(enabled.Value.SystemExportEnabled);
+
+        var disabled = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioSystemExport = false
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+        Assert.False(disabled.Value.SystemExportEnabled);
+    }
+
     [Fact]
     public async Task Workbench_requires_both_workbench_flag_and_plan_preview()
     {
