@@ -42,7 +42,9 @@ export function counterChips(counters: StudioSpecCounters): { label: string; val
     { label: labels.relations, value: counters.relations },
     { label: labels.forms, value: counters.forms },
     { label: labels.seedRecords, value: counters.seedRecords },
-    { label: labels.reports, value: counters.reports }
+    { label: labels.reports, value: counters.reports },
+    // Puce « Vues » seulement quand la spec en propose (les specs P0 n'en ont pas : 6 puces inchangées).
+    ...(counters.views > 0 ? [{ label: STUDIO_AI_LABELS.views.title, value: counters.views }] : [])
   ];
 }
 

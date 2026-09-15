@@ -88,6 +88,11 @@ export interface StudioPlanListItemMock {
   expiresAt: string;
   executedAt?: string | null;
   systemKey?: string | null;
+  errorMessage?: string | null;
+  openUrl?: string | null;
+  relationCount?: number;
+  viewCount?: number;
+  replayable?: boolean;
 }
 
 export interface StudioTemplateMock {

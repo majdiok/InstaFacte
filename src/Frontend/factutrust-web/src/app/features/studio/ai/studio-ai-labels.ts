@@ -332,7 +332,8 @@ export const STUDIO_AI_LABELS = {
     stepCount: 'Étape {current} sur {total}',
     stepsPending: 'En attente…',
     stepRunning: 'En cours…',
-    stepSkipped: 'Ignoré'
+    stepSkipped: 'Ignoré',
+    views: 'Vues'
   },
 
   result: {
@@ -351,7 +352,11 @@ export const STUDIO_AI_LABELS = {
     duplicate: 'Dupliquer',
     share: 'Partager',
     failedTitle: 'La création a échoué',
-    failedHint: 'Rien n’a été conservé. Reformulez votre demande ou réessayez plus tard.'
+    failedHint: 'Rien n’a été conservé. Reformulez votre demande ou réessayez plus tard.',
+    exportJson: 'Exporter (JSON)',
+    replay: 'Rejouer',
+    views: 'vues',
+    workflows: 'workflows'
   },
 
   conversation: {
@@ -516,6 +521,136 @@ export const STUDIO_AI_LABELS = {
   capabilities: {
     previewDisabled: 'L’aperçu avant création est désactivé par l’administrateur : les demandes sont exécutées directement.',
     workbenchRequired: 'Cette fonction nécessite le workbench Studio IA (désactivé sur cet environnement).'
+  },
+
+  // ---- Aperçu enrichi (PR 3.4) --------------------------------------------------------------------
+
+  /** Barre de modes Aperçu / Tester / Personnaliser (3.4c). */
+  modes: {
+    toolbar: 'Mode de l’aperçu',
+    preview: 'Aperçu',
+    test: 'Tester',
+    customize: 'Personnaliser',
+    expiresIn: 'Expire dans',
+    expired: 'Expiré',
+    regenerate: 'Régénérer',
+    previewUnavailable: 'Disponible après mise à jour du serveur.',
+    changes: 'modifications',
+    saveDraft: 'Enregistrer le brouillon'
+  },
+
+  /** Onglet « Vues » (3.4d). */
+  views: {
+    title: 'Vues',
+    empty: 'Aucune vue proposée.',
+    list: 'Liste',
+    kanban: 'Kanban',
+    calendar: 'Calendrier',
+    groupBy: 'Regroupement',
+    dateField: 'Champ date',
+    endField: 'Fin',
+    titleField: 'Titre',
+    columns: 'Colonnes',
+    filters: 'Filtres',
+    sort: 'Tri',
+    isDefault: 'Par défaut',
+    count: '{count} vues',
+    addFilter: 'Filtres de la vue'
+  },
+
+  /** Onglet « Workflows » (état vide en 3.x, P4). */
+  workflows: {
+    title: 'Workflows',
+    emptyTitle: 'Aucun workflow dans cette proposition',
+    emptyHint: 'Les workflows de statut arrivent avec le programme 4.x ; cette proposition n’en contient pas.'
+  },
+
+  /** Mode Tester : formulaire / rapport simulés, 0 écriture (3.4f). */
+  simulation: {
+    banner: 'Simulation — rien n’est enregistré.',
+    entity: 'Table à tester',
+    saveSimulated: 'Enregistrer (simulation)',
+    saved: 'Enregistrement simulé : aucune donnée écrite.',
+    reportUnavailable: 'Rapport indisponible : aucune donnée d’exemple.',
+    sampleFromSeed: 'Calculé sur les données de départ',
+    sampleFromServer: 'Échantillon fourni par le serveur'
+  },
+
+  /** Mode Personnaliser : édition inline des champs (3.4g). */
+  customize: {
+    changes: '{count} modifications',
+    noChanges: 'Aucune modification',
+    addField: 'Ajouter un champ',
+    removeField: 'Retirer',
+    restoreField: 'Rétablir',
+    addOption: 'Ajouter une option',
+    fieldLabel: 'Libellé',
+    fieldType: 'Type',
+    required: 'Requis',
+    unique: 'Unique',
+    options: 'Options',
+    moveUp: 'Monter',
+    moveDown: 'Descendre',
+    dragHandle: 'Réordonner',
+    locked: 'Table existante : non modifiable',
+    keyTaken: 'Cette clé existe déjà.',
+    maxFields: 'Nombre maximal de champs atteint.'
+  },
+
+  /** Import CSV des données de départ (panneau inline, D20 — 3.4h). */
+  csv: {
+    title: 'Importer un CSV',
+    hint: 'Fichier ≤ 512 Ko, 500 lignes maximum ; les colonnes sont rapprochées des champs.',
+    choose: 'Choisir un fichier',
+    drop: 'Déposez un fichier CSV ici',
+    paste: 'ou collez le texte',
+    tooLarge: 'Fichier trop volumineux (512 Ko maximum).',
+    notCsv: 'Seuls les fichiers .csv sont acceptés.',
+    mapping: 'Correspondance colonnes → champs',
+    ignore: '— ignorer —',
+    preview: 'Aperçu ({count} lignes)',
+    truncated: 'Tronqué à {count} lignes.',
+    apply: 'Remplacer les données de départ',
+    cancel: 'Annuler',
+    applied: '{count} lignes importées.'
+  },
+
+  /** Export / import / duplication de système (3.4i, 3.4j). */
+  importExport: {
+    exportTitle: 'Exporter le système',
+    includeSeed: 'Inclure les données de départ',
+    copy: 'Copier',
+    copied: 'Copié.',
+    download: 'Télécharger',
+    importTitle: 'Importer un système (JSON)',
+    dropJson: 'Déposez un fichier .json ou collez son contenu',
+    tooLarge: 'Fichier trop volumineux (512 Ko maximum).',
+    invalidJson: 'JSON invalide.',
+    badVersion: 'specVersion non pris en charge (1 attendu).',
+    counters: '{entities} tables · {relations} relations · {views} vues',
+    displayName: 'Nom du système (optionnel)',
+    import: 'Importer',
+    duplicateTitle: 'Dupliquer un système',
+    duplicate: 'Dupliquer',
+    chooseSystem: 'Système à dupliquer',
+    copySuffix: '(copie)',
+    opened: 'Plan ouvert : vérifiez la proposition puis validez.'
+  },
+
+  /** Rejeu d'un plan terminé / échoué / annulé / expiré (3.4k). */
+  replay: {
+    action: 'Rejouer',
+    conflict: 'Ce plan ne peut pas être rejoué maintenant.',
+    done: 'Plan rejoué : une nouvelle proposition est ouverte.'
+  },
+
+  /** Changement de type d'un champ (3.4l). */
+  typeChange: {
+    checking: 'Vérification…',
+    lossless: 'Conversion sans perte.',
+    requiresEmpty: 'Videz la table avant de changer le type.',
+    forbidden: 'Changement de type impossible.',
+    changed: 'Type modifié.'
   }
 } as const;
 
