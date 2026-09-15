@@ -36,7 +36,21 @@ export const STUDIO_RUNTIME_LABELS = {
     save: 'Enregistrer',
     duplicateKey: 'Une vue porte déjà cette clé.',
     planLimit: 'Limite du plan atteinte pour les vues enregistrées.',
-    staleConflict: 'La vue a été modifiée ailleurs ; rechargez.'
+    staleConflict: 'La vue a été modifiée ailleurs ; rechargez.',
+    name: 'Nom de la vue',
+    key: 'Clé',
+    mode: 'Mode d’affichage',
+    columns: 'Colonnes',
+    sort: 'Tri',
+    pageSize: 'Taille de page',
+    kanbanGroupBy: 'Champ de regroupement',
+    calendarStart: 'Champ de début',
+    columnLimit: 'Nombre maximal de colonnes atteint.',
+    sortLimit: 'Nombre maximal de critères de tri atteint.',
+    invalidKey: 'Clé invalide : minuscule initiale, lettres, chiffres ou « _ » (2 à 64 caractères).',
+    keyImmutable: 'La clé d’une vue est immuable.',
+    deleted: 'Vue supprimée.',
+    saved: 'Vue enregistrée.'
   },
   relations: {
     title: 'Relations',
