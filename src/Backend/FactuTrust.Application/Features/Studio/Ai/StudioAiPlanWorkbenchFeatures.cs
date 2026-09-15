@@ -265,17 +265,17 @@ public sealed class ListStudioAiPlansQueryHandler
             {
                 var node = JsonNode.Parse(summaryJson);
                 var title = node?["title"] is JsonValue value && value.TryGetValue<string>(out var text) ? text : string.Empty;
-                var entityCount = node?["entities"] is JsonArray entities ? entities.Count : 0;
+                var entities = node?["entities"] as JsonArray;
                 var relationCount = node?["relations"] is JsonArray relations ? relations.Count : 0;
                 var viewCount = 0;
-                if (node?["entities"] is JsonArray entitiesWithViews)
-                    foreach (var entity in entitiesWithViews)
+                if (entities is not null)
+                    foreach (var entity in entities)
                         if (entity is JsonObject entityObject
                             && entityObject.TryGetPropertyValue("viewCount", out var viewCountNode)
                             && viewCountNode is JsonValue viewCountValue
                             && viewCountValue.TryGetValue<int>(out var entityViews))
                             viewCount += entityViews;
-                return (title ?? string.Empty, entityCount, relationCount, viewCount);
+                return (title ?? string.Empty, entities?.Count ?? 0, relationCount, viewCount);
             }
             catch (JsonException)
             {

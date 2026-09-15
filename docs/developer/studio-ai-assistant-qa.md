@@ -366,6 +366,9 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   de l'orchestrateur et son ordonnancement, exécution du plan `RecordView`, garde des trois drapeaux,
   catalogue d'outils et `StudioPlanEmittingTools`) ; contrats API `validate`/`from-spec` kind
   `RecordView` dans `StudioAiPlansControllerContractTests` (filtre `FactuTrust.API.Tests.Studio`).
+- Historique/aperçu/rejeu (PR 3.2) : `--filter "FullyQualifiedName~StudioAiSeedSampler|FullyQualifiedName~StudioAiPlanPreviewBuilder|FullyQualifiedName~StudioAiPlanPreviewFeatures"`,
+  contrat `StudioAiPlansControllerContractTests` (filtre `FactuTrust.API.Tests.Studio`) et
+  compteurs de liste dans `StudioAiPlanWorkbenchFeaturesTests` / `StudioAiPlanFeaturesTests`.
 - Frontend : `ng test --watch=false --browsers=ChromeHeadless` (service de plans + flux SSE de confirmation).
 - Gate complet : `powershell -File scripts\verify-all.ps1`.
 
@@ -524,3 +527,43 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     par `StudioSilentFailureGuardsTests`). Le prompt système StudioBuilder porte la règle 8 enrichie
     (cinq opérations actionnables listées, révision de cache « v7 » —
     `AiContextBuilderStudioDigestTests`).
+
+## Historique, aperçu structuré et rejeu des plans (PR 3.2)
+
+> Architecture : [`docs/architecture/studio-ai-plans.md`](../architecture/studio-ai-plans.md).
+> Prérequis : `Ollama:EnableStudioAiPlanPreview=true`, un compte avec `studio:design_entities`,
+> au moins un plan système **confirmé** (ex. `conges` créé) et un plan **échoué** (ex. spec
+> validée puis table cible supprimée avant exécution, ou plan annulé/expiré). AUCUN appel LLM :
+> l'historique, l'aperçu et le rejeu ne lisent que la spec persistée — ces cas s'exécutent contre
+> l'API seule (ou l'atelier une fois le frontend 3.4 livré).
+
+67. **Historique : compteurs relations/vues et lien Ouvrir** — `GET api/studio/ai/plans` ⇒ `200`,
+    chaque élément porte les 14 clés du contrat (dont `errorMessage`, `openUrl`, `relationCount`,
+    `replayable` ; `viewCount` est omis du JSON tant qu'il vaut 0). Le plan système confirmé
+    affiche `relationCount`/`viewCount` cohérents avec son résumé et `openUrl` vers le système
+    créé (`/studio/systems/conges`) — le lien **Ouvrir** de Mes projets l'utilise ; le plan échoué
+    porte `errorMessage` lisible. `replayable` est `true` sur les quatre états terminaux (et sur
+    un plan « À valider » dont l'heure d'expiration est dépassée), `false` sinon. Jamais de clé
+    `spec`/`specJson` dans la réponse. Flag `EnableStudioAiPlanPreview` coupé ⇒ `404`
+    « Le flux d'aperçu Studio n'est pas activé. » sur la liste comme sur `cancel-pending`.
+68. **Aperçu structuré d'un plan système et d'un amendement (dégradé)** —
+    `GET api/studio/ai/plans/{id}/preview` sur le plan confirmé ⇒ `200`, `workflows: []` toujours,
+    `entities[]` avec champs (`required`/`unique`, options de liste), `formLayout.sections[].fields[]`
+    en objets `{ key, width, labelOverride }` (jamais des chaînes), vues proposées, `seedCount`
+    réel et `seedSample` borné à 3 lignes / 80 caractères par valeur (troncature « … »),
+    `relations[]` typées, `warnings[]`/`duplicates[]` relus du résumé. Amendement dont la table
+    cible existe ⇒ diff « avant → après » par opération ; table cible **supprimée** entre-temps ⇒
+    `200` DÉGRADÉ (`amendment.degraded: true`, un item par opération demandée, avertissement
+    « Table introuvable : aperçu limité aux opérations demandées. »), jamais d'erreur. Plan d'un
+    AUTRE utilisateur (ou tenant) ⇒ `404` ; flag coupé ⇒ `404` même message qu'au cas 67 ;
+    permission retirée ⇒ `401`.
+69. **Rejeu d'un plan échoué ⇒ nouveau plan en attente** — `POST api/studio/ai/plans/{id}/replay`
+    sur le plan échoué ⇒ `201 Created` avec en-tête `Location: /api/studio/ai/plans/{nouvelId}` ;
+    le corps porte un plan `Pending` NEUF dont le résumé contient `replayedFromPlanId` = id du
+    plan d'origine. Le plan d'origine est INCHANGÉ (statut `Failed`, `errorMessage` intact — le
+    recharger pour preuve). Le nouveau plan apparaît en tête de l'historique et se confirme par
+    le flux SSE habituel (création réelle au clic Valider, jamais au rejeu). Rejeu d'un plan
+    « À valider » non échu ou « En cours » ⇒ `409` « Seul un plan terminé, échoué, annulé ou
+    expiré peut être rejoué. » ; plan d'un autre utilisateur ⇒ `404` ; flag coupé ⇒ `404`
+    « Le flux d'aperçu Studio n'est pas activé. ». Rejouer deux fois le même plan crée deux plans
+    distincts (idempotence : aucune écriture de schéma au rejeu).
