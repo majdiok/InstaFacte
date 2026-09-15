@@ -634,7 +634,7 @@ export const STUDIO_AI_LABELS = {
     download: 'Télécharger',
     importTitle: 'Importer un système (JSON)',
     dropJson: 'Déposez un fichier .json ou collez son contenu',
-    tooLarge: 'Fichier trop volumineux (512 Ko maximum).',
+    tooLarge: 'Fichier trop volumineux (256 Ko maximum).',
     invalidJson: 'JSON invalide.',
     badVersion: 'specVersion non pris en charge (1 attendu).',
     counters: '{entities} tables · {relations} relations · {views} vues',
@@ -650,7 +650,12 @@ export const STUDIO_AI_LABELS = {
     exportFile: 'Fichier : {name}',
     exportFailed: 'Export impossible.',
     noSystem: 'Aucun système à exporter.',
-    close: 'Fermer'
+    close: 'Fermer',
+    pasteJson: 'Ou collez le JSON ici',
+    remove: 'Retirer',
+    recognized: 'Spécification reconnue',
+    notObject: 'La spécification doit être un objet JSON.',
+    seedRecords: '{count} lignes de départ'
   },
 
   /** Rejeu d'un plan terminé / échoué / annulé / expiré (3.4k). */
