@@ -17,6 +17,8 @@ export interface LinkedRecordRow {
   /** Libellé lisible de la cible (`primaryLabel`). */
   targetLabel: string;
   rowVersion?: string | null;
+  /** Date de création du lien (jonction). */
+  createdAt?: string;
 }
 
 /**
