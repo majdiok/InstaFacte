@@ -422,6 +422,8 @@ export const STUDIO_AI_LABELS = {
       createdAt: 'Créé',
       expiresAt: 'Expire',
       system: 'Système',
+      relations: 'Relations',
+      views: 'Vues',
       actions: 'Actions'
     },
     filters: {
@@ -436,7 +438,8 @@ export const STUDIO_AI_LABELS = {
     loadFailed: 'Impossible de charger vos projets.',
     backToStudio: 'Retour à l’atelier',
     count: '{count} projet(s)',
-    replay: 'Rejouer'
+    replay: 'Rejouer',
+    duplicate: 'Dupliquer'
   },
 
   /** Page « Bibliothèque de modèles » (`/studio/ai/templates`). */
@@ -448,6 +451,7 @@ export const STUDIO_AI_LABELS = {
     loadFailed: 'Impossible de charger la bibliothèque de modèles.',
     disabled: 'La bibliothèque de modèles est désactivée par l’administrateur.',
     entities: '{count} table(s)',
+    relations: '{count} relation(s)',
     uncategorized: 'Autres',
     sourceBuiltin: 'Intégré',
     sourceTenant: 'Votre espace',

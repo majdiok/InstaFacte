@@ -5,8 +5,9 @@ import { Router, provideRouter } from '@angular/router';
 import { ToastService } from '@core/services/toast.service';
 import { of, throwError } from 'rxjs';
 import { StudioAiBuildService } from '../../studio-ai-build.service';
+import { StudioAiCapabilitiesService } from '../studio-ai-capabilities.service';
 import { STUDIO_AI_LABELS } from '../studio-ai-labels';
-import { StudioAiPlanListItemDto, StudioPagedResult } from '../studio-ai.models';
+import { STUDIO_AI_CAPABILITIES_FALLBACK, StudioAiPlanListItemDto, StudioPagedResult } from '../studio-ai.models';
 import { STUDIO_AI_PROJECTS_PAGE_SIZE, StudioAiProjectsPageComponent } from './studio-ai-projects-page.component';
 
 function plan(id: string, status: StudioAiPlanListItemDto['status'], over: Partial<StudioAiPlanListItemDto> = {}): StudioAiPlanListItemDto {
@@ -28,8 +29,11 @@ describe('StudioAiProjectsPageComponent', () => {
   let router: Router;
 
   beforeEach(async () => {
-    builds = jasmine.createSpyObj<StudioAiBuildService>('StudioAiBuildService', ['listPlans', 'replayPlan']);
+    builds = jasmine.createSpyObj<StudioAiBuildService>('StudioAiBuildService', ['listPlans', 'replayPlan', 'getCapabilities']);
     builds.listPlans.and.returnValue(of({ success: true, data: page([]), message: null, errors: [] }) as never);
+    builds.getCapabilities.and.returnValue(of({
+      success: true, message: null, errors: [], data: { ...STUDIO_AI_CAPABILITIES_FALLBACK, workbenchEnabled: true, systemExportEnabled: false }
+    }) as never);
     toast = jasmine.createSpyObj<ToastService>('ToastService', ['add']);
 
     await TestBed.configureTestingModule({
@@ -178,5 +182,49 @@ describe('StudioAiProjectsPageComponent', () => {
     expect(rows()[1].querySelector('[data-action="replay"]')).toBeNull();
     expect(rows()[2].querySelector('button[data-action="replay"]')).not.toBeNull();
     expect(builds.replayPlan).not.toHaveBeenCalled();
+  });
+
+  it('colonnes Relations et Vues renseignées, 0 quand viewCount est absent', () => {
+    builds.listPlans.and.returnValue(of({
+      success: true, message: null, errors: [],
+      data: page([plan('a', 'Completed', { systemKey: 'conges', relationCount: 2, viewCount: 3 }), plan('b', 'Completed', { systemKey: 'stock', relationCount: 1 })])
+    }) as never);
+    create();
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('thead th')).map(th => (th as HTMLElement).textContent?.trim());
+    expect(headers.length).toBe(9);
+    expect(headers).toContain(STUDIO_AI_LABELS.history.columns.relations);
+    expect(headers).toContain(STUDIO_AI_LABELS.history.columns.views);
+    expect(rows()[0].querySelector('[data-col="relations"]')?.textContent?.trim()).toBe('2');
+    expect(rows()[0].querySelector('[data-col="views"]')?.textContent?.trim()).toBe('3');
+    expect(rows()[1].querySelector('[data-col="relations"]')?.textContent?.trim()).toBe('1');
+    expect(rows()[1].querySelector('[data-col="views"]')?.textContent?.trim()).toBe('0');
+  });
+
+  it('Dupliquer proposé sur un projet terminé quand l\'export est activé', () => {
+    builds.getCapabilities.and.returnValue(of({
+      success: true, message: null, errors: [], data: { ...STUDIO_AI_CAPABILITIES_FALLBACK, workbenchEnabled: true, systemExportEnabled: true }
+    }) as never);
+    builds.listPlans.and.returnValue(of({
+      success: true, message: null, errors: [],
+      data: page([plan('a', 'Completed', { systemKey: 'conges' }), plan('b', 'Failed', { systemKey: 'stock' }), plan('c', 'Completed')])
+    }) as never);
+    create();
+
+    const duplicate = rows()[0].querySelector('a[data-action="duplicate"]') as HTMLAnchorElement;
+    expect(duplicate).not.toBeNull();
+    expect(duplicate.textContent).toContain(STUDIO_AI_LABELS.history.duplicate);
+    expect(duplicate.getAttribute('href')).toBe('/studio/ai?duplicate=conges');
+    expect(rows()[1].querySelector('[data-action="duplicate"]')).toBeNull();
+    expect(rows()[2].querySelector('[data-action="duplicate"]')).toBeNull();
+
+    // Flag coupé ⇒ fail-closed : aucun bouton Dupliquer.
+    TestBed.inject(StudioAiCapabilitiesService).reset();
+    builds.getCapabilities.and.returnValue(of({
+      success: true, message: null, errors: [], data: { ...STUDIO_AI_CAPABILITIES_FALLBACK, workbenchEnabled: true, systemExportEnabled: false }
+    }) as never);
+    create();
+    expect(rows()[0].querySelector('[data-action="duplicate"]')).toBeNull();
+    expect(rows()[0].querySelector('a[data-action="open-system"]')).not.toBeNull();
   });
 });
