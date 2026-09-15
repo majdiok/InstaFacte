@@ -184,7 +184,11 @@ internal static class StudioSystemCopyNaming
         var name = (displayName ?? string.Empty).Trim();
         var maxBase = StudioAiPlanCreation.MaxDisplayNameOverrideLength - CopySuffix.Length;
         if (name.Length > maxBase)
+        {
+            // Ne jamais couper une paire de substitution (emoji) : un demi-surrogate isolé deviendrait U+FFFD.
+            if (char.IsHighSurrogate(name[maxBase - 1])) maxBase--;
             name = name[..maxBase].TrimEnd();
+        }
         return name + CopySuffix;
     }
 }
@@ -194,14 +198,11 @@ internal static class StudioSystemCopyNaming
 /// doublons, canonisation, délégation à <c>CreateStudioAiPlanCommand</c>. Aucune écriture hors le plan Pending.
 /// Jamais le chemin « from-spec » (D-c2-3) ; jamais le contenu de la spec dans une erreur ou un log.
 /// </summary>
-internal static class StudioSystemPlanFromSpec
+internal static class StudioSystemPlanning
 {
-    public static bool IsEnabled(OllamaSettings settings) =>
-        settings.EnableStudioSystemExport && settings.EnableStudioAiPlanPreview;
-
     public static Result<StudioAiPlanCreationResponse>? Guard(OllamaSettings settings, ICurrentUser currentUser)
     {
-        if (!IsEnabled(settings))
+        if (!(settings.EnableStudioSystemExport && settings.EnableStudioAiPlanPreview))
             return Result.Failure<StudioAiPlanCreationResponse>(Error.NotFound("Fonctionnalité non disponible."));
 
         if (!StudioContext.TryGet(currentUser, out _, out _, out var err))
@@ -215,7 +216,7 @@ internal static class StudioSystemPlanFromSpec
 
     /// <summary>
     /// Résout le nom affiché (override trimé sinon <paramref name="defaultName"/>), détecte les doublons,
-    /// canonise et crée le plan Pending. <paramref name="canonicalOut"/> permet à l'appelant de bâtir la réponse.
+    /// canonise et crée le plan Pending.
     /// </summary>
     public static async Task<Result<StudioAiPlanCreationResponse>> PlanFromParsedSpecAsync(
         ParsedSystemSpec parsed,
@@ -226,10 +227,12 @@ internal static class StudioSystemPlanFromSpec
         ICustomEntityRepository? customEntities,
         CancellationToken ct)
     {
-        var displayName = string.IsNullOrWhiteSpace(displayNameOverride) ? defaultName : displayNameOverride.Trim();
+        var hasOverride = !string.IsNullOrWhiteSpace(displayNameOverride);
+        var displayName = hasOverride ? displayNameOverride!.Trim() : defaultName.Trim();
         if (displayName.Length > StudioAiPlanCreation.MaxDisplayNameOverrideLength)
-            return Result.Failure<StudioAiPlanCreationResponse>(
-                Error.Validation("displayNameOverride", "Le nom affiché dépasse 128 caractères."));
+            return Result.Failure<StudioAiPlanCreationResponse>(hasOverride
+                ? Error.Validation("displayNameOverride", "Le nom affiché dépasse 128 caractères.")
+                : Error.Validation("spec", "system.displayName dépasse 128 caractères."));
         // La clé système est re-slugifiée à l'exécution depuis displayName (UniqueSystemKeyAsync) : aucune clé ici.
         parsed = parsed with { SystemDisplayName = displayName };
 
@@ -281,7 +284,7 @@ public sealed class DuplicateCustomSystemCommandHandler
 
     public async Task<Result<StudioAiPlanCreationResponse>> Handle(DuplicateCustomSystemCommand request, CancellationToken cancellationToken)
     {
-        if (StudioSystemPlanFromSpec.Guard(_settings, _currentUser) is { } guard)
+        if (StudioSystemPlanning.Guard(_settings, _currentUser) is { } guard)
             return guard;
 
         // Export sans seed ; l'échec (404 CustomSystem.NotFound, clé invalide…) est propagé tel quel.
@@ -297,7 +300,7 @@ public sealed class DuplicateCustomSystemCommandHandler
         // Les avertissements d'export (relations hors système, formules → texte) remontent dans l'aperçu du plan.
         parsed = parsed with { Warnings = (parsed.Warnings ?? Array.Empty<string>()).Concat(export.Value.Warnings).ToList() };
 
-        var result = await StudioSystemPlanFromSpec.PlanFromParsedSpecAsync(
+        var result = await StudioSystemPlanning.PlanFromParsedSpecAsync(
             parsed, request.DisplayNameOverride, StudioSystemCopyNaming.CopyName(export.Value.SystemDisplayName),
             _mediator, _currentUser, _customEntities, cancellationToken);
         if (result.IsFailure)
@@ -344,7 +347,7 @@ public sealed class ImportCustomSystemCommandHandler
 
     public async Task<Result<StudioAiPlanCreationResponse>> Handle(ImportCustomSystemCommand request, CancellationToken cancellationToken)
     {
-        if (StudioSystemPlanFromSpec.Guard(_settings, _currentUser) is { } guard)
+        if (StudioSystemPlanning.Guard(_settings, _currentUser) is { } guard)
             return guard;
 
         var body = request.Request;
@@ -355,6 +358,9 @@ public sealed class ImportCustomSystemCommandHandler
         JsonNode? node = body.Spec;
         if (node is JsonValue value && value.TryGetValue<string>(out var raw))
         {
+            // Borne mesurée sur la chaîne brute avant tout parse (défense en profondeur, comme from-spec).
+            if (raw.Length > StudioAiPlanWorkbench.MaxSpecJsonLength)
+                return Result.Failure<StudioAiPlanCreationResponse>(Error.Validation("spec", "La spec dépasse 256 Ko."));
             try { node = JsonNode.Parse(raw); }
             catch (JsonException)
             {
@@ -368,22 +374,27 @@ public sealed class ImportCustomSystemCommandHandler
         if (specJson.Length > StudioAiPlanWorkbench.MaxSpecJsonLength)
             return Result.Failure<StudioAiPlanCreationResponse>(Error.Validation("spec", "La spec dépasse 256 Ko."));
 
-        if (!body.IncludeSeed && obj.Remove("seed"))
+        if (!body.IncludeSeed && obj.ContainsKey("seed"))
+        {
+            // Copie : la requête appelante n'est pas mutée.
+            obj = obj.DeepClone().AsObject();
+            obj.Remove("seed");
             specJson = obj.ToJsonString();
+        }
 
         if (!StudioAiSystemSpec.TryParse(specJson, out var parsed, out var parseError) || parsed is null)
             return Result.Failure<StudioAiPlanCreationResponse>(
                 Error.Validation("spec", parseError ?? "La spécification est invalide."));
 
-        var result = await StudioSystemPlanFromSpec.PlanFromParsedSpecAsync(
+        var result = await StudioSystemPlanning.PlanFromParsedSpecAsync(
             parsed, body.DisplayNameOverride, parsed.SystemDisplayName,
             _mediator, _currentUser, _customEntities, cancellationToken);
         if (result.IsFailure)
             return result;
 
-        var specVersion = obj["specVersion"] is JsonValue v && v.TryGetValue<int>(out var version) ? version : 1;
+        // TryParse n'accepte que « specVersion » absent ou égal à SupportedSpecVersion : la valeur auditée est donc celle-ci.
         await StudioAudit.SafeLogAsync(_audit, "Studio.System.ImportRequested", "CustomSystem", null,
-            null, new { specVersion, entityCount = parsed.Entities.Count, includeSeed = body.IncludeSeed, planId = result.Value.Plan.Id }, cancellationToken);
+            null, new { specVersion = StudioAiSystemSpec.SupportedSpecVersion, entityCount = parsed.Entities.Count, includeSeed = body.IncludeSeed, planId = result.Value.Plan.Id }, cancellationToken);
 
         _logger?.LogInformation("Studio import: {EntityCount} tables, plan {PlanId} created", parsed.Entities.Count, result.Value.Plan.Id);
 

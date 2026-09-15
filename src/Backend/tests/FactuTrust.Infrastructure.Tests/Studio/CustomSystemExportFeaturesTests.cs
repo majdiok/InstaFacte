@@ -372,8 +372,10 @@ public sealed class CustomSystemExportFeaturesTests
     // ============================================================================================
 
     private readonly Mock<IMediator> _mediator = new(MockBehavior.Strict);
+    private ExportCustomSystemQuery? _capturedExport;
     private CreateStudioAiPlanCommand? _capturedCreate;
     private StudioAiPlanDto? _createdPlan;
+    private object? _capturedAudit;
 
     private OllamaSettings PlanSettings()
     {
@@ -400,8 +402,6 @@ public sealed class CustomSystemExportFeaturesTests
         return new StudioSystemExportDto(StudioSystemSpecExporter.SpecVersion, f.System.Key, f.System.DisplayName, exportedAt,
             result.EntityCount, result.RelationCount, result.ViewCount, result.IncludesSeed, result.Warnings, result.Spec);
     }
-
-    private ExportCustomSystemQuery? _capturedExport;
 
     private void SetupExportSend(Result<StudioSystemExportDto> reply)
     {
@@ -433,21 +433,14 @@ public sealed class CustomSystemExportFeaturesTests
 
     private static JsonObject SpecJson(CreateStudioAiPlanCommand cmd) => JsonNode.Parse(cmd.SpecJson)!.AsObject();
 
-    private static string[] AuditKeys(object? captured)
-    {
-        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(captured));
-        return doc.RootElement.EnumerateObject().Select(p => p.Name).OrderBy(k => k, StringComparer.Ordinal).ToArray();
-    }
-
-    /// <summary>Capture les <c>newValues</c> de l'audit <paramref name="action"/> (cellule 0 du tableau).</summary>
-    private object?[] CaptureAudit(string action)
-    {
-        var holder = new object?[1];
+    /// <summary>Capture les <c>newValues</c> de l'audit <paramref name="action"/> dans <see cref="_capturedAudit"/>.</summary>
+    private void CaptureAudit(string action) =>
         _audit.Setup(a => a.LogAsync(action, "CustomSystem", null, null, It.IsAny<object?>(), It.IsAny<CancellationToken>()))
-            .Callback((string _, string _, Guid? _, object? _, object? newValues, CancellationToken _) => holder[0] = newValues)
+            .Callback((string _, string _, Guid? _, object? _, object? newValues, CancellationToken _) => _capturedAudit = newValues)
             .Returns(Task.CompletedTask);
-        return holder;
-    }
+
+    private static string[] Keys(JsonElement obj) =>
+        obj.EnumerateObject().Select(p => p.Name).OrderBy(k => k, StringComparer.Ordinal).ToArray();
 
     // ---- Duplication : gardes ------------------------------------------------------------------
 
@@ -597,14 +590,14 @@ public sealed class CustomSystemExportFeaturesTests
     public async Task Duplicate_writes_audit_with_source_key_and_plan_id()
     {
         SetupDuplicate();
-        var holder = CaptureAudit("Studio.System.DuplicateRequested");
+        CaptureAudit("Studio.System.DuplicateRequested");
 
         var result = await DuplicateHandler().Handle(new DuplicateCustomSystemCommand("gestion_conges"), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.NotNull(holder[0]);
-        Assert.Equal(new[] { "planId", "sourceKey" }, AuditKeys(holder[0]));
-        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(holder[0]));
+        Assert.NotNull(_capturedAudit);
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(_capturedAudit));
+        Assert.Equal(new[] { "planId", "sourceKey" }, Keys(doc.RootElement));
         Assert.Equal("gestion_conges", doc.RootElement.GetProperty("sourceKey").GetString());
         Assert.Equal(result.Value.Plan.Id, doc.RootElement.GetProperty("planId").GetGuid());
     }
@@ -680,6 +673,48 @@ public sealed class CustomSystemExportFeaturesTests
         Assert.Equal("La spécification doit être un objet JSON.", array.Error.Description);
 
         _mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Import_with_overlong_system_display_name_and_no_override_returns_validation_spec()
+    {
+        var spec = ImportSpec();
+        spec["system"]!["displayName"] = new string('N', StudioAiPlanCreation.MaxDisplayNameOverrideLength + 1);
+
+        var result = await ImportHandler().Handle(new ImportCustomSystemCommand(new ImportCustomSystemRequest(spec)), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.spec", result.Error.Code);
+        Assert.Equal("system.displayName dépasse 128 caractères.", result.Error.Description);
+        _mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Import_without_include_seed_does_not_mutate_the_caller_spec()
+    {
+        SetupCreateSend();
+        var spec = ImportSpec();
+        spec["seed"] = new JsonObject { ["conges"] = new JsonArray(new JsonObject { ["libelle"] = "x" }) };
+
+        var result = await ImportHandler().Handle(
+            new ImportCustomSystemCommand(new ImportCustomSystemRequest(spec, IncludeSeed: false)), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(spec.ContainsKey("seed"));
+        Assert.False(SpecJson(_capturedCreate!).ContainsKey("seed"));
+    }
+
+    [Fact]
+    public void Copy_name_never_splits_a_surrogate_pair()
+    {
+        var maxBase = StudioAiPlanCreation.MaxDisplayNameOverrideLength - StudioSystemCopyNaming.CopySuffix.Length;
+        var name = new string('N', maxBase - 1) + "\U0001F600" + "tail"; // l'emoji (2 chars) chevauche la coupe
+
+        var copy = StudioSystemCopyNaming.CopyName(name);
+
+        Assert.True(copy.Length <= StudioAiPlanCreation.MaxDisplayNameOverrideLength);
+        Assert.DoesNotContain(copy, c => char.IsSurrogate(c));
+        Assert.EndsWith(StudioSystemCopyNaming.CopySuffix, copy, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -773,15 +808,15 @@ public sealed class CustomSystemExportFeaturesTests
     public async Task Import_writes_audit_with_spec_version_entity_count_include_seed_and_plan_id()
     {
         SetupCreateSend();
-        var holder = CaptureAudit("Studio.System.ImportRequested");
+        CaptureAudit("Studio.System.ImportRequested");
 
         var result = await ImportHandler().Handle(
             new ImportCustomSystemCommand(new ImportCustomSystemRequest(ImportSpec(), IncludeSeed: false)), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.NotNull(holder[0]);
-        Assert.Equal(new[] { "entityCount", "includeSeed", "planId", "specVersion" }, AuditKeys(holder[0]));
-        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(holder[0]));
+        Assert.NotNull(_capturedAudit);
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(_capturedAudit));
+        Assert.Equal(new[] { "entityCount", "includeSeed", "planId", "specVersion" }, Keys(doc.RootElement));
         Assert.Equal(1, doc.RootElement.GetProperty("specVersion").GetInt32());
         Assert.Equal(2, doc.RootElement.GetProperty("entityCount").GetInt32());
         Assert.False(doc.RootElement.GetProperty("includeSeed").GetBoolean());
