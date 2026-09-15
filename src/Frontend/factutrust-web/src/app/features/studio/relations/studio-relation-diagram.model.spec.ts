@@ -30,6 +30,36 @@ describe('toDiagram', () => {
     expect(model.edges.map(e => [e.from, e.to])).toEqual([['e1', 'j1'], ['j1', 'e2']]);
   });
 
+  it('place la jonction au milieu exact de ses extrémités, sans chevaucher la cible (régression 2.5i)', () => {
+    const model = toDiagram(
+      [entity('e1', 'a', 'A'), entity('e2', 'b', 'B'), entity('j1', 'a_b', 'A × B', 'Junction')],
+      [rel({ junctionEntityId: 'j1', junctionEntityKey: 'a_b' })]);
+    const a = model.nodes.find(n => n.id === 'e1')!;
+    const b = model.nodes.find(n => n.id === 'e2')!;
+    const jn = model.nodes.find(n => n.id === 'j1')!;
+    // x/y sont des centres (rendu `translate` + rect centré) : la jonction est au milieu,
+    // jamais superposée à la cible adjacente.
+    expect(jn.x).toBe((a.x + b.x) / 2);
+    expect(jn.y).toBe((a.y + b.y) / 2);
+    expect(jn.x).not.toBe(b.x);
+    // Boîtes nœuds (140×40, jonction 170×32) : aucun recouvrement horizontal entre jonction et cible.
+    expect(Math.abs(jn.x - b.x)).toBeGreaterThanOrEqual(170 / 2 + 140 / 2);
+    // Le libellé courant « A × B » (~170px à 12px) ne déborde pas sur les boîtes adjacentes.
+    expect(Math.abs(jn.x - a.x)).toBeGreaterThanOrEqual(140 / 2 + 85);
+  });
+
+  it('maintient chaque nœud entité dans les bornes du viewBox (pas de rognage à gauche)', () => {
+    const model = toDiagram(
+      [entity('e1', 'a', 'A'), entity('e2', 'b', 'B'), entity('e3', 'c', 'C'), entity('e4', 'd', 'D')],
+      []);
+    for (const n of model.nodes) {
+      expect(n.x - 70).toBeGreaterThanOrEqual(0); // demi-largeur du rect entité
+      expect(n.x + 70).toBeLessThanOrEqual(model.width);
+      expect(n.y - 20).toBeGreaterThanOrEqual(0);
+      expect(n.y + 20).toBeLessThanOrEqual(model.height);
+    }
+  });
+
   it('une many_to_one produit une arête unique étiquetée par la clé de champ', () => {
     const model = toDiagram(
       [entity('e1', 'a', 'A'), entity('e2', 'b', 'B')],

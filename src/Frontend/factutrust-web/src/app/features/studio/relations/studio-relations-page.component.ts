@@ -9,7 +9,7 @@ import { STUDIO_BREADCRUMBS } from '../shared/studio-breadcrumb.util';
 import { STUDIO_RUNTIME_LABELS } from '../shared/studio-runtime-labels';
 import { StudioService } from '../studio.service';
 import { CustomEntity } from '../studio.models';
-import { EntityRelationDto } from './studio-relations.models';
+import { EntityRelationDto, relationKindLabel } from './studio-relations.models';
 import { StudioRelationDiagramComponent } from './studio-relation-diagram.component';
 import { DiagramModel, toDiagram } from './studio-relation-diagram.model';
 
@@ -35,9 +35,6 @@ import { DiagramModel, toDiagram } from './studio-relation-diagram.model';
       @if (!loading() && relations().length === 0) {
         <p class="studio-muted" data-testid="relations-empty">{{ labels.relations.empty }}</p>
       } @else {
-        <div class="ft-table-card" data-testid="relations-diagram">
-          <app-studio-relation-diagram [model]="diagram()" size="compact" [emptyLabel]="labels.relations.empty" />
-        </div>
         <div class="ft-table-card">
           <p-table [value]="filteredRelations()" [loading]="loading()" styleClass="p-datatable-sm">
             <ng-template pTemplate="header">
@@ -60,6 +57,11 @@ import { DiagramModel, toDiagram } from './studio-relation-diagram.model';
             </ng-template>
           </p-table>
         </div>
+        @if (!loading()) {
+          <div class="ft-table-card" data-testid="relations-diagram">
+            <app-studio-relation-diagram [model]="diagram()" size="compact" [emptyLabel]="labels.relations.empty" />
+          </div>
+        }
       }
     </app-studio-page-shell>
   `,
@@ -113,11 +115,5 @@ export class StudioRelationsPageComponent implements OnInit {
     });
   }
 
-  kindLabel(kind: EntityRelationDto['kind']): string {
-    switch (kind) {
-      case 'many_to_many': return 'Plusieurs-à-plusieurs';
-      case 'many_to_one': return 'Plusieurs-à-un';
-      default: return 'Un-à-plusieurs';
-    }
-  }
+  protected readonly kindLabel = relationKindLabel;
 }

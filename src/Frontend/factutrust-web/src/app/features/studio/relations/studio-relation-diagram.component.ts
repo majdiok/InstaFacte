@@ -6,6 +6,8 @@ import { DiagramModel, DiagramNode } from './studio-relation-diagram.model';
  * }}</text>` interpolé (échappé — jamais d'`innerHTML` ni de `bypassSecurityTrust*`), `role="img"` +
  * `aria-label`. `size` = 'compact' (page Relations) ou 'full' (réutilisé par 3.4e).
  */
+let markerSeq = 0;
+
 @Component({
   selector: 'app-studio-relation-diagram',
   standalone: true,
@@ -15,22 +17,23 @@ import { DiagramModel, DiagramNode } from './studio-relation-diagram.model';
       <svg class="srd" [class.srd--compact]="size() === 'compact'" [attr.viewBox]="viewBox()" role="img"
         [attr.aria-label]="'Diagramme des relations : ' + model().nodes.length + ' tables'" data-testid="relation-diagram">
         <defs>
-          <marker id="srd-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <marker [attr.id]="markerId" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" class="srd__arrow" />
           </marker>
         </defs>
         @for (edge of model().edges; track $index) {
           @if (nodeById(edge.from); as from) {
             @if (nodeById(edge.to); as to) {
-              <line class="srd__edge" [attr.x1]="cx(from)" [attr.y1]="cy(from)" [attr.x2]="cx(to)" [attr.y2]="cy(to)"
-                marker-end="url(#srd-arrow)" />
+              <line class="srd__edge" [attr.x1]="from.x" [attr.y1]="from.y" [attr.x2]="to.x" [attr.y2]="to.y"
+                [attr.marker-end]="'url(#' + markerId + ')'" />
             }
           }
         }
         @for (node of model().nodes; track node.id) {
           <g class="srd__node" [class.srd__node--junction]="node.kind === 'junction'" [attr.transform]="'translate(' + node.x + ',' + node.y + ')'">
             @if (node.kind === 'junction') {
-              <rect class="srd__shape srd__shape--junction" x="-45" y="-16" width="90" height="32" rx="4" />
+              <!-- Boîte jonction élargie (170) : contient les libellés « A × B » usuels. -->
+              <rect class="srd__shape srd__shape--junction" x="-85" y="-16" width="170" height="32" rx="4" />
             } @else {
               <rect class="srd__shape" x="-70" y="-20" width="140" height="40" rx="8" />
             }
@@ -53,6 +56,8 @@ import { DiagramModel, DiagramNode } from './studio-relation-diagram.model';
   `]
 })
 export class StudioRelationDiagramComponent {
+  /** Id unique par instance : deux diagrammes sur une même page (3.4e) ne doivent pas se partager `srd-arrow`. */
+  protected readonly markerId = `srd-arrow-${++markerSeq}`;
   readonly model = input.required<DiagramModel>();
   readonly size = input<'compact' | 'full'>('full');
   readonly emptyLabel = input('Relations non activées.');
@@ -63,6 +68,4 @@ export class StudioRelationDiagramComponent {
     return this.model().nodes.find(n => n.id === id);
   }
 
-  cx(node: DiagramNode): number { return node.x; }
-  cy(node: DiagramNode): number { return node.y; }
 }

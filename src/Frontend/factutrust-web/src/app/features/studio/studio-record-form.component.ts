@@ -16,6 +16,11 @@ import { StudioRecordTabsComponent, StudioRecordTab } from './shared/studio-reco
 import { StudioLinkedRecordsTabComponent } from './relations/studio-linked-records-tab.component';
 import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
 
+/** Clé d'onglet « Liés » d'une relation N-N (jonction si connue, sinon la cible). */
+function linkedTabKey(r: { junctionEntityKey?: string | null; targetEntityKey: string }): string {
+  return `linked:${r.junctionEntityKey ?? r.targetEntityKey}`;
+}
+
 @Component({
   selector: 'app-studio-record-form',
   standalone: true,
@@ -88,14 +93,14 @@ export class StudioRecordFormComponent implements OnInit {
   readonly tabs = computed<StudioRecordTab[]>(() => [
     { key: 'form', label: 'Fiche' },
     ...this.manyToMany().map(r => ({
-      key: `linked:${r.junctionEntityKey ?? r.targetEntityKey}`,
+      key: linkedTabKey(r),
       label: `${this.runtimeLabels.linked.tabLabel} — ${r.targetLabel}`
     }))
   ]);
   readonly activeRelation = computed(() => {
     const key = this.activeTab();
     if (!key.startsWith('linked:')) return null;
-    return this.manyToMany().find(r => `linked:${r.junctionEntityKey ?? r.targetEntityKey}` === key) ?? null;
+    return this.manyToMany().find(r => linkedTabKey(r) === key) ?? null;
   });
 
   entityKey = '';

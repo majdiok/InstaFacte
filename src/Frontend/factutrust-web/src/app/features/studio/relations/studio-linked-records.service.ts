@@ -77,9 +77,13 @@ export class StudioLinkedRecordsService {
       { context: createHttpContextSkipGlobalErrorUi() });
   }
 
-  /** Cibles candidates : `GET records/{cible}?search=…&page=1&pageSize=20` triées par libellé. */
-  searchTargets(rel: EntityRelationDto, search: string | null): Observable<ApiResponse<PagedResult<CustomRecord>>> {
-    let params = new HttpParams().set('page', 1).set('pageSize', 20);
+  /**
+   * Cibles candidates : `GET records/{cible}?search=…&page=1&pageSize=…` triées par libellé.
+   * `pageSize` 20 pour la liste déroulante ; la passe de résolution de libellés de l'onglet
+   * « Liés » monte à 200 (borne haute du endpoint) pour couvrir les cibles déjà liées.
+   */
+  searchTargets(rel: EntityRelationDto, search: string | null, pageSize = 20): Observable<ApiResponse<PagedResult<CustomRecord>>> {
+    let params = new HttpParams().set('page', 1).set('pageSize', pageSize);
     if (search) params = params.set('search', search);
     return this.http.get<ApiResponse<PagedResult<CustomRecord>>>(`${this.base}/${rel.targetEntityKey}`, { params });
   }

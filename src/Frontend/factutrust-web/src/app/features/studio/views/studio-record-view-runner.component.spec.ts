@@ -126,7 +126,7 @@ describe('StudioRecordViewRunnerComponent', () => {
     const req = httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/vk/run`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body.page).toBe(1);
-    expect(req.request.body.pageSize).toBe(500);
+    expect(req.request.body.pageSize).toBe(200); // borne serveur (le serveur ignore pageSize en Kanban)
     req.flush({
       success: true,
       data: {
@@ -156,16 +156,16 @@ describe('StudioRecordViewRunnerComponent', () => {
     const board = fixture.debugElement.query(By.directive(StudioKanbanBoardComponent));
     board.componentInstance.reload.emit();
     const req = httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/vk/run`);
-    expect(req.request.body.pageSize).toBe(500);
+    expect(req.request.body.pageSize).toBe(200); // borne serveur (le serveur ignore pageSize en Kanban)
     req.flush({ success: true, data: { mode: 'Kanban', items: [], total: 0, page: 1, pageSize: 500, groups: [], truncated: false }, message: null, errors: [] });
   });
 
-  it('mode Calendrier : envoie la plage ISO émise par le calendrier avec pageSize=1000', () => {
+  it('mode Calendrier : envoie la plage ISO émise par le calendrier avec pageSize borné à 200', () => {
     setInputs(calendarView);
     const req = httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/vc/run`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body.page).toBe(1);
-    expect(req.request.body.pageSize).toBe(1000);
+    expect(req.request.body.pageSize).toBe(200); // borne serveur (le serveur ignore pageSize en Calendar)
     expect(req.request.body.rangeStart).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(req.request.body.rangeEnd).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     req.flush({

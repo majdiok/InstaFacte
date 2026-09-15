@@ -54,7 +54,8 @@ describe('StudioLinkedRecordsTabComponent', () => {
   }
 
   function drainTargets(): void {
-    httpMock.match(`${base}/techniciens?page=1&pageSize=20`).forEach(req => {
+    // Options du sélecteur (pageSize=20) et passe de résolution des libellés (pageSize=200).
+    httpMock.match(r => r.urlWithParams.startsWith(`${base}/techniciens?page=1`)).forEach(req => {
       if (!req.cancelled) req.flush(targets);
     });
   }
@@ -68,6 +69,10 @@ describe('StudioLinkedRecordsTabComponent', () => {
     const row = fixture.debugElement.query(By.css('[data-testid="linked-row-t1"]'));
     expect(row.nativeElement.textContent).toContain('Ben Ali');
     expect(fixture.debugElement.query(By.css('[data-testid="linked-truncated"]'))).toBeNull();
+    // Régression 2.5i : la feuille studio-layout.scss doit être chargée par CE composant
+    // (encapsulation émulée) — sinon les lignes « Liés » ne sont pas stylées (libellé et date
+    // accolés, sans carte).
+    expect(getComputedStyle(row.nativeElement).display).toBe('flex');
   });
 
   it('masque Ajouter/Retirer sans canWrite', () => {

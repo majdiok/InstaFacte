@@ -35,3 +35,12 @@ export interface CreateManyToManyRelationRequest {
   junctionKey?: string | null;
   junctionDisplayName?: string | null;
 }
+
+/** Libellé FR du type de relation (partagé : page Relations + concepteur de table). */
+export function relationKindLabel(kind: EntityRelationDto['kind']): string {
+  switch (kind) {
+    case 'many_to_many': return 'Plusieurs-à-plusieurs';
+    case 'many_to_one': return 'Plusieurs-à-un';
+    default: return 'Un-à-plusieurs';
+  }
+}

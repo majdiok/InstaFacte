@@ -21,7 +21,7 @@ import { StudioPageShellComponent } from './shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
 import { StudioManyToManyDialogComponent } from './relations/studio-many-to-many-dialog.component';
 import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
-import { EntityRelationDto } from './relations/studio-relations.models';
+import { EntityRelationDto, relationKindLabel } from './relations/studio-relations.models';
 import { StudioAiCapabilitiesService } from './ai/studio-ai-capabilities.service';
 
 @Component({
@@ -366,13 +366,7 @@ export class StudioEntityDesignerComponent implements OnInit {
     });
   }
 
-  relationKindLabel(kind: EntityRelationDto['kind']): string {
-    switch (kind) {
-      case 'many_to_many': return 'Plusieurs-à-plusieurs';
-      case 'many_to_one': return 'Plusieurs-à-un';
-      default: return 'Un-à-plusieurs';
-    }
-  }
+  protected readonly relationKindLabel = relationKindLabel;
 
   onRelationCreated(): void {
     this.toast.add({ severity: 'success', summary: this.runtimeLabels.relations.title, detail: this.runtimeLabels.relations.created });
