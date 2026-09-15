@@ -262,4 +262,60 @@ public sealed class StudioSilentFailureGuardsTests
         Assert.Equal(CustomRecordViewMode.Kanban, mode);
         Assert.Empty(warnings);
     }
+
+    // ---- PR 3.1b : une opération d'amendement ignorée ou inapplicable n'est JAMAIS silencieuse ----
+
+    private static CustomEntitySchemaDto AmendmentSchema() => new(
+        new CustomEntityDto(Guid.NewGuid(), "contrats", "Contrat", "Contrats", null, null, true, 2, null,
+            DateTime.UtcNow, DateTime.UtcNow),
+        new[]
+        {
+            new CustomFieldDto(Guid.NewGuid(), "nom", "Nom", CustomFieldType.Text, false, false, 1, null, null, null, true),
+            new CustomFieldDto(Guid.NewGuid(), "statut", "Statut", CustomFieldType.Select, false, false, 2, null,
+                new List<SelectOptionDto> { new("actif", "Actif") }, null, true)
+        },
+        new FormLayout());
+
+    /// <summary>Chaque op 3.1b mal formée est écartée au parsing avec un avertissement non vide.</summary>
+    [Theory]
+    [InlineData("""{ "op": "reorder_fields", "fields": [] }""")]
+    [InlineData("""{ "op": "change_field_type", "key": "nom", "type": "wizard" }""")]
+    [InlineData("""{ "op": "change_field_type" }""")]
+    [InlineData("""{ "op": "add_relation", "kind": "one_to_one", "target": "clients" }""")]
+    [InlineData("""{ "op": "add_relation" }""")]
+    [InlineData("""{ "op": "assign_system" }""")]
+    [InlineData("""{ "op": "set_view", "mode": "kanban" }""")]
+    public void A_malformed_pr31b_amendment_op_is_dropped_with_a_warning(string opJson)
+    {
+        var json = $$"""{ "target": { "entityKey": "contrats" }, "operations": [ {{opJson}}, { "op": "remove_field", "key": "nom" } ] }""";
+
+        Assert.True(StudioAiAmendmentSpec.TryParse(json, out var spec, out var error), error);
+
+        Assert.Single(spec!.Operations); // seule l'opération valide survit
+        Assert.NotEmpty(spec.Warnings);
+        Assert.All(spec.Warnings, w => Assert.False(string.IsNullOrWhiteSpace(w)));
+    }
+
+    /// <summary>
+    /// Chaque op 3.1b inapplicable (référence inconnue, drapeau fonctionnel coupé) produit un
+    /// avertissement non vide à l'aperçu — jamais une disparition silencieuse.
+    /// </summary>
+    [Theory]
+    // référence de champ inconnue
+    [InlineData("""{ "op": "reorder_fields", "fields": ["fantome"] }""")]
+    [InlineData("""{ "op": "change_field_type", "key": "fantome", "type": "decimal" }""")]
+    // drapeaux fonctionnels coupés (EnableStudioManyToMany / EnableStudioRecordViews)
+    [InlineData("""{ "op": "add_relation", "kind": "many_to_many", "target": "clients" }""")]
+    [InlineData("""{ "op": "set_view", "mode": "list", "displayName": "Toutes" }""")]
+    public void An_inapplicable_pr31b_amendment_op_warns_in_the_preview(string opJson)
+    {
+        Assert.True(StudioAiAmendmentSpec.TryParse(
+            $$"""{ "target": { "entityKey": "contrats" }, "operations": [ {{opJson}} ] }""",
+            out var spec, out var error), error);
+
+        var preview = StudioAiAmendmentPlanner.BuildPreview(spec!, AmendmentSchema());
+
+        Assert.NotEmpty(preview.Warnings);
+        Assert.All(preview.Warnings, w => Assert.False(string.IsNullOrWhiteSpace(w)));
+    }
 }

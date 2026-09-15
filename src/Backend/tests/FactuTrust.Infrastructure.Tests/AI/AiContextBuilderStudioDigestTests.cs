@@ -18,7 +18,7 @@ namespace FactuTrust.Infrastructure.Tests.AI;
 /// PR 1.2 — digest de contexte dans le prompt StudioBuilder. Le prompt n'expose le « SCHÉMA EXISTANT »
 /// que si <see cref="OllamaSettings.EnableStudioAiSchemaDigest"/> est actif ; le budget de caractères
 /// transmis au service dépend du modèle retenu (CPU 1200 / avancé 4000) ; l'intention connue ajoute un
-/// préambule, une intention inconnue n'ajoute rien ; la révision de cache suit les ajouts de règles (PR 2.4 ⇒ « v6 »)
+/// préambule, une intention inconnue n'ajoute rien ; la révision de cache suit les ajouts de règles (PR 2.4 ⇒ « v6 », PR 3.1b ⇒ « v7 »)
 /// (PR 1.3 : la règle 11 enseigne « existingKey » pour réutiliser une table existante).
 /// </summary>
 public sealed class AiContextBuilderStudioDigestTests
@@ -267,14 +267,42 @@ public sealed class AiContextBuilderStudioDigestTests
     }
 
     [Fact]
-    public void System_prompt_cache_revision_is_v6()
+    public void System_prompt_cache_revision_is_v7()
     {
         // PR 2.4 : règle 13 « vues enregistrées » ajoutée au prompt StudioBuilder ⇒ « v5 » → « v6 ».
+        // PR 3.1b : règle 8 enrichie (amendements reorder_fields / change_field_type / add_relation /
+        // assign_system / set_view) ⇒ « v6 » → « v7 ».
         var field = typeof(AiContextBuilder).GetField(
             "SystemPromptCacheRevision",
             BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(field);
-        Assert.Equal("v6", (string)field!.GetRawConstantValue()!);
+        Assert.Equal("v7", (string)field!.GetRawConstantValue()!);
+    }
+
+    [Fact]
+    public async Task Rule_8_mentions_the_enriched_amendment_operations_only_when_modify_tools_are_on()
+    {
+        var digest = DigestMock("- t « T » : a:text", null);
+        var onBuilder = Build(Settings(digestEnabled: true), digest.Object);
+        var offSettings = Settings(digestEnabled: true);
+        offSettings.EnableStudioAiModifyTools = false;
+        var offBuilder = Build(offSettings, digest.Object);
+
+        var onPrompt = await onBuilder.BuildSystemPromptAsync(
+            AssistantMode.StudioBuilder, null, AssistantAgentScope.None, Opts());
+        var offPrompt = await offBuilder.BuildSystemPromptAsync(
+            AssistantMode.StudioBuilder, null, AssistantAgentScope.None, Opts());
+
+        Assert.Contains("8. MODIFIER L'EXISTANT", onPrompt);
+        Assert.Contains("reorder_fields", onPrompt);
+        Assert.Contains("change_field_type", onPrompt);
+        Assert.Contains("add_relation", onPrompt);
+        Assert.Contains("assign_system", onPrompt);
+        Assert.Contains("set_view", onPrompt);
+
+        Assert.DoesNotContain("8. MODIFIER L'EXISTANT", offPrompt);
+        Assert.DoesNotContain("change_field_type", offPrompt);
+        Assert.DoesNotContain("reorder_fields", offPrompt);
     }
 
     [Fact]

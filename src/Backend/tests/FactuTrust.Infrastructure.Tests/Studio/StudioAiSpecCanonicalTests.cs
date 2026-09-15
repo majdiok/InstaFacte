@@ -108,6 +108,80 @@ public sealed class StudioAiSpecCanonicalTests
         Assert.NotNull(error);
     }
 
+    /// <summary>Spec d'amendement avec les six opérations de la PR 3.1b (alias, libellés, désordre).</summary>
+    private const string AmendmentSpecPr31b = """
+    { "target": { "entityKey": "Interventions" }, "operations": [
+      { "op": "reordonner_champs", "fields": [ "reference", "client", "statut", "reference" ] },
+      { "op": "change_field_type", "key": "duree_estimee", "type": "Decimal",
+        "options": [ { "value": "h", "label": "Heures" } ], "config": { "max": 12, "custom": true } },
+      { "op": "add_relation", "kind": "N-N", "target": "Compétences", "label": "Compétences requises", "junctionName": "Affectations" },
+      { "op": "assign_system", "system": "Gestion Interventions" },
+      { "op": "set_view", "mode": "kanban", "displayName": "Kanban par statut", "columns": ["reference"],
+        "groupBy": "statut", "isDefault": true },
+      { "op": "set_automation", "trigger": "on_create", "action": "notify" } ] }
+    """;
+
+    [Fact]
+    public void Amendment_with_the_pr31b_operations_round_trips_byte_stable()
+    {
+        var canonical = StudioAiSpecCanonical.CanonicalFor(StudioAiPlanKind.Amendment, AmendmentSpecPr31b, out var error);
+        Assert.NotNull(canonical);
+
+        var canonicalAgain = StudioAiSpecCanonical.CanonicalFor(StudioAiPlanKind.Amendment, canonical!, out var reparseError);
+
+        Assert.Null(reparseError);
+        Assert.Equal(canonical, canonicalAgain);
+    }
+
+    [Fact]
+    public void Amendment_canonical_normalizes_the_pr31b_operations()
+    {
+        var canonical = StudioAiSpecCanonical.CanonicalFor(StudioAiPlanKind.Amendment, AmendmentSpecPr31b, out var error);
+        Assert.NotNull(canonical);
+
+        var node = JsonNode.Parse(canonical!)!;
+        // Clé de table slugifiée ; alias d'op absorbés ; doublon de réordonnancement éliminé.
+        Assert.Equal("interventions", node["target"]!["entityKey"]!.GetValue<string>());
+        var ops = node["operations"]!.AsArray();
+        Assert.Equal("reorder_fields", ops[0]!["op"]!.GetValue<string>());
+        Assert.Equal(new[] { "reference", "client", "statut" },
+            ops[0]!["fields"]!.AsArray().Select(f => f!.GetValue<string>()).ToArray());
+        // Type émis en nom d'énumération minuscule exact (rejouable par TryMapType).
+        Assert.Equal("change_field_type", ops[1]!["op"]!.GetValue<string>());
+        Assert.Equal("decimal", ops[1]!["type"]!.GetValue<string>());
+        Assert.Equal("h", ops[1]!["options"]!.AsArray()[0]!["value"]!.GetValue<string>());
+        Assert.Equal("true", ops[1]!["config"]!["custom"]!.ToString());
+        // Relation : kind canonique, cible et clé de jonction slugifiées.
+        Assert.Equal("many_to_many", ops[2]!["kind"]!.GetValue<string>());
+        Assert.Equal("competences", ops[2]!["target"]!.GetValue<string>());
+        Assert.Equal("affectations", ops[2]!["junctionName"]!.GetValue<string>());
+        Assert.Equal("gestion_interventions", ops[3]!["system"]!.GetValue<string>());
+        // Vue : jamais de clé « entity » dans un amendement (la table cible est implicite).
+        Assert.Equal("set_view", ops[4]!["op"]!.GetValue<string>());
+        Assert.Null(ops[4]!["entity"]);
+        Assert.Equal("kanban", ops[4]!["mode"]!.GetValue<string>());
+        // Automatisation : contenu repassé tel quel (hors alias d'op).
+        Assert.Equal("set_automation", ops[5]!["op"]!.GetValue<string>());
+        Assert.Equal("on_create", ops[5]!["trigger"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Amendment_assign_system_detach_round_trips_byte_stable()
+    {
+        const string json = """
+        { "target": { "entityKey": "contrats" }, "operations": [ { "op": "assign_system", "system": "aucun" } ] }
+        """;
+
+        var canonical = StudioAiSpecCanonical.CanonicalFor(StudioAiPlanKind.Amendment, json, out var error);
+        Assert.NotNull(canonical);
+        // Le détachement est émis « none » : une clé absente serait relue comme un oubli du modèle.
+        Assert.Contains("\"system\": \"none\"", canonical, StringComparison.Ordinal);
+
+        var canonicalAgain = StudioAiSpecCanonical.CanonicalFor(StudioAiPlanKind.Amendment, canonical!, out var reparseError);
+        Assert.Null(reparseError);
+        Assert.Equal(canonical, canonicalAgain);
+    }
+
     [Fact]
     public void Field_with_explicit_key_keeps_it()
     {

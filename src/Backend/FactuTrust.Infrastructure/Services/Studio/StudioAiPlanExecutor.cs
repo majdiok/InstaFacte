@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
@@ -28,19 +29,22 @@ public sealed class StudioAiPlanExecutor : IStudioAiPlanExecutor
     private readonly IStudioQuotaService? _quota;
     private readonly ISqlSchemaProvider? _sqlSchema;
     private readonly OllamaSettings? _settings;
+    private readonly ICustomEntityRepository? _entities;
 
     public StudioAiPlanExecutor(
         IMediator mediator,
         ICurrentUser currentUser,
         IStudioQuotaService? quota = null,
         ISqlSchemaProvider? sqlSchema = null,
-        IOptions<OllamaSettings>? settings = null)
+        IOptions<OllamaSettings>? settings = null,
+        ICustomEntityRepository? entities = null)
     {
         _mediator = mediator;
         _currentUser = currentUser;
         _quota = quota;
         _sqlSchema = sqlSchema;
         _settings = settings?.Value;
+        _entities = entities;
     }
 
     public async Task<(bool Success, string? Error, object? Payload)> ExecuteAsync(
@@ -65,7 +69,7 @@ public sealed class StudioAiPlanExecutor : IStudioAiPlanExecutor
             {
                 if (!StudioAiAmendmentSpec.TryParse(plan.SpecJson, out var spec, out var error) || spec is null)
                     return (false, error ?? "Spécification de modification invalide.", null);
-                var executor = new StudioAiAmendmentExecutor(_mediator, _currentUser);
+                var executor = new StudioAiAmendmentExecutor(_mediator, _currentUser, _settings, _entities);
                 return await executor.ExecuteAsync(spec, progress, cancellationToken);
             }
             case StudioAiPlanKind.View:

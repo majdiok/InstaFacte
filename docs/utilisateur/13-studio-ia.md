@@ -57,6 +57,18 @@ Si une table proposée ressemble à une table déjà présente dans votre espace
 
 Vous pouvez continuer à écrire pendant qu’une proposition attend votre validation. Comme un nouvel envoi remplace la proposition en cours, une confirmation vous est demandée : **Abandonner le plan et envoyer** annule la proposition (rien n’est créé) puis envoie votre message ; **Annuler** conserve la proposition.
 
+### Modifier une table existante
+
+L’assistant sait aussi retoucher une table déjà créée : ajouter, modifier ou retirer un champ, renommer la table, réorganiser le formulaire, ajouter un état, **réordonner les champs**, **changer le type d’un champ**, **relier la table à une autre** (relation simple ou plusieurs-à-plusieurs), **rattacher la table à un système** ou **proposer une vue enregistrée** (liste, kanban, calendrier). Demandez par exemple « ajoute un champ Motif de refus sur la table Contrats » ou « propose un kanban par statut pour les interventions » : l’aperçu détaille chaque modification avant validation, et la confirmation les applique réellement (chaque étape du suivi indique si elle a été appliquée, ignorée ou refusée — par exemple une relation plusieurs-à-plusieurs est signalée « ignorée » tant que votre administrateur ne l’a pas autorisée).
+
+Le **changement de type** est encadré pour protéger vos données :
+
+- une conversion **sans perte** (par exemple montant → nombre décimal, ou date → texte) est appliquée directement ; quand le champ perd un affichage spécialisé (calendrier, liste de choix…), l’aperçu vous le signale ;
+- une conversion **qui exige une table vide** (par exemple texte → nombre) est refusée tant que la table contient des enregistrements : le message vous indique combien d’enregistrements bloquent et vous invite à vider la table ou à créer un nouveau champ à la place ;
+- certains types ne peuvent jamais remplacer un champ existant (formule, pièce jointe, signature…) : l’aperçu affiche alors l’étape **en erreur** avec la raison, et l’application la refusera proprement.
+
+Les **automatisations** demandées à l’assistant sont signalées « non appliquées » dans l’aperçu : elles arrivent dans une prochaine version et sont simplement ignorées à la validation.
+
 ---
 
 ## Le rail : modèles, actions rapides, historique

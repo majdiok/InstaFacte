@@ -454,3 +454,73 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     `custom_records:write`, Ajouter/Retirer masqués. `/studio/relations` ⇒ tableau dédoublonné +
     diagramme SVG (`role="img"`) ; `/studio` ⇒ jonctions masquées par défaut, badge « Jonction » après
     décoche.
+
+## Amendements enrichis et changement de type (PR 3.1)
+
+> Architecture : [`docs/architecture/studio-ai-amendments.md`](../architecture/studio-ai-amendments.md).
+> Prérequis : une table Studio `interventions` (champs `nom` Text, `statut` Select avec options,
+> `debut` Date, `montant` Money) alimentée d'enregistrements, un compte avec `studio:design_entities` ;
+> pour les cas IA : `Ollama:EnableStudioAiPlanPreview=true` + `Ollama:EnableStudioAiModifyTools=true`
+> (+ `EnableStudioManyToMany` / `EnableStudioRecordViews` selon le cas).
+> **Smoke chat non exécuté** : le parcours conversationnel complet exige un modèle Ollama (absent de
+> l'environnement de vérification) — les cas 64–66 vérifient donc la chaîne serveur via
+> `POST api/studio/ai/plans/validate` (kind `Amendment` : parsing + canonicalisation, alias absorbés)
+> et renvoient aux tests automatisés (`StudioAiAmendmentSpecTests` / `StudioAiAmendmentPlannerTests` /
+> `StudioAiSpecCanonicalTests` / `StudioAiAmendmentExecutorTests`) pour le contenu de l'aperçu
+> (étapes, sévérités, avertissements), `studio_plan_changes` partageant le même parseur et le même
+> planificateur. Avec un modèle branché, rejouer ces demandes en langage naturel dans l'atelier.
+
+63. **Changement de type : vérification puis application** — avec 3 enregistrements dans
+    `interventions`, `GET api/studio/entities/{idEntite}/fields/{idMontant}/type-check?to=Number` ⇒
+    `200` `{ from: "Money", to: "Number", policy: "requires_empty_table", recordCount: 3, allowed: false }`
+    avec le message « Ce changement exige une table vide (3 enregistrement(s))… » ;
+    `PATCH …/type` corps `{ "fieldType": "Number" }` ⇒ `400 Validation.fieldType` (même message, aucune
+    écriture). Vider la table puis rejouer ⇒ `200`, `data.fieldType = "Number"` ; audit
+    `Studio.Field.TypeChanged` présent. `to=wizard` ou `to=42` ⇒ `400 Validation.to` ;
+    `?to=Formula` ⇒ `200` `policy: "forbidden"` (« Ce type se crée comme un nouveau champ… ») ;
+    `PATCH` vers le même type ⇒ `400` « Le champ est déjà de ce type. ». Cas sans perte :
+    `type-check?to=Decimal` ⇒ `policy: "lossless", allowed: true`, et le `PATCH` réussit même table
+    non vide ; la colonne calculée `jx_montant` est conservée (partagée, indépendante du type).
+64. **Réordonnancement et changement de type (DSL d'amendement)** — `POST api/studio/ai/plans/validate`
+    corps `{ "kind": "Amendment", "specJson": "{\"target\":{\"entityKey\":\"Interventions\"},\"operations\":[{\"op\":\"reordonner_champs\",\"fields\":[\"montant\",\"Nom\",\"fantome\"]},{\"op\":\"change_field_type\",\"key\":\"montant\",\"type\":\"decimal\"}]}" }`
+    ⇒ `200`, spec canonique retournée avec `target.entityKey = "interventions"` (slugifié), l'alias
+    `reordonner_champs` absorbé en `reorder_fields` et le type en `"decimal"` ; à l'aperçu (outil chat
+    / tests) : étape « Réordonner les champs » promettant l'ordre effectif complet (`montant, nom,
+    statut, debut` — « Nom » résolu par libellé, champs non cités conservés à la suite) et avertissement
+    « Champ « fantome » introuvable : retiré de la réorganisation. » ; l'étape `change_field_type`
+    annonce `montant` → `décimal` « sans perte ». `"type": "number"` sur une table non vide ⇒ étape en
+    **avertissement** « table vide » SANS nombre fabriqué (le compte est revérifié à l'application) ;
+    `"type": "formula"` ⇒ étape **en erreur** « Ce type se crée comme un nouveau champ… » ;
+    `"type": "3"` (valeur numérique d'énumération) ⇒ op écartée « type inconnu ».
+65. **Relation, système et vue (DSL d'amendement), drapeaux fonctionnels** — même appel avec
+    `{ "op": "add_relation", "kind": "many_to_many", "target": "Compétences", "label": "Compétences requises" }`,
+    `{ "op": "assign_system", "system": "Gestion Interventions" }` et
+    `{ "op": "set_view", "mode": "kanban", "displayName": "Par statut", "groupBy": "statut" }` ⇒ `200`,
+    forme canonique `kind: "many_to_many"`, `target: "competences"` (slugifiée),
+    `system: "gestion_interventions"`, vue sans clé `entity` (table du plan implicite). Aperçu (flag
+    `EnableStudioManyToMany` on) : étape « Relier à « Compétences requises » » ; `"target":
+    "interventions"` (la table elle-même) ⇒ étape **en erreur** « La table cible doit être différente
+    de la table source. ». Flag off ⇒ l'op est écartée avec avertissement « … relations
+    plusieurs-à-plusieurs ne sont pas activées » (plan refusé si c'était la seule op) — idem
+    `set_view` avec `EnableStudioRecordViews=false`. Flag views on : la vue est résolue contre le
+    schéma réel — `"groupBy": "nom"` (Text) ⇒ l'étape annonce « Liste » + avertissement « Kanban
+    impossible… » (dégradation, jamais d'échec). Détachement : `{ "op": "assign_system", "system":
+    "none" }` ⇒ aperçu « Détacher la table de son système ».
+66. **Exécution réelle des amendements (3.1c/3.1d) — chaque op laisse une étape** — à l'application
+    d'un plan `Amendment` confirmé, le suivi affiche une étape par opération au statut `done`,
+    `skipped` ou `error` (jamais de succès muet) : `reorder_fields` applique l'ordre promis à
+    l'aperçu (les champs de `interventions` sont réordonnés en base, visibles au rechargement du
+    concepteur) ; `change_field_type` applique les conversions permises et remonte une étape en
+    erreur non bloquante quand le handler refuse (`Forbidden` / table non vide) ; `assign_system`
+    rattache la table (rechargée sous le bon système) et `system: "none"` la détache ; `add_relation`
+    `many_to_one` crée le champ relation, `many_to_many` crée la table de jonction — avec
+    `EnableStudioManyToMany=false` l'étape est `skipped` et **aucune** écriture n'a lieu (vérifier
+    l'absence de jonction en base) ; `set_view` crée la vue enregistrée (clé dédupliquée si le nom
+    existe déjà) — avec `EnableStudioRecordViews=false` ⇒ `skipped`, aucune écriture ; une cible de
+    relation inconnue ou de type jonction ⇒ `skipped` + avertissement. `set_automation` reste valide
+    au parsing (`validate` ⇒ `200`), est présenté « Automatisation (non appliquée) » à l'aperçu et
+    remonte `skipped_automation` à l'exécution ; un plan sans rien d'applicable échoue explicitement
+    (« Aucune modification appliquée »). Une op inconnue de l'exécuteur lève (défaut bruyant, couvert
+    par `StudioSilentFailureGuardsTests`). Le prompt système StudioBuilder porte la règle 8 enrichie
+    (cinq opérations actionnables listées, révision de cache « v7 » —
+    `AiContextBuilderStudioDigestTests`).
