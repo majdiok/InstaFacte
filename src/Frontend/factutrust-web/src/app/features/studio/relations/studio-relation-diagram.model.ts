@@ -27,12 +27,12 @@ export interface DiagramModel {
 // ≥ largeur nœud entité (140) + ~largeur d'un libellé de jonction (« Intervention × Technicien »
 // ≈ 170px à 12px) + marge : la jonction est placée au milieu de deux colonnes adjacentes et son
 // libellé ne doit empiéter sur aucune des deux boîtes.
-const COL_WIDTH = 340;
-const ROW_HEIGHT = 120;
+export const COL_WIDTH = 340;
+export const ROW_HEIGHT = 120;
 // ≥ demi-largeur d'un nœud entité (140/2 = 70) pour que la première colonne ne soit pas
 // rognée par le bord gauche du viewBox (les coordonnées sont des centres, voir le rendu
 // `translate(x, y)` + `rect x="-70"` du composant).
-const PADDING = 80;
+export const PADDING = 80;
 
 /**
  * Modèle de diagramme des relations Studio (contrat consommé par 3.4e : `specToDiagram` produit le
