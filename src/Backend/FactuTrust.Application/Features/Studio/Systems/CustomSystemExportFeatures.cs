@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
@@ -154,5 +155,238 @@ public sealed class ExportCustomSystemQueryHandler : IRequestHandler<ExportCusto
             result.IncludesSeed,
             result.Warnings,
             result.Spec));
+    }
+}
+
+// ---- Duplication « (copie) » + Import (tranche 3.3c2) ----
+
+/// <summary>Duplication d'un système du tenant : export sans seed → plan <c>CreateSystem</c> Pending.</summary>
+public sealed record DuplicateCustomSystemCommand(string Key, string? DisplayNameOverride = null)
+    : IRequest<Result<StudioAiPlanCreationResponse>>;
+
+/// <summary>
+/// Corps de <c>POST api/studio/systems/import</c>. <c>Spec</c> accepte un objet JSON ou une chaîne JSON
+/// (tolérance client).
+/// </summary>
+public sealed record ImportCustomSystemRequest(JsonNode? Spec, string? DisplayNameOverride = null, bool IncludeSeed = true);
+
+public sealed record ImportCustomSystemCommand(ImportCustomSystemRequest Request)
+    : IRequest<Result<StudioAiPlanCreationResponse>>;
+
+/// <summary>Nom par défaut d'une copie : « &lt;DisplayName&gt; (copie) », borné à 128 caractères.</summary>
+internal static class StudioSystemCopyNaming
+{
+    public const string CopySuffix = " (copie)";
+
+    /// <summary>« &lt;DisplayName&gt; (copie) », nom source tronqué pour rester ≤ <see cref="StudioAiPlanCreation.MaxDisplayNameOverrideLength"/>.</summary>
+    public static string CopyName(string displayName)
+    {
+        var name = (displayName ?? string.Empty).Trim();
+        var maxBase = StudioAiPlanCreation.MaxDisplayNameOverrideLength - CopySuffix.Length;
+        if (name.Length > maxBase)
+            name = name[..maxBase].TrimEnd();
+        return name + CopySuffix;
+    }
+}
+
+/// <summary>
+/// Chemin commun duplication/import : gardes (deux drapeaux ⇒ 404, tenant, permission), override de nom,
+/// doublons, canonisation, délégation à <c>CreateStudioAiPlanCommand</c>. Aucune écriture hors le plan Pending.
+/// Jamais le chemin « from-spec » (D-c2-3) ; jamais le contenu de la spec dans une erreur ou un log.
+/// </summary>
+internal static class StudioSystemPlanFromSpec
+{
+    public static bool IsEnabled(OllamaSettings settings) =>
+        settings.EnableStudioSystemExport && settings.EnableStudioAiPlanPreview;
+
+    public static Result<StudioAiPlanCreationResponse>? Guard(OllamaSettings settings, ICurrentUser currentUser)
+    {
+        if (!IsEnabled(settings))
+            return Result.Failure<StudioAiPlanCreationResponse>(Error.NotFound("Fonctionnalité non disponible."));
+
+        if (!StudioContext.TryGet(currentUser, out _, out _, out var err))
+            return Result.Failure<StudioAiPlanCreationResponse>(err);
+
+        if (!currentUser.HasPermission(Permissions.Studio.DesignEntities))
+            return Result.Failure<StudioAiPlanCreationResponse>(Error.Unauthorized("Permission de conception Studio requise."));
+
+        return null;
+    }
+
+    /// <summary>
+    /// Résout le nom affiché (override trimé sinon <paramref name="defaultName"/>), détecte les doublons,
+    /// canonise et crée le plan Pending. <paramref name="canonicalOut"/> permet à l'appelant de bâtir la réponse.
+    /// </summary>
+    public static async Task<Result<StudioAiPlanCreationResponse>> PlanFromParsedSpecAsync(
+        ParsedSystemSpec parsed,
+        string? displayNameOverride,
+        string defaultName,
+        IMediator mediator,
+        ICurrentUser currentUser,
+        ICustomEntityRepository? customEntities,
+        CancellationToken ct)
+    {
+        var displayName = string.IsNullOrWhiteSpace(displayNameOverride) ? defaultName : displayNameOverride.Trim();
+        if (displayName.Length > StudioAiPlanCreation.MaxDisplayNameOverrideLength)
+            return Result.Failure<StudioAiPlanCreationResponse>(
+                Error.Validation("displayNameOverride", "Le nom affiché dépasse 128 caractères."));
+        // La clé système est re-slugifiée à l'exécution depuis displayName (UniqueSystemKeyAsync) : aucune clé ici.
+        parsed = parsed with { SystemDisplayName = displayName };
+
+        // Indices de doublons contre les tables actives du tenant (UNE lecture, jamais d'écriture).
+        var duplicates = await StudioAiPlanCreation.DetectDuplicatesAsync(parsed, customEntities, currentUser, ct);
+
+        var canonical = StudioAiSpecCanonical.CanonicalSystem(parsed);
+        var summary = StudioAiPlanSummary.ForSystem(parsed, duplicates);
+
+        // Même délégation que from-template : permission et audit « Studio.AiPlan.Created » inclus.
+        var created = await mediator.Send(new CreateStudioAiPlanCommand(StudioAiPlanKind.CreateSystem, canonical, summary), ct);
+        if (created.IsFailure)
+            return Result.Failure<StudioAiPlanCreationResponse>(created.Error);
+
+        return Result.Success(new StudioAiPlanCreationResponse(
+            created.Value, StudioAiPlanCreation.ToFreshSpecDto(created.Value, canonical)));
+    }
+}
+
+/// <summary>
+/// Duplique un système du tenant en plan <c>CreateSystem</c> Pending (nom « … (copie) » par défaut).
+/// Fail-closed : <c>EnableStudioSystemExport</c> ET <c>EnableStudioAiPlanPreview</c> requis ⇒ sinon 404.
+/// </summary>
+public sealed class DuplicateCustomSystemCommandHandler
+    : IRequestHandler<DuplicateCustomSystemCommand, Result<StudioAiPlanCreationResponse>>
+{
+    private readonly IMediator _mediator;
+    private readonly ICurrentUser _currentUser;
+    private readonly OllamaSettings _settings;
+    private readonly IAuditService _audit;
+    private readonly ICustomEntityRepository? _customEntities;
+    private readonly ILogger<DuplicateCustomSystemCommandHandler>? _logger;
+
+    public DuplicateCustomSystemCommandHandler(
+        IMediator mediator,
+        ICurrentUser currentUser,
+        IOptions<OllamaSettings> settings,
+        IAuditService audit,
+        ICustomEntityRepository? customEntities = null,
+        ILogger<DuplicateCustomSystemCommandHandler>? logger = null)
+    {
+        _mediator = mediator;
+        _currentUser = currentUser;
+        _settings = settings.Value;
+        _audit = audit;
+        _customEntities = customEntities;
+        _logger = logger;
+    }
+
+    public async Task<Result<StudioAiPlanCreationResponse>> Handle(DuplicateCustomSystemCommand request, CancellationToken cancellationToken)
+    {
+        if (StudioSystemPlanFromSpec.Guard(_settings, _currentUser) is { } guard)
+            return guard;
+
+        // Export sans seed ; l'échec (404 CustomSystem.NotFound, clé invalide…) est propagé tel quel.
+        var export = await _mediator.Send(new ExportCustomSystemQuery(request.Key, IncludeSeed: false), cancellationToken);
+        if (export.IsFailure)
+            return Result.Failure<StudioAiPlanCreationResponse>(export.Error);
+
+        var specJson = export.Value.Spec.ToJsonString();
+        if (!StudioAiSystemSpec.TryParse(specJson, out var parsed, out var parseError) || parsed is null)
+            return Result.Failure<StudioAiPlanCreationResponse>(
+                Error.Validation("spec", parseError ?? "Le système exporté ne peut pas être ré-importé."));
+
+        // Les avertissements d'export (relations hors système, formules → texte) remontent dans l'aperçu du plan.
+        parsed = parsed with { Warnings = (parsed.Warnings ?? Array.Empty<string>()).Concat(export.Value.Warnings).ToList() };
+
+        var result = await StudioSystemPlanFromSpec.PlanFromParsedSpecAsync(
+            parsed, request.DisplayNameOverride, StudioSystemCopyNaming.CopyName(export.Value.SystemDisplayName),
+            _mediator, _currentUser, _customEntities, cancellationToken);
+        if (result.IsFailure)
+            return result;
+
+        await StudioAudit.SafeLogAsync(_audit, "Studio.System.DuplicateRequested", "CustomSystem", null,
+            null, new { sourceKey = export.Value.SystemKey, planId = result.Value.Plan.Id }, cancellationToken);
+
+        _logger?.LogInformation("Studio duplicate {SourceKey}: plan {PlanId} created", export.Value.SystemKey, result.Value.Plan.Id);
+
+        return result;
+    }
+}
+
+/// <summary>
+/// Importe une spec système (export d'un autre tenant, fichier édité…) en plan <c>CreateSystem</c> Pending.
+/// Fail-closed (deux drapeaux), taille ≤ <see cref="StudioAiPlanWorkbench.MaxSpecJsonLength"/>, nom ≤ 128.
+/// </summary>
+public sealed class ImportCustomSystemCommandHandler
+    : IRequestHandler<ImportCustomSystemCommand, Result<StudioAiPlanCreationResponse>>
+{
+    private readonly IMediator _mediator;
+    private readonly ICurrentUser _currentUser;
+    private readonly OllamaSettings _settings;
+    private readonly IAuditService _audit;
+    private readonly ICustomEntityRepository? _customEntities;
+    private readonly ILogger<ImportCustomSystemCommandHandler>? _logger;
+
+    public ImportCustomSystemCommandHandler(
+        IMediator mediator,
+        ICurrentUser currentUser,
+        IOptions<OllamaSettings> settings,
+        IAuditService audit,
+        ICustomEntityRepository? customEntities = null,
+        ILogger<ImportCustomSystemCommandHandler>? logger = null)
+    {
+        _mediator = mediator;
+        _currentUser = currentUser;
+        _settings = settings.Value;
+        _audit = audit;
+        _customEntities = customEntities;
+        _logger = logger;
+    }
+
+    public async Task<Result<StudioAiPlanCreationResponse>> Handle(ImportCustomSystemCommand request, CancellationToken cancellationToken)
+    {
+        if (StudioSystemPlanFromSpec.Guard(_settings, _currentUser) is { } guard)
+            return guard;
+
+        var body = request.Request;
+        if (body.Spec is null)
+            return Result.Failure<StudioAiPlanCreationResponse>(Error.Validation("spec", "La spécification est vide."));
+
+        // Normalisation : chaîne JSON tolérée ⇒ re-parsée ; le résultat doit être un objet.
+        JsonNode? node = body.Spec;
+        if (node is JsonValue value && value.TryGetValue<string>(out var raw))
+        {
+            try { node = JsonNode.Parse(raw); }
+            catch (JsonException)
+            {
+                return Result.Failure<StudioAiPlanCreationResponse>(Error.Validation("spec", "La spécification n'est pas un JSON valide."));
+            }
+        }
+        if (node is not JsonObject obj)
+            return Result.Failure<StudioAiPlanCreationResponse>(Error.Validation("spec", "La spécification doit être un objet JSON."));
+
+        var specJson = obj.ToJsonString();
+        if (specJson.Length > StudioAiPlanWorkbench.MaxSpecJsonLength)
+            return Result.Failure<StudioAiPlanCreationResponse>(Error.Validation("spec", "La spec dépasse 256 Ko."));
+
+        if (!body.IncludeSeed && obj.Remove("seed"))
+            specJson = obj.ToJsonString();
+
+        if (!StudioAiSystemSpec.TryParse(specJson, out var parsed, out var parseError) || parsed is null)
+            return Result.Failure<StudioAiPlanCreationResponse>(
+                Error.Validation("spec", parseError ?? "La spécification est invalide."));
+
+        var result = await StudioSystemPlanFromSpec.PlanFromParsedSpecAsync(
+            parsed, body.DisplayNameOverride, parsed.SystemDisplayName,
+            _mediator, _currentUser, _customEntities, cancellationToken);
+        if (result.IsFailure)
+            return result;
+
+        var specVersion = obj["specVersion"] is JsonValue v && v.TryGetValue<int>(out var version) ? version : 1;
+        await StudioAudit.SafeLogAsync(_audit, "Studio.System.ImportRequested", "CustomSystem", null,
+            null, new { specVersion, entityCount = parsed.Entities.Count, includeSeed = body.IncludeSeed, planId = result.Value.Plan.Id }, cancellationToken);
+
+        _logger?.LogInformation("Studio import: {EntityCount} tables, plan {PlanId} created", parsed.Entities.Count, result.Value.Plan.Id);
+
+        return result;
     }
 }

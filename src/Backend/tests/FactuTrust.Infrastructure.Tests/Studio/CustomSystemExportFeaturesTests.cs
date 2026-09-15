@@ -1,13 +1,17 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
+using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.RecordViews;
 using FactuTrust.Application.Features.Studio.Systems;
 using FactuTrust.Domain.Entities.Studio;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
+using MediatR;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -359,5 +363,428 @@ public sealed class CustomSystemExportFeaturesTests
         Assert.All(messages, m => Assert.DoesNotContain("Dupont", m, StringComparison.Ordinal));
         Assert.All(messages, m => Assert.DoesNotContain("specVersion", m, StringComparison.Ordinal));
         Assert.Contains(messages, m => m.Contains("gestion_conges", StringComparison.Ordinal));
+    }
+
+    // ============================================================================================
+    // Tranche 3.3c2 — Duplication « (copie) » + Import : deux drapeaux fail-closed, délégation au
+    // VRAI chemin de création de plan (CreateStudioAiPlanCommand capturé, jamais from-spec), nom
+    // borné, avertissements d'export fusionnés, audit avec clés exactes.
+    // ============================================================================================
+
+    private readonly Mock<IMediator> _mediator = new(MockBehavior.Strict);
+    private CreateStudioAiPlanCommand? _capturedCreate;
+    private StudioAiPlanDto? _createdPlan;
+
+    private OllamaSettings PlanSettings()
+    {
+        _settings.EnableStudioAiPlanPreview = true;
+        return _settings;
+    }
+
+    private DuplicateCustomSystemCommandHandler DuplicateHandler() => new(
+        _mediator.Object, _currentUser.Object, Options.Create(PlanSettings()), _audit.Object, customEntities: null);
+
+    private ImportCustomSystemCommandHandler ImportHandler() => new(
+        _mediator.Object, _currentUser.Object, Options.Create(PlanSettings()), _audit.Object, customEntities: null);
+
+    /// <summary>Export de la fixture par l'exporteur pur (sans dépôt), sous forme de DTO d'export.</summary>
+    private static StudioSystemExportDto ExportDtoOf(Fixture f)
+    {
+        var fields = f.Fields.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<CustomFieldDefinition>)kv.Value);
+        var forms = f.Entities.ToDictionary(e => e.Id, _ => (CustomFormDefinition?)null);
+        var reports = f.Reports.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<CustomReportDefinition>)kv.Value);
+        var views = f.Views.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<CustomRecordViewDefinition>)kv.Value);
+        var exportedAt = new DateTime(2026, 9, 15, 12, 0, 0, DateTimeKind.Utc);
+        var result = StudioSystemSpecExporter.Export(
+            new StudioSystemExportInput(f.System, f.Entities, fields, forms, reports, views), 200, exportedAt);
+        return new StudioSystemExportDto(StudioSystemSpecExporter.SpecVersion, f.System.Key, f.System.DisplayName, exportedAt,
+            result.EntityCount, result.RelationCount, result.ViewCount, result.IncludesSeed, result.Warnings, result.Spec);
+    }
+
+    private ExportCustomSystemQuery? _capturedExport;
+
+    private void SetupExportSend(Result<StudioSystemExportDto> reply)
+    {
+        _mediator.Setup(m => m.Send(It.IsAny<ExportCustomSystemQuery>(), It.IsAny<CancellationToken>()))
+            .Callback((IRequest<Result<StudioSystemExportDto>> q, CancellationToken _) => _capturedExport = (ExportCustomSystemQuery)q)
+            .ReturnsAsync(reply);
+    }
+
+    private void SetupCreateSend()
+    {
+        _mediator.Setup(m => m.Send(It.IsAny<CreateStudioAiPlanCommand>(), It.IsAny<CancellationToken>()))
+            .Returns((IRequest<Result<StudioAiPlanDto>> c, CancellationToken _) =>
+            {
+                _capturedCreate = (CreateStudioAiPlanCommand)c;
+                var now = DateTime.UtcNow;
+                _createdPlan = new StudioAiPlanDto(Guid.NewGuid(), _capturedCreate.Kind.ToString(), StudioAiPlanStatus.Pending.ToString(),
+                    _capturedCreate.SummaryJson, null, null, now, now.AddMinutes(60), null);
+                return Task.FromResult(Result.Success(_createdPlan));
+            });
+    }
+
+    private Fixture SetupDuplicate()
+    {
+        var f = new Fixture();
+        SetupExportSend(Result.Success(ExportDtoOf(f)));
+        SetupCreateSend();
+        return f;
+    }
+
+    private static JsonObject SpecJson(CreateStudioAiPlanCommand cmd) => JsonNode.Parse(cmd.SpecJson)!.AsObject();
+
+    private static string[] AuditKeys(object? captured)
+    {
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(captured));
+        return doc.RootElement.EnumerateObject().Select(p => p.Name).OrderBy(k => k, StringComparer.Ordinal).ToArray();
+    }
+
+    /// <summary>Capture les <c>newValues</c> de l'audit <paramref name="action"/> (cellule 0 du tableau).</summary>
+    private object?[] CaptureAudit(string action)
+    {
+        var holder = new object?[1];
+        _audit.Setup(a => a.LogAsync(action, "CustomSystem", null, null, It.IsAny<object?>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string _, Guid? _, object? _, object? newValues, CancellationToken _) => holder[0] = newValues)
+            .Returns(Task.CompletedTask);
+        return holder;
+    }
+
+    // ---- Duplication : gardes ------------------------------------------------------------------
+
+    [Fact]
+    public async Task Duplicate_when_export_flag_off_is_not_found_and_sends_nothing()
+    {
+        _settings.EnableStudioSystemExport = false;
+
+        var result = await DuplicateHandler().Handle(new DuplicateCustomSystemCommand("gestion_conges"), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("NotFound", result.Error.Code);
+        _mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Duplicate_when_plan_preview_flag_off_is_not_found()
+    {
+        var handler = DuplicateHandler();
+        _settings.EnableStudioAiPlanPreview = false;
+
+        var result = await handler.Handle(new DuplicateCustomSystemCommand("gestion_conges"), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("NotFound", result.Error.Code);
+        _mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Duplicate_without_design_permission_is_unauthorized()
+    {
+        _currentUser.Setup(x => x.HasPermission(It.IsAny<string>())).Returns(false);
+
+        var result = await DuplicateHandler().Handle(new DuplicateCustomSystemCommand("gestion_conges"), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Unauthorized", result.Error.Code);
+        _mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Duplicate_propagates_custom_system_not_found_from_export()
+    {
+        SetupExportSend(Result.Failure<StudioSystemExportDto>(new Error("CustomSystem.NotFound", "CustomSystem with key 'x' was not found.")));
+
+        var result = await DuplicateHandler().Handle(new DuplicateCustomSystemCommand("x"), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("CustomSystem.NotFound", result.Error.Code);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateStudioAiPlanCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Duplicate_requests_export_without_seed()
+    {
+        SetupDuplicate();
+
+        var result = await DuplicateHandler().Handle(new DuplicateCustomSystemCommand("gestion_conges"), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(_capturedExport);
+        Assert.Equal("gestion_conges", _capturedExport!.Key);
+        Assert.False(_capturedExport.IncludeSeed);
+    }
+
+    // ---- Duplication : nom, résumé, réponse, audit --------------------------------------------
+
+    [Fact]
+    public async Task Duplicate_default_name_is_display_name_plus_copie_suffix()
+    {
+        SetupDuplicate();
+
+        var result = await DuplicateHandler().Handle(new DuplicateCustomSystemCommand("gestion_conges"), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(_capturedCreate);
+        Assert.Equal(StudioAiPlanKind.CreateSystem, _capturedCreate!.Kind);
+        Assert.Equal("Gestion des congés (copie)", SpecJson(_capturedCreate)["system"]!["displayName"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Duplicate_copy_name_is_truncated_to_128_characters()
+    {
+        var f = new Fixture();
+        var longName = new string('N', StudioAiPlanCreation.MaxDisplayNameOverrideLength);
+        SetupExportSend(Result.Success(ExportDtoOf(f) with { SystemDisplayName = longName }));
+        SetupCreateSend();
+
+        var result = await DuplicateHandler().Handle(new DuplicateCustomSystemCommand("gestion_conges"), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var name = SpecJson(_capturedCreate!)["system"]!["displayName"]!.GetValue<string>();
+        Assert.Equal(128, name.Length);
+        Assert.EndsWith(StudioSystemCopyNaming.CopySuffix, name, StringComparison.Ordinal);
+        Assert.Equal(128, StudioSystemCopyNaming.CopyName(longName).Length);
+    }
+
+    [Fact]
+    public async Task Duplicate_override_replaces_copy_name_and_is_bounded()
+    {
+        SetupDuplicate();
+
+        var tooLong = await DuplicateHandler().Handle(
+            new DuplicateCustomSystemCommand("gestion_conges", new string('x', 129)), CancellationToken.None);
+
+        Assert.True(tooLong.IsFailure);
+        Assert.Equal("Validation.displayNameOverride", tooLong.Error.Code);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateStudioAiPlanCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        var ok = await DuplicateHandler().Handle(
+            new DuplicateCustomSystemCommand("gestion_conges", "  Congés 2027  "), CancellationToken.None);
+
+        Assert.True(ok.IsSuccess);
+        Assert.Equal("Congés 2027", SpecJson(_capturedCreate!)["system"]!["displayName"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Duplicate_merges_export_warnings_into_plan_summary()
+    {
+        var f = SetupDuplicate();
+        var exportWarnings = ExportDtoOf(f).Warnings;
+        Assert.NotEmpty(exportWarnings);
+
+        var result = await DuplicateHandler().Handle(new DuplicateCustomSystemCommand("gestion_conges"), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var warnings = JsonNode.Parse(_capturedCreate!.SummaryJson)!["warnings"]!.AsArray().Select(w => w!.GetValue<string>()).ToList();
+        Assert.Contains(exportWarnings[0], warnings);
+    }
+
+    [Fact]
+    public async Task Duplicate_returns_plan_creation_response_with_fresh_spec()
+    {
+        SetupDuplicate();
+
+        var result = await DuplicateHandler().Handle(new DuplicateCustomSystemCommand("gestion_conges"), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(_createdPlan!.Id, result.Value.Plan.Id);
+        Assert.Equal(StudioAiPlanStatus.Pending.ToString(), result.Value.Plan.Status);
+        Assert.Equal(_createdPlan.Id, result.Value.Spec.Id);
+        Assert.Equal(_capturedCreate!.SpecJson, StudioAiSpecCanonical.Serialize(result.Value.Spec.Spec));
+        Assert.Null(result.Value.Spec.Spec["exportedFrom"]);
+    }
+
+    [Fact]
+    public async Task Duplicate_writes_audit_with_source_key_and_plan_id()
+    {
+        SetupDuplicate();
+        var holder = CaptureAudit("Studio.System.DuplicateRequested");
+
+        var result = await DuplicateHandler().Handle(new DuplicateCustomSystemCommand("gestion_conges"), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(holder[0]);
+        Assert.Equal(new[] { "planId", "sourceKey" }, AuditKeys(holder[0]));
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(holder[0]));
+        Assert.Equal("gestion_conges", doc.RootElement.GetProperty("sourceKey").GetString());
+        Assert.Equal(result.Value.Plan.Id, doc.RootElement.GetProperty("planId").GetGuid());
+    }
+
+    [Fact]
+    public async Task Duplicate_when_exported_spec_exceeds_import_bounds_returns_validation_spec()
+    {
+        var f = new Fixture();
+        for (var i = 0; i < 7; i++)
+            AddTextEntity(f, $"table_{i}");
+        var dto = ExportDtoOf(f);
+        Assert.Equal(9, dto.EntityCount);
+        SetupExportSend(Result.Success(dto));
+
+        var result = await DuplicateHandler().Handle(new DuplicateCustomSystemCommand("gestion_conges"), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.spec", result.Error.Code);
+        Assert.DoesNotContain("specVersion", result.Error.Description, StringComparison.Ordinal);
+        _mediator.Verify(m => m.Send(It.IsAny<CreateStudioAiPlanCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private static void AddTextEntity(Fixture f, string key)
+    {
+        var e = f.AddEntity(key, $"Table {key}", $"Tables {key}");
+        f.AddField(e, "libelle", "Libellé", CustomFieldType.Text, required: true, sortOrder: 1);
+    }
+
+    // ---- Import --------------------------------------------------------------------------------
+
+    private static JsonObject ImportSpec() => ExportDtoOf(new Fixture()).Spec;
+
+    [Fact]
+    public async Task Import_when_flags_off_is_not_found()
+    {
+        var handler = ImportHandler();
+        var spec = ImportSpec();
+
+        _settings.EnableStudioSystemExport = false;
+        _settings.EnableStudioAiPlanPreview = true;
+        var exportOff = await handler.Handle(new ImportCustomSystemCommand(new ImportCustomSystemRequest(spec)), CancellationToken.None);
+        Assert.True(exportOff.IsFailure);
+        Assert.Equal("NotFound", exportOff.Error.Code);
+
+        _settings.EnableStudioSystemExport = true;
+        _settings.EnableStudioAiPlanPreview = false;
+        var previewOff = await handler.Handle(new ImportCustomSystemCommand(new ImportCustomSystemRequest(spec)), CancellationToken.None);
+        Assert.True(previewOff.IsFailure);
+        Assert.Equal("NotFound", previewOff.Error.Code);
+
+        _mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Import_null_or_non_object_spec_returns_validation_spec()
+    {
+        var handler = ImportHandler();
+
+        var nullSpec = await handler.Handle(new ImportCustomSystemCommand(new ImportCustomSystemRequest(null)), CancellationToken.None);
+        Assert.Equal("Validation.spec", nullSpec.Error.Code);
+        Assert.Equal("La spécification est vide.", nullSpec.Error.Description);
+
+        var number = await handler.Handle(new ImportCustomSystemCommand(new ImportCustomSystemRequest(JsonValue.Create(42))), CancellationToken.None);
+        Assert.Equal("Validation.spec", number.Error.Code);
+        Assert.Equal("La spécification doit être un objet JSON.", number.Error.Description);
+
+        var broken = await handler.Handle(new ImportCustomSystemCommand(new ImportCustomSystemRequest(JsonValue.Create("["))), CancellationToken.None);
+        Assert.Equal("Validation.spec", broken.Error.Code);
+        Assert.Equal("La spécification n'est pas un JSON valide.", broken.Error.Description);
+
+        var array = await handler.Handle(new ImportCustomSystemCommand(new ImportCustomSystemRequest(JsonValue.Create("[1]"))), CancellationToken.None);
+        Assert.Equal("Validation.spec", array.Error.Code);
+        Assert.Equal("La spécification doit être un objet JSON.", array.Error.Description);
+
+        _mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Import_accepts_spec_given_as_json_string()
+    {
+        SetupCreateSend();
+        var asString = JsonValue.Create(ImportSpec().ToJsonString());
+
+        var result = await ImportHandler().Handle(new ImportCustomSystemCommand(new ImportCustomSystemRequest(asString)), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(_capturedCreate);
+        Assert.Equal(StudioAiPlanKind.CreateSystem, _capturedCreate!.Kind);
+        Assert.Equal("Gestion des congés", SpecJson(_capturedCreate)["system"]!["displayName"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Import_spec_over_256_kb_returns_validation_spec()
+    {
+        var spec = ImportSpec();
+        spec["system"]!["description"] = new string('d', 300_000);
+
+        var result = await ImportHandler().Handle(new ImportCustomSystemCommand(new ImportCustomSystemRequest(spec)), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.spec", result.Error.Code);
+        Assert.Equal("La spec dépasse 256 Ko.", result.Error.Description);
+        _mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Import_spec_version_2_returns_validation_spec_with_unsupported_message()
+    {
+        var spec = ImportSpec();
+        spec["specVersion"] = 2;
+
+        var result = await ImportHandler().Handle(new ImportCustomSystemCommand(new ImportCustomSystemRequest(spec)), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.spec", result.Error.Code);
+        Assert.Equal(string.Format(StudioAiSystemSpec.UnsupportedSpecVersionMessage, 2), result.Error.Description);
+        _mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Import_of_an_export_round_trips_to_a_pending_create_system_plan()
+    {
+        // Export RÉEL (handler c1 sur dépôts Strict) puis import du DTO obtenu.
+        var f = SetupLoadedSystem();
+        var export = await Handler().Handle(new ExportCustomSystemQuery(f.System.Key), CancellationToken.None);
+        Assert.True(export.IsSuccess);
+        SetupCreateSend();
+
+        var result = await ImportHandler().Handle(
+            new ImportCustomSystemCommand(new ImportCustomSystemRequest(export.Value.Spec)), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(StudioAiPlanStatus.Pending.ToString(), result.Value.Plan.Status);
+        Assert.True(StudioAiSystemSpec.TryParse(export.Value.Spec.ToJsonString(), out var parsed, out _));
+        Assert.Equal(StudioAiSpecCanonical.CanonicalSystem(parsed!), _capturedCreate!.SpecJson);
+        var canonical = SpecJson(_capturedCreate);
+        Assert.Null(canonical["exportedFrom"]);
+        Assert.Null(canonical["specVersion"]);
+        Assert.Equal(2, canonical["entities"]!.AsArray().Count);
+    }
+
+    [Fact]
+    public async Task Import_without_include_seed_strips_seed_before_parsing()
+    {
+        SetupCreateSend();
+        var spec = ImportSpec();
+        spec["seed"] = new JsonArray(new JsonObject
+        {
+            ["entityRef"] = "employes",
+            ["records"] = new JsonArray(new JsonObject { ["nom"] = "Dupont" })
+        });
+
+        var withSeed = await ImportHandler().Handle(
+            new ImportCustomSystemCommand(new ImportCustomSystemRequest(spec.DeepClone().AsObject(), IncludeSeed: true)), CancellationToken.None);
+        Assert.True(withSeed.IsSuccess);
+        Assert.NotNull(SpecJson(_capturedCreate!)["seed"]);
+
+        var withoutSeed = await ImportHandler().Handle(
+            new ImportCustomSystemCommand(new ImportCustomSystemRequest(spec, IncludeSeed: false)), CancellationToken.None);
+        Assert.True(withoutSeed.IsSuccess);
+        Assert.Null(SpecJson(_capturedCreate!)["seed"]);
+        Assert.DoesNotContain("Dupont", _capturedCreate!.SpecJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Import_writes_audit_with_spec_version_entity_count_include_seed_and_plan_id()
+    {
+        SetupCreateSend();
+        var holder = CaptureAudit("Studio.System.ImportRequested");
+
+        var result = await ImportHandler().Handle(
+            new ImportCustomSystemCommand(new ImportCustomSystemRequest(ImportSpec(), IncludeSeed: false)), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(holder[0]);
+        Assert.Equal(new[] { "entityCount", "includeSeed", "planId", "specVersion" }, AuditKeys(holder[0]));
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(holder[0]));
+        Assert.Equal(1, doc.RootElement.GetProperty("specVersion").GetInt32());
+        Assert.Equal(2, doc.RootElement.GetProperty("entityCount").GetInt32());
+        Assert.False(doc.RootElement.GetProperty("includeSeed").GetBoolean());
+        Assert.Equal(result.Value.Plan.Id, doc.RootElement.GetProperty("planId").GetGuid());
     }
 }
