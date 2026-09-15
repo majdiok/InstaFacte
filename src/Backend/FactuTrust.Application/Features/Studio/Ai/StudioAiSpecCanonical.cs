@@ -60,7 +60,16 @@ public static class StudioAiSpecCanonical
     // ---- Système multi-tables -------------------------------------------------------------
 
     /// <summary>Ordre fixe des clés : system{displayName,icon,description,onboarding(,menu P2)}, entities[], seed[].</summary>
-    public static string CanonicalSystem(ParsedSystemSpec spec)
+    public static string CanonicalSystem(ParsedSystemSpec spec) => Serialize(CanonicalSystemNode(spec));
+
+    /// <summary>
+    /// Nœud canonique d'une spec système (E9, PR 3.3) : même construction que
+    /// <see cref="CanonicalSystem"/> (désormais un one-liner), exposée pour les ré-émetteurs qui
+    /// enrichissent la racine avant sérialisation (<c>specVersion</c>, <c>exportedFrom</c> — export
+    /// de systèmes). La sortie sérialisée de <see cref="CanonicalSystem"/> reste identique à
+    /// l'octet près (test de non-régression sur le modèle <c>suivi-reclamations</c>).
+    /// </summary>
+    public static JsonObject CanonicalSystemNode(ParsedSystemSpec spec)
     {
         var system = new JsonObject { ["displayName"] = spec.SystemDisplayName };
         if (spec.SystemIcon is not null) system["icon"] = spec.SystemIcon;
@@ -132,7 +141,7 @@ public static class StudioAiSpecCanonical
                 ["records"] = new JsonArray(batch.Records.Select(r => (JsonNode)RecordJson(r)).ToArray())
             }).ToArray());
         }
-        return Serialize(root);
+        return root;
     }
 
     // ---- Table simple ----------------------------------------------------------------------

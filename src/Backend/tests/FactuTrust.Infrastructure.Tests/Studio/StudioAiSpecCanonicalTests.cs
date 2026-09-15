@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FactuTrust.Application.Features.Studio.Ai;
+using FactuTrust.Application.Features.Studio.Templates;
 using FactuTrust.Domain.Enums;
 using Xunit;
 
@@ -580,5 +581,304 @@ public sealed class StudioAiSpecCanonicalTests
         Assert.Contains(steps, s => s.key == "filters" && s.detail == "1");
         Assert.Contains(steps, s => s.key == "default");
         Assert.Equal("Colonne « x » inconnue, ignorée.", doc.RootElement.GetProperty("warnings")[0].GetString());
+    }
+
+    // ---------- PR 3.3b1 — extraction CanonicalSystemNode (E9) ----------
+
+    [Fact]
+    public void CanonicalSystem_equals_serialized_canonical_node()
+    {
+        Assert.True(StudioAiSystemSpec.TryParse(SystemSpecLegacy, out var spec, out var error), error);
+
+        var viaString = StudioAiSpecCanonical.CanonicalSystem(spec!);
+        var viaNode = StudioAiSpecCanonical.Serialize(StudioAiSpecCanonical.CanonicalSystemNode(spec!));
+
+        Assert.Equal(viaString, viaNode);
+    }
+
+    /// <summary>
+    /// Sortie de <see cref="StudioAiSpecCanonical.CanonicalSystem"/> sur le modèle embarqué
+    /// <c>suivi-reclamations</c>, capturée AVANT l'extraction de <c>CanonicalSystemNode</c> (3.3b1)
+    /// et figée ici : toute dérive de la forme canonique fait échouer le test de non-régression.
+    /// </summary>
+    private const string SuiviReclamationsCanonicalGolden = """
+    {
+      "system": {
+        "displayName": "Suivi des réclamations",
+        "icon": "headset",
+        "description": "Traitement des réclamations clients : motifs, réclamations et actions correctives.",
+        "onboarding": [
+          "Vérifiez les motifs préchargés",
+          "Enregistrez une réclamation",
+          "Affectez une action corrective"
+        ]
+      },
+      "entities": [
+        {
+          "ref": "motifs",
+          "displayName": "Motif",
+          "displayNamePlural": "Motifs",
+          "icon": "tags",
+          "fields": [
+            {
+              "key": "libelle",
+              "label": "Libellé",
+              "type": "text",
+              "required": true,
+              "unique": true
+            }
+          ]
+        },
+        {
+          "ref": "reclamations",
+          "displayName": "Réclamation",
+          "displayNamePlural": "Réclamations",
+          "icon": "headset",
+          "fields": [
+            {
+              "key": "reference",
+              "label": "Référence",
+              "type": "text",
+              "required": true,
+              "unique": true
+            },
+            {
+              "key": "client",
+              "label": "Client",
+              "type": "relation",
+              "required": true,
+              "unique": false,
+              "relationTo": "clients"
+            },
+            {
+              "key": "motif",
+              "label": "Motif",
+              "type": "relation",
+              "required": true,
+              "unique": false,
+              "relationTo": "motifs"
+            },
+            {
+              "key": "description",
+              "label": "Description",
+              "type": "multilinetext",
+              "required": false,
+              "unique": false
+            },
+            {
+              "key": "priorite",
+              "label": "Priorité",
+              "type": "select",
+              "required": true,
+              "unique": false,
+              "options": [
+                {
+                  "value": "basse",
+                  "label": "Basse"
+                },
+                {
+                  "value": "normale",
+                  "label": "Normale"
+                },
+                {
+                  "value": "haute",
+                  "label": "Haute"
+                }
+              ]
+            },
+            {
+              "key": "date_d_ouverture",
+              "label": "Date d'ouverture",
+              "type": "date",
+              "required": true,
+              "unique": false
+            },
+            {
+              "key": "statut",
+              "label": "Statut",
+              "type": "select",
+              "required": true,
+              "unique": false,
+              "options": [
+                {
+                  "value": "ouverte",
+                  "label": "Ouverte"
+                },
+                {
+                  "value": "en_cours",
+                  "label": "En cours"
+                },
+                {
+                  "value": "resolue",
+                  "label": "Résolue"
+                },
+                {
+                  "value": "cloturee",
+                  "label": "Clôturée"
+                }
+              ]
+            }
+          ],
+          "form": {
+            "sections": [
+              {
+                "title": "Réclamation",
+                "fields": [
+                  {
+                    "field": "reference"
+                  },
+                  {
+                    "field": "client"
+                  },
+                  {
+                    "field": "motif"
+                  },
+                  {
+                    "field": "description"
+                  },
+                  {
+                    "field": "priorite",
+                    "width": "half"
+                  },
+                  {
+                    "field": "date_d_ouverture",
+                    "width": "half"
+                  },
+                  {
+                    "field": "statut"
+                  }
+                ]
+              }
+            ]
+          },
+          "report": {
+            "displayName": "Réclamations ouvertes",
+            "columns": [
+              "reference",
+              "client",
+              "motif",
+              "priorite",
+              "date_d_ouverture",
+              "statut"
+            ],
+            "filters": [
+              {
+                "field": "statut",
+                "op": "neq",
+                "value": "cloturee"
+              }
+            ],
+            "sort": [
+              {
+                "field": "date_d_ouverture",
+                "dir": "desc"
+              }
+            ]
+          }
+        },
+        {
+          "ref": "actions_correctives",
+          "displayName": "Action corrective",
+          "displayNamePlural": "Actions correctives",
+          "icon": "check",
+          "fields": [
+            {
+              "key": "reclamation",
+              "label": "Réclamation",
+              "type": "relation",
+              "required": true,
+              "unique": false,
+              "relationTo": "reclamations"
+            },
+            {
+              "key": "description",
+              "label": "Description",
+              "type": "text",
+              "required": true,
+              "unique": false
+            },
+            {
+              "key": "responsable",
+              "label": "Responsable",
+              "type": "text",
+              "required": false,
+              "unique": false
+            },
+            {
+              "key": "date_limite",
+              "label": "Date limite",
+              "type": "date",
+              "required": false,
+              "unique": false
+            },
+            {
+              "key": "terminee",
+              "label": "Terminée",
+              "type": "boolean",
+              "required": false,
+              "unique": false
+            }
+          ],
+          "form": {
+            "sections": [
+              {
+                "title": "Action corrective",
+                "fields": [
+                  {
+                    "field": "reclamation"
+                  },
+                  {
+                    "field": "description"
+                  },
+                  {
+                    "field": "responsable",
+                    "width": "half"
+                  },
+                  {
+                    "field": "date_limite",
+                    "width": "half"
+                  },
+                  {
+                    "field": "terminee"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "seed": [
+        {
+          "entityRef": "motifs",
+          "records": [
+            {
+              "libelle": "Retard de livraison"
+            },
+            {
+              "libelle": "Produit défectueux"
+            },
+            {
+              "libelle": "Erreur de facturation"
+            },
+            {
+              "libelle": "Qualité de service"
+            }
+          ]
+        }
+      ]
+    }
+    """;
+
+    [Fact]
+    public void CanonicalSystem_on_suivi_reclamations_template_matches_golden_output()
+    {
+        var template = StudioTemplateCatalog.TryGet("suivi-reclamations");
+        Assert.NotNull(template);
+        Assert.True(StudioAiSystemSpec.TryParse(template!.SpecJson, out var spec, out var error), error);
+
+        var canonical = StudioAiSpecCanonical.CanonicalSystem(spec!);
+
+        // Repli LF : la constante survivrait à une conversion CRLF du fichier au checkout Windows.
+        Assert.Equal(SuiviReclamationsCanonicalGolden.Replace("\r\n", "\n"), canonical);
     }
 }
