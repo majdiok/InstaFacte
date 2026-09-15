@@ -1,0 +1,101 @@
+/**
+ * Libellés français centralisés du runtime des vues enregistrées et des relations N-N (PR 2.5).
+ * Toute chaîne visible dans ces écrans doit passer par cet objet (pas de littéral dispersé).
+ */
+export const STUDIO_RUNTIME_LABELS = {
+  views: {
+    listTab: 'Liste',
+    newView: 'Nouvelle vue',
+    editView: 'Modifier la vue',
+    defaultBadge: 'Vue par défaut',
+    truncatedGeneric: 'Affichage limité ; affinez les filtres.',
+    empty: 'Aucun enregistrement.',
+    error: 'Chargement de la vue impossible.',
+    searchDisabled: 'La recherche est désactivée pour cette vue.',
+    soon: 'Bientôt'
+  },
+  kanban: {
+    moveTo: 'Déplacer vers…',
+    emptyGroup: 'Sans valeur',
+    truncated: 'Affichage limité à 500 cartes ; affinez les filtres.',
+    moved: 'Fiche déplacée vers {column}',
+    conflict: 'La fiche a été modifiée ailleurs ; rechargement.',
+    genericError: 'Déplacement impossible.'
+  },
+  calendar: {
+    month: 'Mois',
+    week: 'Semaine',
+    today: 'Aujourd’hui',
+    open: 'Ouvrir',
+    truncated: 'Affichage limité à 1000 événements ; affinez les filtres.'
+  },
+  designer: {
+    title: 'Concepteur de vue',
+    previewHint: 'Enregistrez pour voir l’aperçu.',
+    previewSaved: 'Aperçu calculé sur la version enregistrée (20 premiers enregistrements).',
+    previewStale: 'L’aperçu reflète la version enregistrée : enregistrez la vue pour prévisualiser ce mode.',
+    setDefault: 'Vue par défaut',
+    delete: 'Supprimer',
+    save: 'Enregistrer',
+    duplicateKey: 'Une vue porte déjà cette clé.',
+    planLimit: 'Limite du plan atteinte pour les vues enregistrées.',
+    staleConflict: 'La vue a été modifiée ailleurs ; rechargez.',
+    name: 'Nom de la vue',
+    key: 'Clé',
+    mode: 'Mode d’affichage',
+    columns: 'Colonnes',
+    sort: 'Tri',
+    pageSize: 'Taille de page',
+    kanbanGroupBy: 'Champ de regroupement',
+    calendarStart: 'Champ de début',
+    columnLimit: 'Nombre maximal de colonnes atteint.',
+    sortLimit: 'Nombre maximal de critères de tri atteint.',
+    invalidKey: 'Clé invalide : minuscule initiale, lettres, chiffres ou « _ » (2 à 64 caractères).',
+    keyImmutable: 'La clé d’une vue est immuable.',
+    deleted: 'Vue supprimée.',
+    saved: 'Vue enregistrée.'
+  },
+  relations: {
+    title: 'Relations',
+    addManyToMany: 'Ajouter une relation plusieurs-à-plusieurs',
+    junctionAttributeSoon: 'Attribut de liaison — Bientôt',
+    empty: 'Relations non activées.',
+    duplicateKey: 'Une table de liaison porte déjà cette clé.',
+    created: 'Relation plusieurs-à-plusieurs créée.'
+  },
+  linked: {
+    tabLabel: 'Liés',
+    add: 'Ajouter',
+    remove: 'Retirer',
+    duplicate: 'Lien déjà existant.',
+    truncated: 'Certaines fiches liées ne sont pas affichées.',
+    error: 'Chargement des fiches liées impossible.'
+  },
+  entities: {
+    junctionBadge: 'Jonction',
+    hideJunctions: 'Masquer les jonctions'
+  },
+  filters: {
+    title: 'Filtres',
+    add: 'Ajouter un filtre',
+    remove: 'Retirer ce filtre',
+    field: 'Champ',
+    operator: 'Opérateur',
+    value: 'Valeur',
+    empty: 'Aucun filtre.',
+    limitReached: 'Nombre maximal de filtres atteint.',
+    ops: {
+      eq: 'est égal à',
+      neq: 'est différent de',
+      contains: 'contient',
+      gt: 'est supérieur à',
+      gte: 'est supérieur ou égal à',
+      lt: 'est inférieur à',
+      lte: 'est inférieur ou égal à',
+      in: 'est parmi',
+      is_empty: 'est vide',
+      is_not_empty: 'n’est pas vide',
+      between: 'est compris entre'
+    }
+  }
+} as const;

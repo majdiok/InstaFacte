@@ -347,6 +347,10 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   et `dotnet test src\Backend\tests\FactuTrust.API.Tests --filter "FullyQualifiedName~FactuTrust.API.Tests.Studio"`
   (`AiChatOptionsContractTests` + contrats des contrôleurs Studio ; c'est ce filtre qu'exécute `azure-pipelines.yml`
   sous Linux — le projet complet, qui exige LocalDB, tourne dans le workflow GitHub `CI` sous Windows).
+- Frontend (runtime vues + relations N-N, PR 2.5) : `npx ng test --include='src/app/features/studio/**/*.spec.ts'`
+  (specs Karma `views/`, `shared/`, `relations/`, `studio-record-form`, `studio-entity-list`,
+  `studio-entity-designer`) ; E2E API mockée : `npx playwright test e2e/studio-runtime-views.spec.ts
+  e2e/studio-many-to-many.spec.ts --project=chromium`.
 - Backend (relations N-N) : `--filter "FullyQualifiedName~CreateManyToManyRelation|FullyQualifiedName~ListEntityRelations|FullyQualifiedName~CustomRecordJunctionUniqueness|FullyQualifiedName~CustomRecordRepositoryFilterSql|FullyQualifiedName~GetStudioNavQuery|FullyQualifiedName~AddStudioEntityKind"`
   (composition de la jonction, résolution des relations, unicité de paire, filtre SQL paramétré — nécessite
   `FACTUTRUST_TEST_SQL_CONNECTION` ou LocalDB, sinon `Skipped` —, nav sans jonction, migration `Kind`) ;
@@ -429,6 +433,27 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     `planPreviewEnabled = false` ⇒ carte Historique absente, aucun appel `GET api/studio/ai/plans`.
     Sans `systemExportEnabled`, **Exporter le système (JSON)** et **Partager** sont grisés « Bientôt » ;
     Importer / Dupliquer n'apparaissent qu'avec l'export activé (toast « arrive dans une prochaine version »).
+
+## Runtime des vues et relations N-N — frontend (PR 2.5)
+
+95. **Sélecteur de vues** : `/studio/d/<table>` avec vues dans le schéma ⇒ onglets « Liste » +
+    vues enregistrées, vue par défaut active (`POST …/views/{id}/run`) ; `?view=<id>` force une vue
+    (Kanban rendu groupé) ; schéma sans vues ⇒ liste brute d'avant 2.5, aucun appel `/run`.
+96. **Concepteur de vue** : `/studio/d/<table>/views/new` — clé auto-slug immuable en édition, bornes
+    (25 colonnes / 10 filtres / 3 tris / 6 champs carte) ; 409 création ⇒ « Une vue porte déjà cette
+    clé. », 409 édition ⇒ « La vue a été modifiée ailleurs ; rechargez. » + « Recharger », 400 « Limite
+    du plan… » ⇒ bandeau quota ; suppression confirmée ⇒ retour liste ; aperçu R3 en édition
+    (`previewLimit=20`, « Actualiser l'aperçu »).
+97. **Dialog N-N** : concepteur de table, capability `manyToManyEnabled` seule ⇒ bouton « Ajouter une
+    relation plusieurs-à-plusieurs » (après « Pont ERP ») + section Relations ; dialog : cible sans la
+    source ni les jonctions, clé `{source}_{cible}` par défaut, bloc « Attribut de liaison — Bientôt » ;
+    409 ⇒ « Une table de liaison porte déjà cette clé. », succès ⇒ toast + rechargement.
+98. **Onglet « Liés » + page Relations** : fiche en édition avec N-N ⇒ onglets Fiche / Liés — ⟨cible⟩ ;
+    ajout ⇒ POST jonction, 409 `record.duplicate_link` ⇒ « Lien déjà existant. » en ligne, liste
+    inchangée ; retrait ⇒ DELETE jonction/{id} ; bandeau tronqué si `totalCount > pageSize`. Sans
+    `custom_records:write`, Ajouter/Retirer masqués. `/studio/relations` ⇒ tableau dédoublonné +
+    diagramme SVG (`role="img"`) ; `/studio` ⇒ jonctions masquées par défaut, badge « Jonction » après
+    décoche.
 
 ## Amendements enrichis et changement de type (PR 3.1)
 

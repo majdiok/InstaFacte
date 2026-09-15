@@ -155,6 +155,22 @@ acceptable pour un lien métier, documenté comme tel.
 
 ---
 
+## 5bis. Frontend (PR 2.5)
+
+- **Dialog de création** (2.5f) : `relations/studio-many-to-many-dialog.component.ts` (concepteur de
+  table, capability `manyToManyEnabled`) ; section « Relations » de la table (type FR, cible,
+  jonction liée).
+- **Onglet « Liés »** (2.5e) : `relations/studio-linked-records.service.ts` **compose les endpoints
+  CRUD de la jonction** (aucun endpoint « linked » dédié) : liste = `GET records/{jonction}?filterField/
+  filterValue`, ajout = `POST records/{jonction}` (409 `record.duplicate_link` en ligne), retrait =
+  `DELETE records/{jonction}/{id}` ; `studio-record-form` montre les onglets Fiche / Liés — ⟨cible⟩
+  (`shared/studio-record-tabs.component.ts`, contrat réutilisé par 4.4h) uniquement en édition.
+- **Page Relations + diagramme** (2.5g) : `relations/studio-relations-page.component.ts` (N-N
+  dédoublonnées par `junctionEntityId`) et `studio-relation-diagram` (SVG en template Angular,
+  `DiagramModel`/`toDiagram` — contrat consommé par 3.4e) ; les jonctions sont masquées par défaut
+  dans la liste des tables (badge « Jonction »).
+- **E2E (2.5h)** : `e2e/studio-many-to-many.spec.ts` (4 cas, API mockée).
+
 ## 6. Sécurité
 
 - Isolation tenant sur chaque lecture/écriture (`tenantId` partout, `Unauthorized` sans tenant).
@@ -169,7 +185,8 @@ acceptable pour un lien métier, documenté comme tel.
 
 ## 7. Ce que ça ne fait pas (suite du programme)
 
-- Pas d'écran de saisie des liens ni d'onglet « Relations » : PR 2.5 (frontend).
+- Écran de saisie des liens et page « Relations » : **livrés en PR 2.5 (frontend)** — onglet « Liés »
+  de la fiche, dialog de création N-N, page `/studio/relations` + diagramme (voir §5bis).
 - Pas de suppression/édition d'une relation N‑N par endpoint dédié : on supprime la jonction comme
   toute entité (`DELETE api/studio/entities/{id}`).
 - Pas d'unicité SQL stricte de la paire (voir §3).

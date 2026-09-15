@@ -753,6 +753,27 @@ describe('StudioAiSessionStore', () => {
     });
   });
 
+  it('un seul `studio_plan` rendu par événement (2.5i) : deux événements successifs ⇒ remplacement, pas de doublon', () => {
+    const events = new Subject<ChatStreamEvent>();
+    stream.streamChat.and.returnValue(events.asObservable());
+    builds.getPlanSpec.and.returnValue(of({
+      success: true,
+      data: { spec: JSON.stringify({ entities: [{ key: 'conges' }] }), rowVersion: 'rv-1', expiresAt: '2026-09-09T10:00:00Z' },
+      message: null, errors: []
+    }) as never);
+
+    store.send('Créer un système de congés');
+    events.next(planEvent('p-1'));
+    events.next(planEvent('p-1'));
+    events.next(planEvent('p-2'));
+
+    // Chaque événement est appliqué une fois : un seul plan courant, la dernière émission gagne.
+    expect(store.phase()).toBe('awaiting_confirmation');
+    expect(store.plan()?.planId).toBe('p-2');
+    expect(builds.getPlanSpec.calls.count()).toBe(3);
+    expect(store.draft()?.entities.length).toBe(1);
+  });
+
   describe('pure helpers', () => {
     it('normalizeSummary fills the missing collections', () => {
       const normalized = normalizeSummary({ title: 'X' } as StudioPlanSummary);

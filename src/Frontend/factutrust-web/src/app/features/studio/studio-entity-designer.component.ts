@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
@@ -19,6 +19,10 @@ import {
 } from './studio.models';
 import { StudioPageShellComponent } from './shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
+import { StudioManyToManyDialogComponent } from './relations/studio-many-to-many-dialog.component';
+import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
+import { EntityRelationDto, relationKindLabel } from './relations/studio-relations.models';
+import { StudioAiCapabilitiesService } from './ai/studio-ai-capabilities.service';
 
 @Component({
   selector: 'app-studio-entity-designer',
@@ -26,7 +30,7 @@ import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
   imports: [
     CommonModule, FormsModule, RouterModule,
     TableModule, ButtonModule, DialogModule, InputTextModule, InputNumberModule, InputSwitchModule, SelectModule,
-    TooltipModule, ToastModule, StudioPageShellComponent
+    TooltipModule, ToastModule, StudioPageShellComponent, StudioManyToManyDialogComponent
   ],
   template: `
     <p-toast></p-toast>
@@ -44,6 +48,10 @@ import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
           class="p-button-outlined p-button-sm" [routerLink]="['/studio/d', e.key]"></button>
         <button pButton type="button" label="Pont ERP" icon="fa-solid fa-bolt"
           class="p-button-outlined p-button-sm" [routerLink]="['/studio', e.id, 'automations']"></button>
+        @if (manyToManyEnabled()) {
+          <button pButton type="button" [label]="runtimeLabels.relations.addManyToMany" icon="fa-solid fa-diagram-project"
+            class="p-button-outlined p-button-sm" (click)="m2mVisible.set(true)" data-testid="m2m-open"></button>
+        }
         <button pButton type="button" label="Ajouter un champ" icon="fa-solid fa-plus" (click)="openAdd()"></button>
       </div>
 
@@ -82,7 +90,37 @@ import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
         </ng-template>
       </p-table>
       </div>
+
+      @if (manyToManyEnabled()) {
+        <div class="ft-table-card" data-testid="relations-section">
+          <h3 class="studio-section-title">{{ runtimeLabels.relations.title }}</h3>
+          <p-table [value]="relations()" [loading]="relationsLoading()" styleClass="p-datatable-sm">
+            <ng-template pTemplate="header">
+              <tr><th>Type</th><th>Cible</th><th>Jonction</th></tr>
+            </ng-template>
+            <ng-template pTemplate="body" let-rel>
+              <tr>
+                <td>{{ relationKindLabel(rel.kind) }}</td>
+                <td>{{ rel.kind === 'many_to_many' ? rel.targetLabel : (rel.sourceEntityKey === e.key ? rel.targetLabel : rel.sourceLabel) }}</td>
+                <td>
+                  @if (rel.junctionEntityKey) {
+                    <a [routerLink]="['/studio', rel.junctionEntityId]">{{ rel.junctionEntityKey }}</a>
+                  } @else { — }
+                </td>
+              </tr>
+            </ng-template>
+            <ng-template pTemplate="emptymessage">
+              <tr><td colspan="3" class="ft-empty">{{ runtimeLabels.relations.empty }}</td></tr>
+            </ng-template>
+          </p-table>
+        </div>
+      }
     </app-studio-page-shell>
+
+    @if (manyToManyEnabled() && entity()) {
+      <app-studio-many-to-many-dialog [sourceEntity]="entity()!" [entities]="allEntities()"
+        [(visible)]="m2mVisible" (created)="onRelationCreated()" />
+    }
 
     <p-dialog [header]="editing() ? 'Modifier le champ' : 'Nouveau champ'" [(visible)]="dialogVisible" [modal]="true" [style]="{ width: '34rem' }">
       <div class="ft-form">
@@ -243,6 +281,18 @@ export class StudioEntityDesignerComponent implements OnInit {
   private readonly toast = inject(MessageService);
   private readonly confirmation = inject(ConfirmationService);
   private readonly route = inject(ActivatedRoute);
+  private readonly capabilities = inject(StudioAiCapabilitiesService);
+
+  readonly runtimeLabels = STUDIO_RUNTIME_LABELS;
+  readonly manyToManyEnabled = computed(() =>
+    this.capabilities.state() === 'ready' && this.capabilities.capabilities().manyToManyEnabled === true);
+  readonly relations = signal<EntityRelationDto[]>([]);
+  readonly relationsLoading = signal(false);
+  readonly m2mVisible = signal(false);
+
+  constructor() {
+    effect(() => { if (this.manyToManyEnabled() && this.entityId) this.loadRelations(); });
+  }
 
   breadcrumbs = STUDIO_BREADCRUMBS.entities();
 
@@ -304,7 +354,24 @@ export class StudioEntityDesignerComponent implements OnInit {
     this.entityId = this.route.snapshot.paramMap.get('id') ?? '';
     this.loadEntity();
     this.loadFields();
+    this.capabilities.ensureLoaded();
     this.studio.listEntities(false).subscribe({ next: res => { if (res.success) this.allEntities.set(res.data ?? []); } });
+  }
+
+  loadRelations(): void {
+    this.relationsLoading.set(true);
+    this.studio.listEntityRelations(this.entityId).subscribe({
+      next: res => { this.relationsLoading.set(false); if (res.success) this.relations.set(res.data ?? []); },
+      error: () => this.relationsLoading.set(false)
+    });
+  }
+
+  protected readonly relationKindLabel = relationKindLabel;
+
+  onRelationCreated(): void {
+    this.toast.add({ severity: 'success', summary: this.runtimeLabels.relations.title, detail: this.runtimeLabels.relations.created });
+    this.loadRelations();
+    this.loadFields();
   }
 
   loadEntity(): void {

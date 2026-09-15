@@ -74,6 +74,8 @@ export interface StudioMockOptions {
   /** Historique renvoyé par `GET /api/studio/ai/plans`. */
   plans?: StudioPlanListItemMock[];
   templates?: StudioTemplateMock[];
+  /** Remplace `STUDIO_E2E_USER.effectivePermissions` (ex. ajout de `custom_records:write`). */
+  permissions?: string[];
 }
 
 export interface StudioPlanListItemMock {
@@ -291,7 +293,7 @@ export async function installStudioApiMocks(page: Page, options: StudioMockOptio
   await mockJson('**/api/studio/nav', ok([]));
   await mockJson('**/api/ai/health', ok({ available: true }));
   await mockJson('**/api/ai/warm-up', ok({ warmed: true }));
-  await mockJson('**/api/auth/me', ok(STUDIO_E2E_USER));
+  await mockJson('**/api/auth/me', ok(options.permissions ? { ...STUDIO_E2E_USER, effectivePermissions: options.permissions } : STUDIO_E2E_USER));
 
   await page.route('**/api/ai/studio/capabilities', async route => {
     record(route);
@@ -425,4 +427,189 @@ function safeJson(raw: string | null): unknown {
   } catch {
     return raw;
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// Runtime des vues enregistrées + relations N-N (2.5h) — mocks au-dessus du filet
+// `installStudioApiMocks` (Playwright évalue la route la plus récente d'abord).
+// ---------------------------------------------------------------------------
+
+export interface StudioRuntimeMockOptions {
+  /** Table hôte du runtime (défaut 'interventions'). */
+  entityKey?: string;
+  /** Schéma complet (`CustomEntitySchema`) ; un défaut List+Kanban + N-N est fourni. */
+  schema?: unknown;
+  /** Surcharge du résultat `POST …/views/{id}/run` (par défaut : mode adapté à l'id). */
+  runResult?: unknown;
+  /** Clé de la table de jonction N-N (défaut 'intervention_technicien'). */
+  junctionKey?: string;
+  /** `POST records/{jonction}` renvoie 409 `record.duplicate_link`. */
+  duplicateLinkOn409?: boolean;
+  /** `PATCH records/{clé}/{id}` renvoie 409 (conflit rowVersion, drag kanban). */
+  patchConflict409?: boolean;
+  /** Schéma sans vues enregistrées (cas « drapeau coupé » côté liste). */
+  withoutViews?: boolean;
+}
+
+const RUNTIME_ENTITIES = [
+  { id: 'e-int', key: 'interventions', displayName: 'Interventions', displayNamePlural: 'Interventions', icon: null, description: null, isActive: true, fieldCount: 3, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', kind: 'Standard' },
+  { id: 'e-tech', key: 'techniciens', displayName: 'Techniciens', displayNamePlural: 'Techniciens', icon: null, description: null, isActive: true, fieldCount: 1, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', kind: 'Standard' },
+  { id: 'e-jct', key: 'intervention_technicien', displayName: 'Intervention × Technicien', displayNamePlural: 'Liens', icon: null, description: null, isActive: true, fieldCount: 2, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', kind: 'Junction' }
+];
+
+const RUNTIME_FIELDS = [
+  { id: 'f-nom', key: 'nom', label: 'Nom', fieldType: 0, isRequired: true, isUnique: false, sortOrder: 0, rules: null, options: null, relation: null, isActive: true },
+  { id: 'f-statut', key: 'statut', label: 'Statut', fieldType: 7, isRequired: false, isUnique: false, sortOrder: 1, rules: null,
+    options: [{ value: 'a_planifier', label: 'À planifier' }, { value: 'termine', label: 'Terminé' }], relation: null, isActive: true },
+  { id: 'f-debut', key: 'debut', label: 'Début', fieldType: 5, isRequired: false, isUnique: false, sortOrder: 2, rules: null, options: null, relation: null, isActive: true }
+];
+
+const RUNTIME_RECORDS = [
+  { id: 'r1', data: { nom: 'Chaudière A12', statut: 'a_planifier', debut: '2026-09-10' }, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', rowVersion: 'AAA=' },
+  { id: 'r2', data: { nom: 'Pompe B3', statut: 'termine', debut: '2026-09-12' }, createdAt: '2026-09-02T00:00:00Z', updatedAt: '2026-09-02T00:00:00Z', rowVersion: 'AAB=' }
+];
+
+const RUNTIME_TARGETS = [
+  { id: 't1', data: { nom: 'Ben Ali' }, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', rowVersion: 'T1' },
+  { id: 't2', data: { nom: 'Sassi' }, createdAt: '2026-09-02T00:00:00Z', updatedAt: '2026-09-02T00:00:00Z', rowVersion: 'T2' }
+];
+
+const RUNTIME_M2M = {
+  kind: 'many_to_many', sourceEntityId: 'e-int', sourceEntityKey: 'interventions', sourceLabel: 'Interventions',
+  targetEntityId: 'e-tech', targetEntityKey: 'techniciens', targetLabel: 'Techniciens',
+  fieldId: 'jf-int', fieldKey: 'intervention_id', isRequired: true, isUnique: false,
+  junctionEntityId: 'e-jct', junctionEntityKey: 'intervention_technicien',
+  junctionTargetFieldId: 'jf-tech', junctionTargetFieldKey: 'technicien_id'
+};
+
+const LIST_VIEW = {
+  id: 'v-list', key: 'actives', displayName: 'Actives', mode: 'List',
+  definition: { columns: [{ fieldKey: 'nom', hidden: false }], filters: [], sort: [], kanban: null, calendar: null, searchEnabled: true, pageSize: 25 },
+  isDefault: true, isActive: true, rowVersion: 'V1', updatedAt: '2026-09-01T00:00:00Z'
+};
+const KANBAN_VIEW = {
+  id: 'v-kanban', key: 'par_statut', displayName: 'Par statut', mode: 'Kanban',
+  definition: { columns: [{ fieldKey: 'nom', hidden: false }], filters: [], sort: [],
+    kanban: { groupByFieldKey: 'statut', titleFieldKey: 'nom', cardFieldKeys: [], columnOrder: null, showEmptyGroup: true }, calendar: null,
+    searchEnabled: false, pageSize: 25 },
+  isDefault: false, isActive: true, rowVersion: 'V2', updatedAt: '2026-09-01T00:00:00Z'
+};
+
+function runtimeSchema(): unknown {
+  return {
+    entity: RUNTIME_ENTITIES[0],
+    fields: RUNTIME_FIELDS,
+    form: { sections: [] },
+    relations: [RUNTIME_M2M],
+    views: [LIST_VIEW, KANBAN_VIEW]
+  };
+}
+
+function runResultFor(viewId: string): unknown {
+  if (viewId === 'v-kanban') {
+    return {
+      mode: 'Kanban', items: [], total: 2, page: 1, pageSize: 500,
+      groups: [
+        { value: 'a_planifier', label: 'À planifier', count: 1, items: [RUNTIME_RECORDS[0]] },
+        { value: 'termine', label: 'Terminé', count: 1, items: [RUNTIME_RECORDS[1]] }
+      ],
+      events: null, truncated: false
+    };
+  }
+  return { mode: 'List', items: RUNTIME_RECORDS, total: 2, page: 1, pageSize: 25, groups: null, events: null, truncated: false };
+}
+
+/**
+ * Mocks du runtime 2.5 (vues enregistrées + N-N) à installer APRÈS `installStudioApiMocks`.
+ * Chaque appel est poussé dans `ctx.calls` ; les écritures réussissent (201/200/204) sauf options
+ * `duplicateLinkOn409` / `patchConflict409`.
+ */
+export async function installStudioRuntimeMocks(
+  page: Page, ctx: StudioMockContext, options: StudioRuntimeMockOptions = {}
+): Promise<void> {
+  const key = options.entityKey ?? 'interventions';
+  const junction = options.junctionKey ?? 'intervention_technicien';
+  const schema = options.schema ?? (options.withoutViews ? { ...runtimeSchema(), views: [] } : runtimeSchema());
+  const record_ = (route: Route) => {
+    const req = route.request();
+    ctx.calls.push({ method: req.method(), url: req.url(), body: safeJson(req.postData()) });
+  };
+  const fulfil = async (route: Route, body: unknown, status = 200) => {
+    record_(route);
+    await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  };
+  const paged = (items: unknown[], totalCount = items.length) =>
+    ok({ items, page: 1, pageSize: items.length || 10, totalCount, totalPages: 1, hasNextPage: false, hasPreviousPage: false });
+
+  // Ordre = priorité croissante (Playwright évalue la route la plus récente d'abord) : les motifs
+  // génériques sont enregistrés AVANT les motifs précis ; les listes paginées portent un `?**`
+  // (le glob doit couvrir la query string).
+
+  // — Table hôte : CRUD d'enregistrement (id), PATCH éventuellement en conflit 409.
+  await page.route(`**/api/studio/records/${key}/*`, async route => {
+    if (route.request().method() === 'PATCH') {
+      if (options.patchConflict409) {
+        await fulfil(route, { success: false, data: null, message: 'Conflit de version.', errors: [], code: 'record.stale' }, 409);
+        return;
+      }
+      await fulfil(route, ok(RUNTIME_RECORDS[0]));
+      return;
+    }
+    await fulfil(route, ok(RUNTIME_RECORDS[0]));
+  });
+  await page.route(`**/api/studio/records/${key}?**`, route => fulfil(route, paged(RUNTIME_RECORDS)));
+  await page.route(`**/api/studio/records/${key}`, route => fulfil(route, paged(RUNTIME_RECORDS)));
+  await page.route(`**/api/studio/records/${key}/schema`, route => fulfil(route, ok(schema)));
+
+  // — Vues enregistrées : run + CRUD.
+  await page.route(`**/api/studio/records/${key}/views/*/run`, route =>
+    fulfil(route, ok(options.runResult ?? runResultFor(route.request().url().split('/views/')[1].split('/run')[0]))));
+  await page.route(`**/api/studio/records/${key}/views/*/default`, route => fulfil(route, ok(null)));
+  await page.route(`**/api/studio/records/${key}/views/*`, async route => {
+    const method = route.request().method();
+    if (method === 'DELETE') { record_(route); await route.fulfill({ status: 204, body: '' }); return; }
+    if (method === 'PUT') { await fulfil(route, ok({ ...LIST_VIEW, ...(safeJson(route.request().postData()) as object) })); return; }
+    await fulfil(route, ok(LIST_VIEW));
+  });
+  await page.route(`**/api/studio/records/${key}/views`, async route => {
+    if (route.request().method() === 'POST') {
+      const body = (safeJson(route.request().postData()) ?? {}) as Record<string, unknown>;
+      await fulfil(route, ok({ ...LIST_VIEW, id: 'v-new', key: body['key'] ?? 'v_new', displayName: body['displayName'] ?? 'Nouvelle vue', mode: body['mode'] ?? 'List', definition: body['definition'] ?? LIST_VIEW.definition }), 201);
+      return;
+    }
+    await fulfil(route, ok([LIST_VIEW, KANBAN_VIEW]));
+  });
+
+  // — Jonction : retrait (DELETE {id}), liste des liens (GET ?…), ajout (POST).
+  await page.route(`**/api/studio/records/${junction}/*`, async route => {
+    if (route.request().method() === 'DELETE') { record_(route); await route.fulfill({ status: 204, body: '' }); return; }
+    await fulfil(route, paged([]));
+  });
+  await page.route(`**/api/studio/records/${junction}?**`, route =>
+    fulfil(route, paged([{ id: 'j-rec-1', data: { intervention_id: 'r1', technicien_id: 't1' }, createdAt: '2026-09-03T00:00:00Z', updatedAt: '2026-09-03T00:00:00Z', rowVersion: 'J1' }])));
+  await page.route(`**/api/studio/records/${junction}`, async route => {
+    if (route.request().method() === 'POST') {
+      if (options.duplicateLinkOn409) {
+        await fulfil(route, { success: false, data: null, message: 'Lien déjà existant.', errors: [], code: 'record.duplicate_link' }, 409);
+        return;
+      }
+      await fulfil(route, ok({ id: 'j-rec-2', data: {}, createdAt: '2026-09-03T01:00:00Z', updatedAt: '', rowVersion: 'J2' }), 201);
+      return;
+    }
+    await fulfil(route, paged([]));
+  });
+
+  // — Cibles candidates (recherche « Liés »).
+  await page.route(`**/api/studio/records/techniciens?**`, route => fulfil(route, paged(RUNTIME_TARGETS)));
+  await page.route(`**/api/studio/records/techniciens`, route => fulfil(route, paged(RUNTIME_TARGETS)));
+
+  // — Entités + relations (concepteur de table, page Relations, liste des tables).
+  await page.route(`**/api/studio/entities/*/relations/many-to-many`, route =>
+    fulfil(route, ok({ junction: RUNTIME_ENTITIES[2], sourceField: RUNTIME_FIELDS[0], targetField: RUNTIME_FIELDS[1] }), 201));
+  await page.route(`**/api/studio/entities/*/relations`, route => fulfil(route, ok([RUNTIME_M2M])));
+  await page.route(`**/api/studio/entities/*/fields?**`, route => fulfil(route, ok(RUNTIME_FIELDS)));
+  await page.route(`**/api/studio/entities/*`, route => fulfil(route, ok(RUNTIME_ENTITIES[0])));
+  await page.route(`**/api/studio/entities?**`, route => fulfil(route, ok(RUNTIME_ENTITIES)));
+  await page.route(`**/api/studio/entities`, route => fulfil(route, ok(RUNTIME_ENTITIES)));
 }
