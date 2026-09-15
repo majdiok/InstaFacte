@@ -878,7 +878,10 @@ public sealed class StudioAiSpecCanonicalTests
 
         var canonical = StudioAiSpecCanonical.CanonicalSystem(spec!);
 
-        // Repli LF : la constante survivrait à une conversion CRLF du fichier au checkout Windows.
-        Assert.Equal(SuiviReclamationsCanonicalGolden.Replace("\r\n", "\n"), canonical);
+        // Repli LF des deux côtés : la constante survivrait à une conversion CRLF du fichier au checkout Windows,
+        // et WriteIndented émet Environment.NewLine (CRLF sur l'agent CI Windows). La forme (clés, ordre, indentation) reste comparée à l'octet près.
+        Assert.Equal(
+            SuiviReclamationsCanonicalGolden.Replace("\r\n", "\n"),
+            canonical.Replace("\r\n", "\n"));
     }
 }
