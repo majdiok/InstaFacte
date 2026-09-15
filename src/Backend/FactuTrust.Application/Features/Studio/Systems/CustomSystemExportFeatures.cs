@@ -164,6 +164,9 @@ public sealed class ExportCustomSystemQueryHandler : IRequestHandler<ExportCusto
 public sealed record DuplicateCustomSystemCommand(string Key, string? DisplayNameOverride = null)
     : IRequest<Result<StudioAiPlanCreationResponse>>;
 
+/// <summary>Corps optionnel de <c>POST api/studio/systems/{key}/duplicate</c> (tranche 3.3d).</summary>
+public sealed record DuplicateCustomSystemRequest(string? DisplayName);
+
 /// <summary>
 /// Corps de <c>POST api/studio/systems/import</c>. <c>Spec</c> accepte un objet JSON ou une chaîne JSON
 /// (tolérance client).
