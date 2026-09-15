@@ -115,7 +115,7 @@ export const STUDIO_CHILD_ROUTES: Routes = [
     title: 'Nouvel enregistrement - InstaFact'
   },
   // Déclarées avant `d/:key/:id/edit` pour que `views` ne soit pas capturé comme `:id` (V4/spec).
-  // Stub 2.5a (« Concepteur de vue — bientôt ») ; remplacé par le vrai concepteur en 2.5c.
+  // Stub 2.5a (« Concepteur de vue — bientôt ») ; remplacé par le vrai concepteur en 2.5d.
   {
     path: 'd/:key/views/new',
     canActivate: [permissionGuard, capabilityGuard('recordViewsEnabled', r => '/studio/d/' + r.paramMap.get('key'))],

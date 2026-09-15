@@ -61,8 +61,10 @@ import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
             <h3 class="ft-filters__title"><i class="pi pi-search"></i> Recherche</h3>
           </div>
           <div class="studio-toolbar">
-            <input pInputText [(ngModel)]="search" (keyup.enter)="reload()" placeholder="Rechercher…" class="studio-search-input" />
-            <button pButton type="button" icon="fa-solid fa-magnifying-glass" label="Rechercher" class="p-button-sm" (click)="reload()"></button>
+            <input pInputText [(ngModel)]="search" (keyup.enter)="reload()" placeholder="Rechercher…" class="studio-search-input"
+              [disabled]="searchDisabled()" [title]="searchDisabled() ? labels.views.searchDisabled : ''" />
+            <button pButton type="button" icon="fa-solid fa-magnifying-glass" label="Rechercher" class="p-button-sm" (click)="reload()"
+              [disabled]="searchDisabled()"></button>
             <span class="studio-toolbar__spacer"></span>
             @if (!activeView()) {
               <!-- Export masqué quand une vue enregistrée est active : il porterait sur les enregistrements
@@ -159,20 +161,23 @@ export class StudioRecordListComponent implements OnInit {
   );
   readonly activeViewId = computed(() => this.activeViewIdParam());
 
+  // Runtime piloté par le SCHÉMA (décision A-Q1, 2.5c) : `schema.views` est servi sous
+  // `custom_records:read` et vide quand `EnableStudioRecordViews` est coupé (fail-closed côté
+  // serveur, `StudioRecordViewsController.Unavailable()`). Un rôle « données » sans permission Studio
+  // voit donc le sélecteur, le kanban et le calendrier ; `GET api/ai/studio/capabilities` (policy
+  // `StudioDesignEntities`, 403 pour lui) ne conditionne que les écrans de CONCEPTION.
   readonly views = computed(() => this.schema()?.views ?? []);
-  // Repli strict : tant que les capacités ne sont pas confirmées (`ready`), la page ignore `?view=`
-  // et se comporte exactement comme avant 2.5a (zéro régression). La course « schéma arrivé avant
-  // les capacités » ne doit jamais déclencher un `/run` ni monter le runner.
   readonly recordViewsEnabled = computed(() =>
     this.capabilities.state() === 'ready' && this.capabilities.capabilities().recordViewsEnabled === true);
   // Vue effective : `?view=<id>` si présente, sinon la vue `isDefault`, sinon la « Liste » brute.
+  // Sans vue dans le schéma, l'écran est strictement celui d'avant 2.5a (zéro régression).
   readonly activeView = computed(() => {
-    if (!this.recordViewsEnabled()) return null;
     const views = this.views();
     const fromParam = views.find(v => v.id === this.activeViewId());
     return fromParam ?? views.find(v => v.isDefault) ?? null;
   });
-  readonly showSwitcher = computed(() => this.recordViewsEnabled() && this.views().length > 0);
+  readonly showSwitcher = computed(() => this.views().length > 0);
+  // Boutons « Nouvelle vue » / « Modifier la vue » : conception ⇒ capacités (A-Q2, fail-closed).
   readonly showViewButton = computed(() => this.recordViewsEnabled() && this.canDesignForms());
 
   canWrite = () => this.auth.hasPermission(PERMISSIONS.customData.recordsWrite);
@@ -202,6 +207,7 @@ export class StudioRecordListComponent implements OnInit {
   }
 
   onSwitchView(viewId: string | null): void {
+    this.runnerTotal.set(null); // ne pas afficher l'ancien total pendant le run de la nouvelle vue
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { view: viewId },
@@ -219,6 +225,8 @@ export class StudioRecordListComponent implements OnInit {
   /** Total rapporté par le runner (vue active) ; pris en compte par le sous-titre. */
   private readonly runnerTotal = signal<number | null>(null);
   readonly subtitleTotal = computed(() => this.activeView() ? (this.runnerTotal() ?? 0) : this.total());
+  /** Vue active avec recherche désactivée ⇒ champ grisé (le serveur répondrait 400 « recherche désactivée »). */
+  readonly searchDisabled = computed(() => this.activeView()?.definition.searchEnabled === false);
 
   onRunnerTotal(total: number): void {
     this.runnerTotal.set(total);
@@ -310,6 +318,8 @@ export class StudioRecordListComponent implements OnInit {
           next: res => {
             if (res.success) {
               this.toast.add({ severity: 'success', summary: 'Supprimé' });
+              // Suppression via une vue : la liste brute (onglet « Liste ») doit être re-lue au retour.
+              this.fetched = false;
               this.reload();
             }
           },

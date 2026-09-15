@@ -125,8 +125,16 @@ export const RECORD_VIEW_LIMITS = {
   maxCalendarDays: 92,
   maxCardFields: 6,
   maxInValues: 100,
-  maxExtraFilters: 5
+  maxExtraFilters: 5,
+  /** Forme d'une clé de vue (`StudioKey.IsValidShape` : minuscule initiale, `[a-z0-9_]`, 2–64). */
+  keyPattern: /^[a-z][a-z0-9_]{1,63}$/
 } as const;
+
+/**
+ * Clés « système » acceptées en colonne ou en tri sans champ correspondant
+ * (`RecordViewDefinitionValidator.PersistedKeys`) — jamais en filtre.
+ */
+export const RECORD_VIEW_PERSISTED_KEYS: readonly string[] = ['createdAt', 'updatedAt'];
 
 /**
  * Table de compatibilité opérateur / type de champ, miroir exact de
