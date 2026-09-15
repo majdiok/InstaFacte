@@ -200,7 +200,11 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
               <app-studio-ai-forms-tab [spec]="spec()!" />
             </p-tabpanel>
             <p-tabpanel value="seed">
-              <app-studio-ai-seed-tab [spec]="spec()!" />
+              <!-- 3.4h : en mode Personnaliser, chaque bloc permet d'importer un CSV (seed du brouillon). -->
+              <app-studio-ai-seed-tab
+                [spec]="spec()!"
+                [editable]="store.mode() === 'customize'"
+                (seedReplace)="store.replaceSeed($event.ref, $event.records)" />
             </p-tabpanel>
             <p-tabpanel value="reports">
               <app-studio-ai-reports-tab [spec]="spec()!" />
