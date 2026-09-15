@@ -390,6 +390,12 @@ public sealed class OllamaSettings
     /// Effectif seulement si <see cref="EnableStudioRecordViews"/> et <see cref="EnableStudioAiPlanPreview"/> sont actifs.</summary>
     public bool EnableStudioAiRecordViewTools { get; set; } = false;
 
+    /// <summary>Export/duplication/import de systèmes Studio (PR 3.3).</summary>
+    public bool EnableStudioSystemExport { get; set; } = false;
+
+    /// <summary>Lignes de seed exportées par table (borne).</summary>
+    public int StudioExportMaxSeedRows { get; set; } = 200;
+
     /// <summary>
     /// Budget de tours d'outils quand la requête Studio utilise le modèle avancé (GPU / cloud) :
     /// remplace le plafond CPU (<see cref="CpuMaxToolCallRounds"/>) pour ce seul tour. Borné 1..20.
