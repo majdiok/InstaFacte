@@ -12,6 +12,7 @@ import { counterChips } from '../studio-ai-spec.util';
 import { StudioAiDuplicatesBannerComponent } from './studio-ai-duplicates-banner.component';
 import { StudioAiFormsTabComponent } from './studio-ai-forms-tab.component';
 import { StudioAiMenuTabComponent } from './studio-ai-menu-tab.component';
+import { StudioAiModeBarComponent } from './studio-ai-mode-bar.component';
 import { StudioAiOverviewTabComponent } from './studio-ai-overview-tab.component';
 import { StudioAiRelationsTabComponent } from './studio-ai-relations-tab.component';
 import { StudioAiReportsTabComponent } from './studio-ai-reports-tab.component';
@@ -24,7 +25,8 @@ import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
  * Trois états : aucun plan (placeholder), spec en cours de chargement (squelette), proposition
  * chargée (en-tête, compteurs, onglets). Le composant ne crée jamais rien : « Créer maintenant »
  * remonte `confirmRequested` pour que la page ouvre le dialogue de confirmation, seul chemin vers
- * `POST {id}/confirm`. « Modifier » est présent mais désactivé : l'édition détaillée arrive en P1b.
+ * `POST {id}/confirm`. La barre de modes (Aperçu / Tester / Personnaliser, 3.4c) remplace l'ancien
+ * bouton « Modifier » ; « Personnaliser » démarre l'édition dans le store.
  */
 @Component({
   selector: 'app-studio-ai-preview',
@@ -33,7 +35,7 @@ import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
     ButtonModule, SkeletonModule, TabsModule, TagModule, TooltipModule,
     StudioAiOverviewTabComponent, StudioAiTablesTabComponent, StudioAiRelationsTabComponent,
     StudioAiFormsTabComponent, StudioAiSeedTabComponent, StudioAiReportsTabComponent,
-    StudioAiMenuTabComponent, StudioAiDuplicatesBannerComponent
+    StudioAiMenuTabComponent, StudioAiDuplicatesBannerComponent, StudioAiModeBarComponent
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './studio-ai-preview.scss',
@@ -47,12 +49,14 @@ import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
         </div>
         @if (store.plan()) {
           <div class="sai-head__actions">
-            <p-button
-              [label]="labels.edit"
-              icon="fa-solid fa-sliders"
-              [outlined]="true"
-              [disabled]="true"
-              [pTooltip]="labels.readOnlyHint" />
+            <app-studio-ai-mode-bar
+              [mode]="store.mode()"
+              [expiresInSeconds]="store.expiresInSeconds()"
+              [changeCount]="store.changeCount()"
+              [previewUnavailable]="store.previewUnavailable()"
+              [busy]="store.busy()"
+              (modeChange)="store.setMode($event)"
+              (regenerate)="regenerateExpired()" />
             <p-button
               [label]="labels.cancel"
               icon="fa-solid fa-xmark"
@@ -207,11 +211,15 @@ export class StudioAiPreviewComponent {
 
   readonly headerSubtitle = computed(() => {
     if (!this.store.plan()) return this.labels.emptyHint;
+    if (this.store.mode() === 'customize') return this.labels.editingSubtitle;
     const description = this.spec()?.system?.description;
     return description ? `${description} · ${this.labels.nothingCreated}` : this.labels.nothingCreated;
   });
 
-  readonly confirmTooltip = computed(() => (this.store.canConfirm() ? '' : this.labels.integrateDisabledDirty));
+  readonly confirmTooltip = computed(() => {
+    if (this.store.expired()) return this.labels.expired;
+    return this.store.canConfirm() ? '' : this.labels.integrateDisabledDirty;
+  });
 
   readonly chips = computed(() => counterChips(this.store.counters()));
 
@@ -241,6 +249,12 @@ export class StudioAiPreviewComponent {
    */
   onTabLabelClick(event: Event, available: boolean): void {
     if (!available) event.stopPropagation();
+  }
+
+  /** « Régénérer » sur un plan expiré : rejoue le plan (`POST {id}/replay`) et ouvre le nouveau. */
+  regenerateExpired(): void {
+    const plan = this.store.plan();
+    if (plan) this.store.replay(plan.planId);
   }
 
   /** Clic sur une table de la Vue d'ensemble : bascule sur l'onglet Tables, table sélectionnée. */
