@@ -18,6 +18,7 @@ import { StudioAiRelationsTabComponent } from './studio-ai-relations-tab.compone
 import { StudioAiReportsTabComponent } from './studio-ai-reports-tab.component';
 import { StudioAiSeedTabComponent } from './studio-ai-seed-tab.component';
 import { StudioAiTablesTabComponent } from './studio-ai-tables-tab.component';
+import { StudioAiTestPanelComponent } from './studio-ai-test-panel.component';
 import { StudioAiViewsTabComponent } from './studio-ai-views-tab.component';
 import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.component';
 
@@ -28,7 +29,8 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
  * chargée (en-tête, compteurs, onglets). Le composant ne crée jamais rien : « Créer maintenant »
  * remonte `confirmRequested` pour que la page ouvre le dialogue de confirmation, seul chemin vers
  * `POST {id}/confirm`. La barre de modes (Aperçu / Tester / Personnaliser, 3.4c) remplace l'ancien
- * bouton « Modifier » ; « Personnaliser » démarre l'édition dans le store.
+ * bouton « Modifier » ; « Personnaliser » démarre l'édition dans le store. En mode « Tester » (3.4f1),
+ * les onglets sont remplacés par le panneau de simulation (`app-studio-ai-test-panel`, 0 écriture).
  */
 @Component({
   selector: 'app-studio-ai-preview',
@@ -38,7 +40,7 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
     StudioAiOverviewTabComponent, StudioAiTablesTabComponent, StudioAiRelationsTabComponent,
     StudioAiFormsTabComponent, StudioAiSeedTabComponent, StudioAiReportsTabComponent,
     StudioAiMenuTabComponent, StudioAiDuplicatesBannerComponent, StudioAiModeBarComponent,
-    StudioAiViewsTabComponent, StudioAiWorkflowsTabComponent
+    StudioAiViewsTabComponent, StudioAiWorkflowsTabComponent, StudioAiTestPanelComponent
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './studio-ai-preview.scss',
@@ -131,6 +133,15 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
           }
         </div>
 
+        @switch (store.mode()) {
+          @case ('test') {
+            <!-- Mode Tester (3.4f1) : formulaire simulé depuis la spec, 0 écriture ; onglets masqués. -->
+            <app-studio-ai-test-panel
+              [spec]="spec()!"
+              [preview]="store.preview()"
+              [previewUnavailable]="store.previewUnavailable()" />
+          }
+          @default {
         <p-tabs [value]="activeTab()" [scrollable]="true" (valueChange)="onTabChange($event)">
           <p-tablist>
             @for (tab of tabs; track tab.id) {
@@ -188,6 +199,8 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
             </p-tabpanel>
           </p-tabpanels>
         </p-tabs>
+          }
+        }
       }
     </section>
   `
