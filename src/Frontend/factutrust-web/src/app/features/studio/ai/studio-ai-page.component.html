@@ -78,7 +78,7 @@
             (navigate)="store.go($event)"
             (newRequest)="newRequest()"
             (exportSystem)="openExport($event)"
-            (duplicate)="comingSoon()"
+            (duplicate)="openDuplicate($event)"
             (replay)="replayCurrent()" />
         }
       }
@@ -111,8 +111,8 @@
       [busy]="store.busy()"
       (useTemplate)="useTemplate($event)"
       (reset)="resetFromRail()"
-      (importTemplate)="comingSoon()"
-      (duplicate)="comingSoon()"
+      (importTemplate)="openImport()"
+      (duplicate)="openDuplicate(null)"
       (exportSystem)="openExport(null)"
       (openPlan)="openHistoryPlan($event)"
       (tryPrompt)="tryPrompt($event)" />
@@ -131,3 +131,15 @@
 <app-studio-ai-export-dialog
   [(visible)]="exportVisible"
   [systemKey]="exportKey()" />
+
+<app-studio-ai-import-dialog
+  [(visible)]="importVisible"
+  [busy]="store.busy()"
+  [serverError]="store.error()"
+  (submitted)="submitImport($event)" />
+
+<app-studio-ai-duplicate-dialog
+  [(visible)]="duplicateVisible"
+  [busy]="store.busy()"
+  [systemKey]="duplicateKey()"
+  (submitted)="submitDuplicate($event)" />
