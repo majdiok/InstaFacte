@@ -306,6 +306,139 @@ public sealed class StudioAiPlansControllerContractTests
         Assert.IsType<BadRequestObjectResult>(result);
     }
 
+    // ---------- PR 3.2 — aperçu structuré (GET {id}/preview) et rejeu (POST {id}/replay) ----------
+
+    [Fact]
+    public async Task Preview_returns_404_and_calls_nothing_when_plan_preview_disabled()
+    {
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        var controller = CreateController(mediator, workbenchEnabled: true, planPreviewEnabled: false);
+
+        var result = await controller.Preview(Guid.NewGuid(), CancellationToken.None);
+
+        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<object>>(notFound.Value);
+        Assert.Equal("Le flux d'aperçu Studio n'est pas activé.", body.Error);
+        mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Preview_success_returns_dto_in_envelope()
+    {
+        var planId = Guid.NewGuid();
+        var preview = new StudioAiPlanPreviewDto(
+            planId, "CreateSystem", "Pending", "Congés",
+            Array.Empty<PreviewEntity>(), Array.Empty<PreviewRelation>(), null,
+            Array.Empty<object>(), Array.Empty<string>(), Array.Empty<DuplicateHint>());
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        mediator.Setup(m => m.Send(It.IsAny<GetStudioAiPlanPreviewQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(preview));
+        var controller = CreateController(mediator, workbenchEnabled: true, planPreviewEnabled: true);
+
+        var result = await controller.Preview(planId, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<StudioAiPlanPreviewDto>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal(planId, body.Data!.PlanId);
+        // Contrat §12 : « workflows » est toujours sérialisé, vide en 3.x (4.4 lira summary.workflows[]).
+        Assert.Empty(body.Data.Workflows);
+        mediator.Verify(m => m.Send(
+            It.Is<GetStudioAiPlanPreviewQuery>(q => q.PlanId == planId),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Preview_maps_validation_error_to_400()
+    {
+        // Spec persistée incanonisable : le handler renvoie Validation.spec, mappée 400 (jamais 500).
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        mediator.Setup(m => m.Send(It.IsAny<GetStudioAiPlanPreviewQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<StudioAiPlanPreviewDto>(
+                Error.Validation("spec", "La spec est invalide.")));
+        var controller = CreateController(mediator, workbenchEnabled: true, planPreviewEnabled: true);
+
+        var result = await controller.Preview(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Replay_returns_404_and_calls_nothing_when_plan_preview_disabled()
+    {
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        var controller = CreateController(mediator, workbenchEnabled: true, planPreviewEnabled: false);
+
+        var result = await controller.Replay(Guid.NewGuid(), CancellationToken.None);
+
+        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<object>>(notFound.Value);
+        Assert.Equal("Le flux d'aperçu Studio n'est pas activé.", body.Error);
+        mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Replay_success_returns_201_with_location_header()
+    {
+        // E5 : première 201 du contrôleur — Location absolue vers la ressource NEUVE créée.
+        var now = DateTime.UtcNow;
+        var newPlanId = Guid.NewGuid();
+        var response = new StudioAiPlanCreationResponse(
+            new StudioAiPlanDto(newPlanId, "CreateSystem", "Pending", "{}", null, null,
+                now, now.AddMinutes(60), null),
+            new StudioAiPlanSpecDto(newPlanId, "CreateSystem", "Pending", now.AddMinutes(60), "AAAA",
+                JsonNode.Parse("""{ "system": { "displayName": "Congés" } }""")!));
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        mediator.Setup(m => m.Send(It.IsAny<ReplayStudioAiPlanCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(response));
+        var controller = CreateController(mediator, workbenchEnabled: true, planPreviewEnabled: true);
+        var sourceId = Guid.NewGuid();
+
+        var result = await controller.Replay(sourceId, CancellationToken.None);
+
+        var created = Assert.IsType<CreatedResult>(result);
+        Assert.Equal($"/api/studio/ai/plans/{newPlanId}", created.Location);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<StudioAiPlanCreationResponse>>(created.Value);
+        Assert.True(body.Success);
+        Assert.Equal(newPlanId, body.Data!.Plan.Id);
+        mediator.Verify(m => m.Send(
+            It.Is<ReplayStudioAiPlanCommand>(cmd => cmd.PlanId == sourceId),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Replay_maps_conflict_to_409_with_fixed_message()
+    {
+        // Plan non rejouable (en attente non échu, en cours) : 409 au message figé (3.2c).
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        mediator.Setup(m => m.Send(It.IsAny<ReplayStudioAiPlanCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<StudioAiPlanCreationResponse>(
+                Error.Conflict("Seul un plan terminé, échoué, annulé ou expiré peut être rejoué.")));
+        var controller = CreateController(mediator, workbenchEnabled: true, planPreviewEnabled: true);
+
+        var result = await controller.Replay(Guid.NewGuid(), CancellationToken.None);
+
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<string>>(conflict.Value);
+        Assert.False(body.Success);
+        Assert.Equal("Seul un plan terminé, échoué, annulé ou expiré peut être rejoué.", body.Error);
+    }
+
+    [Fact]
+    public async Task Replay_maps_validation_error_to_400()
+    {
+        // Re-canonicalisation impossible (spec stockée devenue invalide) : Validation.spec ⇒ 400.
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        mediator.Setup(m => m.Send(It.IsAny<ReplayStudioAiPlanCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<StudioAiPlanCreationResponse>(
+                Error.Validation("spec", "La spec est invalide.")));
+        var controller = CreateController(mediator, workbenchEnabled: true, planPreviewEnabled: true);
+
+        var result = await controller.Replay(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
     private static async Task<IActionResult> PutSpecFailingWith(Error error)
     {
         var mediator = new Mock<IMediator>();
