@@ -1,5 +1,7 @@
+using System.Text.Json.Nodes;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
@@ -220,6 +222,138 @@ public sealed class StudioAiPlanPreviewFeaturesTests
         _mediator.VerifyNoOtherCalls();
     }
 
+    // ---- Replay : gardes ----
+
+    [Fact]
+    public async Task Replay_when_flag_off_is_not_found()
+    {
+        var result = await ReplayHandler(Settings(planPreview: false))
+            .Handle(new ReplayStudioAiPlanCommand(Guid.NewGuid()), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("NotFound", result.Error.Code);
+        Assert.Equal("Fonctionnalité non disponible.", result.Error.Description);
+        _plans.VerifyNoOtherCalls();
+        _mediator.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Replay_pending_not_expired_is_conflict()
+    {
+        var plan = Plan(StudioAiPlanKind.CreateSystem, SystemSpec, "{ \"title\": \"RH\" }"); // Pending, 60 min
+        SetupGet(plan);
+
+        var result = await ReplayHandler().Handle(new ReplayStudioAiPlanCommand(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Conflict", result.Error.Code);
+        Assert.Equal("Seul un plan terminé, échoué, annulé ou expiré peut être rejoué.", result.Error.Description);
+        _mediator.VerifyNoOtherCalls();
+        _plans.Verify(p => p.AddAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Replay_executing_is_conflict()
+    {
+        var plan = Plan(StudioAiPlanKind.CreateSystem, SystemSpec, "{ \"title\": \"RH\" }");
+        plan.MarkExecuting();
+        SetupGet(plan);
+
+        var result = await ReplayHandler().Handle(new ReplayStudioAiPlanCommand(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Conflict", result.Error.Code);
+        Assert.Equal("Seul un plan terminé, échoué, annulé ou expiré peut être rejoué.", result.Error.Description);
+        _mediator.VerifyNoOtherCalls();
+    }
+
+    // ---- Replay : re-création ----
+
+    [Fact]
+    public async Task Replay_failed_plan_creates_new_pending_plan_with_replayed_from_id()
+    {
+        var plan = Plan(StudioAiPlanKind.CreateSystem, SystemSpec, "{ \"title\": \"RH\" }");
+        plan.MarkFailed("Échec de création de la colonne.");
+        SetupGet(plan);
+        SetupRealCreate();
+
+        var result = await ReplayHandler().Handle(new ReplayStudioAiPlanCommand(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        // Un plan NEUF Pending est créé (jamais de mutation du plan d'origine).
+        var added = Assert.IsType<StudioAiBuildPlan>(_addedPlan);
+        Assert.NotEqual(plan.Id, added.Id);
+        Assert.Equal(StudioAiPlanStatus.Pending, added.Status);
+        Assert.Equal(StudioAiPlanKind.CreateSystem, added.Kind);
+        Assert.Equal(result.Value.Plan.Id, added.Id);
+        // Spec persistée = forme canonique RE-CALCULÉE de la spec d'origine.
+        var canonical = StudioAiSpecCanonical.CanonicalFor(StudioAiPlanKind.CreateSystem, SystemSpec, out _);
+        Assert.Equal(canonical, added.SpecJson);
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(canonical!), result.Value.Spec.Spec));
+        // Traçabilité : replayedFromPlanId à la RACINE du résumé recalculé, autres clés intactes.
+        var summary = JsonNode.Parse(added.SummaryJson)!.AsObject();
+        Assert.Equal(plan.Id, summary["replayedFromPlanId"]!.GetValue<Guid>());
+        Assert.Equal("RH", summary["title"]!.GetValue<string>());
+        // L'audit de création est émis par le handler délégué (même événement que le flux LLM).
+        _audit.Verify(a => a.LogAsync("Studio.AiPlan.Created", "StudioAiBuildPlan", added.Id,
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Replay_amendment_falls_back_to_original_summary()
+    {
+        // E1 : un amendement n'a pas de résumé recalculé ⇒ le summary persisté sert de repli.
+        var plan = Plan(StudioAiPlanKind.Amendment, AmendmentSpec, "{ \"title\": \"Évolution contrats\" }");
+        plan.MarkCancelled();
+        SetupGet(plan);
+        SetupRealCreate();
+
+        var result = await ReplayHandler().Handle(new ReplayStudioAiPlanCommand(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        var summary = JsonNode.Parse(_addedPlan!.SummaryJson)!.AsObject();
+        Assert.Equal("Évolution contrats", summary["title"]!.GetValue<string>()); // clé d'origine conservée
+        Assert.Equal(plan.Id, summary["replayedFromPlanId"]!.GetValue<Guid>());
+        Assert.Equal(StudioAiPlanKind.Amendment, _addedPlan.Kind);
+    }
+
+    [Fact]
+    public async Task Replay_invalid_spec_is_validation_error_on_spec()
+    {
+        var plan = Plan(StudioAiPlanKind.CreateSystem, "{ pas du json", "{}");
+        plan.MarkFailed("Échec de création.");
+        SetupGet(plan);
+
+        var result = await ReplayHandler().Handle(new ReplayStudioAiPlanCommand(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.spec", result.Error.Code);
+        _mediator.VerifyNoOtherCalls();
+        _plans.Verify(p => p.AddAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Replay_never_mutates_source_plan()
+    {
+        var plan = Plan(StudioAiPlanKind.CreateSystem, SystemSpec, "{ \"title\": \"RH\" }");
+        plan.MarkFailed("Échec de création.");
+        var originalSpec = plan.SpecJson;
+        var originalSummary = plan.SummaryJson;
+        SetupGet(plan);
+        SetupRealCreate();
+
+        var result = await ReplayHandler().Handle(new ReplayStudioAiPlanCommand(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        // La seule écriture est l'AJOUT du nouveau plan ; le plan d'origine n'est jamais persisté
+        // (pas de TryUpdateAsync — la méthode de mutation du dépôt) ni modifié en mémoire.
+        _plans.Verify(p => p.AddAsync(It.Is<StudioAiBuildPlan>(x => x.Id != plan.Id), It.IsAny<CancellationToken>()), Times.Once);
+        _plans.Verify(p => p.TryUpdateAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>(), It.IsAny<byte[]?>()), Times.Never);
+        Assert.Equal(StudioAiPlanStatus.Failed, plan.Status);
+        Assert.Equal(originalSpec, plan.SpecJson);
+        Assert.Equal(originalSummary, plan.SummaryJson);
+    }
+
     // ---- Helpers ----
 
     private static StudioAiBuildPlan Plan(StudioAiPlanKind kind, string specJson, string summaryJson, Guid? owner = null) =>
@@ -230,6 +364,27 @@ public sealed class StudioAiPlanPreviewFeaturesTests
 
     private GetStudioAiPlanPreviewQueryHandler PreviewHandler(IOptions<OllamaSettings>? settings = null) =>
         new(_plans.Object, _currentUser.Object, _mediator.Object, settings ?? Settings());
+
+    private ReplayStudioAiPlanCommandHandler ReplayHandler(IOptions<OllamaSettings>? settings = null) =>
+        new(_plans.Object, _currentUser.Object, _mediator.Object, settings ?? Settings());
+
+    // ---- Rejeu : le mediator exécute le VRAI handler de création (permission + audit réels) ----
+
+    private readonly Mock<IAuditService> _audit = new(MockBehavior.Strict);
+    private StudioAiBuildPlan? _addedPlan;
+
+    private void SetupRealCreate()
+    {
+        var inner = new CreateStudioAiPlanCommandHandler(_plans.Object, _audit.Object, _currentUser.Object);
+        _mediator.Setup(m => m.Send(It.IsAny<CreateStudioAiPlanCommand>(), It.IsAny<CancellationToken>()))
+            .Returns((CreateStudioAiPlanCommand c, CancellationToken ct) => inner.Handle(c, ct));
+        _plans.Setup(p => p.AddAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>()))
+            .Callback((StudioAiBuildPlan plan, CancellationToken _) => _addedPlan = plan)
+            .Returns(Task.CompletedTask);
+        _audit.Setup(a => a.LogAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(),
+                It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+    }
 
     private static IOptions<OllamaSettings> Settings(bool planPreview = true, bool manyToMany = true, bool recordViews = true) =>
         Options.Create(new OllamaSettings
