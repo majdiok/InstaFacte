@@ -109,19 +109,45 @@ describe('StudioAiPreviewComponent', () => {
     expect(disabled.every(l => l.includes(STUDIO_AI_LABELS.soon))).toBeTrue();
   });
 
-  it('emits confirmRequested instead of creating anything, and keeps « Modifier » disabled', () => {
+  it('affiche la barre de modes à la place du bouton Modifier', () => {
     loadPlan();
     const emitted: number[] = [];
     fixture.componentInstance.confirmRequested.subscribe(() => emitted.push(1));
+    const host = fixture.nativeElement as HTMLElement;
 
-    const buttons = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button'));
+    const buttons = Array.from(host.querySelectorAll('button'));
     const create = buttons.find(b => b.textContent?.includes(STUDIO_AI_LABELS.preview.createNow));
-    const edit = buttons.find(b => b.textContent?.includes(STUDIO_AI_LABELS.preview.edit));
-    expect(edit?.disabled).toBeTrue();
-    expect(create?.disabled).withContext('canConfirm est vrai en attente de validation').toBeFalse();
+    const edit = buttons.find(b => b.textContent?.trim() === STUDIO_AI_LABELS.preview.edit);
+    expect(edit).withContext('l’ancien bouton « Modifier » a disparu').toBeUndefined();
+    expect(host.querySelector('app-studio-ai-mode-bar')).not.toBeNull();
 
+    const modes = Array.from(host.querySelectorAll<HTMLButtonElement>('.sai-modebar__btn'));
+    expect(modes.length).toBe(3);
+    expect(modes.find(b => b.dataset['mode'] === 'preview')?.getAttribute('aria-pressed')).toBe('true');
+
+    modes.find(b => b.dataset['mode'] === 'customize')?.click();
+    fixture.detectChanges();
+    expect(store.mode()).toBe('customize');
+    expect(store.phase()).withContext('Personnaliser démarre l’édition').toBe('editing');
+    expect(text()).toContain(STUDIO_AI_LABELS.preview.editingSubtitle);
+
+    expect(create?.disabled).withContext('canConfirm est vrai en attente de validation').toBeFalse();
     create?.click();
     expect(emitted.length).toBe(1);
+  });
+
+  it('bloque Créer maintenant quand le plan est expiré', () => {
+    loadPlan();
+    store.expiresInSeconds.set(0);
+    fixture.detectChanges();
+    const host = fixture.nativeElement as HTMLElement;
+
+    const create = Array.from(host.querySelectorAll('button'))
+      .find(b => b.textContent?.includes(STUDIO_AI_LABELS.preview.createNow));
+    expect(create?.disabled).toBeTrue();
+    expect(fixture.componentInstance.confirmTooltip()).toBe(STUDIO_AI_LABELS.preview.expired);
+    expect(text()).toContain(STUDIO_AI_LABELS.modes.expired);
+    expect(Array.from(host.querySelectorAll<HTMLButtonElement>('.sai-modebar__btn')).every(b => b.disabled)).toBeTrue();
   });
 
   it('switches to the Tables tab when the overview asks to open an entity', () => {
