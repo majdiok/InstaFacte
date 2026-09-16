@@ -332,7 +332,7 @@ export class StudioEntityDesignerComponent implements OnInit {
   }
 
   typeBlocked(): boolean {
-    return this.typeChanged() && this.typeCheck() !== null && !this.typeCheck()!.allowed;
+    return this.typeChanged() && this.typeCheck()?.allowed === false;
   }
 
   typeSeverity(): 'info' | 'warn' | 'error' {
@@ -344,12 +344,16 @@ export class StudioEntityDesignerComponent implements OnInit {
   onTypeChange(type: CustomFieldType): void {
     if (!this.editing()) return;
     if (type === this.originalType) {
-      this.typeCheck.set(null);
-      this.typeChecking.set(false);
+      this.resetTypeCheck();
       return;
     }
     this.typeChecking.set(true);
     this.typeCheck$.next(type);
+  }
+
+  private resetTypeCheck(): void {
+    this.typeCheck.set(null);
+    this.typeChecking.set(false);
   }
 
   breadcrumbs = STUDIO_BREADCRUMBS.entities();
@@ -494,8 +498,7 @@ export class StudioEntityDesignerComponent implements OnInit {
     this.editing.set(false);
     this.editId = null;
     this.originalType = null;
-    this.typeCheck.set(null);
-    this.typeChecking.set(false);
+    this.resetTypeCheck();
     this.fLabel = this.fKey = this.fOptionsText = '';
     this.fType = CustomFieldType.Text;
     this.fRequired = this.fUnique = false;
@@ -521,8 +524,7 @@ export class StudioEntityDesignerComponent implements OnInit {
     this.fKey = f.key;
     this.fType = f.fieldType;
     this.originalType = f.fieldType;
-    this.typeCheck.set(null);
-    this.typeChecking.set(false);
+    this.resetTypeCheck();
     this.fRequired = f.isRequired;
     this.fUnique = f.isUnique;
     this.fOptionsText = (f.options ?? []).map(o => `${o.value}|${o.label}`).join('\n');
