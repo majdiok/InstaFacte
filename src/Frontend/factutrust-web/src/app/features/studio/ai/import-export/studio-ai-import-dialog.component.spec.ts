@@ -65,6 +65,18 @@ describe('StudioAiImportDialogComponent', () => {
     expect(importButton()?.disabled).toBeTrue();
   });
 
+  it('entité sans champs ⇒ message d\'erreur, pas de plantage', () => {
+    component.onPaste(JSON.stringify({ specVersion: 1, entities: [{ name: 'Client' }] }));
+    fixture.detectChanges();
+
+    expect(component.error()).toBe('Le fichier ne ressemble pas à une spécification de système (tables et champs attendus).');
+    expect(component.spec()).toBeNull();
+    expect(component.counters()).toBeNull();
+    expect(component.canSubmit()).toBeFalse();
+    expect(document.body.textContent).toContain('ne ressemble pas à une spécification');
+    expect(importButton()?.disabled).toBeTrue();
+  });
+
   it('specVersion ≠ 1 ⇒ message de version, Importer désactivé', () => {
     const spec = { ...studioAiSpecWithViewsFixture(), specVersion: 2 };
     component.onPaste(JSON.stringify(spec));

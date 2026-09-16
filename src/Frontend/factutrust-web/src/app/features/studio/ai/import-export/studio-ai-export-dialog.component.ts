@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, model, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 import { CheckboxModule } from 'primeng/checkbox';
 import { DialogModule } from 'primeng/dialog';
@@ -207,6 +208,8 @@ export class StudioAiExportDialogComponent {
   );
 
   private copiedTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Export en vol ; annulé par un nouveau `load()` ou la fermeture (évite une réponse tardive). */
+  private exportSub: Subscription | null = null;
 
   constructor() {
     // Ouverture / fermeture : préréglage de la clé, chargement de la liste, remise à zéro.
@@ -233,11 +236,12 @@ export class StudioAiExportDialogComponent {
     if (!key) {
       return;
     }
+    this.exportSub?.unsubscribe();
     this.loading.set(true);
     this.error.set(null);
     this.result.set(null);
     this.copied.set(false);
-    this.builds.exportSystem(key, this.includeSeed()).subscribe({
+    this.exportSub = this.builds.exportSystem(key, this.includeSeed()).subscribe({
       next: res => {
         this.result.set(res.data ?? null);
         this.loading.set(false);
@@ -277,7 +281,7 @@ export class StudioAiExportDialogComponent {
     anchor.href = url;
     anchor.download = this.fileName();
     anchor.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   protected close(): void {
@@ -285,6 +289,7 @@ export class StudioAiExportDialogComponent {
   }
 
   private onOpen(): void {
+    this.result.set(null);
     this.selectedKey.set(this.systemKey());
     this.systemsLoaded.set(false);
     if (this.systemKey() !== null) {
@@ -304,6 +309,8 @@ export class StudioAiExportDialogComponent {
   }
 
   private onClose(): void {
+    this.exportSub?.unsubscribe();
+    this.exportSub = null;
     this.result.set(null);
     this.error.set(null);
     this.loading.set(false);

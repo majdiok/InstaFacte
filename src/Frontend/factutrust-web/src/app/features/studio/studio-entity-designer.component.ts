@@ -1,6 +1,6 @@
 import { Component, DestroyRef, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subject, catchError, of, switchMap, timer } from 'rxjs';
+import { EMPTY, Subject, catchError, of, switchMap, tap, timer } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
@@ -127,7 +127,7 @@ import { StudioAiCapabilitiesService } from './ai/studio-ai-capabilities.service
         [(visible)]="m2mVisible" (created)="onRelationCreated()" />
     }
 
-    <p-dialog [header]="editing() ? 'Modifier le champ' : 'Nouveau champ'" [(visible)]="dialogVisible" [modal]="true" [style]="{ width: '34rem' }">
+    <p-dialog [header]="editing() ? 'Modifier le champ' : 'Nouveau champ'" [(visible)]="dialogVisible" [modal]="true" [style]="{ width: '34rem' }" (onHide)="resetTypeCheck()">
       <div class="ft-form">
         <label>Libellé *</label>
         <input pInputText [(ngModel)]="fLabel" (ngModelChange)="onLabelChange($event)" />
@@ -266,7 +266,7 @@ import { StudioAiCapabilitiesService } from './ai/studio-ai-capabilities.service
         </ng-container>
       </div>
       <ng-template pTemplate="footer">
-        <button pButton type="button" label="Annuler" class="p-button-text" (click)="dialogVisible = false"></button>
+        <button pButton type="button" label="Annuler" class="p-button-text" (click)="closeDialog()"></button>
         <button pButton type="button" label="Enregistrer" icon="fa-solid fa-check" [disabled]="saving() || typeBlocked() || typeChecking()" (click)="save()" data-testid="field-save"></button>
       </ng-template>
     </p-dialog>
@@ -305,17 +305,18 @@ export class StudioEntityDesignerComponent implements OnInit {
   readonly typeCheck = signal<StudioFieldTypeCheckDto | null>(null);
   readonly typeChecking = signal(false);
   private originalType: CustomFieldType | null = null;
-  private readonly typeCheck$ = new Subject<CustomFieldType>();
+  /** `null` annule la vérification en cours (retour au type d'origine, ouverture, fermeture). */
+  private readonly typeCheck$ = new Subject<{ fieldId: string; type: CustomFieldType } | null>();
 
   constructor() {
     effect(() => { if (this.manyToManyEnabled() && this.entityId) this.loadRelations(); });
     this.typeCheck$.pipe(
-      switchMap(type => timer(300).pipe(
-        switchMap(() => this.studio.checkFieldTypeChange(this.entityId, this.editId!, CustomFieldType[type])),
+      switchMap(req => req === null ? EMPTY : timer(300).pipe(
+        switchMap(() => this.studio.checkFieldTypeChange(this.entityId, req.fieldId, CustomFieldType[req.type])),
         catchError(err => of({
           success: false,
           data: {
-            from: '', to: CustomFieldType[type], policy: 'forbidden', recordCount: 0, allowed: false,
+            from: '', to: CustomFieldType[req.type], policy: 'forbidden', recordCount: 0, allowed: false,
             message: err?.error?.message ?? this.labels.typeChange.forbidden
           } as StudioFieldTypeCheckDto
         }))
@@ -342,18 +343,24 @@ export class StudioEntityDesignerComponent implements OnInit {
   }
 
   onTypeChange(type: CustomFieldType): void {
-    if (!this.editing()) return;
+    if (!this.editing() || !this.editId) return;
     if (type === this.originalType) {
       this.resetTypeCheck();
       return;
     }
     this.typeChecking.set(true);
-    this.typeCheck$.next(type);
+    this.typeCheck$.next({ fieldId: this.editId, type });
   }
 
-  private resetTypeCheck(): void {
+  protected resetTypeCheck(): void {
+    this.typeCheck$.next(null);
     this.typeCheck.set(null);
     this.typeChecking.set(false);
+  }
+
+  protected closeDialog(): void {
+    this.dialogVisible = false;
+    this.resetTypeCheck();
   }
 
   breadcrumbs = STUDIO_BREADCRUMBS.entities();
@@ -594,6 +601,7 @@ export class StudioEntityDesignerComponent implements OnInit {
   }
 
   save(): void {
+    if (this.typeBlocked() || this.typeChecking()) return;
     if (!this.fLabel.trim() || (!this.editing() && !this.fKey.trim())) {
       this.toast.add({ severity: 'warn', summary: 'Champs requis', detail: 'Libellé et clé obligatoires.' });
       return;
@@ -647,12 +655,23 @@ export class StudioEntityDesignerComponent implements OnInit {
         rules: rules as any, options, relation, isActive: true, config
       });
       const typeReq: ChangeCustomFieldTypeRequest = { fieldType: this.fType, options, rules: rules as any, relation, config };
+      /** PATCH type réussi puis PUT en échec : la liste doit refléter le nouveau type. */
+      let typeApplied = false;
       const save$ = this.typeChanged()
-        ? this.studio.changeFieldType(this.entityId, fieldId, typeReq).pipe(switchMap(() => update$))
+        ? this.studio.changeFieldType(this.entityId, fieldId, typeReq).pipe(
+            tap(res => { typeApplied = res.success !== false; }),
+            switchMap(() => update$)
+          )
         : update$;
       save$.subscribe({
         next: res => done(res.success, res.errors?.[0] ?? res.message ?? undefined),
-        error: err => done(false, err?.error?.message)
+        error: err => {
+          if (typeApplied) {
+            this.loadFields();
+            this.loadEntity();
+          }
+          done(false, err?.error?.message);
+        }
       });
     } else {
       this.studio.createField(this.entityId, {

@@ -229,6 +229,8 @@ export class StudioAiImportDialogComponent {
   /** Défaut serveur `includeSeed = true`. */
   readonly includeSeed = signal(true);
   readonly canSubmit = computed(() => !!this.spec() && !this.error() && !this.busy());
+  /** Lecture de fichier en cours ; annulée par « Retirer » ou un nouveau fichier. */
+  private reader: FileReader | null = null;
 
   protected readonly labels = STUDIO_AI_LABELS;
   protected readonly maxDisplayName = IMPORT_MAX_DISPLAY_NAME;
@@ -258,12 +260,25 @@ export class StudioAiImportDialogComponent {
       this.error.set(STUDIO_AI_LABELS.importExport.tooLarge);
       return;
     }
+    this.reader?.abort();
     const reader = new FileReader();
+    this.reader = reader;
     reader.onload = () => {
+      if (this.reader !== reader) {
+        return;
+      }
+      this.reader = null;
       const text = String(reader.result ?? '');
       this.fileName.set(file.name);
       this.raw.set(text);
       this.parse(text);
+    };
+    reader.onerror = () => {
+      if (this.reader !== reader) {
+        return;
+      }
+      this.reader = null;
+      this.error.set(STUDIO_AI_LABELS.importExport.invalidJson);
     };
     reader.readAsText(file);
   }
@@ -303,7 +318,8 @@ export class StudioAiImportDialogComponent {
 
   /**
    * `JSON.parse` ⇒ `invalidJson` ; non-objet ⇒ `notObject` ; enveloppe d'export (`spec` objet +
-   * `systemKey`) ⇒ `.spec` ; `specVersion` présent et ≠ 1 ⇒ `badVersion`.
+   * `systemKey`) ⇒ `.spec` ; `specVersion` présent et ≠ 1 ⇒ `badVersion` ; forme minimale
+   * (`entities` tableau d'objets à `fields` tableau, `seed` absent ou tableau) sinon `invalidShape`.
    */
   private parse(text: string): void {
     this.spec.set(null);
@@ -331,11 +347,17 @@ export class StudioAiImportDialogComponent {
       this.error.set(STUDIO_AI_LABELS.importExport.badVersion);
       return;
     }
+    if (!hasSpecShape(spec)) {
+      this.error.set(STUDIO_AI_LABELS.importExport.invalidShape);
+      return;
+    }
     this.error.set(null);
     this.spec.set(spec);
   }
 
   private clearContent(): void {
+    this.reader?.abort();
+    this.reader = null;
     this.fileName.set(null);
     this.raw.set('');
     this.spec.set(null);
@@ -344,4 +366,14 @@ export class StudioAiImportDialogComponent {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Forme minimale exigée par `countSpec` : évite un plantage du rendu sur un JSON quelconque. */
+function hasSpecShape(spec: Record<string, unknown>): boolean {
+  const entities = spec['entities'];
+  if (!Array.isArray(entities) || !entities.every(e => isObject(e) && Array.isArray(e['fields']))) {
+    return false;
+  }
+  const seed = spec['seed'];
+  return seed === undefined || seed === null || Array.isArray(seed);
 }

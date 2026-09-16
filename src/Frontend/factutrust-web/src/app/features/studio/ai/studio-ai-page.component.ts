@@ -352,7 +352,9 @@ export class StudioAiPageComponent {
   }
 
   /** Ouvre le dialog Importer (JSON) depuis le rail. */
+  /** Ouvre le dialog Importer ; une erreur antérieure du store ne doit pas s'y afficher. */
   openImport(): void {
+    this.store.error.set(null);
     this.importVisible.set(true);
   }
 

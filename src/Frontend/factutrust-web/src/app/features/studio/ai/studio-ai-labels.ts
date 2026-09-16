@@ -664,6 +664,7 @@ export const STUDIO_AI_LABELS = {
     remove: 'Retirer',
     recognized: 'Spécification reconnue',
     notObject: 'La spécification doit être un objet JSON.',
+    invalidShape: 'Le fichier ne ressemble pas à une spécification de système (tables et champs attendus).',
     seedRecords: '{count} lignes de départ',
     duplicateSource: 'Système source',
     copyName: 'Nom de la copie',
