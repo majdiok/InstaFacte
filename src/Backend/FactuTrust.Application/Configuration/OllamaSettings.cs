@@ -380,6 +380,9 @@ public sealed class OllamaSettings
     /// </summary>
     public bool EnableStudioRecordViews { get; set; }
 
+    /// <summary>Durée max (s) d'un segment d'exécution synchrone du moteur de workflows (borné 1..30).</summary>
+    public int StudioWorkflowMaxSegmentSeconds { get; set; } = 5;
+
     /// <summary>Cartes maximales chargées par une vue Kanban (au-delà, <c>truncated = true</c>). Défaut 500.</summary>
     public int StudioRecordViewMaxKanbanCards { get; set; } = 500;
 

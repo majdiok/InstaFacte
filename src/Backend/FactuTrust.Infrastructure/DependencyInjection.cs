@@ -6,6 +6,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Features.Stock.Queries;
 using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.Workflows.Engine;
 using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.AI.Commands;
 using FactuTrust.Application.Features.AI.DTOs;
@@ -395,6 +396,7 @@ public static class DependencyInjection
         services.AddScoped<FactuTrust.Application.Features.Studio.Ai.IStudioAiPlanExecutor, Services.Studio.StudioAiPlanExecutor>();
         // Workflows Studio (PR 4.1) — dépôt SQL multi-tenant.
         services.AddScoped<IStudioWorkflowRepository, Repositories.Studio.StudioWorkflowRepository>();
+        services.AddScoped<IStudioWorkflowEngine, Services.Studio.Workflows.StudioWorkflowEngine>();
         // Digest de contexte Studio (schéma du tenant + dernier plan) injecté dans le prompt StudioBuilder.
         services.AddScoped<IStudioContextDigestService, Services.Studio.StudioContextDigestService>();
         services.AddScoped<IDocumentTemplateResolver, DocumentTemplateResolver>();
