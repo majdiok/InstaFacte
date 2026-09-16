@@ -643,7 +643,13 @@ export const STUDIO_AI_LABELS = {
     duplicate: 'Dupliquer',
     chooseSystem: 'Système à dupliquer',
     copySuffix: '(copie)',
-    opened: 'Plan ouvert : vérifiez la proposition puis validez.'
+    opened: 'Plan ouvert : vérifiez la proposition puis validez.',
+    exportLoading: 'Préparation de l’export…',
+    exportWarnings: 'Points à vérifier',
+    exportFile: 'Fichier : {name}',
+    exportFailed: 'Export impossible.',
+    noSystem: 'Aucun système à exporter.',
+    close: 'Fermer'
   },
 
   /** Rejeu d'un plan terminé / échoué / annulé / expiré (3.4k). */
