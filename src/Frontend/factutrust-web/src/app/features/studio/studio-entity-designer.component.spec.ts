@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
@@ -10,6 +10,8 @@ import { environment } from '@environments/environment';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { StudioEntityDesignerComponent } from './studio-entity-designer.component';
 import { StudioAiCapabilitiesService } from './ai/studio-ai-capabilities.service';
+import { CustomField, CustomFieldType } from './studio.models';
+import { STUDIO_AI_LABELS } from './ai/studio-ai-labels';
 import { STUDIO_AI_CAPABILITIES_FALLBACK, StudioAiCapabilitiesDto } from './ai/studio-ai.models';
 
 const API = `${environment.apiUrl}/studio`;
@@ -33,35 +35,40 @@ function capabilitiesStub(overrides: Partial<StudioAiCapabilitiesDto>, state: 'r
   };
 }
 
+const f1: CustomField = {
+  id: 'f1', key: 'montant', label: 'Montant', fieldType: CustomFieldType.Text, isRequired: false, isUnique: false,
+  sortOrder: 0, rules: null, options: null, relation: null, isActive: true
+};
+
+let fixture: ComponentFixture<StudioEntityDesignerComponent>;
+let component: StudioEntityDesignerComponent;
+let httpMock: HttpTestingController;
+
+function setup(manyToManyEnabled: boolean): void {
+  TestBed.configureTestingModule({
+    imports: [StudioEntityDesignerComponent],
+    providers: [
+      provideHttpClient(),
+      provideHttpClientTesting(),
+      provideRouter([]),
+      provideNoopAnimations(),
+      MessageService,
+      { provide: ConfirmationService, useValue: { confirm: () => {} } },
+      { provide: StudioAiCapabilitiesService, useValue: capabilitiesStub({ manyToManyEnabled }) },
+      { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'e1' }) } } }
+    ]
+  });
+  fixture = TestBed.createComponent(StudioEntityDesignerComponent);
+  component = fixture.componentInstance;
+  httpMock = TestBed.inject(HttpTestingController);
+  fixture.detectChanges();
+  httpMock.expectOne(`${API}/entities/e1`).flush({ success: true, data: e1, message: null, errors: [] });
+  httpMock.expectOne(req => req.url === `${API}/entities/e1/fields`).flush({ success: true, data: [], message: null, errors: [] });
+  httpMock.expectOne(req => req.url === `${API}/entities` && req.method === 'GET').flush({ success: true, data: [e1], message: null, errors: [] });
+  fixture.detectChanges();
+}
+
 describe('StudioEntityDesignerComponent — relations N-N (2.5f)', () => {
-  let fixture: ComponentFixture<StudioEntityDesignerComponent>;
-  let component: StudioEntityDesignerComponent;
-  let httpMock: HttpTestingController;
-
-  function setup(manyToManyEnabled: boolean): void {
-    TestBed.configureTestingModule({
-      imports: [StudioEntityDesignerComponent],
-      providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        provideRouter([]),
-        provideNoopAnimations(),
-        MessageService,
-        { provide: ConfirmationService, useValue: { confirm: () => {} } },
-        { provide: StudioAiCapabilitiesService, useValue: capabilitiesStub({ manyToManyEnabled }) },
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'e1' }) } } }
-      ]
-    });
-    fixture = TestBed.createComponent(StudioEntityDesignerComponent);
-    component = fixture.componentInstance;
-    httpMock = TestBed.inject(HttpTestingController);
-    fixture.detectChanges();
-    httpMock.expectOne(`${API}/entities/e1`).flush({ success: true, data: e1, message: null, errors: [] });
-    httpMock.expectOne(req => req.url === `${API}/entities/e1/fields`).flush({ success: true, data: [], message: null, errors: [] });
-    httpMock.expectOne(req => req.url === `${API}/entities` && req.method === 'GET').flush({ success: true, data: [e1], message: null, errors: [] });
-    fixture.detectChanges();
-  }
-
   afterEach(() => httpMock.verify());
 
   it('sans manyToManyEnabled ⇒ ni bouton ni section Relations, aucun GET relations', () => {
@@ -98,4 +105,147 @@ describe('StudioEntityDesignerComponent — relations N-N (2.5f)', () => {
     expect(toast.add).toHaveBeenCalled();
     expect(component.relations().length).toBe(2);
   });
+});
+
+describe('StudioEntityDesignerComponent — changement de type (3.4l)', () => {
+  const typeCheckUrl = `${API}/entities/e1/fields/f1/type-check`;
+  const ok = (data: unknown) => ({ success: true, data, message: null, errors: [] });
+
+  function saveButton(): HTMLButtonElement {
+    return fixture.debugElement.query(By.css('[data-testid="field-save"]')).nativeElement as HTMLButtonElement;
+  }
+
+  function editAndChangeType(to: CustomFieldType): void {
+    component.openEdit(f1);
+    fixture.detectChanges();
+    component.fType = to;
+    component.onTypeChange(to);
+    fixture.detectChanges();
+  }
+
+  afterEach(() => httpMock.verify());
+
+  it('modifier le type d\'un champ existant ⇒ GET type-check?to=Number après 300 ms', fakeAsync(() => {
+    setup(false);
+    editAndChangeType(CustomFieldType.Number);
+    expect(component.typeChecking()).toBeTrue();
+    tick(299);
+    httpMock.expectNone(req => req.url === typeCheckUrl);
+    tick(1);
+    const req = httpMock.expectOne(req => req.url === typeCheckUrl && req.method === 'GET');
+    expect(req.request.params.get('to')).toBe('Number');
+    req.flush(ok({ from: 'Text', to: 'Number', policy: 'lossless', recordCount: 0, message: 'Conversion sans perte.', allowed: true }));
+    expect(component.typeChecking()).toBeFalse();
+    expect(component.typeCheck()?.allowed).toBeTrue();
+  }));
+
+  it('policy lossless ⇒ message info, Enregistrer actif', fakeAsync(() => {
+    setup(false);
+    editAndChangeType(CustomFieldType.Number);
+    expect(saveButton().disabled).toBeTrue();
+    tick(300);
+    httpMock.expectOne(req => req.url === typeCheckUrl)
+      .flush(ok({ from: 'Text', to: 'Number', policy: 'lossless', recordCount: 3, message: 'Conversion sans perte (3 lignes).', allowed: true }));
+    fixture.detectChanges();
+    const msg = fixture.debugElement.query(By.css('[data-testid="type-check-message"]'));
+    expect(msg.nativeElement.textContent).toContain('Conversion sans perte (3 lignes).');
+    expect(component.typeSeverity()).toBe('info');
+    expect(saveButton().disabled).toBeFalse();
+  }));
+
+  it('policy requires_empty_table non autorisée ⇒ Enregistrer désactivé', fakeAsync(() => {
+    setup(false);
+    editAndChangeType(CustomFieldType.Number);
+    tick(300);
+    httpMock.expectOne(req => req.url === typeCheckUrl)
+      .flush(ok({ from: 'Text', to: 'Number', policy: 'requires_empty_table', recordCount: 12, message: 'Videz la table (12 lignes).', allowed: false }));
+    fixture.detectChanges();
+    expect(component.typeSeverity()).toBe('warn');
+    expect(component.typeBlocked()).toBeTrue();
+    expect(saveButton().disabled).toBeTrue();
+    expect(fixture.debugElement.query(By.css('[data-testid="type-check-message"]')).nativeElement.textContent)
+      .toContain('Videz la table (12 lignes).');
+  }));
+
+  it('policy forbidden ⇒ Enregistrer désactivé', fakeAsync(() => {
+    setup(false);
+    editAndChangeType(CustomFieldType.Formula);
+    tick(300);
+    httpMock.expectOne(req => req.url === typeCheckUrl)
+      .flush({ success: false, message: 'Conversion Text → Formula interdite.', errors: [] }, { status: 400, statusText: 'Bad Request' });
+    fixture.detectChanges();
+    expect(component.typeCheck()?.policy).toBe('forbidden');
+    expect(component.typeCheck()?.message).toBe('Conversion Text → Formula interdite.');
+    expect(component.typeSeverity()).toBe('error');
+    expect(saveButton().disabled).toBeTrue();
+
+    // Le flux reste vivant après un 400 : revenir au type d'origine efface la vérification.
+    component.fType = CustomFieldType.Text;
+    component.onTypeChange(CustomFieldType.Text);
+    fixture.detectChanges();
+    expect(component.typeCheck()).toBeNull();
+    expect(saveButton().disabled).toBeFalse();
+  }));
+
+  it('Enregistrer avec type modifié ⇒ PATCH …/type puis PUT du champ ; 400 ⇒ message serveur tel quel', fakeAsync(() => {
+    setup(false);
+    const toast = TestBed.inject(MessageService);
+    spyOn(toast, 'add');
+    editAndChangeType(CustomFieldType.Number);
+    tick(300);
+    httpMock.expectOne(req => req.url === typeCheckUrl)
+      .flush(ok({ from: 'Text', to: 'Number', policy: 'lossless', recordCount: 0, message: 'OK', allowed: true }));
+    fixture.detectChanges();
+
+    component.save();
+    const patch = httpMock.expectOne(req => req.url === `${API}/entities/e1/fields/f1/type` && req.method === 'PATCH');
+    expect(patch.request.body.fieldType).toBe(CustomFieldType.Number);
+    patch.flush(ok({ ...f1, fieldType: CustomFieldType.Number }));
+    const put = httpMock.expectOne(req => req.url === `${API}/entities/e1/fields/f1` && req.method === 'PUT');
+    expect(put.request.body.label).toBe('Montant');
+    put.flush(ok({ ...f1, fieldType: CustomFieldType.Number }));
+    httpMock.expectOne(req => req.url === `${API}/entities/e1/fields`).flush(ok([]));
+    httpMock.expectOne(`${API}/entities/e1`).flush(ok(e1));
+    expect(component.dialogVisible).toBeFalse();
+    expect(toast.add).not.toHaveBeenCalled();
+
+    // 400 sur le PATCH ⇒ toast avec le message serveur tel quel, pas de PUT.
+    editAndChangeType(CustomFieldType.Number);
+    tick(300);
+    httpMock.expectOne(req => req.url === typeCheckUrl)
+      .flush(ok({ from: 'Text', to: 'Number', policy: 'lossless', recordCount: 0, message: 'OK', allowed: true }));
+    component.save();
+    httpMock.expectOne(req => req.url === `${API}/entities/e1/fields/f1/type` && req.method === 'PATCH')
+      .flush({ success: false, message: 'Valeur « abc » non convertible en nombre.', errors: [] }, { status: 400, statusText: 'Bad Request' });
+    httpMock.expectNone(req => req.url === `${API}/entities/e1/fields/f1` && req.method === 'PUT');
+    expect(toast.add).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'error', detail: 'Valeur « abc » non convertible en nombre.' }));
+    expect(component.saving()).toBeFalse();
+  }));
+
+  it('création de champ : aucun type-check, POST inchangé', fakeAsync(() => {
+    setup(false);
+    component.openAdd();
+    fixture.detectChanges();
+    component.fLabel = 'Quantité';
+    component.onLabelChange('Quantité');
+    component.fType = CustomFieldType.Number;
+    component.onTypeChange(CustomFieldType.Number);
+    fixture.detectChanges();
+    tick(300);
+    httpMock.expectNone(req => req.url.includes('/type-check'));
+    expect(component.typeChecking()).toBeFalse();
+    expect(component.typeCheck()).toBeNull();
+    expect(fixture.debugElement.query(By.css('[data-testid="type-check-message"]'))).toBeNull();
+    expect(saveButton().disabled).toBeFalse();
+
+    component.save();
+    httpMock.expectNone(req => req.method === 'PATCH');
+    const post = httpMock.expectOne(req => req.url === `${API}/entities/e1/fields` && req.method === 'POST');
+    expect(post.request.body).toEqual(jasmine.objectContaining({ key: 'quantite', label: 'Quantité', fieldType: CustomFieldType.Number }));
+    post.flush(ok({ ...f1, id: 'f2', key: 'quantite', fieldType: CustomFieldType.Number }));
+    httpMock.expectOne(req => req.url === `${API}/entities/e1/fields`).flush(ok([]));
+    httpMock.expectOne(`${API}/entities/e1`).flush(ok(e1));
+    expect(component.dialogVisible).toBeFalse();
+    expect(STUDIO_AI_LABELS.typeChange.checking).toBeTruthy();
+  }));
 });
