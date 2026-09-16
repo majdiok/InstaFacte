@@ -293,6 +293,22 @@ export class StudioAiPageComponent {
     open();
   }
 
+  /** « Rejouer » un plan de l'historique : nouveau plan via `POST {id}/replay` (409 ⇒ `labels.replay.conflict`, géré par le store). */
+  replayHistoryPlan(item: StudioAiPlanListItemDto): void {
+    if (this.store.busy()) return;
+    const replay = () => this.store.replay(item.id);
+    if (this.store.hasPlan()) {
+      this.confirmAction({
+        header: this.labels.rail.history,
+        message: this.labels.rail.replaceCurrent,
+        acceptLabel: this.labels.replay.action,
+        accept: replay
+      });
+      return;
+    }
+    replay();
+  }
+
   private openPlanById(planId: string): void {
     this.builds.getPlan(planId).subscribe({
       next: res => {
