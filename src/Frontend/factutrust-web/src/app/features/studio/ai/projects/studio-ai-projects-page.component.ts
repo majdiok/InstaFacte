@@ -13,6 +13,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { StudioAiBuildService } from '../../studio-ai-build.service';
 import { StudioPageShellComponent } from '../../shared/studio-page-shell.component';
 import { studioBreadcrumb } from '../../shared/studio-breadcrumb.util';
+import { StudioAiCapabilitiesService } from '../studio-ai-capabilities.service';
 import { STUDIO_AI_LABELS, formatLabel } from '../studio-ai-labels';
 import { studioAiHttpError } from '../studio-ai-spec.util';
 import { StudioAiPlanKind, StudioAiPlanListItemDto, StudioAiPlanStatus, StudioPagedResult } from '../studio-ai.models';
@@ -30,7 +31,8 @@ const KIND_ORDER: StudioAiPlanKind[] = ['CreateSystem', 'CreateApp', 'Amendment'
  * côté serveur (`GET api/ai/studio/plans`, 20 par page), filtrables par statut et genre.
  * « Reprendre » rouvre un plan encore à valider dans l'atelier (`/studio/ai?plan=<id>`) ;
  * « Ouvrir le système » mène au hub du système créé ; « Rejouer » (`replayable`) crée un nouveau plan
- * (`POST {id}/replay` ⇒ 201) puis ouvre l'atelier sur celui-ci (`/studio/ai?plan=<nouvel id>`).
+ * (`POST {id}/replay` ⇒ 201) puis ouvre l'atelier sur celui-ci (`/studio/ai?plan=<nouvel id>`) ;
+ * « Dupliquer » (N7, si `systemExportEnabled`) ouvre l'atelier avec `?duplicate=<systemKey>`.
  */
 @Component({
   selector: 'app-studio-ai-projects-page',
@@ -100,6 +102,8 @@ const KIND_ORDER: StudioAiPlanKind[] = ['CreateSystem', 'CreateApp', 'Amendment'
               <th>{{ labels.columns.createdAt }}</th>
               <th>{{ labels.columns.expiresAt }}</th>
               <th>{{ labels.columns.system }}</th>
+              <th class="sap-projects__num">{{ labels.columns.relations }}</th>
+              <th class="sap-projects__num">{{ labels.columns.views }}</th>
               <th class="sap-projects__actions-col">{{ labels.columns.actions }}</th>
             </tr>
           </ng-template>
@@ -116,6 +120,8 @@ const KIND_ORDER: StudioAiPlanKind[] = ['CreateSystem', 'CreateApp', 'Amendment'
               <td>{{ item.createdAt | date: 'dd/MM/yyyy HH:mm' }}</td>
               <td>{{ item.status === 'Pending' && item.expiresAt ? (item.expiresAt | date: 'dd/MM/yyyy HH:mm') : '—' }}</td>
               <td class="sap-projects__system">{{ item.systemKey || '—' }}</td>
+              <td class="sap-projects__num" data-col="relations">{{ item.relationCount ?? 0 }}</td>
+              <td class="sap-projects__num" data-col="views">{{ item.viewCount ?? 0 }}</td>
               <td class="sap-projects__actions">
                 @if (item.status === 'Pending') {
                   <a
@@ -136,6 +142,18 @@ const KIND_ORDER: StudioAiPlanKind[] = ['CreateSystem', 'CreateApp', 'Amendment'
                     [outlined]="true"
                     [routerLink]="['/studio/systems', item.systemKey]"
                     data-action="open-system"></a>
+                  @if (item.status === 'Completed' && duplicateEnabled()) {
+                    <a
+                      pButton
+                      [label]="labels.duplicate"
+                      icon="fa-solid fa-clone"
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      [routerLink]="['/studio/ai']"
+                      [queryParams]="{ duplicate: item.systemKey }"
+                      data-action="duplicate"></a>
+                  }
                 }
                 @if (item.replayable) {
                   <button
@@ -156,7 +174,7 @@ const KIND_ORDER: StudioAiPlanKind[] = ['CreateSystem', 'CreateApp', 'Amendment'
           </ng-template>
           <ng-template #emptymessage>
             <tr>
-              <td colspan="7" class="sap-projects__empty" data-testid="projects-empty">
+              <td colspan="9" class="sap-projects__empty" data-testid="projects-empty">
                 @if (!loading() && !error()) { {{ labels.empty }} }
               </td>
             </tr>
@@ -183,6 +201,7 @@ const KIND_ORDER: StudioAiPlanKind[] = ['CreateSystem', 'CreateApp', 'Amendment'
     .sap-projects__count { margin-left: auto; font-size: 0.8125rem; color: var(--color-neutral-500, #6b7280); }
     .sap-projects__title { font-weight: 500; }
     .sap-projects__system { font-family: ui-monospace, monospace; font-size: 0.8125rem; color: var(--color-neutral-600, #4b5563); }
+    .sap-projects__num { text-align: right; font-variant-numeric: tabular-nums; }
     .sap-projects__actions { white-space: nowrap; text-align: right; }
     .sap-projects__actions > * + * { margin-left: 0.5rem; }
     .sap-projects__actions a { text-decoration: none; }
@@ -199,6 +218,7 @@ export class StudioAiProjectsPageComponent {
   private readonly builds = inject(StudioAiBuildService);
   private readonly router = inject(Router);
   private readonly toast = inject(ToastService);
+  private readonly capabilities = inject(StudioAiCapabilitiesService);
 
   readonly labels = STUDIO_AI_LABELS.history;
   readonly retryLabel = STUDIO_AI_LABELS.conversation.retry;
@@ -226,6 +246,8 @@ export class StudioAiProjectsPageComponent {
   readonly replaying = signal<string | null>(null);
 
   readonly countText = computed(() => formatLabel(this.labels.count, { count: this.totalCount() }));
+  /** N7 : « Dupliquer » (⇒ `/studio/ai?duplicate=<key>`) — fail-closed sur `systemExportEnabled`. */
+  readonly duplicateEnabled = computed(() => this.capabilities.state() === 'ready' && this.capabilities.capabilities().systemExportEnabled);
 
   readonly planKindLabel = planKindLabel;
   readonly planStatusLabel = planStatusLabel;
@@ -234,6 +256,7 @@ export class StudioAiProjectsPageComponent {
   private requestSeq = 0;
 
   constructor() {
+    this.capabilities.ensureLoaded();
     this.load();
   }
 
