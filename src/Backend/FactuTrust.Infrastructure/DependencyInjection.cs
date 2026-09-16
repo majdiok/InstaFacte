@@ -397,6 +397,9 @@ public static class DependencyInjection
         // Workflows Studio (PR 4.1) — dépôt SQL multi-tenant.
         services.AddScoped<IStudioWorkflowRepository, Repositories.Studio.StudioWorkflowRepository>();
         services.AddScoped<IStudioWorkflowEngine, Services.Studio.Workflows.StudioWorkflowEngine>();
+        services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.ConditionStepHandler>();
+        services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.UpdateFieldStepHandler>();
+        services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.ErpActionStepHandler>();
         // Digest de contexte Studio (schéma du tenant + dernier plan) injecté dans le prompt StudioBuilder.
         services.AddScoped<IStudioContextDigestService, Services.Studio.StudioContextDigestService>();
         services.AddScoped<IDocumentTemplateResolver, DocumentTemplateResolver>();
