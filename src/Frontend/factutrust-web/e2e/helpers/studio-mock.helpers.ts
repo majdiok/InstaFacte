@@ -103,6 +103,8 @@ export interface StudioTemplateMock {
   moduleTag: string;
   source: string;
   entityCount: number;
+  relationCount?: number;
+  viewModes?: string[];
 }
 
 /** Trace des appels API interceptés (méthode + URL + corps JSON éventuel) pour les assertions. */
@@ -617,4 +619,198 @@ export async function installStudioRuntimeMocks(
   await page.route(`**/api/studio/entities/*`, route => fulfil(route, ok(RUNTIME_ENTITIES[0])));
   await page.route(`**/api/studio/entities?**`, route => fulfil(route, ok(RUNTIME_ENTITIES)));
   await page.route(`**/api/studio/entities`, route => fulfil(route, ok(RUNTIME_ENTITIES)));
+}
+
+
+// ---------------------------------------------------------------------------
+// Aperçu IA enrichi (3.4) — Tester / Personnaliser / Régénérer / import-export-duplication.
+// À installer APRÈS `installStudioApiMocks` (routes plus récentes ⇒ prioritaires).
+// ---------------------------------------------------------------------------
+
+export interface StudioPreviewMockOptions {
+  /** `GET {id}/preview` : 200 (aperçu structuré) ou 404 (drapeau serveur coupé ⇒ mode Tester dégradé). */
+  previewStatus?: 200 | 404;
+  /** `PUT {id}/spec` renvoie 409 (le plan a été modifié entre-temps). */
+  specPutConflict?: boolean;
+  /** `POST systems/import` : 201 (plan ouvert) ou 400 (« La spec dépasse 256 Ko. »). */
+  importStatus?: 201 | 400;
+  /** `POST {id}/replay` : 201 (nouveau plan `p-replay`) ou 409. */
+  replayStatus?: 201 | 409;
+  /** Événements SSE de `POST {id}/confirm` (défaut : 3 étapes `studio_progress` + `studio_result` + `done`). */
+  confirmEvents?: SseEvent[];
+}
+
+export const STUDIO_E2E_SYSTEMS = [
+  { id: 's-conges', key: 'conges', displayName: 'Gestion des congés', icon: 'fa-solid fa-umbrella-beach', description: 'Suivi des congés', onboardingSteps: null, isActive: true, entityCount: 2, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-10T00:00:00Z' },
+  { id: 's-contrats', key: 'contrats', displayName: 'Suivi des contrats', icon: null, description: null, onboardingSteps: null, isActive: true, entityCount: 3, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-15T00:00:00Z' }
+];
+
+/** `StudioAiPlanPreviewDto` aligné sur `studioSystemSpec()` (2 tables, 1 relation, 1 vue par table). */
+export function studioPlanPreview(planId: string) {
+  const spec = studioSystemSpec();
+  return {
+    planId,
+    kind: 'CreateSystem',
+    status: 'Pending',
+    title: spec.system.displayName,
+    entities: spec.entities.map(e => ({
+      ref: e.ref,
+      displayName: e.displayName,
+      existingKey: null,
+      fields: e.fields.map(f => ({
+        key: f.key, label: f.label, fieldType: f.type, required: !!(f as { required?: boolean }).required, unique: false,
+        options: (f as { options?: string[] }).options ?? null,
+        relationToRef: (f as { relationRef?: string }).relationRef ?? null
+      })),
+      formLayout: { sections: [{ title: 'Général', fields: e.fields.map(f => ({ key: f.key, width: 'half', labelOverride: null })) }] },
+      views: [{ mode: 'list', displayName: `Toutes les ${e.displayNamePlural.toLowerCase()}` }],
+      seedCount: 2,
+      seedSample: [
+        Object.fromEntries(e.fields.map(f => [f.key, `${f.label} 1`])),
+        Object.fromEntries(e.fields.map(f => [f.key, `${f.label} 2`]))
+      ]
+    })),
+    relations: [{ kind: 'many_to_one', fromRef: 'demande', toRef: 'employe', label: 'Employé', junctionName: null }],
+    amendment: null,
+    workflows: [],
+    warnings: [],
+    duplicates: []
+  };
+}
+
+/** Enveloppe `StudioAiPlanCreationResponse` (`{ plan, spec }`) d'un plan créé côté serveur (201). */
+function creationResponse(id: string, title: string, spec: unknown = studioSystemSpec()) {
+  const expiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
+  const summary = studioPlanSummary({ title });
+  return {
+    plan: { id, kind: 'CreateSystem', status: 'Pending', summaryJson: JSON.stringify(summary), createdAt: new Date().toISOString(), expiresAt },
+    spec: { id, kind: 'CreateSystem', status: 'Pending', expiresAt, rowVersion: 'AAAA', spec }
+  };
+}
+
+function defaultConfirmEvents(): SseEvent[] {
+  const step = (phase: string, label: string, status: string, entityRef: string | null = null) =>
+    ({ type: 'studio_progress', content: JSON.stringify({ phase, label, status, entityRef, detail: null }) });
+  return [
+    step('creating_system', 'Système « Gestion des congés »', 'done'),
+    step('creating_entities', 'Table Employé', 'done', 'employe'),
+    step('creating_entities', 'Table Demande de congé', 'done', 'demande'),
+    step('creating_views', 'Vue Toutes les demandes', 'done', 'demande'),
+    {
+      type: 'studio_result',
+      content: JSON.stringify({
+        success: true,
+        systemKey: 'conges',
+        systemUrl: '/studio/systems/conges',
+        displayName: 'Gestion des congés',
+        entityCount: 2,
+        entities: [
+          { refKey: 'employe', entityKey: 'employes', displayName: 'Employé', openUrl: '/studio/records/employes' },
+          { refKey: 'demande', entityKey: 'demandes', displayName: 'Demande de congé', openUrl: '/studio/records/demandes' }
+        ],
+        warnings: [],
+        message: 'Système créé.'
+      })
+    },
+    { type: 'done', content: '' }
+  ];
+}
+
+/**
+ * Mocks de l'aperçu IA enrichi (3.4) : `GET {id}/preview`, `POST {id}/replay`, `PUT {id}/spec` (409
+ * optionnel), `POST {id}/confirm` (SSE), `GET systems/{key}/export`, `POST systems/{key}/duplicate`,
+ * `POST systems/import`, `GET systems`, `GET systems/{key}`. Chaque appel est poussé dans `ctx.calls`.
+ */
+export async function installStudioPreviewMocks(
+  page: Page, ctx: StudioMockContext, options: StudioPreviewMockOptions = {}
+): Promise<void> {
+  const record_ = (route: Route) => {
+    const req = route.request();
+    ctx.calls.push({ method: req.method(), url: req.url(), body: safeJson(req.postData()) });
+  };
+  const fulfil = async (route: Route, body: unknown, status = 200) => {
+    record_(route);
+    await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  };
+  const segment = (route: Route, fromEnd: number) => route.request().url().split('?')[0].split('/').slice(fromEnd, fromEnd + 1)[0];
+
+  // — Plans : aperçu structuré (GET-only), rejeu, conflit de brouillon, confirmation SSE.
+  await page.route(/\/api\/studio\/ai\/plans\/[^/?]+\/preview$/, async route => {
+    const id = segment(route, -2);
+    if (options.previewStatus === 404) {
+      await fulfil(route, { success: false, data: null, message: 'Not found', errors: [] }, 404);
+      return;
+    }
+    await fulfil(route, ok(studioPlanPreview(id)));
+  });
+
+  await page.route(/\/api\/studio\/ai\/plans\/[^/?]+\/replay$/, async route => {
+    if (options.replayStatus === 409) {
+      await fulfil(route, { success: false, data: null, message: 'Plan non rejouable.', errors: [] }, 409);
+      return;
+    }
+    await fulfil(route, ok(creationResponse('p-replay', 'Gestion des congés')), 201);
+  });
+
+  if (options.specPutConflict) {
+    await page.route(/\/api\/studio\/ai\/plans\/[^/?]+\/spec$/, async route => {
+      if (route.request().method() !== 'PUT') { await route.fallback(); return; }
+      await fulfil(route, { success: false, data: null, message: 'Conflit de version.', errors: [] }, 409);
+    });
+  }
+
+  await page.route(/\/api\/studio\/ai\/plans\/[^/?]+\/confirm$/, async route => {
+    record_(route);
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+      body: sseBody(options.confirmEvents ?? defaultConfirmEvents())
+    });
+  });
+
+  // — Systèmes : liste, détail, export, duplication, import.
+  await page.route('**/api/studio/systems?**', route => fulfil(route, ok(STUDIO_E2E_SYSTEMS)));
+  await page.route('**/api/studio/systems', route => fulfil(route, ok(STUDIO_E2E_SYSTEMS)));
+  await page.route(/\/api\/studio\/systems\/[^/?]+$/, async route => {
+    const key = segment(route, -1);
+    const system = STUDIO_E2E_SYSTEMS.find(s => s.key === key) ?? STUDIO_E2E_SYSTEMS[0];
+    await fulfil(route, ok({ system, entities: [] }));
+  });
+
+  await page.route(/\/api\/studio\/systems\/[^/?]+\/export(\?.*)?$/, async route => {
+    const key = segment(route, -2);
+    const includeSeed = new URL(route.request().url()).searchParams.get('includeSeed') === 'true';
+    const system = STUDIO_E2E_SYSTEMS.find(s => s.key === key);
+    await fulfil(route, ok({
+      specVersion: 1,
+      systemKey: key,
+      systemDisplayName: system?.displayName ?? key,
+      exportedAt: new Date().toISOString(),
+      entityCount: 2,
+      relationCount: 1,
+      viewCount: 0,
+      includesSeed: includeSeed,
+      warnings: [],
+      spec: studioSystemSpec()
+    }));
+  });
+
+  await page.route(/\/api\/studio\/systems\/[^/?]+\/duplicate$/, async route => {
+    const key = segment(route, -2);
+    const body = (safeJson(route.request().postData()) ?? {}) as { displayName?: string | null };
+    const source = STUDIO_E2E_SYSTEMS.find(s => s.key === key);
+    const title = body.displayName || `${source?.displayName ?? key} (copie)`;
+    await fulfil(route, ok(creationResponse('p-duplicate', title)), 201);
+  });
+
+  await page.route('**/api/studio/systems/import', async route => {
+    if (options.importStatus === 400) {
+      await fulfil(route, { success: false, data: null, message: 'La spec dépasse 256 Ko.', errors: [] }, 400);
+      return;
+    }
+    const body = (safeJson(route.request().postData()) ?? {}) as { spec?: unknown; displayNameOverride?: string | null };
+    const spec = typeof body.spec === 'string' ? JSON.parse(body.spec) : body.spec ?? studioSystemSpec();
+    const title = body.displayNameOverride || (spec as { system?: { displayName?: string } })?.system?.displayName || 'Import';
+    await fulfil(route, ok(creationResponse('p-import', title, spec)), 201);
+  });
 }
