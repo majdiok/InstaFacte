@@ -772,6 +772,11 @@ export async function installStudioPreviewMocks(
   await page.route('**/api/studio/systems?**', route => fulfil(route, ok(STUDIO_E2E_SYSTEMS)));
   await page.route('**/api/studio/systems', route => fulfil(route, ok(STUDIO_E2E_SYSTEMS)));
   await page.route(/\/api\/studio\/systems\/[^/?]+$/, async route => {
+    // Le motif capte aussi `POST …/systems/import` : seul le détail (GET) est servi ici.
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
     const key = segment(route, -1);
     const system = STUDIO_E2E_SYSTEMS.find(s => s.key === key) ?? STUDIO_E2E_SYSTEMS[0];
     await fulfil(route, ok({ system, entities: [] }));

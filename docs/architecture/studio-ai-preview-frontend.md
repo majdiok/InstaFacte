@@ -77,8 +77,8 @@ Importer / Dupliquer / modèles :
 
 `POST api/studio/ai/plans/{id}/replay` ⇒ `201 { plan, spec }` ⇒ `openCreationResponse` (plan + spec
 canonique + résumé, phase `awaiting_confirmation`) puis `refreshHistory()`. `409` ⇒ `error =
-replay.conflict`. L'en-tête `Location` n'est pas consommé (D14). « Régénérer avec ces modifications »
-(`store.regenerate`) est un flux distinct : il renvoie au chat la demande initiale enrichie du résumé
+replay.conflict`. L'en-tête `Location` n'est pas consommé (D14). `store.regenerate()` est une API du
+store sans point d'entrée UI en 3.4 : elle renverrait au chat la demande initiale enrichie du résumé
 des changements.
 
 ### 2.4 Import / export / duplication / `?duplicate=`
@@ -136,4 +136,6 @@ Aucune PII n'est journalisée côté client ; aucun secret n'est manipulé.
   `studioSystemExportFixture`).
 - E2E (Playwright, backend mocké) : `e2e/studio-ai-preview.spec.ts` avec `installStudioPreviewMocks`
   (`e2e/helpers/studio-mock.helpers.ts`) : doublons, brouillon + `PUT spec`, 409, Tester GET-only,
-  expiration ⇒ replay, import, export ; captures `docs/screenshots/studio-ia-apercu-*.png`.
+  expiration ⇒ replay, import, export. Les captures `docs/screenshots/studio-ia-apercu-*.png`
+  (`test.describe('captures')`) sont ignorées par défaut et ne se régénèrent qu'avec
+  `STUDIO_DOC_SCREENSHOTS=1` (PNG suivis, pixels non déterministes).
