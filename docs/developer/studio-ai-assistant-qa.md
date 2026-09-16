@@ -335,6 +335,11 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   `CustomEntityDefinitions`, index unique filtré `(TenantId, EntityDefinitionId, Key) WHERE IsDeleted = 0`,
   index `(TenantId, EntityDefinitionId, IsDefault)` — vues enregistrées). Jumeau idempotent :
   `docs/runbooks/sql/AddStudioRecordViews_Tenant.idempotent.sql`.
+- `20260912150000_AddStudioWorkflows_Tenant` (4 tables autonomes `StudioWorkflowDefinitions`,
+  `StudioWorkflowInstances`, `StudioWorkflowStepRuns`, `StudioWorkflowApprovals`, 9 index dont la clé
+  unique filtrée `(TenantId, EntityDefinitionId, Key) WHERE IsDeleted = 0`, aucune FK — workflows
+  Studio). Jumeau idempotent :
+  `docs/runbooks/sql/AddStudioWorkflows_Tenant.idempotent.sql`.
 
 ## Portée automatisée
 
