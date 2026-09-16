@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Features.Studio.Automations;
 using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.Workflows;
 using FactuTrust.Application.Features.Studio.Workflows.Engine;
 using FactuTrust.Application.Features.Studio.Workflows.Spec;
 using FactuTrust.Domain.Enums;
@@ -69,6 +70,9 @@ public sealed class UpdateFieldStepHandler : IStudioWorkflowStepHandler
         if (pairError is not null)
             return new StepOutcome.Fail(pairError.Description);
 
+        // PR 4.1i : capture AVANT SetData pour le déclencheur « field_changed » des workflows chaînés.
+        var previous = ctx.Record.DataJson;
+
         ctx.Record.SetData(canonical, ctx.Instance.StartedBy);
         try
         {
@@ -86,6 +90,11 @@ public sealed class UpdateFieldStepHandler : IStudioWorkflowStepHandler
         await StudioRecordLifecycle.PublishAsync(
             _publisher, tenantId, ctx.Entity.Id, ctx.Record.Id, canonical,
             StudioAutomationTrigger.OnUpdate, ctx.Instance.StartedBy, cancellationToken);
+
+        // Workflows Studio (PR 4.1i) : le marqueur ambiant fournit origine et profondeur (anti-boucle).
+        await StudioWorkflowLifecycle.PublishAsync(
+            _publisher, tenantId, ctx.Entity.Id, ctx.Record.Id, canonical, previous,
+            StudioAutomationTrigger.OnUpdate, ctx.Instance.StartedBy, _logger, cancellationToken);
 
         // Journal : clés uniquement, jamais les valeurs écrites.
         return new StepOutcome.Continue(new JsonObject

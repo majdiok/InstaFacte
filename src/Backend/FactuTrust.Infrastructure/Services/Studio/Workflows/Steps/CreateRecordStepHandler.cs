@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Features.Studio.Automations;
 using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.Workflows;
 using FactuTrust.Application.Features.Studio.Workflows.Engine;
 using FactuTrust.Application.Features.Studio.Workflows.Spec;
 using FactuTrust.Domain.Entities.Studio;
@@ -104,6 +105,11 @@ public sealed class CreateRecordStepHandler : IStudioWorkflowStepHandler
         await StudioRecordLifecycle.PublishAsync(
             _publisher, ctx.TenantId, target.Id, record.Id, canonical,
             StudioAutomationTrigger.OnCreate, ctx.Instance.StartedBy, cancellationToken);
+
+        // Workflows Studio (PR 4.1i) : le marqueur ambiant fournit origine et profondeur (anti-boucle).
+        await StudioWorkflowLifecycle.PublishAsync(
+            _publisher, ctx.TenantId, target.Id, record.Id, canonical, null,
+            StudioAutomationTrigger.OnCreate, ctx.Instance.StartedBy, _logger, cancellationToken);
 
         JsonObject result = new()
         {

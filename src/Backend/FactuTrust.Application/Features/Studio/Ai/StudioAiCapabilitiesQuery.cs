@@ -101,7 +101,7 @@ public sealed class StudioAiCapabilitiesQueryHandler
             // PR 2.4 : règle centralisée (propre drapeau + vues enregistrées + flux d'aperçu).
             RecordViewToolsEnabled: StudioAiPlanCreation.RecordViewToolsEnabled(_settings),
             SystemExportEnabled: _settings.EnableStudioSystemExport,
-            WorkflowsEnabled: false,
+            WorkflowsEnabled: _settings.EnableStudioWorkflows,
             WorkflowToolsEnabled: false));
     }
 

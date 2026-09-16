@@ -5,8 +5,10 @@ using FactuTrust.Application.Features.AI.DTOs;
 using FactuTrust.Application.Features.AI.Tools;
 using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.Records;
 using FactuTrust.Application.Features.Studio.RecordViews;
 using FactuTrust.Domain.Enums;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.Studio;
@@ -317,5 +319,64 @@ public sealed class StudioSilentFailureGuardsTests
 
         Assert.NotEmpty(preview.Warnings);
         Assert.All(preview.Warnings, w => Assert.False(string.IsNullOrWhiteSpace(w)));
+    }
+
+    // ---- PR 4.1i : la publication des workflows n'est JAMAIS silencieuse (P15) ----
+
+    /// <summary>
+    /// Les 3 handlers d'enregistrements (Create/Update/Patch) acceptent un
+    /// <c>ILogger&lt;T&gt;?</c> en dernier paramètre OPTIONNEL (défaut null) : la publication des
+    /// workflows est journalisée quand un logger est injecté, sans casser les ctors existants (R7).
+    /// </summary>
+    [Fact]
+    public void Record_handlers_accept_an_optional_logger_for_workflow_publication()
+    {
+        var handlerTypes = new[]
+        {
+            typeof(CreateCustomRecordCommandHandler),
+            typeof(UpdateCustomRecordCommandHandler),
+            typeof(PatchCustomRecordCommandHandler)
+        };
+
+        foreach (var handlerType in handlerTypes)
+        {
+            var ctor = Assert.Single(handlerType.GetConstructors());
+            var last = ctor.GetParameters().Last();
+            Assert.Equal(typeof(ILogger<>).MakeGenericType(handlerType), last.ParameterType);
+            Assert.True(last.IsOptional, $"{handlerType.Name} : le logger doit être optionnel (P15).");
+            Assert.Null(last.DefaultValue);
+        }
+    }
+
+    /// <summary>
+    /// Garde-fou source : <c>StudioWorkflowLifecycle</c> journalise tout échec de publication en
+    /// <c>LogWarning</c> et ne contient aucun <c>catch { }</c> vide (contrairement au Pont legacy,
+    /// dont le catch vide est assumé — cf. <c>StudioRecordLifecycle</c>).
+    /// </summary>
+    [Fact]
+    public void Workflow_lifecycle_never_swallows_silently()
+    {
+        var source = File.ReadAllText(LocateStudioWorkflowLifecycleFile());
+
+        Assert.Contains("LogWarning", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("catch { }", source, StringComparison.Ordinal);
+    }
+
+    private static string LocateStudioWorkflowLifecycleFile()
+    {
+        // Remonte depuis le dossier du binaire de test jusqu'à trouver
+        // src/Backend/FactuTrust.Application/Features/Studio/Workflows/StudioWorkflowLifecycle.cs.
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(
+                dir.FullName, "src", "Backend", "FactuTrust.Application", "Features", "Studio",
+                "Workflows", "StudioWorkflowLifecycle.cs");
+            if (File.Exists(candidate))
+                return candidate;
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException(
+            "StudioWorkflowLifecycle.cs introuvable (remontée depuis AppContext.BaseDirectory).");
     }
 }
