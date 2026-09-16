@@ -157,6 +157,9 @@ describe('StudioAiExportDialogComponent', () => {
 
     expect(createUrl).toHaveBeenCalledTimes(1);
     expect(click).toHaveBeenCalledTimes(1);
+    // L'URL n'est révoquée qu'après le clic (setTimeout 0) pour laisser le navigateur démarrer le téléchargement.
+    expect(revokeUrl).not.toHaveBeenCalled();
+    await new Promise(resolve => setTimeout(resolve, 0));
     expect(revokeUrl).toHaveBeenCalledOnceWith('blob:studio-test');
     expect(blob).toBeTruthy();
     expect(blob!.type).toBe('application/json');

@@ -97,6 +97,12 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
           <span>{{ error }}</span>
         </div>
       }
+      @for (validationError of store.validation().errors; track validationError) {
+        <div class="sai-banner sai-banner--error" role="alert" data-testid="sai-validation-error">
+          <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+          <span>{{ validationError }}</span>
+        </div>
+      }
       @if (store.warnings().length) {
         <div class="sai-banner sai-banner--warn">
           <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>

@@ -231,8 +231,7 @@ export class StudioAiDuplicateDialogComponent {
   }
 
   private onOpen(): void {
-    this.displayName.set('');
-    this.error.set(null);
+    this.reset();
     this.selectedKey.set(this.systemKey());
     this.studio.listSystems().subscribe({
       next: res => this.systems.set(res.data ?? []),

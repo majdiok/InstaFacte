@@ -623,3 +623,57 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     « Jalons », liste « Projets actifs » filtrée `statut = actif`, rapport « Tâches par statut »,
     5 lignes de départ ; l'export de ce système (cas 70) redonne `relationCount: 1` et
     `viewCount: 4`, et sa duplication (cas 72) recrée la relation N-N.
+
+## Aperçu IA enrichi — frontend (PR 3.4)
+
+> Architecture : [`docs/architecture/studio-ai-preview-frontend.md`](../architecture/studio-ai-preview-frontend.md).
+> Prérequis : `EnableStudioAiPlanPreview` et `EnableStudioSystemExport` activés (`planPreviewEnabled` /
+> `systemExportEnabled` dans `GET api/studio/ai/capabilities`), un compte avec `studio:design_entities`,
+> une proposition « Système complet » ouverte dans l'atelier (`/studio/ai`). Suite Playwright miroir :
+> `e2e/studio-ai-preview.spec.ts` (7 cas, backend mocké). Les numéros 75–90 (backend 4.x) et 103–106 (4.4)
+> restent réservés.
+
+99. **Tester sans écriture** : barre de modes de l'aperçu ⇒ **Tester** ⇒ un seul `GET api/studio/ai/plans/{id}/preview`
+    (jamais rejoué tant que le plan est le même), puis le formulaire de la première table rendu par le
+    formulaire dynamique réel ; saisir les champs requis puis **Enregistrer** ⇒ message de simulation en
+    ligne, **aucune** requête `POST`/`PUT`/`PATCH`/`DELETE` sur `api/studio/*` (vérifier dans l'onglet
+    Réseau) ; carte « Rapport » alimentée par `summary.sample` sinon par l'agrégation locale des données
+    de départ, bouton Exporter du rapport inactif (`aria-disabled`). `GET …/preview` ⇒ `404` (flag
+    serveur absent) ⇒ pilule « Disponible après mise à jour du serveur. » sur le bouton Tester, panneau
+    toujours fonctionnel depuis la spec seule, aucun bandeau d'erreur global. Revenir à **Aperçu** ne
+    déclenche aucun appel.
+100. **Personnaliser : brouillon 409 + import/export aller-retour** : **Personnaliser** ⇒ renommer un champ
+    dans l'onglet Tables ⇒ badge « 1 » sur le bouton Personnaliser ⇒ **Enregistrer le brouillon** ⇒
+    `PUT api/studio/ai/plans/{id}/spec` avec le `rowVersion` courant ⇒ fil « Modifications enregistrées
+    dans le plan. », badge à 0, nouveau `rowVersion` mémorisé. Rejouer avec un `rowVersion` périmé (second
+    onglet qui a enregistré entre-temps) ⇒ `409` ⇒ bandeau d'erreur `role="alert"` « Ce plan a été modifié
+    entre-temps. Rechargez l’aperçu. » au-dessus de l'aperçu, brouillon **conservé** (badge et bouton
+    toujours actifs), rien n'est écrasé. Puis, sur un système créé : carte résultat ou rail ⇒ **Exporter
+    (JSON)** ⇒ dialog « Exporter le système » (`p-select` des systèmes quand aucune clé n'est préréglée),
+    `GET api/studio/systems/{key}/export` ⇒ compteurs « n tables · n relations · n vues », **Télécharger**
+    ⇒ fichier `studio-system-<clé>.json` (spec seule, identique à `?download=true`) ; rail ⇒ **Importer un
+    modèle (JSON)** ⇒ déposer ce fichier ⇒ « Spécification reconnue » + compteurs identiques ⇒ **Importer**
+    ⇒ `POST api/studio/systems/import` (`displayNameOverride` optionnel, `includeSeed`) ⇒ `201` ⇒ la
+    proposition s'ouvre dans l'aperçu avec les mêmes compteurs. Fichier > 256 Ko ⇒ « Fichier trop
+    volumineux (256 Ko maximum). » **sans** lecture ni appel réseau ; JSON invalide ⇒ « JSON invalide. » ;
+    `specVersion: 2` ⇒ « specVersion non pris en charge (1 attendu). ».
+101. **Expiration ⇒ Régénérer ⇒ `POST …/replay`** : laisser le compte à rebours de la barre de modes
+    atteindre 0 (ou ouvrir un plan dont `expiresAt` est passé) ⇒ pilule **Expiré**, **Créer maintenant**
+    désactivé, boutons de mode désactivés, bouton **Régénérer** visible ⇒ clic ⇒
+    `POST api/studio/ai/plans/{id}/replay` ⇒ `201` ⇒ nouvelle proposition **À valider** ouverte à la place
+    (fil « Plan rejoué : une nouvelle proposition est ouverte. »), historique du rail rafraîchi. Même
+    action depuis le rail (**Rejouer** sur une ligne `replayable`, confirmation « Remplacer la proposition
+    en cours ? » si un plan est affiché) et depuis **Mes projets** (`/studio/ai/projects`, bouton Rejouer ⇒
+    `201` ⇒ redirection `/studio/ai?plan=<nouvel id>`). `409` ⇒ « Ce plan ne peut pas être rejoué
+    maintenant. » (bandeau dans l'atelier, toast dans Mes projets), plan source inchangé.
+102. **Changement de type refusé désactive Enregistrer ; `lossless` ⇒ PATCH `…/type`** : concepteur de
+    table (`/studio/<entityId>`) ⇒ modifier un champ existant ⇒ changer le type dans la liste (plus
+    grisée en édition) ⇒ « Vérification… » puis
+    `GET api/studio/entities/{entityId}/fields/{fieldId}/type-check?to=<Type>` (anti-rebond, dernière
+    valeur seule) : `lossless` ⇒ `p-message` `info` avec le message serveur verbatim, **Enregistrer**
+    actif ⇒ clic ⇒ `PATCH api/studio/entities/{entityId}/fields/{fieldId}/type` puis `PUT` du champ ⇒
+    dialog fermé, liste des champs rechargée avec le nouveau type ; `requires_empty_table` ⇒ message
+    `warn` avec le nombre d'enregistrements bloquants,
+    **Enregistrer désactivé** ; `forbidden` ⇒ message `error`, **Enregistrer désactivé** ; revenir au type
+    d'origine ⇒ message effacé, Enregistrer actif, aucun `PATCH` émis. Pendant la vérification le bouton
+    reste désactivé (pas de double soumission).

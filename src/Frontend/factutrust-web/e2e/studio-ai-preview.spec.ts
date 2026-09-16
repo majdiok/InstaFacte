@@ -18,6 +18,10 @@ import {
  * mocks de l'atelier) : suite déterministe, aucun serveur .NET requis.
  *
  * Référence QA manuelle : docs/developer/studio-ai-assistant-qa.md, cas 99–102.
+ *
+ * Captures docs (`test.describe('captures')`) : ignorées par défaut car elles réécrivent les PNG suivis
+ * de `docs/screenshots/` (pixels non déterministes) ; définir `STUDIO_DOC_SCREENSHOTS=1` pour les
+ * régénérer volontairement.
  */
 
 const DUPLICATES = [
@@ -98,8 +102,8 @@ test.describe('Aperçu IA enrichi — 7 cas (3.4m)', () => {
 
     await banner.getByRole('button', { name: 'Réutiliser la table existante' }).click();
 
+    await expect.poll(() => ctx.find('/spec', 'PUT').length).toBe(1);
     const puts = ctx.find('/spec', 'PUT');
-    expect(puts.length).toBe(1);
     const body = puts[0].body as { specJson: string; rowVersion: string };
     expect(body.rowVersion).toBe('AAAA');
     const spec = JSON.parse(body.specJson) as { entities: { ref: string; existingKey?: string }[] };
@@ -119,8 +123,8 @@ test.describe('Aperçu IA enrichi — 7 cas (3.4m)', () => {
 
     await page.getByRole('button', { name: 'Enregistrer le brouillon' }).click();
 
+    await expect.poll(() => ctx.find('/spec', 'PUT').length).toBe(1);
     const puts = ctx.find('/spec', 'PUT');
-    expect(puts.length).toBe(1);
     const body = puts[0].body as { specJson: string; rowVersion: string };
     expect(body.rowVersion).toBe('AAAA');
     const spec = JSON.parse(body.specJson) as { entities: { fields: { key: string; label: string }[] }[] };
@@ -139,8 +143,8 @@ test.describe('Aperçu IA enrichi — 7 cas (3.4m)', () => {
 
     await page.getByRole('button', { name: 'Enregistrer le brouillon' }).click();
 
+    await expect.poll(() => ctx.find('/spec', 'PUT').length).toBe(1);
     const puts = ctx.find('/spec', 'PUT');
-    expect(puts.length).toBe(1);
     expect((puts[0].body as { rowVersion: string }).rowVersion).toBe('AAAA');
 
     // 409 : le brouillon est conservé (badge et bouton toujours actifs), rien n'est enregistré.
@@ -148,6 +152,12 @@ test.describe('Aperçu IA enrichi — 7 cas (3.4m)', () => {
     await expect(page.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled();
     await expect(page.locator('app-studio-ai-conversation')).not.toContainText('Modifications enregistrées dans le plan.');
     await expect(page.locator('app-studio-ai-preview')).toBeVisible();
+
+    // 3.4n : le conflit est rendu dans un bandeau d'erreur de l'aperçu (validation().errors).
+    const banner = page.locator('app-studio-ai-preview [data-testid="sai-validation-error"]');
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveAttribute('role', 'alert');
+    await expect(banner).toContainText('Ce plan a été modifié entre-temps. Rechargez l’aperçu.');
   });
 
   test('Tester ⇒ GET …/preview et aucune écriture', async ({ page }) => {
@@ -168,6 +178,9 @@ test.describe('Aperçu IA enrichi — 7 cas (3.4m)', () => {
     await expect(page.locator('[data-component-id="sai-test-report"]')).toBeVisible();
 
     // Un tour de plus dans le panneau (formulaire simulé) : toujours aucune écriture.
+    await panel.locator('input').first().fill('Test');
+    await panel.getByRole('button', { name: 'Enregistrer' }).click();
+    await expect(panel.locator('[data-component-id="sai-test-saved"]')).toContainText('Enregistrement simulé : aucune donnée écrite.');
     await page.waitForTimeout(500);
     page.off('request', onRequest);
 
@@ -194,8 +207,8 @@ test.describe('Aperçu IA enrichi — 7 cas (3.4m)', () => {
 
     await page.getByRole('button', { name: 'Régénérer' }).click();
 
+    await expect.poll(() => ctx.find('/replay', 'POST').length).toBe(1);
     const replays = ctx.find('/replay', 'POST');
-    expect(replays.length).toBe(1);
     expect(replays[0].url).toMatch(/\/api\/studio\/ai\/plans\/p-expired\/replay$/);
 
     // Le nouveau plan (p-replay) est ouvert : pilule active, modes déverrouillés.
@@ -214,8 +227,8 @@ test.describe('Aperçu IA enrichi — 7 cas (3.4m)', () => {
     await dialog.locator('#saii-name').fill('Congés importés');
     await dialog.locator('[data-action="import"]').click();
 
+    await expect.poll(() => ctx.find('/api/studio/systems/import', 'POST').length).toBe(1);
     const imports = ctx.find('/api/studio/systems/import', 'POST');
-    expect(imports.length).toBe(1);
     const body = imports[0].body as { spec: { entities: unknown[] }; displayNameOverride: string | null; includeSeed: boolean };
     expect(body.spec.entities.length).toBe(2);
     expect(body.displayNameOverride).toBe('Congés importés');
@@ -227,7 +240,7 @@ test.describe('Aperçu IA enrichi — 7 cas (3.4m)', () => {
     await expect(page.getByRole('button', { name: 'Créer maintenant' })).toBeEnabled();
   });
 
-  test('Exporter ⇒ téléchargement system-<clé>.json', async ({ page }) => {
+  test('Exporter ⇒ téléchargement studio-system-<clé>.json', async ({ page }) => {
     const ctx = await setup(page);
     await gotoAtelier(page);
     await openExportFromRail(page);
@@ -268,6 +281,8 @@ async function capture(page: Page, name: string): Promise<void> {
 }
 
 test.describe('captures', () => {
+  test.skip(!process.env.STUDIO_DOC_SCREENSHOTS, 'captures docs — définir STUDIO_DOC_SCREENSHOTS=1');
+
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
   });

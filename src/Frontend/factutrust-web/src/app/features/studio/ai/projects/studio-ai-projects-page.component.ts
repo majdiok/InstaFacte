@@ -279,7 +279,7 @@ export class StudioAiProjectsPageComponent {
     this.load();
   }
 
-  /** « Rejouer » : 201 ⇒ atelier sur le nouveau plan ; 409 ⇒ toast « conflit » ; sinon message d'erreur générique. */
+  /** « Rejouer » : 201 ⇒ atelier sur le nouveau plan ; 409 ⇒ toast « conflit » ; 2xx sans plan ou autre erreur ⇒ message d'erreur. */
   replay(item: StudioAiPlanListItemDto): void {
     if (this.replaying()) return;
     this.replaying.set(item.id);
@@ -288,7 +288,8 @@ export class StudioAiProjectsPageComponent {
         this.replaying.set(null);
         const planId = res?.success ? res.data?.plan?.id : null;
         if (!planId) {
-          this.error.set(this.replayLabels.conflict);
+          // 2xx sans plan : réponse inattendue, pas un conflit.
+          this.error.set(STUDIO_AI_LABELS.page.templateFailed);
           return;
         }
         void this.router.navigate(['/studio/ai'], { queryParams: { plan: planId } });

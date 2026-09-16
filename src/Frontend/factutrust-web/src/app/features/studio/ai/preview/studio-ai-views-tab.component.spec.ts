@@ -34,7 +34,8 @@ describe('StudioAiViewsTabComponent', () => {
     expect(text(cards[0])).toContain('Par statut');
     expect(text(cards[0])).toContain(STUDIO_AI_LABELS.views.kanban);
     expect(text(cards[0])).toContain('Demandes de congés');
-    expect(text(cards[0])).toContain(`${STUDIO_AI_LABELS.views.groupBy} : statut`);
+    // D5 (3.4n) : `statut` existe désormais sur `demandes` ⇒ la puce résout le libellé du champ.
+    expect(text(cards[0])).toContain(`${STUDIO_AI_LABELS.views.groupBy} : Statut`);
 
     // `calendrier` (alias FR) ⇒ p-tag « Calendrier », puces Champ date / Fin résolues en libellés.
     expect(text(cards[1])).toContain(STUDIO_AI_LABELS.views.calendar);

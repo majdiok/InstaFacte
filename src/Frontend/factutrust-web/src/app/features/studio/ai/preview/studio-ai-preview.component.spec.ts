@@ -173,6 +173,19 @@ describe('StudioAiPreviewComponent', () => {
     expect(Array.from(host.querySelectorAll<HTMLButtonElement>('.sai-modebar__btn')).every(b => b.disabled)).toBeTrue();
   });
 
+  it('erreur de brouillon (409) affichée dans un bandeau d’erreur', () => {
+    loadPlan();
+    store.validation.set({ warnings: [], errors: [STUDIO_AI_LABELS.errors.conflict], pending: false });
+    fixture.detectChanges();
+    const host = fixture.nativeElement as HTMLElement;
+
+    const banners = Array.from(host.querySelectorAll('[data-testid="sai-validation-error"]'));
+    expect(banners.length).toBe(1);
+    expect(banners[0].getAttribute('role')).toBe('alert');
+    expect(banners[0].classList.contains('sai-banner--error')).toBeTrue();
+    expect(banners[0].textContent).toContain(STUDIO_AI_LABELS.errors.conflict);
+  });
+
   it('switches to the Tables tab when the overview asks to open an entity', () => {
     loadPlan();
     const opened: string[] = [];

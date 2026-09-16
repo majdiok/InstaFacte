@@ -139,6 +139,21 @@ describe('StudioEntityDesignerComponent — changement de type (3.4l)', () => {
     expect(component.typeCheck()?.allowed).toBeTrue();
   }));
 
+  it('revenir au type d\'origine annule la vérification en cours', fakeAsync(() => {
+    setup(false);
+    editAndChangeType(CustomFieldType.Number);
+    expect(component.typeChecking()).toBeTrue();
+    tick(100);
+    component.fType = CustomFieldType.Text;
+    component.onTypeChange(CustomFieldType.Text);
+    fixture.detectChanges();
+    tick(300);
+    httpMock.expectNone(req => req.url === typeCheckUrl);
+    expect(component.typeChecking()).toBeFalse();
+    expect(component.typeCheck()).toBeNull();
+    expect(saveButton().disabled).toBeFalse();
+  }));
+
   it('policy lossless ⇒ message info, Enregistrer actif', fakeAsync(() => {
     setup(false);
     editAndChangeType(CustomFieldType.Number);
