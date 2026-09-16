@@ -643,7 +643,7 @@ export const STUDIO_AI_LABELS = {
     duplicateTitle: 'Dupliquer un système',
     duplicate: 'Dupliquer',
     chooseSystem: 'Système à dupliquer',
-    copySuffix: '(copie)',
+    copySuffix: '{name} (copie)',
     opened: 'Plan ouvert : vérifiez la proposition puis validez.',
     exportLoading: 'Préparation de l’export…',
     exportWarnings: 'Points à vérifier',
@@ -655,7 +655,13 @@ export const STUDIO_AI_LABELS = {
     remove: 'Retirer',
     recognized: 'Spécification reconnue',
     notObject: 'La spécification doit être un objet JSON.',
-    seedRecords: '{count} lignes de départ'
+    seedRecords: '{count} lignes de départ',
+    duplicateSource: 'Système source',
+    copyName: 'Nom de la copie',
+    createCopy: 'Créer la copie',
+    duplicateNote: 'La copie est proposée dans l’aperçu IA ; les données de départ sont reprises.',
+    nameCounter: '{count}/{max}',
+    entitiesCount: '{count} tables'
   },
 
   /** Rejeu d'un plan terminé / échoué / annulé / expiré (3.4k). */

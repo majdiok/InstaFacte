@@ -14,11 +14,13 @@ import { StudioAiCapabilitiesService } from './studio-ai-capabilities.service';
 import { STUDIO_AI_LABELS, StudioAiIntentCardDef, formatLabel } from './studio-ai-labels';
 import { StudioAiSendOptions, StudioAiSessionStore, parsePlanSummary } from './studio-ai-session.store';
 import { studioAiHttpError } from './studio-ai-spec.util';
-import { StudioAiIntent, StudioAiPlanListItemDto, StudioAiPreviewTab, StudioTemplateListItemDto } from './studio-ai.models';
+import { ImportCustomSystemRequest, StudioAiIntent, StudioAiPlanListItemDto, StudioAiPreviewTab, StudioTemplateListItemDto } from './studio-ai.models';
 import { StudioAiComposerComponent } from './composer/studio-ai-composer.component';
 import { StudioAiIntentCardsComponent } from './composer/studio-ai-intent-cards.component';
 import { StudioAiConversationComponent } from './conversation/studio-ai-conversation.component';
+import { StudioAiDuplicateDialogComponent, StudioAiDuplicateRequest } from './import-export/studio-ai-duplicate-dialog.component';
 import { StudioAiExportDialogComponent } from './import-export/studio-ai-export-dialog.component';
+import { StudioAiImportDialogComponent } from './import-export/studio-ai-import-dialog.component';
 import { StudioAiConfirmDialogComponent } from './preview/studio-ai-confirm-dialog.component';
 import { StudioAiPreviewComponent } from './preview/studio-ai-preview.component';
 import { StudioAiProgressComponent } from './preview/studio-ai-progress.component';
@@ -45,7 +47,8 @@ const INTENT_TO_TAB: Partial<Record<StudioAiIntent, StudioAiPreviewTab>> = {
  * en root) : quitter la page réinitialise l'atelier.
  *
  * Paramètres d'URL consommés une fois puis retirés : `?intent=` (carte présélectionnée, A20),
- * `?template=<key>` (plan depuis la bibliothèque), `?plan=<id>` (reprise depuis « Mes projets »).
+ * `?template=<key>` (plan depuis la bibliothèque), `?plan=<id>` (reprise depuis « Mes projets »),
+ * `?duplicate=<key>` (dialog Dupliquer prérempli depuis le hub d'un système — N7, fail-closed sur l'export).
  */
 @Component({
   selector: 'app-studio-ai-page',
@@ -62,6 +65,8 @@ const INTENT_TO_TAB: Partial<Record<StudioAiIntent, StudioAiPreviewTab>> = {
     StudioAiConversationComponent,
     StudioAiConfirmDialogComponent,
     StudioAiExportDialogComponent,
+    StudioAiImportDialogComponent,
+    StudioAiDuplicateDialogComponent,
     StudioAiPreviewComponent,
     StudioAiProgressComponent,
     StudioAiResultCardComponent
@@ -93,6 +98,11 @@ export class StudioAiPageComponent {
   /** Dialog Exporter (JSON) : clé préréglée depuis la carte résultat, `null` depuis le rail (p-select). */
   readonly exportVisible = signal(false);
   readonly exportKey = signal<string | null>(null);
+  /** Dialog Importer (JSON) : fermé automatiquement quand le plan importé est ouvert. */
+  readonly importVisible = signal(false);
+  /** Dialog Dupliquer : clé préréglée depuis la carte résultat / `?duplicate=`, `null` depuis le rail. */
+  readonly duplicateVisible = signal(false);
+  readonly duplicateKey = signal<string | null>(null);
 
   /** Modèles du catalogue pour le rail (chargés une fois si `templatesEnabled`). */
   readonly templates = signal<StudioTemplateListItemDto[]>([]);
@@ -100,6 +110,7 @@ export class StudioAiPageComponent {
   readonly templatesError = signal<string | null>(null);
 
   private railLoaded = false;
+  private importSubmitted = false;
 
   /** Ce que la colonne principale affiche. */
   readonly mainView = computed<'compose' | 'preview' | 'progress' | 'result'>(() => {
@@ -130,6 +141,16 @@ export class StudioAiPageComponent {
       const caps = this.capabilities.capabilities();
       if (caps.planPreviewEnabled) this.store.loadHistory();
       if (caps.templatesEnabled) this.loadTemplates();
+    });
+
+    // Import soumis : le dialog se ferme dès que le store a ouvert le plan (phase ≠ planning, sans erreur).
+    effect(() => {
+      const phase = this.store.phase();
+      const error = this.store.error();
+      if (this.importSubmitted && phase !== 'planning') {
+        this.importSubmitted = false;
+        if (!error) this.importVisible.set(false);
+      }
     });
 
     this.route.queryParamMap
@@ -314,9 +335,29 @@ export class StudioAiPageComponent {
     this.store.replay(plan.planId);
   }
 
-  /** Actions rapides Import / Dupliquer : câblées en 3.4j, simple rappel « Bientôt » d'ici là. */
-  comingSoon(): void {
-    this.toast.add({ severity: 'info', summary: this.labels.soon, detail: this.labels.rail.comingSoon });
+  /** Ouvre le dialog Importer (JSON) depuis le rail. */
+  openImport(): void {
+    this.importVisible.set(true);
+  }
+
+  /** Ouvre le dialog Dupliquer ; `key` null ⇒ choix du système dans le dialog. */
+  openDuplicate(key: string | null): void {
+    this.duplicateKey.set(key);
+    this.duplicateVisible.set(true);
+  }
+
+  /** `POST systems/import` via le store ; le dialog reste ouvert (erreur affichée) jusqu'à l'ouverture du plan. */
+  submitImport(req: ImportCustomSystemRequest): void {
+    if (this.store.busy()) return;
+    this.importSubmitted = true;
+    this.store.importSystem(req);
+  }
+
+  /** `POST systems/{key}/duplicate` via le store ; la proposition s'ouvre dans l'aperçu. */
+  submitDuplicate(req: StudioAiDuplicateRequest): void {
+    if (this.store.busy()) return;
+    this.duplicateVisible.set(false);
+    this.store.duplicateSystem(req.key, req.displayName);
   }
 
   // ---- Paramètres d'URL ------------------------------------------------------------------------------------
@@ -325,7 +366,8 @@ export class StudioAiPageComponent {
     const intent = params.get('intent');
     const template = params.get('template');
     const plan = params.get('plan');
-    if (!intent && !template && !plan) return;
+    const duplicate = params.get('duplicate');
+    if (!intent && !template && !plan && !duplicate) return;
 
     if (intent) {
       const card = this.labels.intents.find(c => c.intent === intent);
@@ -333,10 +375,12 @@ export class StudioAiPageComponent {
     }
     if (template) this.useTemplate(template);
     else if (plan) this.openPlanById(plan);
+    // Fail-closed : sans export activé, le paramètre est simplement ignoré (et effacé).
+    if (duplicate && this.capabilities.capabilities().systemExportEnabled) this.openDuplicate(duplicate);
 
     // Consommés une fois : un rechargement ne doit pas recréer un plan ni rouvrir un ancien.
     void this.router
-      .navigate([], { relativeTo: this.route, queryParams: { intent: null, template: null, plan: null }, queryParamsHandling: 'merge', replaceUrl: true })
+      .navigate([], { relativeTo: this.route, queryParams: { intent: null, template: null, plan: null, duplicate: null }, queryParamsHandling: 'merge', replaceUrl: true })
       .catch(() => undefined);
   }
 }
