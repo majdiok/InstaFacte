@@ -71,9 +71,15 @@
           <app-studio-ai-result-card
             [result]="store.result()!"
             [actions]="store.actions()"
+            [counters]="store.counters()"
+            [exportEnabled]="capabilities.capabilities().systemExportEnabled"
+            [replayable]="!!store.plan()"
             (open)="store.openCreated($event)"
             (navigate)="store.go($event)"
-            (newRequest)="newRequest()" />
+            (newRequest)="newRequest()"
+            (exportSystem)="openExport($event)"
+            (duplicate)="comingSoon()"
+            (replay)="replayCurrent()" />
         }
       }
 
@@ -107,7 +113,7 @@
       (reset)="resetFromRail()"
       (importTemplate)="comingSoon()"
       (duplicate)="comingSoon()"
-      (exportSystem)="comingSoon()"
+      (exportSystem)="openExport(null)"
       (openPlan)="openHistoryPlan($event)"
       (tryPrompt)="tryPrompt($event)" />
   </div>
@@ -121,3 +127,7 @@
   [busy]="store.busy()"
   (confirmed)="confirm()"
   (cancelled)="confirmVisible.set(false)" />
+
+<app-studio-ai-export-dialog
+  [(visible)]="exportVisible"
+  [systemKey]="exportKey()" />

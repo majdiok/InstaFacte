@@ -355,7 +355,8 @@ export const STUDIO_AI_LABELS = {
     exportJson: 'Exporter (JSON)',
     replay: 'Rejouer',
     views: 'vues',
-    workflows: 'workflows'
+    workflows: 'workflows',
+    counters: 'Contenu créé'
   },
 
   conversation: {
