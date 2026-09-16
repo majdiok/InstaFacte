@@ -180,6 +180,29 @@ public sealed class StudioAiCapabilitiesQueryTests
         Assert.False(disabled.Value.SystemExportEnabled);
     }
 
+    /// <summary>
+    /// PR 4.1i : <c>WorkflowsEnabled</c> suit <c>Ollama:EnableStudioWorkflows</c> ; les outils de
+    /// workflows (<c>WorkflowToolsEnabled</c>) restent faux tant que 4.3a n'est pas livrée.
+    /// </summary>
+    [Fact]
+    public async Task Workflows_follow_their_flag_and_workflow_tools_stay_false()
+    {
+        var enabled = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioWorkflows = true
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+
+        Assert.True(enabled.Value.WorkflowsEnabled);
+        Assert.False(enabled.Value.WorkflowToolsEnabled);
+
+        var disabled = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioWorkflows = false
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+        Assert.False(disabled.Value.WorkflowsEnabled);
+        Assert.False(disabled.Value.WorkflowToolsEnabled);
+    }
+
     [Fact]
     public async Task Workbench_requires_both_workbench_flag_and_plan_preview()
     {

@@ -380,6 +380,9 @@ public sealed class OllamaSettings
     /// </summary>
     public bool EnableStudioRecordViews { get; set; }
 
+    /// <summary>Active les workflows Studio (moteur d'étapes, API de conception). Flag off ⇒ routes 404, déclencheurs inertes.</summary>
+    public bool EnableStudioWorkflows { get; set; } = false;
+
     /// <summary>Durée max (s) d'un segment d'exécution synchrone du moteur de workflows (borné 1..30).</summary>
     public int StudioWorkflowMaxSegmentSeconds { get; set; } = 5;
 
