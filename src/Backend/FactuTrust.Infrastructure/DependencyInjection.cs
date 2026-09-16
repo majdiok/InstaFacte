@@ -400,6 +400,10 @@ public static class DependencyInjection
         services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.ConditionStepHandler>();
         services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.UpdateFieldStepHandler>();
         services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.ErpActionStepHandler>();
+        services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.NotifyStepHandler>();
+        services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.ApprovalStepHandler>();
+        services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.WaitStepHandler>();
+        services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.CreateRecordStepHandler>();
         // Digest de contexte Studio (schéma du tenant + dernier plan) injecté dans le prompt StudioBuilder.
         services.AddScoped<IStudioContextDigestService, Services.Studio.StudioContextDigestService>();
         services.AddScoped<IDocumentTemplateResolver, DocumentTemplateResolver>();
