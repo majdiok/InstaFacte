@@ -82,24 +82,71 @@ Si une proposition est déjà affichée, une confirmation **« Remplacer la prop
 ### Actions rapides
 
 - **Réinitialiser la conversation** : annule toutes vos propositions en attente (elles restent visibles dans l’historique, en **Annulé**), efface la conversation et repart à zéro. Une confirmation est demandée et un message indique le nombre de propositions annulées.
-- **Importer un modèle (JSON)**, **Dupliquer un système**, **Exporter le système (JSON)** : disponibles lorsque l’export de systèmes est activé par votre administrateur ; sinon **Exporter** est marqué **Bientôt**.
+- **Importer un modèle (JSON)** : ouvre le dialog **Importer un système (JSON)** — déposez un fichier `.json` (256 Ko maximum) ou collez son contenu, vérifiez les compteurs reconnus (tables · relations · vues), renommez éventuellement le système, puis **Importer** : une proposition **À valider** s’ouvre dans l’aperçu.
+- **Dupliquer un système** : ouvre le dialog **Dupliquer un système** — choisissez le système source, ajustez le nom de la copie (proposé « Nom (copie) », 128 caractères maximum), puis **Créer la copie** : la copie est proposée dans l’aperçu, à valider comme n’importe quelle proposition.
+- **Exporter le système (JSON)** : ouvre le dialog **Exporter le système** — choisissez le système, cochez éventuellement **Inclure les données de départ**, puis **Copier** ou **Télécharger** le fichier `studio-system-<clé>.json`.
+- Ces trois actions ne sont disponibles que lorsque l’export de systèmes est activé par votre administrateur ; sinon **Exporter** est marqué **Bientôt** et Importer / Dupliquer n’apparaissent pas.
 - **Partager avec l’équipe** : à venir.
 
 ### Historique des générations
 
 Les cinq dernières générations, avec leur statut : **À valider**, **En cours**, **Terminé**, **Échec**, **Annulé**, **Expiré**. Cliquez sur une proposition **À valider** pour la reprendre dans l’atelier. **Voir tout** ouvre **Mes projets** (`/studio/ai/projects`) : toutes vos générations, 20 par page, filtrables par statut et par genre, avec **Reprendre** (propositions à valider) et **Ouvrir le système** (systèmes créés).
 
-Chaque ligne indique aussi les compteurs de la proposition (tables, relations, vues) et, en cas d’échec, la raison. **Aperçu** affiche le détail structuré d’une génération (tables, champs, relations, formulaires, données de départ, avertissements) tel qu’il a été calculé, sans rien modifier. **Rejouer** — proposé sur les générations **Terminé**, **Échec**, **Annulé** ou **Expiré** — recrée une nouvelle proposition **À valider** à partir de la même demande, revérifiée contre l’existant (doublons signalés à nouveau) : la génération d’origine est conservée telle quelle, et rien n’est appliqué tant que vous n’avez pas validé la nouvelle proposition.
+Chaque ligne du rail indique le genre, la date et les compteurs de la proposition (tables, puis « n rel. » et « n vues » quand il y en a) ; un statut **Échec** affiche la raison au survol. Une ligne **Terminé** propose **Ouvrir le système** (le hub du système créé) et une ligne rejouable (**Terminé**, **Échec**, **Annulé**, **Expiré**) propose **Rejouer** : si une proposition est déjà affichée, une confirmation **« Remplacer la proposition en cours ? »** vous est demandée avant de la remplacer par la nouvelle.
+
+Dans **Mes projets**, les colonnes **Relations** et **Vues** complètent les compteurs, **Rejouer** ouvre directement l’atelier sur la nouvelle proposition et **Dupliquer** (systèmes créés, export activé) ouvre l’atelier avec le dialog de duplication prérempli. **Aperçu** affiche le détail structuré d’une génération (tables, champs, relations, formulaires, données de départ, avertissements) tel qu’il a été calculé, sans rien modifier. **Rejouer** — proposé sur les générations **Terminé**, **Échec**, **Annulé** ou **Expiré** — recrée une nouvelle proposition **À valider** à partir de la même demande, revérifiée contre l’existant (doublons signalés à nouveau) : la génération d’origine est conservée telle quelle, et rien n’est appliqué tant que vous n’avez pas validé la nouvelle proposition.
 
 ### Exporter, dupliquer ou importer un système
 
-**Exporter le système (JSON)** produit un fichier portable décrivant la structure du système (tables, champs, relations, formulaires, vues, rapport) sans aucune donnée personnelle ni identifiant interne. Les données de départ sont optionnelles et limitées (au plus quelques centaines de lignes, sans les valeurs de relation, pièces jointes ni signatures).
+**Exporter le système (JSON)** produit un fichier portable décrivant la structure du système (tables, champs, relations, formulaires, vues, rapport) sans aucune donnée personnelle ni identifiant interne. Le dialog **Exporter le système** est accessible depuis le rail (choix du système dans une liste), depuis la carte de résultat après une création et depuis l’en-tête du hub d’un système. Il affiche l’aperçu du JSON, les compteurs (« n tables · n relations · n vues ») et, le cas échéant, des **Points à vérifier** (par exemple une formule exportée en texte). **Copier** place le JSON dans le presse-papiers ; **Télécharger** enregistre `studio-system-<clé>.json`. Les données de départ (**Inclure les données de départ**) sont optionnelles et limitées (au plus quelques centaines de lignes, sans les valeurs de relation, pièces jointes ni signatures).
 
-**Dupliquer un système** crée une **proposition** nommée « Nom (copie) », à vérifier et valider comme n’importe quelle proposition de l’assistant : rien n’est créé avant votre confirmation, et le système d’origine n’est pas modifié. Les tables qui existent déjà sont signalées dans l’aperçu ; les copies reçoivent une clé distincte.
+![Dialog Exporter le système](../screenshots/studio-ia-apercu-export.png)
 
-**Importer un modèle (JSON)** charge un fichier exporté (depuis cette société ou une autre) : l’assistant affiche l’aperçu avant de créer quoi que ce soit. Un fichier d’une version plus récente ou trop volumineux est refusé avec un message explicite.
+**Dupliquer un système** crée une **proposition** nommée « Nom (copie) » (vous pouvez saisir un autre nom, 128 caractères maximum), à vérifier et valider comme n’importe quelle proposition de l’assistant : rien n’est créé avant votre confirmation, et le système d’origine n’est pas modifié. Les tables qui existent déjà sont signalées dans l’aperçu ; les copies reçoivent une clé distincte. Le dialog s’ouvre depuis le rail, la carte de résultat, le hub d’un système ou **Mes projets**.
 
-Ces actions n’apparaissent que si l’administrateur les a activées.
+**Importer un modèle (JSON)** charge un fichier exporté (depuis cette société ou une autre), soit la spécification seule (fichier téléchargé), soit l’enveloppe complète : déposez le fichier ou collez le JSON, le dialog affiche **Spécification reconnue** avec les compteurs et le nombre de lignes de départ, vous pouvez renommer le système et exclure les données de départ, puis **Importer** ouvre la proposition dans l’aperçu avant de créer quoi que ce soit. Un fichier de plus de **256 Ko**, un JSON invalide ou une version de spécification plus récente sont refusés avec un message explicite, sans rien envoyer au serveur.
+
+![Dialog Importer un système](../screenshots/studio-ia-apercu-import.png)
+
+Ces actions n’apparaissent que si l’administrateur les a activées et que vous disposez du droit de conception (`studio:design_entities`).
+
+---
+
+## Tester, personnaliser et suivre la création
+
+### Les modes de l’aperçu
+
+Au-dessus de l’aperçu, une barre propose trois modes : **Aperçu** (lecture), **Tester** et **Personnaliser**. À droite, une pilule **« Expire dans … »** décompte la durée de validité de la proposition ; à zéro, elle devient **Expiré**, les modes et **Créer maintenant** se désactivent et un bouton **Régénérer** apparaît : il recrée une nouvelle proposition **À valider** à partir de la même spécification (la proposition expirée reste dans l’historique).
+
+![Aperçu d’une proposition](../screenshots/studio-ia-apercu-apercu.png)
+
+### Tester la proposition
+
+**Tester** affiche le formulaire réel d’une table de la proposition, tel qu’il apparaîtra une fois créé. Choisissez la table, saisissez des valeurs (les champs obligatoires, listes de choix et relations se comportent comme dans l’application), puis **Enregistrer** : un message de simulation confirme la saisie. **Rien n’est enregistré ni créé** : le mode Tester ne fait que lire la proposition. Si la table prévoit un rapport, une carte **Rapport** en montre le résultat calculé sur les données de départ (l’export du rapport est désactivé en simulation). Quand le serveur ne fournit pas encore l’aperçu détaillé, la mention **« Disponible après mise à jour du serveur. »** apparaît et le test fonctionne à partir de la proposition seule.
+
+![Mode Tester](../screenshots/studio-ia-apercu-tester.png)
+
+### Personnaliser la proposition
+
+**Personnaliser** ouvre la proposition en édition : renommer une table ou un champ, changer un type, cocher **Requis** / **Unique**, ajouter ou retirer un champ (les champs retirés restent visibles barrés jusqu’à l’enregistrement et peuvent être rétablis), réordonner les champs (glisser-déposer ou flèches ↑↓), ajouter une option à une liste de choix, corriger les données de départ, ajuster les vues. Le badge sur le bouton **Personnaliser** compte les modifications en attente ; **Enregistrer le brouillon** les envoie au serveur, qui revérifie la proposition et affiche « Modifications enregistrées dans le plan. ». Si la proposition a été modifiée entre-temps depuis un autre onglet, un bandeau **« Ce plan a été modifié entre-temps. Rechargez l’aperçu. »** s’affiche et votre brouillon est conservé sans écraser l’autre version. **Régénérer avec ces modifications** renvoie votre demande initiale à l’IA enrichie du résumé de vos changements.
+
+![Mode Personnaliser](../screenshots/studio-ia-apercu-personnaliser.png)
+
+### Suivre la création
+
+Après **Créer maintenant**, la progression liste chaque étape (système, tables, champs, relations, vues, formulaires, rapports, données de départ) avec son état, et une puce **Vues n/m** suit la création des vues enregistrées.
+
+![Progression de la création](../screenshots/studio-ia-apercu-progression.png)
+
+### Carte de résultat
+
+À la fin, la carte **« Système « … » créé »** récapitule le **contenu créé** en huit compteurs : **tables**, **champs**, **relations**, **formulaires**, **rapports**, **vues**, **données de départ** et **workflows**. Elle propose **Ouvrir le système** (ou la table), **Saisir une fiche**, **Voir les rapports**, puis — si l’export est activé — **Exporter (JSON)** et **Dupliquer**, et **Rejouer** pour relancer une proposition identique. Les **Points de vigilance** rappellent les avertissements à vérifier.
+
+![Carte de résultat](../screenshots/studio-ia-apercu-resultat.png)
+
+### Changer le type d’un champ
+
+Dans le **concepteur de table** (hors assistant), modifiez un champ existant et changez son **Type** : l’application vérifie aussitôt la conversion et affiche le verdict sous la liste — **Conversion sans perte** (information, vous pouvez enregistrer), **Videz la table avant de changer le type** (avertissement : la table contient des enregistrements, **Enregistrer** est désactivé) ou **Changement de type impossible** (erreur : ce type ne peut pas remplacer un champ existant, **Enregistrer** est désactivé). Revenir au type d’origine lève le blocage. La conversion est appliquée à l’enregistrement, avant les autres modifications du champ.
 
 ---
 

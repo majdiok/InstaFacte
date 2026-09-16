@@ -148,6 +148,12 @@ test.describe('Aperçu IA enrichi — 7 cas (3.4m)', () => {
     await expect(page.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled();
     await expect(page.locator('app-studio-ai-conversation')).not.toContainText('Modifications enregistrées dans le plan.');
     await expect(page.locator('app-studio-ai-preview')).toBeVisible();
+
+    // 3.4n : le conflit est rendu dans un bandeau d'erreur de l'aperçu (validation().errors).
+    const banner = page.locator('app-studio-ai-preview [data-testid="sai-validation-error"]');
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveAttribute('role', 'alert');
+    await expect(banner).toContainText('Ce plan a été modifié entre-temps. Rechargez l’aperçu.');
   });
 
   test('Tester ⇒ GET …/preview et aucune écriture', async ({ page }) => {

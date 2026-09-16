@@ -98,14 +98,31 @@ export function studioAiSpecFixture(): StudioSystemSpec {
 }
 
 /**
- * Même système avec des vues enregistrées sur `demandes` (un mode canonique `kanban`, un alias
- * français `calendrier`) et une relation racine N-N `employes ↔ demandes` — sert aux tests de
+ * Même système avec un champ `statut` (Select) ajouté à `demandes`, des vues enregistrées sur
+ * `demandes` (un mode canonique `kanban` groupé sur `statut`, un alias français `calendrier`) et une
+ * relation racine N-N `employes ↔ demandes` — sert aux tests de
  * `countSpec`, `counterChips` et de l'onglet « Vues ».
  */
 export function studioAiSpecWithViewsFixture(): StudioSystemSpec {
   const spec = studioAiSpecFixture();
   const demandes = spec.entities.find(e => e.ref === 'demandes');
   if (demandes) {
+    // D5 (3.4n) : la vue kanban groupe sur `statut`, qui doit exister sur `demandes` (6 champs ici, 9 au total).
+    demandes.fields = [
+      ...demandes.fields,
+      {
+        key: 'statut',
+        label: 'Statut',
+        type: 'select',
+        required: false,
+        unique: false,
+        options: [
+          { value: 'soumise', label: 'Soumise' },
+          { value: 'validee', label: 'Validée' },
+          { value: 'refusee', label: 'Refusée' }
+        ]
+      }
+    ];
     demandes.views = [
       { name: 'Par statut', mode: 'kanban', groupBy: 'statut' },
       { name: 'Calendrier', mode: 'calendrier', start: 'date_debut', end: 'nb_jours' }
