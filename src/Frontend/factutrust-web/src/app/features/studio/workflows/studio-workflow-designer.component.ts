@@ -29,6 +29,7 @@ import { StudioWorkflowStepEditorComponent } from './step-editor/studio-workflow
 import { StudioWorkflowStepListComponent } from './step-editor/studio-workflow-step-list.component';
 import { STUDIO_WORKFLOW_LABELS, formatWorkflowLabel } from './studio-workflow-labels';
 import { workflowErrorMessage } from './studio-workflow-http.util';
+import { StudioWorkflowInstancesPanelComponent } from './studio-workflow-instances-panel.component';
 import {
   COMPUTED_FIELD_TYPES,
   STEP_KEY_REGEX,
@@ -37,6 +38,7 @@ import {
   WORKFLOW_LIMITS,
   WORKFLOW_TRIGGERS,
   WorkflowDefinitionDto,
+  WorkflowInstanceDto,
   WorkflowStepSpec,
   WorkflowTrigger,
   WorkflowTriggerConfig,
@@ -83,7 +85,8 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
  * D-44-23), déclencheur en cartes radio (`scheduled` désactivé « Bientôt », D5) avec
  * sous-formulaire `field_changed`, puis grille 3 colonnes `1fr · 320 px · 250 px` (D-44-21) :
  * liste d'étapes + arbre de branchements en `@defer` (col. 1), éditeur d'étape 4.4c1 (col. 2),
- * aperçu/instances (col. 3 — état vide en e1, rempli en 4.4e2). Sous 1280 px, les colonnes 2–3
+ * aperçu/instances récentes (col. 3, panneau 4.4e2 rafraîchi via `refreshToken` ; le clic pose
+ * `?instance=<id>`, D20 — le drawer de détail arrive en 4.4f). Sous 1280 px, les colonnes 2–3
  * passent en `p-drawer` (D-44-22, première utilisation de `primeng/drawer`).
  * Enregistrement TOUJOURS précédé d'une validation serveur (D-44-02) dont les erreurs sont
  * remontées par étape/propriété (`steps[i].prop`) à la liste et à l'éditeur.
@@ -96,7 +99,7 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
   imports: [
     CommonModule, FormsModule, ButtonModule, DrawerModule, InputTextModule, MessageModule, SelectModule,
     SkeletonModule, TagModule, TextareaModule, ToggleSwitchModule, StudioPageShellComponent,
-    StudioWorkflowStepListComponent, StudioWorkflowStepEditorComponent,
+    StudioWorkflowStepListComponent, StudioWorkflowStepEditorComponent, StudioWorkflowInstancesPanelComponent,
     // Référencé UNIQUEMENT dans le bloc `@defer` ci-dessous : Angular l'isole dans un chunk
     // chargé à la demande (primeng/tree reste hors du bundle initial — 4.4c2 §3).
     StudioWorkflowConditionTreeComponent
@@ -256,13 +259,8 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
               <ng-container *ngTemplateOutlet="editorTpl" />
             </div>
             <div class="wf-designer__col wf-designer__col--side">
-              <h3 class="wf-side__title">{{ L.instances.recent }}</h3>
-              @if (id) {
-                <!-- 4.4e2 : panneau « instances récentes » (refreshToken à consommer). -->
-                <p-skeleton height="8rem" data-testid="wf-instances-pending" />
-              } @else {
-                <p class="studio-muted" data-testid="wf-instances-unsaved">{{ L.designer.unsavedInstances }}</p>
-              }
+              <app-studio-workflow-instances-panel [workflowId]="id" [entityKey]="entity()?.key ?? null"
+                [refreshToken]="refreshToken()" (open)="openInstance($event)" />
             </div>
           }
         </div>
@@ -340,8 +338,10 @@ export class StudioWorkflowDesignerComponent implements OnInit {
   readonly rowVersion = signal<string | null>(null);
   readonly version = signal(0);
   readonly openInstances = signal(0);
-  /** Incrémenté après chaque enregistrement — le panneau d'instances (4.4e2) se rafraîchira dessus. */
+  /** Incrémenté après chaque enregistrement — le panneau d'instances (4.4e2) se rafraîchit dessus. */
   readonly refreshToken = signal(0);
+  /** Instance ouverte via `?instance=` (D20, posé par `openInstance`) — consommé par le drawer de détail en 4.4f. */
+  readonly instanceId = toSignal(this.route.queryParamMap.pipe(map(q => q.get('instance'))), { initialValue: null });
   private readonly snapshot = signal('');
 
   // ---- Réactif écran étroit (D-44-21 : colonnes 2–3 en tiroir sous 1280 px) ----
@@ -443,6 +443,11 @@ export class StudioWorkflowDesignerComponent implements OnInit {
   /** Écran étroit : la sélection d'une étape ouvre le tiroir d'édition. */
   onSelected(index: number | null): void {
     if (this.narrow() && index !== null) this.editorDrawer.set(true);
+  }
+
+  /** Clic sur une instance de la colonne 3 (4.4e2) : l'URL porte l'instance ouverte (D20) ; le drawer arrive en 4.4f. */
+  openInstance(i: WorkflowInstanceDto): void {
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { instance: i.id }, queryParamsHandling: 'merge' });
   }
 
   /** Lien « steps[i].prop » de la bannière de validation ⇒ sélectionne l'étape fautive. */

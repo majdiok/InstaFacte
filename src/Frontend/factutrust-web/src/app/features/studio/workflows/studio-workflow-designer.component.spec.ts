@@ -62,7 +62,9 @@ describe('StudioWorkflowDesignerComponent', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: convertToParamMap({ id: 'w1' }), queryParamMap: convertToParamMap({}) }
+            snapshot: { paramMap: convertToParamMap({ id: 'w1' }), queryParamMap: convertToParamMap({}) },
+            // 4.4e2 : le concepteur lit `?instance=` en continu (toSignal) pour le drawer de 4.4f.
+            queryParamMap: of(convertToParamMap({}))
           }
         },
         { provide: BreakpointObserver, useValue: { observe: () => of({ matches: false, breakpoints: {} }) } }
@@ -83,6 +85,10 @@ describe('StudioWorkflowDesignerComponent', () => {
       data: { entity: entities[0], fields, form: { sections: [] }, relations: [], views: [] },
       message: null, error: null
     });
+    fixture.detectChanges();
+    // 4.4e2 : le panneau d'instances de la colonne 3 charge les 20 dernières instances du workflow.
+    httpMock.expectOne(r => r.url === `${API}/workflows/w1/instances` && r.params.get('max') === '20')
+      .flush({ success: true, data: [], message: null, error: null });
     fixture.detectChanges();
   }
 
