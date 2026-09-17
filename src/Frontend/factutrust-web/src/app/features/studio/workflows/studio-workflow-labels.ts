@@ -100,7 +100,8 @@ export const STUDIO_WORKFLOW_LABELS = {
     keyInvalid: 'Clé invalide : minuscule initiale, puis lettres, chiffres ou « _ » (2 à 64 caractères).',
     keyDuplicate: 'Cette clé est déjà utilisée par une autre étape.',
     conditionPreview: 'Aperçu de la condition',
-    gotoTarget: 'Aller à l\'étape'
+    gotoTarget: 'Aller à l\'étape',
+    addPair: 'Ajouter une affectation'
   },
 
   /** Repli FR si le catalogue serveur ne fournit pas de `label`. */
@@ -129,7 +130,8 @@ export const STUDIO_WORKFLOW_LABELS = {
     startedBy: 'La personne qui a lancé',
     pickRole: 'Choisir un rôle',
     pickUser: 'Choisir un utilisateur',
-    usersUnavailable: 'Liste des utilisateurs réservée aux administrateurs.'
+    usersUnavailable: 'Liste des utilisateurs réservée aux administrateurs.',
+    userIdHint: 'Identifiant (GUID) de l\'utilisateur — la liste est réservée aux administrateurs.'
   },
 
   /** 11 rôles tenant (D15) — `FirmManager`/`FirmAccountant` exclus (D-44-13) ; clés = noms exacts de l'enum `UserRole`. */
