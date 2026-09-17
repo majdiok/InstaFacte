@@ -3,6 +3,7 @@ import { permissionGuard } from '@core/guards/permission.guard';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { StudioShellComponent } from './shared/studio-shell.component';
 import { capabilityGuard } from './shared/capability.guard';
+import { approvalsAccessGuard } from './approvals/approvals-access.guard';
 
 /**
  * Routes enfants du module Studio. Elles sont enveloppées par `StudioShellComponent`
@@ -190,6 +191,16 @@ export const STUDIO_CHILD_ROUTES: Routes = [
     data: { permissions: [PERMISSIONS.customData.recordsRead] },
     loadComponent: () => import('./workflows/studio-record-redirect.component').then(m => m.StudioRecordRedirectComponent),
     title: 'Enregistrement - InstaFact'
+  },
+  // Mes approbations (4.4g2, D-44-19 : déclarée ici seulement) : permissionGuard PUIS
+  // approvalsAccessGuard (sonde count — 404 ⇒ /studio, 403 ⇒ /access-denied). Pas de
+  // studio:design_entities au niveau route (U2/D11) : la page décision exige recordsWrite.
+  {
+    path: 'approvals',
+    canActivate: [permissionGuard, approvalsAccessGuard],
+    data: { permissions: [PERMISSIONS.customData.recordsRead] },
+    loadComponent: () => import('./approvals/studio-approvals-page.component').then(m => m.StudioApprovalsPageComponent),
+    title: 'Mes approbations - InstaFact'
   },
   // Déclarée avant `:id` pour que `relations` ne soit pas capturé comme un identifiant de table (V5/E5).
   {

@@ -248,7 +248,25 @@ export const STUDIO_WORKFLOW_LABELS = {
     late: 'En retard de {value}',
     due: 'Dans {value}',
     openRecord: 'Ouvrir la fiche',
-    readOnly: 'Lecture seule : votre rôle ne permet pas de décider.'
+    readOnly: 'Lecture seule : votre rôle ne permet pas de décider.',
+    // 4.4g2 (H-3, ajout additif) — les clés déjà définies en 4.4a1 (`subtitle`, `commentRequired`,
+    // `approved`, `rejected`, `alreadyDecided`, `notAssigned`, `emptyHint`, `readOnly`…) gardent
+    // leur libellé d'origine ; la page n'utilise que les clés plates ci-dessous pour les colonnes.
+    refresh: 'Actualiser',
+    colWorkflow: 'Workflow / étape',
+    colRecord: 'Enregistrement',
+    colStartedAt: 'Lancé le',
+    colRequestedAt: 'Demandé le',
+    colDue: 'Échéance',
+    colActions: 'Actions',
+    approveTitle: 'Approuver la demande',
+    rejectTitle: 'Refuser la demande',
+    commentOptional: 'Commentaire (facultatif)',
+    commentMissing: 'Indiquez le motif du refus.',
+    cancel: 'Annuler',
+    decisionError: 'La décision n\'a pas pu être enregistrée.',
+    loadError: 'Impossible de charger vos approbations.',
+    retry: 'Réessayer'
   },
 
   recordTab: {

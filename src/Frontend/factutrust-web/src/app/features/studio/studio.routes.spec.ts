@@ -3,6 +3,7 @@ import { StudioShellComponent } from './shared/studio-shell.component';
 import { permissionGuard } from '@core/guards/permission.guard';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { STUDIO_CHILD_ROUTES, STUDIO_ROUTES } from './studio.routes';
+import { approvalsAccessGuard } from './approvals/approvals-access.guard';
 
 describe('STUDIO_ROUTES', () => {
   const shell = STUDIO_ROUTES[0];
@@ -103,6 +104,21 @@ describe('STUDIO_ROUTES', () => {
     expect(redirect.canActivate?.length).toBe(1);
     expect(redirect.canActivate?.[0]).toBe(permissionGuard);
     expect(redirect.data?.['permissions']).toEqual([PERMISSIONS.customData.recordsRead]);
+  });
+
+  it('approvals enchaîne permissionGuard puis approvalsAccessGuard et exige custom_records:read (4.4g2)', () => {
+    const paths = STUDIO_CHILD_ROUTES.map(r => r.path);
+    const idx = (p: string) => paths.indexOf(p);
+    expect(idx('approvals')).toBeGreaterThan(-1);
+    expect(idx('approvals')).toBeLessThan(idx('relations'));   // après les routes workflows*/records, avant relations
+    expect(idx('approvals')).toBeLessThan(idx(':id'));
+    const approvals = child('approvals');
+    expect(approvals.canActivate?.length).toBe(2);
+    expect(approvals.canActivate?.[0]).toBe(permissionGuard);
+    expect(approvals.canActivate?.[1]).toBe(approvalsAccessGuard);
+    expect(approvals.data?.['permissions']).toEqual([PERMISSIONS.customData.recordsRead]);
+    expect(typeof approvals.loadComponent).toBe('function');
+    expect(approvals.title).toBe('Mes approbations - InstaFact');
   });
 });
 
