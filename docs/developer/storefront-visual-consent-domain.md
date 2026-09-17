@@ -73,10 +73,16 @@ must arrive with the dependent additive Master mapping/migration, not before its
 ## Qualification boundary
 
 `StorefrontVisualConsentTests` exercises absent/complete standalone state, rejected atomic
-replacement, explicit acceptance, idempotence and the supplied-status suspension guard. Tests
-with unchanged legacy fixtures check that neither acceptance nor withdrawal mutates their state;
-this is not an integrated profile/consent workflow. Existing storefront domain tests remain
-applicable. Test execution/results are reported separately, not implied by their presence.
+replacement, explicit acceptance, preservation of the initial proof on repeats, idempotent
+withdrawal and the supplied-status suspension guard. Status enums are passed directly; there
+is no connected profile whose isolation this suite could verify. Existing storefront domain
+tests remain applicable, but do not prove integration with visual consent.
+
+When the state is attached to the aggregate/EF model, add real isolation tests for CGU, branding,
+publication, moderation, street position, checkout and events, including withdrawal during
+suspension and approval without resurrecting consent. None of that profile-isolation evidence
+is claimed at this checkpoint. Test execution/results are reported separately, not implied by
+the tests' presence.
 
 V03 is **not closed**: actual HTTP permissions, stale proposals, concurrency, SQL CHECK and audit
 rollback require real API/SQL tests. V01 public isolation/allowlists and V12 N/N−1 projection and

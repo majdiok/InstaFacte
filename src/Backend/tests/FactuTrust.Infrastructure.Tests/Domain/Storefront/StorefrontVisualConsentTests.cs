@@ -1,13 +1,12 @@
 using FactuTrust.Domain.Entities.Storefront;
-using FactuTrust.Infrastructure.Tests.Storefront;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.Domain.Storefront;
 
 public sealed class StorefrontVisualConsentTests
 {
-    // Consent is deliberately unattached. Profile snapshots below verify the legacy fixture
-    // stays independent; they do not certify an integrated persistence/authorization workflow.
+    // Consent is deliberately unattached. These tests exercise only its state and supplied
+    // status guard; profile isolation requires the future aggregate/EF integration tests.
     private const string ProfileKey = "vp-c12";
     private const string Revision = "r1";
     private const string TermsVersion = "visual-1.0";
@@ -28,39 +27,27 @@ public sealed class StorefrontVisualConsentTests
         AssertAbsent(consent);
     }
 
-    [Theory]
-    [InlineData(StorefrontStatus.Draft)]
-    [InlineData(StorefrontStatus.PendingReview)]
-    [InlineData(StorefrontStatus.Published)]
-    [InlineData(StorefrontStatus.Suspended)]
-    public void OldProfileFixtureAndStandaloneConsent_ShouldRequireNoNewInputs(StorefrontStatus status)
+    [Fact]
+    public void NewConsent_ShouldHaveAllFiveFieldsAbsent()
     {
-        var profile = CreateProfile(status);
         var consent = new StorefrontVisualConsent();
 
         AssertAbsent(consent);
-        Assert.Equal("1.0.0", profile.ConsentVersion);
-        Assert.NotEqual(Guid.Empty, profile.ConsentAcceptedByUserId);
-        Assert.Equal(status, profile.Status);
     }
 
     [Theory]
     [InlineData(StorefrontStatus.Draft)]
     [InlineData(StorefrontStatus.PendingReview)]
     [InlineData(StorefrontStatus.Published)]
-    public void Accept_ShouldSetCompleteConsent_WithoutChangingOtherState(StorefrontStatus status)
+    public void Accept_ShouldSetCompleteConsent_ForAllowedStatus(StorefrontStatus status)
     {
-        var profile = CreateProfile(status);
         var consent = new StorefrontVisualConsent();
-        var before = NonVisualState(profile);
 
-        var result = consent.AcceptVisualConsent(profile.Status, ProfileKey, Revision, TermsVersion, true, OwnerId, AcceptedAt);
+        var result = consent.AcceptVisualConsent(status, ProfileKey, Revision, TermsVersion, true, OwnerId, AcceptedAt);
 
         Assert.True(result.IsSuccess, result.Error.Description);
         Assert.True(result.Value);
         AssertAccepted(consent);
-        Assert.Equal(before, NonVisualState(profile));
-        Assert.Empty(profile.DomainEvents); // The standalone state does not emit persisted-profile events.
     }
 
     [Theory]
@@ -68,12 +55,11 @@ public sealed class StorefrontVisualConsentTests
     [InlineData(true)]
     public void Accept_ShouldRequireExplicitAcceptance_WithoutMutation(bool hasConsent)
     {
-        var profile = CreateProfile(StorefrontStatus.Published);
         var consent = new StorefrontVisualConsent();
-        if (hasConsent) Accept(consent, profile.Status);
+        if (hasConsent) Accept(consent, StorefrontStatus.Published);
         var before = VisualState(consent);
 
-        var result = consent.AcceptVisualConsent(profile.Status, ProfileKey, Revision, TermsVersion, false, OwnerId, AcceptedAt);
+        var result = consent.AcceptVisualConsent(StorefrontStatus.Published, ProfileKey, Revision, TermsVersion, false, OwnerId, AcceptedAt);
 
         Assert.True(result.IsFailure);
         Assert.Equal("Validation.VisualConsent", result.Error.Code);
@@ -97,31 +83,27 @@ public sealed class StorefrontVisualConsentTests
         // A rejected first acceptance stays all-null; a rejected replacement keeps all old fields.
         foreach (var hasConsent in new[] { false, true })
         {
-            var profile = CreateProfile(StorefrontStatus.Published);
             var consent = new StorefrontVisualConsent();
-            if (hasConsent) Accept(consent, profile.Status);
+            if (hasConsent) Accept(consent, StorefrontStatus.Published);
             var before = VisualState(consent);
-            var otherState = NonVisualState(profile);
 
-            var result = consent.AcceptVisualConsent(profile.Status, key!, revision!, version!, true, OwnerId, AcceptedAt.AddDays(1));
+            var result = consent.AcceptVisualConsent(StorefrontStatus.Published, key!, revision!, version!, true, OwnerId, AcceptedAt.AddDays(1));
 
             Assert.True(result.IsFailure);
             Assert.Equal($"Validation.{field}", result.Error.Code);
             Assert.Equal(before, VisualState(consent));
-            Assert.Equal(otherState, NonVisualState(profile));
         }
     }
 
     [Fact]
     public void Accept_ShouldAcceptBoundaries_AndTrimTermsVersionOnly()
     {
-        var profile = CreateProfile(StorefrontStatus.Draft);
         var consent = new StorefrontVisualConsent();
         var key = new string('a', StorefrontVisualConsent.PublicVisualProfileKeyMaxLength);
         var revision = "r" + new string('9', StorefrontVisualConsent.PublicVisualProfileRevisionMaxLength - 1);
         var version = new string('v', StorefrontVisualConsent.VisualConsentVersionMaxLength - 2);
 
-        var result = consent.AcceptVisualConsent(profile.Status, key, revision, $" {version} ", true, OwnerId, AcceptedAt);
+        var result = consent.AcceptVisualConsent(StorefrontStatus.Draft, key, revision, $" {version} ", true, OwnerId, AcceptedAt);
 
         Assert.True(result.IsSuccess, result.Error.Description);
         Assert.Equal(key, consent.PublicVisualProfileKey);
@@ -134,12 +116,11 @@ public sealed class StorefrontVisualConsentTests
     [Fact]
     public void Accept_ShouldRejectEmptyActor_WithoutReplacingProof()
     {
-        var profile = CreateProfile(StorefrontStatus.Published);
         var consent = new StorefrontVisualConsent();
-        Accept(consent, profile.Status);
+        Accept(consent, StorefrontStatus.Published);
         var before = VisualState(consent);
 
-        var result = consent.AcceptVisualConsent(profile.Status, ProfileKey, "r2", TermsVersion, true, Guid.Empty, AcceptedAt);
+        var result = consent.AcceptVisualConsent(StorefrontStatus.Published, ProfileKey, "r2", TermsVersion, true, Guid.Empty, AcceptedAt);
 
         Assert.True(result.IsFailure);
         Assert.Equal("Validation.VisualConsentAcceptedByUserId", result.Error.Code);
@@ -157,12 +138,11 @@ public sealed class StorefrontVisualConsentTests
     [MemberData(nameof(InvalidDates))]
     public void Accept_ShouldRejectMissingOrNonUtcDate_WithoutReplacingProof(DateTime timestamp)
     {
-        var profile = CreateProfile(StorefrontStatus.Published);
         var consent = new StorefrontVisualConsent();
-        Accept(consent, profile.Status);
+        Accept(consent, StorefrontStatus.Published);
         var before = VisualState(consent);
 
-        var result = consent.AcceptVisualConsent(profile.Status, ProfileKey, "r2", TermsVersion, true, OwnerId, timestamp);
+        var result = consent.AcceptVisualConsent(StorefrontStatus.Published, ProfileKey, "r2", TermsVersion, true, OwnerId, timestamp);
 
         Assert.True(result.IsFailure);
         Assert.Equal("Validation.VisualConsentAcceptedAt", result.Error.Code);
@@ -172,16 +152,14 @@ public sealed class StorefrontVisualConsentTests
     [Fact]
     public void AcceptSameIdentityAndTerms_ShouldBeNoOp_AndPreserveOriginalActorAndDate()
     {
-        var profile = CreateProfile(StorefrontStatus.Published);
         var consent = new StorefrontVisualConsent();
-        Accept(consent, profile.Status);
+        Accept(consent, StorefrontStatus.Published);
 
-        var result = consent.AcceptVisualConsent(profile.Status, ProfileKey, Revision, $" {TermsVersion} ", true, Guid.NewGuid(), AcceptedAt.AddDays(1));
+        var result = consent.AcceptVisualConsent(StorefrontStatus.Published, ProfileKey, Revision, $" {TermsVersion} ", true, Guid.NewGuid(), AcceptedAt.AddDays(1));
 
         Assert.True(result.IsSuccess, result.Error.Description);
         Assert.False(result.Value);
         AssertAccepted(consent);
-        Assert.Empty(profile.DomainEvents);
     }
 
     [Theory]
@@ -190,19 +168,16 @@ public sealed class StorefrontVisualConsentTests
     [InlineData(ProfileKey, Revision, "visual-2.0")]
     public void AcceptDifferentIdentityOrTerms_ShouldReplaceCompleteProof(string key, string revision, string version)
     {
-        var profile = CreateProfile(StorefrontStatus.Published);
         var consent = new StorefrontVisualConsent();
-        Accept(consent, profile.Status);
+        Accept(consent, StorefrontStatus.Published);
         var owner = Guid.NewGuid();
         var timestamp = AcceptedAt.AddDays(1);
-        var before = NonVisualState(profile);
 
-        var result = consent.AcceptVisualConsent(profile.Status, key, revision, version, true, owner, timestamp);
+        var result = consent.AcceptVisualConsent(StorefrontStatus.Published, key, revision, version, true, owner, timestamp);
 
         Assert.True(result.IsSuccess, result.Error.Description);
         Assert.True(result.Value);
         Assert.Equal(new object?[] { key, revision, version, timestamp, owner }, VisualState(consent));
-        Assert.Equal(before, NonVisualState(profile));
     }
 
     [Theory]
@@ -210,37 +185,24 @@ public sealed class StorefrontVisualConsentTests
     [InlineData(true)]
     public void AcceptWhileSuspended_ShouldFail_EvenForAnOtherwiseIdempotentRepeat(bool hasConsent)
     {
-        var profile = CreateProfile(StorefrontStatus.Published);
         var consent = new StorefrontVisualConsent();
-        if (hasConsent) Accept(consent, profile.Status);
-        Assert.True(profile.Suspend("Moderation hold").IsSuccess);
+        if (hasConsent) Accept(consent, StorefrontStatus.Published);
         var before = VisualState(consent);
-        var otherState = NonVisualState(profile);
 
         foreach (var revision in new[] { Revision, "r2" })
         {
-            var result = consent.AcceptVisualConsent(profile.Status, ProfileKey, revision, TermsVersion, true, OwnerId, AcceptedAt);
+            var result = consent.AcceptVisualConsent(StorefrontStatus.Suspended, ProfileKey, revision, TermsVersion, true, OwnerId, AcceptedAt);
             Assert.True(result.IsFailure);
             Assert.Equal("Validation.Status", result.Error.Code);
             Assert.Equal(before, VisualState(consent));
-            Assert.Equal(otherState, NonVisualState(profile));
         }
     }
 
-    [Theory]
-    [InlineData(StorefrontStatus.Draft)]
-    [InlineData(StorefrontStatus.PendingReview)]
-    [InlineData(StorefrontStatus.Published)]
-    [InlineData(StorefrontStatus.Suspended)]
-    public void Withdraw_ShouldClearAllFiveFieldsOnly_AndBeIdempotent(StorefrontStatus status)
+    [Fact]
+    public void Withdraw_ShouldClearAllFiveFields_AndBeIdempotent()
     {
-        var profile = CreateProfile(status == StorefrontStatus.Suspended ? StorefrontStatus.Published : status);
         var consent = new StorefrontVisualConsent();
-        Accept(consent, profile.Status);
-        if (status == StorefrontStatus.Suspended)
-            Assert.True(profile.Suspend("Moderation hold").IsSuccess);
-        var before = NonVisualState(profile);
-        var events = profile.DomainEvents.ToArray();
+        Accept(consent, StorefrontStatus.Published);
 
         var first = consent.WithdrawVisualConsent();
         var repeat = consent.WithdrawVisualConsent();
@@ -250,79 +212,32 @@ public sealed class StorefrontVisualConsentTests
         Assert.True(repeat.IsSuccess);
         Assert.False(repeat.Value);
         AssertAbsent(consent);
-        Assert.Equal(before, NonVisualState(profile));
-        Assert.Equal(events, profile.DomainEvents);
     }
 
-    [Theory]
-    [InlineData(StorefrontStatus.Draft)]
-    [InlineData(StorefrontStatus.Suspended)]
-    public void WithdrawAbsentConsent_ShouldBeNoOp(StorefrontStatus status)
+    [Fact]
+    public void WithdrawAbsentConsent_ShouldBeNoOp()
     {
-        var profile = CreateProfile(status);
         var consent = new StorefrontVisualConsent();
-        var before = NonVisualState(profile);
 
         var result = consent.WithdrawVisualConsent();
 
         Assert.True(result.IsSuccess);
         Assert.False(result.Value);
         AssertAbsent(consent);
-        Assert.Equal(before, NonVisualState(profile));
-        Assert.Empty(profile.DomainEvents);
     }
 
     [Fact]
-    public void WithdrawWhileSuspended_ShouldNotPermitAcceptance_OrResurrectConsentOnApproval()
+    public void Withdraw_ShouldLeaveConsentAbsent_WhenSuspendedAcceptanceIsRejected()
     {
-        var profile = CreateProfile(StorefrontStatus.Published);
         var consent = new StorefrontVisualConsent();
-        Accept(consent, profile.Status);
-        Assert.True(profile.Suspend("Moderation hold").IsSuccess);
+        Accept(consent, StorefrontStatus.Published);
         Assert.True(consent.WithdrawVisualConsent().Value);
 
-        var accept = consent.AcceptVisualConsent(profile.Status, ProfileKey, Revision, TermsVersion, true, OwnerId, AcceptedAt.AddDays(1));
+        var accept = consent.AcceptVisualConsent(StorefrontStatus.Suspended, ProfileKey, Revision, TermsVersion, true, OwnerId, AcceptedAt.AddDays(1));
 
         Assert.True(accept.IsFailure);
-        Assert.Equal(StorefrontStatus.Suspended, profile.Status);
+        Assert.Equal("Validation.Status", accept.Error.Code);
         AssertAbsent(consent);
-        Assert.True(profile.Approve(99).IsSuccess);
-        AssertAbsent(consent);
-        Assert.Equal(7, profile.StreetPositionIndex);
-    }
-
-    [Fact]
-    public void CguRenewalAndBrandingChange_ShouldNotCreateOrReplaceVisualConsent()
-    {
-        var profile = CreateProfile(StorefrontStatus.Draft);
-        var consent = new StorefrontVisualConsent();
-        profile.RecordConsentRenewal("2.0.0", Guid.NewGuid(), AcceptedAt);
-        AssertAbsent(consent);
-        Accept(consent, profile.Status);
-        var before = VisualState(consent);
-
-        profile.RecordConsentRenewal("3.0.0", Guid.NewGuid(), AcceptedAt.AddDays(1));
-        var update = profile.UpdateProfile("New branding", null, "Description", "#112233", "#445566",
-            StorefrontCategory.Services, FacadeTheme.Classic, "new@example.test", null, null, null, null, false);
-
-        Assert.True(update.IsSuccess, update.Error.Description);
-        Assert.Equal(before, VisualState(consent));
-        Assert.True(consent.WithdrawVisualConsent().Value);
-        profile.RecordConsentRenewal("4.0.0", Guid.NewGuid(), AcceptedAt.AddDays(2));
-        AssertAbsent(consent);
-    }
-
-    private static StorefrontProfile CreateProfile(StorefrontStatus status)
-    {
-        // Keep the pre-L1 fixture unchanged: creation never needs a visual reference.
-        var profile = StorefrontProfileTestData.CreateProfile(status == StorefrontStatus.Draft
-            ? StorefrontStatus.Draft : StorefrontStatus.PendingReview);
-        if (status is StorefrontStatus.Published or StorefrontStatus.Suspended)
-            Assert.True(profile.Approve(7).IsSuccess);
-        if (status == StorefrontStatus.Suspended)
-            Assert.True(profile.Suspend("Moderation hold").IsSuccess);
-        profile.ClearDomainEvents();
-        return profile;
     }
 
     private static void Accept(StorefrontVisualConsent consent, StorefrontStatus status)
@@ -342,17 +257,5 @@ public sealed class StorefrontVisualConsentTests
     {
         consent.PublicVisualProfileKey, consent.PublicVisualProfileRevision, consent.VisualConsentVersion,
         consent.VisualConsentAcceptedAt, consent.VisualConsentAcceptedByUserId
-    };
-
-    private static object NonVisualState(StorefrontProfile profile) => new
-    {
-        profile.Id, profile.TenantId, profile.Slug, profile.DisplayName, profile.Tagline,
-        profile.DescriptionMarkdown, profile.BrandPrimaryColorHex, profile.BrandSecondaryColorHex,
-        profile.PublicLogoUrl, profile.PublicCoverImageUrl, profile.Category, profile.Status, profile.FacadeTheme,
-        profile.PublicContactEmail, profile.PublicContactPhone, profile.PublicContactWhatsApp,
-        profile.StreetPositionIndex, profile.OrderSubmissionEnabled, profile.PublishedAt, profile.SuspendedAt,
-        profile.RejectionReason, profile.SuspensionReason, profile.ConsentVersion,
-        profile.ConsentAcceptedAt, profile.ConsentAcceptedByUserId,
-        profile.Version, profile.CreatedAt, profile.UpdatedAt, profile.CreatedBy, profile.UpdatedBy
     };
 }
