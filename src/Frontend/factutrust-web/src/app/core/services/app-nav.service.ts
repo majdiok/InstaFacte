@@ -34,6 +34,8 @@ import { AccountingFeatureFlagsService } from '@features/accounting/shared/accou
 import { AppModule } from '@core/models/app-module';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { StudioNavService } from '@features/studio/studio-nav.service';
+import { StudioAiCapabilitiesService } from '@features/studio/ai/studio-ai-capabilities.service';
+import { StudioApprovalsBadgeService } from '@features/studio/approvals/studio-approvals-badge.service';
 import { StockFeaturesStore } from '@core/services/stock-features-store.service';
 import { VARIANT_AXES_PATH } from '@features/settings/variant-axes/variant-axes.paths';
 import {
@@ -55,6 +57,8 @@ export class AppNavService {
   private readonly firmFeatureFlags = inject(FirmFeatureFlagsService);
   private readonly accountingFlags = inject(AccountingFeatureFlagsService);
   private readonly studioNav = inject(StudioNavService);
+  private readonly studioCapabilities = inject(StudioAiCapabilitiesService);
+  private readonly approvalsBadge = inject(StudioApprovalsBadgeService);
   private readonly stockFeaturesStore = inject(StockFeaturesStore);
 
   private readonly activeClients = signal<FirmClientDossier[]>([]);
@@ -73,6 +77,11 @@ export class AppNavService {
 
     this.stockFeaturesStore.ensureLoaded();
     this.stockFeaturesStore.features();
+
+    if (this.auth.hasPermission(PERMISSIONS.studio.designEntities)) {
+      this.studioCapabilities.ensureLoaded(); // 403 pour les autres profils : on ne l'appelle pas
+      this.approvalsBadge.start(); // D23 : idempotent (g1)
+    }
 
     if (this.auth.isAccountingFirm()) {
       if (this.auth.isDelegatedMode()) {
@@ -346,6 +355,25 @@ export class AppNavService {
         modules: [AppModule.Studio],
         permissionsAll: [PERMISSIONS.studio.designEntities]
       },
+      ...(this.studioCapabilities.workflowsEnabled()
+        ? ([
+            {
+              label: 'Workflows',
+              route: '/studio/workflows',
+              icon: 'fa-solid fa-route',
+              modules: [AppModule.Studio],
+              permissionsAll: [PERMISSIONS.studio.designEntities]
+            },
+            {
+              label: 'Mes approbations',
+              route: '/studio/approvals',
+              icon: 'fa-solid fa-inbox',
+              modules: [AppModule.Studio],
+              permissionsAll: [PERMISSIONS.customData.recordsRead],
+              badge: this.approvalsBadge.count() || null
+            }
+          ] satisfies NavSubItem[])
+        : []),
       ...this.studioNav.items().map<NavSubItem>(e => ({
         label: e.label,
         route: e.route.startsWith('/') ? e.route : `/studio/d/${e.key}`,
