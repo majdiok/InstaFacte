@@ -82,7 +82,7 @@ Les sept types d'étapes (`StudioWorkflowStepTypes.All`, ordre figé du catalogu
 | `notify` | ● `to` (`{ kind ∈ user\|role\|startedBy, value }`), ● `title`, `body`, `link` | notification in-app (`NotificationType.StudioWorkflowMessage`) ; titre ≤ 200, corps ≤ 1000, lien ≤ 300 |
 | `approval` | ● `assignee` (`{ kind, value }` comme `to`), ● `title`, `message`, `dueInHours` (72 par défaut, 1..720), `onTimeout`, `onReject`, `gotoKey` | suspend l'instance (`waiting_approval`) et crée une `StudioWorkflowApproval` ; reprise en PR 4.2 |
 | `wait` | `hours` **ou** `until` (gabarit ISO 8601 UTC), `maxHours` (≤ 720) | suspend l'instance (`waiting`) jusqu'à l'échéance ; reprise en PR 4.2 |
-| `create_record` | ● `entity` (clé d'une autre table, jonctions refusées), ● `set`, `saveResultAs` | crée un enregistrement dans une autre table Studio (déclenche ses propres workflows, profondeur + 1) |
+| `create_record` | ● `entity` (clé d'une autre table, jonctions refusées), ● `set`, `saveResultAs` | crée un enregistrement dans une autre table Studio (déclenche ses propres workflows, profondeur + 2 par maillon, voir « Déclenchement ») |
 
 Validation (`StudioWorkflowStepsSpec.Parse` puis `Validate`) : chaque problème est localisé par un
 chemin — `trigger`, `triggerConfig.field`, `steps`, `steps[i].key`, `steps[i].type`, `steps[i].field`,
@@ -101,9 +101,11 @@ notification MediatR dédiée `CustomRecordWorkflowNotification` via `StudioWork
    mise à jour ⇒ `on_update` **et** `field_changed` (dont le `field` a effectivement changé, avec `from`/`to`
    s'ils sont fixés) ;
 3. applique le quota `MaxWorkflowInstancesPerRecord` (200 instances **ouvertes** par enregistrement) ;
-4. refuse la ré-entrée : `StudioWorkflowExecutionScope` propage la profondeur (`Depth + 1`, `MaxDepth = 2`)
-   et `IStudioWorkflowRepository.HasOpenInstanceInChainAsync` coupe toute chaîne où la même définition a
-   déjà une instance ouverte (`OriginInstanceId` renseigné sur les instances dérivées) ;
+4. refuse la ré-entrée : `StudioWorkflowExecutionScope` propage la profondeur — le moteur exécute chaque
+   segment sous `Depth + 1` et le déclencheur démarre l'instance dérivée à `Depth + 1`, soit **+2 par maillon**
+   (A(0) → B(2) → refus, `MaxDepth = 2`) — et `IStudioWorkflowRepository.HasOpenInstanceInChainAsync` coupe
+   toute chaîne où la même définition a déjà une instance ouverte (`OriginInstanceId` = instance parente sur
+   les instances dérivées) ;
 5. démarre l'instance (`IStudioWorkflowEngine.StartAsync`) sous l'utilisateur courant.
 
 Le déclencheur `manual` (`POST api/studio/records/{entityKey}/{recordId}/workflows/{workflowKey}/run`) et la

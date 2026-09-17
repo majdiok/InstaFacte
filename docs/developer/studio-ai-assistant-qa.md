@@ -735,10 +735,12 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     **une seule** instance `completed`, `depth=0`, pas de relance par sa propre écriture. Workflow **B** sur
     `taches`, `trigger: "on_create"`, étape `create_record` vers `commandes` (`set: { "statut": "brouillon" }`)
     et workflow **C** sur `commandes`, `on_create`, étape `create_record` vers `taches` : créer une tâche ⇒ B
-    (`depth=0`) crée une commande ⇒ C (`depth=1`, `originInstanceId` = instance de B) crée une tâche ⇒ B
-    (`depth=2`, `originInstanceId` renseigné) **s'arrête** (aucune instance de profondeur 3, aucun
-    enregistrement supplémentaire) ; les instances au-delà de la borne n'existent pas, celles créées sont
-    `completed` ou `failed` avec un message explicite — jamais `running` bloquée.
+    (`depth=0`) crée une commande ⇒ C (`depth=2`, `originInstanceId` = instance de B) crée une tâche ⇒ la
+    relance de B est **refusée** (profondeur 3 > `MaxDepth = 2`, journal « Workflow trigger ignored beyond max
+    depth ») : une seule instance de B, une seule de C, toutes deux `completed`, aucun enregistrement
+    supplémentaire (chaque maillon ajoute 2 à la profondeur : le moteur exécute sous `Depth + 1` et le
+    déclencheur démarre l'instance dérivée à `Depth + 1`). Les instances créées sont `completed` ou `failed`
+    avec un message explicite — jamais `running` bloquée.
 80. **`erp_action` via le Pont ERP** — `POST …/validate` avec une étape `erp_action` dont `action` n'est
     pas dans `StudioBridgeActionCatalog.List()` ⇒ `isValid=false`, `errors[].path = steps[i].action`. Avec une
     action bridgeable et `saveResultAs: "res"` sur un workflow `on_update` (le lancement `manual` arrive en
