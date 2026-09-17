@@ -70,9 +70,12 @@ autorisée. Retrait/révocation prime sur fichiers conservés et consentement pa
 Les champs inconnus supplémentaires sont **tolérés** (évolution additive) ; les valeurs
 inconnues des champs connus sont rejetées. Les types readonly ne sont pas une frontière
 de confiance : toute donnée reçue passe par les validateurs avant usage.
-La validation ne nettoie ni ne clone le manifeste : le futur consommateur doit
+La validation ne nettoie ni ne clone le manifeste : tout consommateur doit
 construire ses objets internes par allowlist et ne jamais réémettre les champs
-inconnus. Cette projection n'est **pas** livrée par cette tranche.
+inconnus. Cette projection est livrée par `business-scene-contract-projection.ts`
+(copie détachée et figée après validation, enveloppe JSON bornée partagée, union
+de demande résolue sans fabrication de profil neutre) ; le CLI catalogue ne
+consomme déjà plus que l'enregistrement projeté.
 
 ## 3. Manifeste (plan §6.2) — points de contrôle
 
@@ -206,7 +209,8 @@ Elles ne prouvent pas une borne de mémoire/temps du décodeur glTF.
 
 La navigation, les UV/ancrages, les estimations, les images et l'attribution restent
 déclaratifs : une scène synthétique sans géométrie peut passer ces checks, **pas**
-être publiée. L'index immuable N/N−1 et l'allowlist dérivée, la projection interne
-par allowlist, l'union de demande neutre, le runtime et la baseline WebGL requalifiée
-restent aussi à livrer. Aucun nouveau consentement, art, publication ou activation UI
-n'est autorisé implicitement par cette tranche.
+être publiée. L'index immuable N/N−1 et l'allowlist dérivée, le runtime et la
+baseline WebGL requalifiée restent aussi à livrer ; la projection interne par
+allowlist et l'union de demande résolue (acceptée / neutre-globale explicite, sans
+attestation d'autorisation) sont désormais livrées. Aucun nouveau consentement,
+art, publication ou activation UI n'est autorisé implicitement par cette tranche.

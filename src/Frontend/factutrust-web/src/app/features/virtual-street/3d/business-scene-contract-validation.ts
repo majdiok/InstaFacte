@@ -809,37 +809,8 @@ function validateManifestEnvelope(manifest: Record<string, unknown>, out: Contra
       return;
     }
   }
-  const stack: { value: unknown; depth: number }[] = [{ value: manifest, depth: 0 }];
-  let values = 1;
-  while (stack.length) {
-    const { value, depth } = stack.pop()!;
-    if (depth > CATALOG_VALIDATION_LIMITS.jsonDepth) {
-      fail(out, 'manifest.limit-depth', 'manifest', 'JSON nesting exceeds the validation ceiling');
-      return;
-    }
-    if (typeof value === 'string' && value.length > CATALOG_VALIDATION_LIMITS.stringLength) {
-      fail(out, 'manifest.limit-string', 'manifest', 'JSON string exceeds the validation ceiling');
-      return;
-    }
-    if (typeof value !== 'object' || value === null) continue;
-    if (Array.isArray(value) && value.length > CATALOG_VALIDATION_LIMITS.arrayEntries) {
-      fail(out, 'manifest.limit-array', 'manifest', 'JSON array exceeds the validation ceiling');
-      return;
-    }
-    // Do not allocate Object.entries on an unbounded object. No recursive descent.
-    for (const key in value) {
-      if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
-      if (++values > CATALOG_VALIDATION_LIMITS.jsonValues) {
-        fail(out, 'manifest.limit-values', 'manifest', 'JSON value count exceeds the validation ceiling');
-        return;
-      }
-      if (key.length > CATALOG_VALIDATION_LIMITS.stringLength) {
-        fail(out, 'manifest.limit-string', 'manifest', 'JSON key exceeds the validation ceiling');
-        return;
-      }
-      stack.push({ value: (value as Record<string, unknown>)[key], depth: depth + 1 });
-    }
-  }
+  out.push(...validateContractJsonEnvelope(manifest, 'manifest'));
+  if (out.length) return;
   let edges = 0;
   const assets = manifest['assets'];
   if (Array.isArray(assets)) {
@@ -852,6 +823,61 @@ function validateManifestEnvelope(manifest: Record<string, unknown>, out: Contra
       }
     }
   }
+}
+
+/** Shared iterative work bounds for parsed JSON, including unknown additive fields. */
+export function validateContractJsonEnvelope(input: unknown, root: string, parsedJsonOnly = false): ContractViolation[] {
+  const out: ContractViolation[] = [];
+  const stack: { value: unknown; depth: number }[] = [{ value: input, depth: 0 }];
+  let values = 1;
+  while (stack.length) {
+    const { value, depth } = stack.pop()!;
+    if (parsedJsonOnly && value !== null && !['object', 'string', 'boolean'].includes(typeof value) &&
+      !(typeof value === 'number' && Number.isFinite(value))) {
+      fail(out, `${root}.json-type`, root, 'Only parsed JSON values may be projected');
+      return out;
+    }
+    if (depth > CATALOG_VALIDATION_LIMITS.jsonDepth) {
+      fail(out, `${root}.limit-depth`, root, 'JSON nesting exceeds the validation ceiling');
+      return out;
+    }
+    if (typeof value === 'string' && value.length > CATALOG_VALIDATION_LIMITS.stringLength) {
+      fail(out, `${root}.limit-string`, root, 'JSON string exceeds the validation ceiling');
+      return out;
+    }
+    if (typeof value !== 'object' || value === null) continue;
+    if (parsedJsonOnly) {
+      const prototype = Object.getPrototypeOf(value);
+      if ((prototype !== null && prototype !== (Array.isArray(value) ? Array.prototype : Object.prototype)) ||
+        Object.getOwnPropertySymbols(value).length) {
+        fail(out, `${root}.json-type`, root, 'Only plain JSON records and arrays may be projected');
+        return out;
+      }
+    }
+    if (Array.isArray(value) && value.length > CATALOG_VALIDATION_LIMITS.arrayEntries) {
+      fail(out, `${root}.limit-array`, root, 'JSON array exceeds the validation ceiling');
+      return out;
+    }
+    // Do not allocate Object.entries on an unbounded object. No recursive descent.
+    for (const key in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+      if (++values > CATALOG_VALIDATION_LIMITS.jsonValues) {
+        fail(out, `${root}.limit-values`, root, 'JSON value count exceeds the validation ceiling');
+        return out;
+      }
+      if (key.length > CATALOG_VALIDATION_LIMITS.stringLength) {
+        fail(out, `${root}.limit-string`, root, 'JSON key exceeds the validation ceiling');
+        return out;
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
+      if (parsedJsonOnly && !('value' in descriptor)) {
+        fail(out, `${root}.json-type`, root, 'JSON records cannot contain accessors');
+        return out;
+      }
+      stack.push({ value: parsedJsonOnly ? descriptor.value : (value as Record<string, unknown>)[key], depth: depth + 1 });
+    }
+  }
+  return out;
 }
 
 /** Kahn traversal: O(assets + edges), no call-stack recursion or growing trail strings. */

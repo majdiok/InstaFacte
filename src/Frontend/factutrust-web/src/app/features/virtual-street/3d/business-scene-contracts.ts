@@ -196,6 +196,23 @@ export interface BusinessSceneRequest {
   readonly sceneKey: string;
 }
 
+/**
+ * Internal representation of a decision already made by trusted policy, NOT an
+ * authorization token. Structural validity proves neither consent nor G1 approval.
+ * Never derive this choice from private classification in a client consumer.
+ */
+export type ResolvedBusinessSceneRequest =
+  | { readonly kind: 'accepted'; readonly request: BusinessSceneRequest }
+  | {
+      readonly kind: 'neutral-global';
+      /** Explicit globally neutral selection approved outside this contract. */
+      readonly sceneKey: string;
+      readonly catalogVersion: string;
+      readonly quality: BusinessQuality;
+      readonly scopeId: string;
+      readonly generation: number;
+    };
+
 /** Future no-store endpoint payload only; this file implements no polling or permission. */
 export type StreetExperienceConfig = {
   readonly schemaVersion: 1;
