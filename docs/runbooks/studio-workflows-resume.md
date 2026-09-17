@@ -20,7 +20,8 @@ Garde : si `Ollama:EnableStudioWorkflows` est `false`, le job journalise et sort
    concurrente) isole l'approbation (warning), pas le tenant (D-26).
 3. **Reprises** — instances `waiting`/`waiting_approval` échues **sans approbation encore `pending`**
    (D-04) : le runner pose le bail (`RowVersion`), impersonne le lanceur (fail-closed : rôle plateforme,
-   rôle applicatif ambigu ou identifiants vides ⇒ refus) et appelle le moteur. Lanceur introuvable ou
+   rôle applicatif ambigu ou identifiants vides ⇒ refus) et appelle le moteur — les instances sans
+   lanceur (déclencheur système) tournent sans impersonation. Lanceur introuvable ou
    inactif ⇒ instance `failed` « Lanceur introuvable ou inactif : reprise refusée. » + notification 17 +
    audit `Studio.Workflow.InstanceFailed`. Le bail est relâché en `finally` quoi qu'il arrive (D-25).
 4. **Purge** — instances terminales (`completed`/`failed`/`cancelled`) dont `CompletedAt <
@@ -74,7 +75,7 @@ job expire l'approbation et applique `onTimeout`.
 
    ```sql
    SELECT COUNT(*) FROM StudioWorkflowInstances
-   WHERE Status IN (1, 2) /* Running, Waiting */ AND DueAt < DATEADD(minute, -30, SYSUTCDATETIME());
+   WHERE Status IN (1, 2) /* Waiting, WaitingApproval */ AND DueAt < DATEADD(minute, -30, SYSUTCDATETIME());
    -- attendu : 0 (hors baux en cours : LeasedAt récent)
    ```
 

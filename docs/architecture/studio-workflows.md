@@ -235,6 +235,11 @@ sequenceDiagram
     end
 ```
 
+> **Note — déclencheurs système.** Les instances sans lanceur (`StartedBy` null : `on_create`,
+> `on_update`, déclencheurs ERP) sautent l'impersonation : le moteur tourne alors sans cliché, et le
+> branchement « cliché null ⇒ échec » du diagramme ne s'applique qu'aux instances lancées par un
+> utilisateur.
+
 ### Identité courante : `ChannelAwareCurrentUser` (4.2b)
 
 Trois niveaux strictement ordonnés, jamais de repli partiel : **impersonation** (cliché posé par le
@@ -257,7 +262,7 @@ instance annule ses approbations `pending` (moteur, D-20).
 | 1 | GET | `workflows/approvals/mine?max=100` | `custom_records:read` | 200 `WorkflowApprovalInboxItemDto[]` |
 | 2 | GET | `workflows/approvals/mine/count` | `custom_records:read` | 200 `{ count }` |
 | 3 | POST | `workflows/approvals/{approvalId}/approve` | `custom_records:write` | 200 `WorkflowInstanceDto` |
-| 4 | POST | `workflows/approvals/{approvalId}/reject` | `custom_records:write` | 200 (400 sans commentaire) |
+| 4 | POST | `workflows/approvals/{approvalId}/reject` | `custom_records:write` | 200 `WorkflowInstanceDto` (400 sans commentaire) |
 | 5 | GET | `records/{entityKey}/{recordId}/workflow-instances?max=50` | `custom_records:read` | 200 `WorkflowInstanceDto[]` |
 | 6 | GET | `records/{entityKey}/workflows` | `custom_records:read` | 200 `RunnableWorkflowDto[]` |
 | 7 | POST | `records/{entityKey}/{recordId}/workflows/{workflowKey}/run` | `custom_records:write` | 201 + `Location` vers `workflows/instances/{id}` |
