@@ -9,6 +9,8 @@ using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Studio.Workflows;
 using FactuTrust.Domain.Enums;
 using MediatR;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FactuTrust.Application.Features.Studio.Workflows;
 
@@ -259,19 +261,22 @@ public sealed class RemindInstanceCommandHandler : IRequestHandler<RemindInstanc
     private readonly IAuditService _audit;
     private readonly ICurrentUser _currentUser;
     private readonly TimeProvider _time;
+    private readonly ILogger<RemindInstanceCommandHandler> _logger;
 
     public RemindInstanceCommandHandler(
         IStudioWorkflowRepository workflows,
         INotificationService notifications,
         IAuditService audit,
         ICurrentUser currentUser,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        ILogger<RemindInstanceCommandHandler>? logger = null)
     {
         _workflows = workflows;
         _notifications = notifications;
         _audit = audit;
         _currentUser = currentUser;
         _time = time ?? TimeProvider.System;
+        _logger = logger ?? NullLogger<RemindInstanceCommandHandler>.Instance;
     }
 
     public async Task<Result<WorkflowInstanceDto>> Handle(RemindInstanceCommand command, CancellationToken cancellationToken)
@@ -310,9 +315,10 @@ public sealed class RemindInstanceCommandHandler : IRequestHandler<RemindInstanc
                     $"Rappel : {approval.Title}", approval.Message ?? string.Empty, "/studio/approvals",
                     approval.AssigneeUserId, cancellationToken);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Notification best-effort : la relance est mémorisée quoi qu'il arrive.
+                // Notification best-effort : la relance est mémorisée quoi qu'il arrive (revue 4.2f : log support).
+                _logger.LogWarning(ex, "Relance de l'approbation {ApprovalId} non notifiée", approval.Id);
             }
         }
 
