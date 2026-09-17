@@ -7,7 +7,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, test } from 'node:test';
 import { compileCatalogContracts } from './street-catalog-contracts.mjs';
-import { validateCatalogSchema } from './validate-street-catalog.mjs';
 
 const compiled = compileCatalogContracts({ tests: true });
 const { CATALOG_VALIDATION_CASES: corpus } = compiled.load('testing/business-catalog-validation-corpus.js');
@@ -17,18 +16,16 @@ const script = join(dirname(fileURLToPath(import.meta.url)), 'validate-street-ca
 after(() => { compiled.close(); rmSync(directory, { recursive: true, force: true }); });
 
 for (const entry of corpus) {
-  test(`TS / Node schema parity: ${entry.name}`, () => {
+  test(`Node expected schema corpus: ${entry.name}`, () => {
     // Round-trip through JSON just as the CLI does, not a typed fixture cast.
     const manifest = JSON.parse(JSON.stringify(entry.create()));
-    const ts = compiled.contracts.validateBusinessCatalogManifest(manifest);
-    const cli = validateCatalogSchema(manifest, compiled.contracts);
-    assert.deepEqual(cli, ts, 'all codes, paths and messages must agree');
-    assert.deepEqual([...new Set(cli.map(v => v.code))].sort(), [...entry.expectedCodes].sort());
+    const violations = compiled.contracts.validateBusinessCatalogManifest(manifest);
+    assert.deepEqual([...new Set(violations.map(v => v.code))].sort(), [...entry.expectedCodes].sort());
   });
 }
 
-function child(args) {
-  const result = spawnSync(process.execPath, [script, ...args, '--json'], { encoding: 'utf8', timeout: 60_000 });
+function child(args, timeout = 60_000) {
+  const result = spawnSync(process.execPath, [script, ...args, '--json'], { encoding: 'utf8', timeout, killSignal: 'SIGKILL' });
   assert.ifError(result.error);
   assert.notEqual(result.status, null, result.stderr);
   return { status: result.status, output: JSON.parse(result.stdout) };
@@ -113,6 +110,23 @@ for (const kind of ['render', 'attribution']) {
     const result = child(fixture.args);
     assert.equal(result.status, 1);
     assert.match(result.output.error, /ENOENT/);
+  });
+}
+
+for (const kind of ['manifest', 'schema-only manifest', 'render', 'attribution']) {
+  test(`real child rejects a ${kind} FIFO without a writer`, { skip: process.platform === 'win32' }, () => {
+    const fixture = fileFixture();
+    const file = kind.endsWith('manifest') ? fixture.manifestFile
+      : join(fixture.versionRoot, fixture.manifest.assets.find(a => a.kind === kind).path);
+    rmSync(file);
+    const fifo = spawnSync('mkfifo', [file], { encoding: 'utf8', timeout: 1000, killSignal: 'SIGKILL' });
+    assert.ifError(fifo.error);
+    assert.equal(fifo.status, 0, fifo.stderr);
+    const args = kind === 'schema-only manifest' ? ['--schema-only', '--manifest', file] : fixture.args;
+    // The process must return file.type itself, not be terminated by the timeout.
+    const result = child(args, 5000);
+    assert.equal(result.status, 1);
+    assert.equal(result.output.error, 'file.type: regular file required');
   });
 }
 

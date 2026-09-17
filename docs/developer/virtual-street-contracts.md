@@ -29,9 +29,12 @@ TypeScript pur** en CommonJS dans un répertoire temporaire, nettoyé après ex�
 Elle ne maintient plus de deuxième validation de versions, budgets, navigation,
 identités, dépendances ou attribution. La compilation ciblée utilise TypeScript
 existant ; elle ne charge ni Angular ni Three et ne génère aucun asset.
-Le corpus JSON partagé et son adaptateur synthétique dans `VS/testing/` sont
-exécutés par Jasmine et Node, avec codes attendus explicites ; des tests enfant
-vérifient aussi les vrais codes de sortie CLI.
+Les 79 cas du corpus JSON partagé et de son adaptateur synthétique dans `VS/testing/`
+sont exécutés séparément dans les suites TS/Jasmine et Node, avec codes attendus
+explicites et roundtrip JSON côté Node. Ces assertions portent sur les résultats
+attendus, pas sur l'autocomparaison de deux appels au même validateur. Jasmine
+contrôle aussi la non-mutation ; des processus enfant vérifient les vrais résultats
+et codes de sortie CLI.
 
 ## 1. Les versions à ne pas confondre (plan §6.1)
 
@@ -163,6 +166,11 @@ aucun catalogue de production n'est ajouté ici.
 - Le mode fichiers parcourt **tous** les descripteurs, y compris `render` et
   `attribution` : frontière réelle du répertoire, refus des symlinks du sous-arbre,
   fichier régulier, taille effective et SHA-256, puis glTF validator sur les GLB.
+  La lecture refuse les fichiers non réguliers avant ouverture et recontrôle le
+  descripteur ; l'ouverture non bloquante, lorsqu'elle est disponible, évite une
+  attente sur FIFO remplacé entre ces contrôles. Les régressions POSIX utilisent
+  des FIFO sans writer et des processus enfant avec timeout de cinq secondes,
+  pour le manifeste (deux modes), un rendu et une attribution.
   Un succès vaut `file-integrity-only`, jamais une release complète ; le résultat
   contient toujours `productionReleaseQualified: false`.
 - `quality:gate:street-catalog` n'est pas encore une gate V4 de publication : son
@@ -192,7 +200,7 @@ Elles ne prouvent pas une borne de mémoire/temps du décodeur glTF.
 | V06 | Chemins lexicaux fermés, version explicite, dépendances, realpath/symlinks statiques, fichiers render/attribution hashés | Transport/redirects et allowlist runtime ; robustesse contre remplacement concurrent des fichiers dans un espace non fiable |
 | V07 | Schéma commun, enums MIME/extensions déclarées, glTF validator existant | Magic bytes/MIME réels de chaque format, contenu incorporé et URI/buffers/images, décodeurs approuvés et aucun fetch implicite |
 | V08 | JSON/collections/graphe bornés, tailles de fichiers contrôlées avant lecture | Inspection bornée GLB/accessors/nœuds/offsets, textures réelles/mips/layers/décompression, limites CPU/mémoire du runner r161 ; budgets transitifs mesurés |
-| V19 | Corpus positif/négatif, codes/parité, enfants réellement rouges, hashes inchangés | Manifest d'attendus de release non vide, couverture/droits approuvés, orchestration CI bloquante et attestation liée au candidat |
+| V19 | Corpus positif/négatif à résultats attendus partagé entre TS/Jasmine et Node, enfants réellement rouges, hashes inchangés | Manifest d'attendus de release non vide, couverture/droits approuvés, orchestration CI bloquante et attestation liée au candidat |
 
 La navigation, les UV/ancrages, les estimations, les images et l'attribution restent
 déclaratifs : une scène synthétique sans géométrie peut passer ces checks, **pas**

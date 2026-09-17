@@ -3,17 +3,12 @@
  * validator. File integrity is not binary safety, rights or release approval.
  */
 import { createHash } from 'node:crypto';
-import { closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileCatalogContracts } from './street-catalog-contracts.mjs';
 
 const fail = message => { throw new Error(message); };
-
-// Exported for the shared parity corpus; no second set of schema/budget rules.
-export function validateCatalogSchema(manifest, contracts) {
-  return contracts.validateBusinessCatalogManifest(manifest);
-}
 
 function parseArguments(args) {
   const values = {};
@@ -39,7 +34,10 @@ function parseArguments(args) {
 }
 
 function readBounded(file, maxBytes, expectedBytes) {
-  const fd = openSync(file, 'r');
+  // A FIFO without a writer would block on open, before the descriptor check.
+  if (!lstatSync(file).isFile()) fail('file.type: regular file required');
+  // On POSIX, a regular file replaced by a FIFO between lstat/open must not hang.
+  const fd = openSync(file, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile()) fail('file.type: regular file required');
@@ -97,7 +95,7 @@ export async function runCatalogCli(args) {
       manifestFile = catalogFile(versionRoot, manifestFile);
     }
     const manifest = JSON.parse(readBounded(manifestFile, contracts.CATALOG_VALIDATION_LIMITS.jsonBytes).toString('utf8'));
-    const violations = validateCatalogSchema(manifest, contracts);
+    const violations = contracts.validateBusinessCatalogManifest(manifest);
     if (violations.length) return { exitCode: 1, json, result: { qualification: 'none', violations } };
     if (!options['--schema-only']) {
       if (manifest.catalogVersion !== options['--version']) fail('file.version-mismatch: manifest version does not match its directory');
