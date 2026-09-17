@@ -10,6 +10,7 @@ import { MessageService } from 'primeng/api';
 import { AuthService } from '@core/services/auth.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
+import { ButtonComponent } from '@shared/components/button/button.component';
 import { StudioRecordListComponent } from './studio-record-list.component';
 import { StudioAiCapabilitiesService } from './ai/studio-ai-capabilities.service';
 import { STUDIO_AI_CAPABILITIES_FALLBACK, StudioAiCapabilitiesDto } from './ai/studio-ai.models';
@@ -55,7 +56,8 @@ describe('StudioRecordListComponent', () => {
   let router: Router;
   let queryParamMap$: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
 
-  function setup(recordViewsEnabled: boolean, canDesignForms = true, state: 'unknown' | 'loading' | 'ready' | 'unavailable' = 'ready'): void {
+  function setup(recordViewsEnabled: boolean, canDesignForms = true, state: 'unknown' | 'loading' | 'ready' | 'unavailable' = 'ready',
+    canDesign = false, workflowsEnabled = false): void {
     queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
 
     TestBed.configureTestingModule({
@@ -71,10 +73,11 @@ describe('StudioRecordListComponent', () => {
           useValue: {
             hasPermission: (p: string) =>
               p === PERMISSIONS.customData.recordsWrite ? true :
-              p === PERMISSIONS.studio.designForms ? canDesignForms : false
+              p === PERMISSIONS.studio.designForms ? canDesignForms :
+              p === PERMISSIONS.studio.designEntities ? canDesign : false
           }
         },
-        { provide: StudioAiCapabilitiesService, useValue: capabilitiesStub({ recordViewsEnabled }, state) },
+        { provide: StudioAiCapabilitiesService, useValue: capabilitiesStub({ recordViewsEnabled, workflowsEnabled }, state) },
         {
           provide: ActivatedRoute,
           useValue: {
@@ -315,5 +318,33 @@ describe('StudioRecordListComponent', () => {
     expect(fixture.componentInstance.subtitleTotal()).toBe(3);
     expect(fixture.nativeElement.textContent).toContain('3 enregistrement(s)');
     expect(fixture.debugElement.query(By.css('p-menu'))).toBeNull();
+  });
+
+  // ---- Accès workflows (4.4i) : capacité workflowsEnabled + studio:design_entities ----
+
+  it('affiche le bouton Workflows pour un concepteur quand la capacité est vraie', () => {
+    setup(false, true, 'ready', true, true);
+    httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/schema`).flush({ success: true, data: schema(false), message: null, errors: [] });
+    httpMock.expectOne(req => req.url === `${environment.apiUrl}/studio/records/interventions`)
+      .flush({ success: true, data: { items: [], totalCount: 0 }, message: null, errors: [] });
+    fixture.detectChanges();
+
+    const btn = fixture.debugElement.query(By.css('[data-testid="wf-open"]'));
+    expect(btn).not.toBeNull();
+    expect(btn.nativeElement.textContent).toContain('Workflows');
+    const button = btn.componentInstance as ButtonComponent;
+    // Le hub 4.4d pré-filtre sur l'identifiant de table (?entity=<id>, H-5 / D-44-85).
+    expect(button.routerLink).toEqual(['/studio', 'workflows']);
+    expect(button.queryParams).toEqual({ entity: 'e1' });
+  });
+
+  it('masque le bouton Workflows sans studio:design_entities même capacité vraie', () => {
+    setup(false, true, 'ready', false, true);
+    httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/schema`).flush({ success: true, data: schema(false), message: null, errors: [] });
+    httpMock.expectOne(req => req.url === `${environment.apiUrl}/studio/records/interventions`)
+      .flush({ success: true, data: { items: [], totalCount: 0 }, message: null, errors: [] });
+    fixture.detectChanges();
+
+    expect(fixture.debugElement.query(By.css('[data-testid="wf-open"]'))).toBeNull();
   });
 });
