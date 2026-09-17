@@ -72,6 +72,7 @@
             [result]="store.result()!"
             [actions]="store.actions()"
             [counters]="store.counters()"
+            [summary]="store.plan()?.summary ?? null"
             [exportEnabled]="capabilities.capabilities().systemExportEnabled"
             [replayable]="!!store.plan()"
             (open)="store.openCreated($event)"
