@@ -1,0 +1,197 @@
+# Workflows Studio (PR 4.1)
+
+> État : livré (backend — modèle, moteur, déclencheur, API de conception). Runtime différé, approbations
+> et routes d'exécution : PR 4.2. Workflows proposés par l'IA : PR 4.3. Frontend : PR 4.4.
+> Drapeau : `Ollama:EnableStudioWorkflows` (défaut C# `false`, **`false` dans les deux `appsettings*.json`** —
+> activation par configuration d'environnement `Ollama__EnableStudioWorkflows=true`, jamais dans le dépôt).
+> Migration tenant : `20260912150000_AddStudioWorkflows_Tenant` (additive, inerte drapeau coupé).
+
+## Vue d'ensemble
+
+Un **workflow Studio** est une suite ordonnée d'**étapes** (≤ 30) rattachée à une table Studio
+(`CustomEntityDefinition`) et démarrée par un **déclencheur** : création d'un enregistrement, mise à
+jour, changement d'un champ précis, lancement manuel (le déclencheur planifié est réservé : refusé à la
+validation). Chaque exécution est une **instance** exécutée par segments côté serveur, avec un
+journal d'étapes append-only et, à terme, des approbations humaines.
+
+Public : le concepteur (`studio:design_entities`) dessine et active les workflows ; les utilisateurs
+qui créent ou modifient des enregistrements (`custom_records:write`) les déclenchent sans le savoir.
+Tout est gardé par le drapeau `Ollama:EnableStudioWorkflows` : coupé ⇒ 404 sur chaque route de
+conception et **aucun démarrage** d'instance ; la capability `workflowsEnabled`
+(`GET api/ai/studio/capabilities`) reflète le drapeau, `workflowToolsEnabled` reste figé à `false`
+jusqu'à la PR 4.3.
+
+## Modèle
+
+Quatre tables autonomes (aucune clé étrangère, isolation par `TenantId` sur chaque ligne) :
+
+| Table | Entité | Rôle |
+|---|---|---|
+| `StudioWorkflowDefinitions` | `StudioWorkflowDefinition` | définition : `Key` (64, unique par table parmi les non supprimées), `Name` (128), `Description`, `Trigger` (enum), `TriggerConfigJson` (nvarchar(2048)), `StepsJson` (nvarchar(max)), `Version` (incrémentée quand les étapes changent), `IsActive`, `IsDeleted`/`DeletedAt` (suppression logique), `RowVersion` (concurrence optimiste ⇒ 409) |
+| `StudioWorkflowInstances` | `StudioWorkflowInstance` | exécution : `WorkflowDefinitionId`, `DefinitionVersion`, `EntityDefinitionId`, `RecordId`, `TriggerKind`, `Status`, `CurrentStepIndex`/`CurrentStepKey`, `ContextJson` (nvarchar(max)), `DueAt`, `LastRemindedAt`, `StartedBy`, `StartedAt`, `CompletedAt`, `Depth`, `OriginInstanceId`, `Error`, `RowVersion` (bail de reprise, PR 4.2) |
+| `StudioWorkflowStepRuns` | `StudioWorkflowStepRun` | journal append-only : `StepIndex`, `StepKey`, `StepType`, `Status`, `Outcome`, `ResultJson` (≤ 8 Ko), `Error`, `StartedAt`, `FinishedAt` |
+| `StudioWorkflowApprovals` | `StudioWorkflowApproval` | demande d'approbation : `StepKey`, `AssigneeUserId` **ou** `AssigneeRole`, `Title`, `Message`, `Status`, `DecidedBy`/`DecidedAt`/`Comment`, `DueAt`, `RowVersion` |
+
+Cinq enums, exposées par l'API en **snake_case** via `StudioWorkflowEnumNames` :
+
+| Enum | Valeurs API |
+|---|---|
+| `StudioWorkflowTriggerKind` | `on_create`, `on_update`, `field_changed`, `manual`, `scheduled` (réservé) |
+| `StudioWorkflowInstanceStatus` | `running`, `waiting`, `waiting_approval`, `completed`, `failed`, `cancelled` |
+| `StudioWorkflowStepRunStatus` | `succeeded`, `skipped`, `failed`, `suspended` |
+| `StudioWorkflowApprovalStatus` | `pending`, `approved`, `rejected`, `cancelled`, `expired` |
+| `StudioWorkflowStepOutcome` | `continue`, `skip`, `goto`, `stop`, `suspend`, `fail` |
+
+Neuf index : `UX_StudioWorkflowDefinitions_Tenant_Entity_Key` (unique, filtré `[IsDeleted] = 0`),
+`IX_StudioWorkflowDefinitions_Tenant_Entity_Trigger_Active`,
+`IX_StudioWorkflowInstances_Tenant_Definition_StartedAt`, `IX_StudioWorkflowInstances_Tenant_Record_StartedAt`,
+`IX_StudioWorkflowInstances_Tenant_Status_DueAt` (reprise différée),
+`IX_StudioWorkflowStepRuns_Tenant_Instance_Step`, `IX_StudioWorkflowApprovals_Tenant_Instance`,
+`IX_StudioWorkflowApprovals_Tenant_AssigneeUser_Status`, `IX_StudioWorkflowApprovals_Tenant_AssigneeRole_Status`.
+Migration `20260912150000_AddStudioWorkflows_Tenant` (dossier `Migrations/Tenant/`, `Down` complet) ;
+jumeau idempotent `docs/runbooks/sql/AddStudioWorkflows_Tenant.idempotent.sql` ; consignée dans
+`docs/backend-tenant-migrations.md`.
+
+## Définition JSON
+
+`TriggerConfigJson` (≤ 2 Ko, `StudioWorkflowStepsSpec.MaxTriggerConfigBytes`) : vide pour `on_create`,
+`on_update` et `manual` ; pour `field_changed` : `{ "field": "statut", "from": "brouillon", "to": "valide" }`
+(`from` / `to` optionnels, le champ doit exister et être actif).
+
+`StepsJson` (≤ 64 Ko, ≤ 30 étapes) :
+
+```json
+{
+  "version": 1,
+  "steps": [
+    { "key": "verif", "type": "condition", "filters": [{ "field": "statut", "op": "eq", "value": "valide" }], "onFalse": "stop" },
+    { "key": "maj",   "type": "update_field", "set": { "traite_le": "{{ _now }}" } },
+    { "key": "info",  "type": "notify", "to": { "kind": "role", "value": "Admin" }, "title": "Commande {{ ref }} validée" }
+  ]
+}
+```
+
+Les sept types d'étapes (`StudioWorkflowStepTypes.All`, ordre figé du catalogue
+`GET api/studio/workflows/step-catalog`) et leurs propriétés :
+
+| `type` | Propriétés (● obligatoire) | Effet |
+|---|---|---|
+| `condition` | ● `filters` (1 à 10 `{ field, op, value, value2? }` ; `field` ∈ champs actifs, `_previous.<champ>`, `_approval.<clé>.status`, `_results.<clé>.<prop>`), `match` (`all` par défaut / `any`), `onFalse` (`stop` par défaut / `skip` / `goto`), `gotoKey` | poursuit si l'enregistrement satisfait les filtres, sinon applique `onFalse` |
+| `update_field` | ● `set` (clé de champ ⇒ valeur ou gabarit) | écrit des champs de l'enregistrement courant (mêmes règles que `PATCH`) |
+| `erp_action` | ● `action` (catalogue `StudioBridgeActionCatalog.List()`), `mapping`, `onFailure` (`fail`/`continue`), `saveResultAs` | appelle une action ERP via le Pont ERP ; corrélation `studio-workflow:<instance>:<étape>` |
+| `notify` | ● `to` (`{ kind ∈ user\|role\|startedBy, value }`), ● `title`, `body`, `link` | notification in-app (`NotificationType.StudioWorkflowMessage`) ; titre ≤ 200, corps ≤ 1000, lien ≤ 300 |
+| `approval` | ● `assignee` (`{ kind, value }` comme `to`), ● `title`, `message`, `dueInHours` (72 par défaut, 1..720), `onTimeout`, `onReject`, `gotoKey` | suspend l'instance (`waiting_approval`) et crée une `StudioWorkflowApproval` ; reprise en PR 4.2 |
+| `wait` | `hours` **ou** `until` (gabarit ISO 8601 UTC), `maxHours` (≤ 720) | suspend l'instance (`waiting`) jusqu'à l'échéance ; reprise en PR 4.2 |
+| `create_record` | ● `entity` (clé d'une autre table, jonctions refusées), ● `set`, `saveResultAs` | crée un enregistrement dans une autre table Studio (déclenche ses propres workflows, profondeur + 1) |
+
+Validation (`StudioWorkflowStepsSpec.Parse` puis `Validate`) : chaque problème est localisé par un
+chemin — `trigger`, `triggerConfig.field`, `steps`, `steps[i].key`, `steps[i].type`, `steps[i].field`,
+`steps[i].action`, `steps[i].gotoKey`… ; clés d'étapes uniques ; `goto` uniquement **vers l'avant** ;
+`scheduled` ⇒ `trigger` « Déclencheur planifié : bientôt disponible. ». `Lint` produit des
+**avertissements** non bloquants (étape jamais atteinte, gabarit vers une variable inconnue…).
+
+## Déclenchement
+
+`CreateCustomRecordCommand` et `PatchCustomRecordCommand` publient, après l'écriture, une
+notification MediatR dédiée `CustomRecordWorkflowNotification` via `StudioWorkflowLifecycle.PublishAsync`
+(le Pont ERP et les automatisations gardent leur propre notification, inchangée). Le handler :
+
+1. sort immédiatement si `EnableStudioWorkflows` est coupé ;
+2. charge les définitions **actives** de la table pour les déclencheurs concernés — création ⇒ `on_create` ;
+   mise à jour ⇒ `on_update` **et** `field_changed` (dont le `field` a effectivement changé, avec `from`/`to`
+   s'ils sont fixés) ;
+3. applique le quota `MaxWorkflowInstancesPerRecord` (200 instances **ouvertes** par enregistrement) ;
+4. refuse la ré-entrée : `StudioWorkflowExecutionScope` propage la profondeur (`Depth + 1`, `MaxDepth = 2`)
+   et `IStudioWorkflowRepository.HasOpenInstanceInChainAsync` coupe toute chaîne où la même définition a
+   déjà une instance ouverte (`OriginInstanceId` renseigné sur les instances dérivées) ;
+5. démarre l'instance (`IStudioWorkflowEngine.StartAsync`) sous l'utilisateur courant.
+
+Le déclencheur `manual` (`POST api/studio/records/{entityKey}/{recordId}/workflows/{workflowKey}/run`) et la
+reprise différée arrivent en PR 4.2.
+
+## Exécution
+
+`StudioWorkflowEngine` exécute une instance par **segments** : au plus `MaxStepsPerSegment = 30` étapes et
+`Ollama:StudioWorkflowMaxSegmentSeconds` secondes (5 par défaut, clampé 1..30) par passage, avec un
+**checkpoint après chaque étape** (`StudioWorkflowStepRun` + `ContextJson` + `CurrentStepIndex`). Chaque
+handler (`ConditionStepHandler`, `UpdateFieldStepHandler`, `ErpActionStepHandler`, `NotifyStepHandler`,
+`ApprovalStepHandler`, `WaitStepHandler`, `CreateRecordStepHandler`) renvoie un `StepOutcome` :
+`Continue`, `Skip(raison)`, `Goto(clé)`, `Stop(raison)`, `Suspend(statut, dueAt)` ou `Fail(message, continueAnyway)`.
+
+Statuts d'instance : `running` ⇒ `completed` (fin des étapes ou `stop`), `waiting` (`wait`),
+`waiting_approval` (`approval`), `failed` (`fail`, exception, définition invalide) ou `cancelled`
+(suppression du workflow, annulation manuelle en PR 4.2). Une définition invalide au démarrage produit
+une instance `failed` **traçable** (step run `definition`) plutôt qu'un refus silencieux ; l'échec d'une
+étape notifie le lanceur (`NotificationType.StudioWorkflowStepFailed`, lien
+`/studio/d/{entityKey}/{recordId}/edit`).
+
+Contexte (`ContextJson`, racine `"version": 1`) : `record` (instantané des champs), `startedBy`,
+`previous` (valeurs avant la mise à jour ; **masqué** — renvoyé `null` — par l'API de lecture),
+`approval` (décisions par clé d'étape), `results` (résultats `saveResultAs`), `vars`. Gabarits
+`StudioTemplateRenderer` : `{{ <champ> }}`, `{{ _now }}` (ISO 8601 UTC), `{{ _record.* }}`,
+`{{ _startedBy.* }}`, `{{ _previous.* }}`, `{{ _approval.<clé>.status }}`, `{{ _results.<clé>.* }}` ;
+variable inconnue ⇒ chaîne vide + avertissement ; sortie tronquée à 4000 caractères ; aucune évaluation
+de code.
+
+## API de conception (`api/studio`, gardée par le drapeau)
+
+`StudioWorkflowsController` — politique de classe `studio:design_entities`, aucune politique plus faible
+par action ; drapeau coupé ⇒ 404 « Les workflows Studio ne sont pas activés. » **avant tout appel au
+médiateur**. Erreurs via `StudioErrorMapping` : 409 `Conflict`, 404 `*.NotFound`, 400 pour le reste
+(`Validation.*`). L'enveloppe `ApiResponse<T>` ne porte que le message d'erreur (pas de propriété `code`).
+
+| Route | Corps | Réponse | Erreurs |
+|---|---|---|---|
+| `GET workflows/step-catalog` | — | 200 `WorkflowStepCatalogDto { entries }` | — |
+| `GET entities/{entityId}/workflows` | — | 200 `WorkflowDefinitionDto[]` (actifs et inactifs, `openInstances`) | 404 `CustomEntity.NotFound` |
+| `GET workflows/{id}` | — | 200 `WorkflowDefinitionDto` | 404 `StudioWorkflowDefinition.NotFound` |
+| `POST entities/{entityId}/workflows` | `SaveWorkflowRequest` | **201** + `Location` → `GET workflows/{id}`, `version = 1` | 400 `Validation.trigger` / `Validation.steps[i].<prop>` (1ʳᵉ issue + « (+n autre(s) erreur(s) …) ») / `Validation.Plan` (quota 20) ; 409 `Conflict` (clé prise) ; 404 |
+| `PUT workflows/{id}` | `SaveWorkflowRequest` (`rowVersion` **obligatoire**, `key` immuable) | 200 `WorkflowDefinitionDto` (`version` + 1 si les étapes changent) | 400 `Validation.rowVersion` / `Validation.key` / étapes ; 409 `Conflict` (jeton périmé) ; 404 |
+| `POST workflows/{id}/toggle` | `{ "isActive": true }` | 200 `WorkflowDefinitionDto` (idempotent, sans jeton) | 404 |
+| `DELETE workflows/{id}` | — | **200** `WorkflowDeletionResultDto { cancelledInstances }` (soft delete + annulation des instances ouvertes) | 404 |
+| `POST workflows/{id}/duplicate` | — | **201** copie **inactive** « <nom> (copie) », clé `<clé>_copie` … `_copie_9` | 400 `Validation.Plan` ; 409 `Conflict` (copies épuisées) ; 404 |
+| `POST entities/{entityId}/workflows/validate` | `SaveWorkflowRequest` | 200 `WorkflowValidationResultDto { isValid, errors[{path,message}], warnings[], stepCount }` — **même invalide** | 404 `CustomEntity.NotFound` |
+| `GET workflows/{id}/instances?max=50` | — | 200 `WorkflowInstanceDto[]` (`max` borné 1..200 côté Application) | 404 |
+| `GET workflows/instances/{instanceId}` | — | 200 `WorkflowInstanceDetailDto { instance, steps, approvals, context }` (`context.previous = null`) | 404 `StudioWorkflowInstance.NotFound` |
+
+`SaveWorkflowRequest` : `key`, `name`, `description`, `trigger`, `triggerConfig`, `steps`, `isActive`,
+`rowVersion` (base64). La clé commence par une minuscule et ne contient que minuscules, chiffres et `_` (2 à 64 caractères) ; elle ne change plus après
+création ; l'unicité est insensible à la casse (collation SQL + index filtré).
+
+## Quota, capability, audit, notifications
+
+- Quotas plan (`StudioQuotas`) : `MaxWorkflowsPerEntity` = 20 définitions non supprimées par table,
+  `MaxWorkflowSteps` = 30 étapes, `MaxWorkflowInstancesPerRecord` = 200 instances ouvertes par
+  enregistrement ; dépassement ⇒ `Validation.Plan`.
+- Capability : `workflowsEnabled` = drapeau ; `workflowToolsEnabled` = `false` jusqu'à la PR 4.3.
+- Audit (`IAuditService`, `entityType` `StudioWorkflowDefinition` / `StudioWorkflowInstance`) :
+  `Studio.Workflow.Created`, `Updated`, `Toggled`, `Deleted`, `Duplicated`, `InstanceStarted`,
+  `InstanceFailed`, `InstanceCancelled`. Aucune valeur d'enregistrement ni `StepsJson` dans les journaux
+  applicatifs (identifiants seulement).
+- Notifications (`NotificationType`) : `StudioWorkflowApprovalRequested = 15`, `StudioWorkflowApprovalDecided = 16`,
+  `StudioWorkflowStepFailed = 17`, `StudioWorkflowMessage = 18`.
+
+## Frontend
+
+Rien de livré en PR 4.1. Le concepteur (hub par table, éditeur d'étapes, détail d'instance), la page
+« Mes approbations » et l'onglet Workflow de l'aperçu IA arrivent en PR 4.4 (11 méthodes de conception
+ci-dessus + 9 méthodes d'exécution de la PR 4.2). Les déclencheurs et les variables de gabarit ne sont
+**pas** exposés par le catalogue (`entries` seul) : le client les code à partir de ce document.
+
+## Réversibilité
+
+- Drapeau coupé : 404 sur les 11 routes, aucun démarrage d'instance, capability `workflowsEnabled = false` ;
+  les tables restent inertes.
+- Migration additive avec `Down` complet ; jumeau SQL idempotent rejouable ; aucune modification des tables
+  existantes, aucune clé étrangère.
+- Suppression d'un workflow = suppression logique + annulation des instances ouvertes (`cancelledInstances`).
+
+## Écarts et décisions
+
+Le Journal des écarts de la PR 4.1 (`docs/plans/2026-09-11-studio-ia-programme-continuation.md`,
+section « Journal des écarts ») consigne les lignes `D-4.1-01 → D-4.1-17` (code fusionné 4.1a → 4.1i relu
+le 2026-09-17) et `D-41-01 → D-41-15` (tranches 4.1j1, 4.1j2, 4.1k, 4.1l). Points saillants :
+`CustomEntity.NotFound` (D-41-01), quota `Validation.Plan` (D-41-02), code d'erreur = chemin de la première
+issue (D-41-03), catalogue `{ entries }` seul (D-41-04), toggle sans jeton (D-41-05), duplication inactive
+`_copie` (D-41-06), `DELETE` ⇒ 200 (D-41-11), drapeaux `false` dans le dépôt (D-41-13), enveloppe d'erreur
+sans `code` (D-41-15).

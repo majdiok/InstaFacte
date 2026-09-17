@@ -379,6 +379,11 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   « (copie) », import chaîne/objet/`specVersion`, 10 modèles et `StudioTemplateStats`, test d'or, clé réservée
   `import`) ; contrats API `StudioSystemsControllerContractTests` et `StudioTemplatesControllerTests`
   (filtre `FactuTrust.API.Tests.Studio`).
+- Workflows Studio (PR 4.1) : `--filter "FullyQualifiedName~StudioWorkflow"` (`StudioWorkflow*Tests` :
+  entités, spec / validation / lint des étapes, contexte et gabarits, handlers d'étapes, moteur segmenté,
+  déclencheur, dépôt et migration — les tests SQL exigent `FACTUTRUST_TEST_SQL_CONNECTION`, sinon `Skipped` —,
+  `StudioWorkflowFeaturesTests` pour les handlers de conception) ; contrat API
+  `StudioWorkflowsControllerContractTests` (filtre `FactuTrust.API.Tests.Studio`).
 - Frontend : `ng test --watch=false --browsers=ChromeHeadless` (service de plans + flux SSE de confirmation).
 - Gate complet : `powershell -File scripts\verify-all.ps1`.
 
@@ -682,3 +687,64 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     **Enregistrer désactivé** ; `forbidden` ⇒ message `error`, **Enregistrer désactivé** ; revenir au type
     d'origine ⇒ message effacé, Enregistrer actif, aucun `PATCH` émis. Pendant la vérification le bouton
     reste désactivé (pas de double soumission).
+
+## Workflows Studio — moteur, déclencheur et API de conception (PR 4.1)
+
+> Architecture : [`docs/architecture/studio-workflows.md`](../architecture/studio-workflows.md).
+> Prérequis : migration tenant `20260912150000_AddStudioWorkflows_Tenant` appliquée ; drapeau activé **par
+> variable d'environnement** `Ollama__EnableStudioWorkflows=true` (les deux `appsettings*.json` restent à
+> `false`) ; une table Studio `commandes` (champs `statut` Select `brouillon`/`valide`, `montant` Money,
+> `traite_le` DateTime, `ref` AutoNumber) et une table `taches` (champ `titre` Text) alimentées ; un compte
+> avec `studio:design_entities` (conception) et `custom_records:write` (déclenchement). Appels Swagger /
+> `curl` — le frontend arrive en PR 4.4. Les numéros 75–80 sont ceux du registre du plan maître ; l'ordre du
+> fichier suit les PR.
+
+75. **Drapeau éteint** — sans `Ollama__EnableStudioWorkflows`, appeler les 11 routes de
+    `StudioWorkflowsController` (`GET api/studio/workflows/step-catalog`, `GET/POST api/studio/entities/{entityId}/workflows`,
+    `POST …/workflows/validate`, `GET/PUT/DELETE api/studio/workflows/{id}`, `POST …/toggle`, `POST …/duplicate`,
+    `GET …/instances`, `GET api/studio/workflows/instances/{instanceId}`) ⇒ `404`
+    « Les workflows Studio ne sont pas activés. » partout, aucune trace côté application ;
+    `GET api/ai/studio/capabilities` ⇒ `workflowsEnabled=false`, `workflowToolsEnabled=false` ; créer puis
+    modifier un enregistrement de `commandes` ⇒ `201` / `200` habituels et **aucune ligne** dans
+    `StudioWorkflowInstances`.
+76. **Création, quota, clé** — drapeau activé : `POST api/studio/entities/{entityId}/workflows` corps
+    `{ "key": "relance", "name": "Relance", "trigger": "field_changed", "triggerConfig": { "field": "statut", "to": "valide" }, "steps": { "version": 1, "steps": [ { "key": "verif", "type": "condition", "filters": [{ "field": "montant", "op": "gt", "value": 100 }] }, { "key": "maj", "type": "update_field", "set": { "traite_le": "{{ _now }}" } } ] }, "isActive": true }`
+    ⇒ `201`, en-tête `Location` vers `GET api/studio/workflows/{id}`, `version=1`, `stepCount=2`,
+    `openInstances=0`, `rowVersion` base64 ; ligne d'audit `Studio.Workflow.Created`. Re-`POST` avec la même
+    clé (ou `RELANCE`) ⇒ `409` « Un workflow avec la clé « relance » existe déjà pour cette table. ». Créer
+    ensuite jusqu'à 20 workflows puis un 21ᵉ ⇒ `400` message de quota (`Validation.Plan`). `GET …/entities/{entityId}/workflows`
+    liste les 20, actifs et inactifs. Modifier un enregistrement de `commandes` en passant `statut` à `valide` avec
+    `montant > 100` ⇒ `GET api/studio/workflows/{id}/instances` montre une instance `completed`, `trigger=field_changed`,
+    `depth=0` ; `GET api/studio/workflows/instances/{instanceId}` ⇒ deux step runs `succeeded` (`verif` puis `maj`),
+    `context.previous = null`, `traite_le` renseigné sur l'enregistrement.
+77. **Validation des étapes** — `POST api/studio/entities/{entityId}/workflows/validate` avec, tour à tour :
+    `type: "teleport"` ; `update_field` sur un champ `inconnu` ; `condition` avec `onFalse: "goto"` et `gotoKey`
+    vers une étape **antérieure** ; 31 étapes ⇒ toujours `200` avec `isValid=false` et `errors[].path` =
+    `steps[0].type`, `steps[0].set` (« Champ « inconnu » inconnu, inactif ou calculé. »), `steps[1].gotoKey`
+    (« doit référencer une étape postérieure »), `steps` (31 > 30) ;
+    `warnings[]` peut lister les étapes jamais atteintes. `PUT api/studio/workflows/{id}` du workflow du cas 76
+    avec les mêmes étapes et son `rowVersion` ⇒ `400` dont le message est celui de la **première** issue,
+    suivi de « (+n autre(s) erreur(s) — utilisez la validation pour la liste complète.) » s'il y en a
+    plusieurs ; `GET` ⇒ définition inchangée (`version` identique, mêmes étapes).
+78. **Déclencheur planifié refusé** — `POST` et `PUT` avec `"trigger": "scheduled"` ⇒ `400`
+    « Déclencheur planifié : bientôt disponible. » ; `POST …/validate` avec le même corps ⇒ `200`
+    `isValid=false`, une issue `path="trigger"` avec ce message ; aucune définition créée ni modifiée.
+79. **Anti-boucle** — workflow **A** sur `commandes`, `trigger: "on_update"`, une étape `update_field`
+    (`set: { "montant": "{{ montant }}" }`) : modifier un enregistrement ⇒ `GET workflows/{A}/instances` ⇒
+    **une seule** instance `completed`, `depth=0`, pas de relance par sa propre écriture. Workflow **B** sur
+    `taches`, `trigger: "on_create"`, étape `create_record` vers `commandes` (`set: { "statut": "brouillon" }`)
+    et workflow **C** sur `commandes`, `on_create`, étape `create_record` vers `taches` : créer une tâche ⇒ B
+    (`depth=0`) crée une commande ⇒ C (`depth=1`, `originInstanceId` = instance de B) crée une tâche ⇒ B
+    (`depth=2`, `originInstanceId` renseigné) **s'arrête** (aucune instance de profondeur 3, aucun
+    enregistrement supplémentaire) ; les instances au-delà de la borne n'existent pas, celles créées sont
+    `completed` ou `failed` avec un message explicite — jamais `running` bloquée.
+80. **`erp_action` via le Pont ERP** — `POST …/validate` avec une étape `erp_action` dont `action` n'est
+    pas dans `StudioBridgeActionCatalog.List()` ⇒ `isValid=false`, `errors[].path = steps[i].action`. Avec une
+    action bridgeable et `saveResultAs: "res"` sur un workflow `on_update` (le lancement `manual` arrive en
+    PR 4.2) : modifier l'enregistrement ⇒ instance `completed`, `GET workflows/instances/{id}`
+    montre le step run `erp_action` `succeeded` avec `result` non nul, `context.results.res` renseigné ; les
+    journaux applicatifs portent la corrélation `studio-workflow:<instanceId>:<clé d'étape>` **sans** valeurs
+    d'enregistrement. Simuler un échec (action bridgeable sur un enregistrement incomplet) : `onFailure`
+    absent ⇒ instance `failed`, step run `failed`, notification `StudioWorkflowStepFailed` (type 17) au
+    lanceur avec lien `/studio/d/commandes/{recordId}/edit` ; `onFailure: "continue"` ⇒ step run `failed`,
+    instance poursuivie jusqu'à `completed`.
