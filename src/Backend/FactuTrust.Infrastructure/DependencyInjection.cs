@@ -309,7 +309,15 @@ public static class DependencyInjection
         services.AddScoped<IStorefrontTenantWriter, StorefrontTenantWriter>();
         services.AddScoped<IPublicStorefrontReadRepository, PublicStorefrontReadRepository>();
         services.AddScoped<IStorefrontOrderRepository, StorefrontOrderRepository>();
-        services.AddScoped<IStorefrontCaptchaValidator, StorefrontCaptchaValidator>();
+        services.AddHttpClient<IStorefrontCaptchaValidator, StorefrontCaptchaValidator>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(5);
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+            UseCookies = false,
+            MaxResponseHeadersLength = 16
+        }).RemoveAllLoggers();
 
         services.AddScoped<IAccountingPeriodService, AccountingPeriodService>();
         // Enregistrement inconditionnel : les handlers MediatR le prennent en dépendance et
