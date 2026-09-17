@@ -99,6 +99,9 @@ function boundedJson(text: string): Record<string, unknown> {
 interface View { offset: number; length: number; stride: number | undefined }
 interface Accessor { offset: number; count: number; size: number; component: number; componentBytes: number; stride: number; normalized: boolean }
 
+const COMPONENT_BYTES: Readonly<Record<number, number | undefined>> = Object.freeze({ 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 });
+const TYPE_COMPONENTS: Readonly<Record<string, number | undefined>> = Object.freeze({ SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 });
+
 /** Only static, uncompressed, image-free triangle meshes are admitted initially. */
 export function preflightBusinessGlb(input: Uint8Array): BusinessGlbPreflight {
   try {
@@ -172,8 +175,8 @@ export function preflightBusinessGlb(input: Uint8Array): BusinessGlbPreflight {
       if ('sparse' in accessor) reject('glb.unsupported-feature', path, 'Sparse accessors are not inspected');
       const view = views[reference(accessor['bufferView'], views.length, `${path}.bufferView`)];
       const component = integer(accessor['componentType'], 5126, `${path}.componentType`, 5120);
-      const componentBytes = new Map([[5120, 1], [5121, 1], [5122, 2], [5123, 2], [5125, 4], [5126, 4]]).get(component);
-      const size = new Map<string, number>([['SCALAR', 1], ['VEC2', 2], ['VEC3', 3], ['VEC4', 4]]).get(String(accessor['type']));
+      const componentBytes = COMPONENT_BYTES[component];
+      const size = TYPE_COMPONENTS[String(accessor['type'])];
       if (!componentBytes || !size) reject('glb.accessor-format', path, 'Unsupported component or accessor shape');
       const count = integer(accessor['count'], BUSINESS_GLB_LIMITS.accessorElements, `${path}.count`, 1);
       const start = integer(accessor['byteOffset'] ?? 0, view.length, `${path}.byteOffset`);
