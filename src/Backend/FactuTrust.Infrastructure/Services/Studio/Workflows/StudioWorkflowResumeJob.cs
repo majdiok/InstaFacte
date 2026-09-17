@@ -124,29 +124,45 @@ public sealed class StudioWorkflowResumeJob
         }
 
         // 2. Expirations : statut « expired » mémorisé dans le contexte, instance rendue due (D-05).
+        // Une course (décision utilisateur, autre exécution) isole l'approbation, pas le tenant (revue 4.2d).
         var approvalsExpired = 0;
         foreach (var approval in await repo.ListExpiredApprovalsAsync(tenantId, now, batch, ct))
         {
-            approval.Expire(now);
-            await repo.UpdateApprovalAsync(approval, ct);
-
-            var instance = await repo.GetInstanceAsync(tenantId, approval.InstanceId, ct);
-            if (instance is not null && !instance.IsTerminal)
+            try
             {
-                var context = StudioWorkflowContext.Parse(instance.ContextJson);
-                context.SetApproval(
-                    approval.StepKey, StudioWorkflowEnumNames.ApprovalStatusName(approval.Status), null, null, now);
-                var serialized = context.Serialize();
-                instance.Suspend(instance.Status, now, serialized.IsSuccess ? serialized.Value : instance.ContextJson);
-                await repo.UpdateInstanceAsync(instance, ct);
+                approval.Expire(now);
+                await repo.UpdateApprovalAsync(approval, ct);
 
-                if (instance.StartedBy is { } recipient)
+                var instance = await repo.GetInstanceAsync(tenantId, approval.InstanceId, ct);
+                if (instance is not null && !instance.IsTerminal)
                 {
-                    await SafeNotifyExpiryAsync(notifications, tenantId, approval, recipient, instance.Id, ct);
-                }
-            }
+                    var context = StudioWorkflowContext.Parse(instance.ContextJson);
+                    context.SetApproval(
+                        approval.StepKey, StudioWorkflowEnumNames.ApprovalStatusName(approval.Status), null, null, now);
+                    var serialized = context.Serialize();
+                    if (!serialized.IsSuccess)
+                        _logger.LogWarning(
+                            "Contexte trop volumineux : statut « expired » perdu {ApprovalId}", approval.Id);
+                    instance.Suspend(instance.Status, now, serialized.IsSuccess ? serialized.Value : instance.ContextJson);
+                    await repo.UpdateInstanceAsync(instance, ct);
 
-            approvalsExpired++;
+                    if (instance.StartedBy is { } recipient)
+                    {
+                        await SafeNotifyExpiryAsync(notifications, tenantId, approval, recipient, instance.Id, ct);
+                    }
+                }
+
+                approvalsExpired++;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Décision concurrente gagnée entre lecture et écriture : rien à faire.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Expiration de l'approbation {ApprovalId} tenant {TenantId} en échec",
+                    approval.Id, tenantId);
+            }
         }
 
         // 3. Reprises : le runner pose le bail et impersonne le lanceur ; une panne isole l'instance.
@@ -168,6 +184,8 @@ public sealed class StudioWorkflowResumeJob
                     case StudioWorkflowRunOutcome.StarterUnavailable:
                         starterUnavailable++;
                         break;
+                    case StudioWorkflowRunOutcome.Skipped:
+                        break; // terminale : déjà exclue par ListDueAsync, présent par exhaustivité
                 }
             }
             catch (Exception ex)
