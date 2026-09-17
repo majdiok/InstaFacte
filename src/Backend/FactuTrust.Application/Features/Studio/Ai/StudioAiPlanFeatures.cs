@@ -69,6 +69,9 @@ public static class StudioAiPlanDefaults
         // comme une fenêtre — pas de la définition du modèle de données.
         StudioAiPlanKind.RecordView => Permissions.Studio.DesignForms,
         StudioAiPlanKind.Report => Permissions.Studio.DesignReports,
+        // PR 4.3 (D-11) : cas explicite — un plan de workflows relève de la conception des tables,
+        // comme les créations ; ne pas le laisser au cas par défaut.
+        StudioAiPlanKind.Workflow => Permissions.Studio.DesignEntities,
         _ => Permissions.Studio.DesignEntities
     };
 

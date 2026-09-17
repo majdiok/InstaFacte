@@ -400,6 +400,13 @@ public sealed class OllamaSettings
     public TimeSpan StudioWorkflowLeaseDuration => TimeSpan.FromMinutes(Math.Clamp(StudioWorkflowLeaseMinutes, 5, 120));
 
     /// <summary>
+    /// Active l'outil IA <c>studio_plan_workflow</c> (PR 4.3) : préparation de plans de workflows à
+    /// confirmer. Exige AUSSI <see cref="EnableStudioWorkflows"/> et le flux d'aperçu — règle unique
+    /// <c>StudioAiPlanCreation.WorkflowToolsEnabled</c>. <c>false</c> jusqu'à validation manuelle (QA 86–90).
+    /// </summary>
+    public bool EnableStudioAiWorkflowTools { get; set; } = false;
+
+    /// <summary>
     /// Taille de lot par tenant et par tick du job <c>studio-workflow-resume</c> (reaper, expirations,
     /// reprises, purge). Borné 10..500 par le job (4.2d).
     /// </summary>

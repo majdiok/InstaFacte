@@ -245,6 +245,17 @@ public sealed class StudioAiPlanFeaturesTests
     private CreateStudioAiPlanCommandHandler CreateHandler() =>
         new(_plans.Object, _audit.Object, _currentUser.Object);
 
+    /// <summary>
+    /// PR 4.3 : la nature Workflow vaut 6 (persistée en <c>int</c>, sans migration) et relève de la
+    /// conception des tables (D-11 — cas explicite, pas le cas par défaut).
+    /// </summary>
+    [Fact]
+    public void Workflow_kind_has_value_6_and_requires_design_entities()
+    {
+        Assert.Equal(6, (int)StudioAiPlanKind.Workflow);
+        Assert.Equal(Permissions.Studio.DesignEntities, StudioAiPlanDefaults.RequiredPermission(StudioAiPlanKind.Workflow));
+    }
+
     private ConfirmStudioAiPlanCommandHandler ConfirmHandler() =>
         new(_plans.Object, _executor.Object, _audit.Object, _currentUser.Object);
 
