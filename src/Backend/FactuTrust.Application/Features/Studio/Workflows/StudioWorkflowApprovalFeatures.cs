@@ -79,6 +79,10 @@ public sealed class ListMyApprovalsQueryHandler
         var approvals = await _workflows.ListPendingApprovalsForUserAsync(
             tenantId, userId ?? Guid.Empty, _currentUser.Role?.ToString(), Math.Clamp(query.Max, 1, 200), cancellationToken);
 
+        // Caches par identifiant (revue 4.2e : N+1) — définitions/entités/champs sont partagés entre éléments.
+        var definitions = new Dictionary<Guid, StudioWorkflowDefinition?>();
+        var entities = new Dictionary<Guid, CustomEntityDefinition?>();
+        var labelKeys = new Dictionary<Guid, string?>();
         var items = new List<WorkflowApprovalInboxItemDto>(approvals.Count);
         foreach (var approval in approvals)
         {
@@ -87,8 +91,16 @@ public sealed class ListMyApprovalsQueryHandler
                 continue; // décision en cours ou instance refermée : l'élément n'est plus actionnable
 
             // Définition possiblement supprimée : clé et nom « — » plutôt qu'un 500.
-            var definition = await _workflows.GetDefinitionAsync(tenantId, instance.WorkflowDefinitionId, cancellationToken);
-            var entity = await _entities.GetByIdAsync(tenantId, instance.EntityDefinitionId, cancellationToken);
+            if (!definitions.TryGetValue(instance.WorkflowDefinitionId, out var definition))
+            {
+                definition = await _workflows.GetDefinitionAsync(tenantId, instance.WorkflowDefinitionId, cancellationToken);
+                definitions[instance.WorkflowDefinitionId] = definition;
+            }
+            if (!entities.TryGetValue(instance.EntityDefinitionId, out var entity))
+            {
+                entity = await _entities.GetByIdAsync(tenantId, instance.EntityDefinitionId, cancellationToken);
+                entities[instance.EntityDefinitionId] = entity;
+            }
 
             string? recordLabel = null;
             if (entity is not null)
@@ -97,9 +109,13 @@ public sealed class ListMyApprovalsQueryHandler
                 if (record is not null)
                 {
                     // Libellé = premier champ texte (motif des options de relation, CustomFieldFeatures).
-                    var fields = await _fields.ListByEntityAsync(tenantId, entity.Id, includeInactive: false, cancellationToken);
-                    var labelKey = fields
-                        .FirstOrDefault(f => f.FieldType is CustomFieldType.Text or CustomFieldType.MultilineText)?.Key;
+                    if (!labelKeys.TryGetValue(entity.Id, out var labelKey))
+                    {
+                        var fields = await _fields.ListByEntityAsync(tenantId, entity.Id, includeInactive: false, cancellationToken);
+                        labelKey = fields
+                            .FirstOrDefault(f => f.FieldType is CustomFieldType.Text or CustomFieldType.MultilineText)?.Key;
+                        labelKeys[entity.Id] = labelKey;
+                    }
                     recordLabel = ExtractDisplay(record.DataJson, labelKey);
                 }
             }
@@ -130,8 +146,9 @@ public sealed class ListMyApprovalsQueryHandler
             var value = node?[key];
             return value is null ? null : value.ToString();
         }
-        catch (System.Text.Json.JsonException)
+        catch (Exception)
         {
+            // JsonException (JSON illisible) ou InvalidOperationException (nœud non-objet) : pas de libellé.
             return null;
         }
     }
@@ -241,7 +258,13 @@ public sealed class DecideApprovalCommandHandler : IRequestHandler<DecideApprova
             context.SetApproval(
                 approval.StepKey, StudioWorkflowEnumNames.ApprovalStatusName(approval.Status), comment, userId.Value, now);
             var serialized = context.Serialize();
+            // Contrat moteur : si la sérialisation échoue (contexte trop volumineux), l'ancien JSON est
+            // conservé — le marqueur de décision n'y figure pas et le moteur l'ignorera au prochain tick ;
+            // cas extrême accepté (la décision, elle, est déjà persistée sur l'approbation).
             instance.Suspend(instance.Status, now, serialized.IsSuccess ? serialized.Value : instance.ContextJson);
+            // Non atomique avec UpdateApprovalAsync (revue 4.2e) : si cette écriture échoue, l'approbation
+            // est décidée mais l'instance n'est pas due — le job studio-workflow-resume réconcilie au tick
+            // suivant (ListDueAsync), une nouvelle tentative utilisateur renvoie 409.
             await _workflows.UpdateInstanceAsync(instance, cancellationToken);
 
             if (instance.StartedBy is { } recipient)
