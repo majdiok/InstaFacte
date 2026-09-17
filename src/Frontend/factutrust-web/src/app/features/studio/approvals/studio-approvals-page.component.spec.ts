@@ -1,3 +1,4 @@
+import { Component, input, model, output } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -10,10 +11,29 @@ import { AuthService } from '@core/services/auth.service';
 import { StudioApprovalsPageComponent } from './studio-approvals-page.component';
 import { StudioApprovalsBadgeService } from './studio-approvals-badge.service';
 import { STUDIO_WORKFLOW_LABELS } from '../workflows/studio-workflow-labels';
-import type { WorkflowApprovalInboxItemDto } from '../workflows/studio-workflows.models';
+import { StudioWorkflowInstanceDetailComponent } from '../workflows/studio-workflow-instance-detail.component';
+import type { WorkflowApprovalInboxItemDto, WorkflowInstanceDto } from '../workflows/studio-workflows.models';
 
 const API = `${environment.apiUrl}/studio`;
 const labels = STUDIO_WORKFLOW_LABELS.approvals;
+
+/**
+ * Bouchon du drawer d'instance 4.4f (API figée H-8) : la page l'importe pour
+ * « Voir l'instance » (4.4h1) mais l'utilisateur de test n'a pas
+ * `studio:design_entities` par défaut — le vrai drawer (et son `getInstance`,
+ * route de conception D-44-25) n'est donc jamais rendu ; on le neutralise quand même.
+ */
+@Component({
+  selector: 'app-studio-workflow-instance-detail',
+  standalone: true,
+  template: ''
+})
+class InstanceDetailStubComponent {
+  readonly instanceId = model<string | null>(null);
+  readonly entityKey = input<string | null>(null);
+  readonly changed = output<WorkflowInstanceDto>();
+  readonly closed = output<void>();
+}
 
 /** Item de boîte de réception au format H-1 (forme imbriquée, annexe 4.4g2). */
 function inboxItem(id = 'a1', dueAt: string | null = null): WorkflowApprovalInboxItemDto {
@@ -50,6 +70,10 @@ describe('StudioApprovalsPageComponent', () => {
         { provide: StudioApprovalsBadgeService, useValue: { refresh: (badgeRefresh = jasmine.createSpy('refresh')) } }
       ]
     });
+    TestBed.overrideComponent(StudioApprovalsPageComponent, {
+      remove: { imports: [StudioWorkflowInstanceDetailComponent] },
+      add: { imports: [InstanceDetailStubComponent] }
+    });
     toastSpy = spyOn(TestBed.inject(MessageService), 'add');
     fixture = TestBed.createComponent(StudioApprovalsPageComponent);
     component = fixture.componentInstance;
@@ -59,13 +83,15 @@ describe('StudioApprovalsPageComponent', () => {
 
   afterEach(async () => {
     httpMock.verify();
-    // Le dialog est monté avec appendTo="body" : on le referme et on laisse son animation de
-    // sortie se terminer AVANT la destruction du TestBed (sinon NG0205 « injecteur détruit »
-    // en console), puis purge défensive des résidus éventuels (cf. note 4.4f).
+    // Dialog ET drawer (4.4h1) montés avec appendTo="body" : on les referme et on laisse
+    // leurs animations de sortie se terminer AVANT la destruction du TestBed (sinon
+    // NG0205 « injecteur détruit » en console), puis purge défensive (cf. note 4.4f).
     component.decision.set(null);
+    component.selected.set(null);
+    component.openInstanceId.set(null);
     fixture.detectChanges();
     await fixture.whenStable();
-    document.querySelectorAll('.p-dialog, .p-dialog-mask').forEach(el => el.remove());
+    document.querySelectorAll('.p-dialog, .p-dialog-mask, .p-drawer, .p-drawer-mask').forEach(el => el.remove());
   });
 
   /** Répond au GET de la boîte de réception (prédicat : URL sans les query params). */
@@ -187,6 +213,40 @@ describe('StudioApprovalsPageComponent', () => {
       .flush({ success: true, data: [], message: null, error: null });
     fixture.detectChanges();
     expect(component.items()).toEqual([]);
+  });
+
+  it('ouvre le détail en colonne fixe au-delà de 1 280 px', () => {
+    perms = new Set([PERMISSIONS.customData.recordsRead, PERMISSIONS.customData.recordsWrite]);
+    setup();
+    flushInbox([inboxItem('a1')]);
+
+    component.wide.set(true);                                        // D-44-56 : bascule pilotée par le signal en test
+    clickRowButton('sap-detail-a1');
+
+    expect(component.selected()?.id).toBe('a1');
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-panel-column"]')).not.toBeNull();
+    expect((fixture.nativeElement.querySelector('.sap-layout') as HTMLElement).classList).toContain('sap-layout--panel');
+    expect((fixture.nativeElement.querySelector('[data-testid="sap-row-a1"]') as HTMLElement).classList).toContain('sap-row--selected');
+    expect(document.querySelector('.p-drawer')).toBeNull();          // pas de tiroir en mode large
+  });
+
+  it('ouvre le détail dans un drawer sous 1 280 px et le ferme', () => {
+    perms = new Set([PERMISSIONS.customData.recordsRead, PERMISSIONS.customData.recordsWrite]);
+    setup();
+    flushInbox([inboxItem('a1')]);
+
+    component.wide.set(false);
+    clickRowButton('sap-detail-a1');
+
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-panel-column"]')).toBeNull();
+    const drawer = document.querySelector('.p-drawer') as HTMLElement;   // appendTo="body"
+    expect(drawer).not.toBeNull();
+    expect(drawer.textContent).toContain('Validation devis');
+
+    component.clearSelection();
+    fixture.detectChanges();
+    expect(component.selected()).toBeNull();
+    expect(document.querySelector('.p-drawer')).toBeNull();
   });
 
   it("affiche l'erreur et Réessayer quand le chargement échoue", () => {

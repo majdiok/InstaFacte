@@ -266,7 +266,17 @@ export const STUDIO_WORKFLOW_LABELS = {
     cancel: 'Annuler',
     decisionError: 'La décision n\'a pas pu être enregistrée.',
     loadError: 'Impossible de charger vos approbations.',
-    retry: 'Réessayer'
+    retry: 'Réessayer',
+    // 4.4h1 (ajout additif, panneau de détail) — `detail` existait déjà (4.4a1) ; `due` N'EST
+    // PAS repris : il vaut déjà 'Dans {value}' (gabarit d'échéance) et le panneau utilise
+    // `colDue` (« Échéance ») pour l'étiquette du dt.
+    close: 'Fermer',
+    record: 'Enregistrement',
+    startedAt: 'Lancé le',
+    requestedAt: 'Demandé le',
+    requestComment: 'Message du demandeur',
+    openInstance: 'Voir l\'instance',
+    status: 'Statut'
   },
 
   recordTab: {
