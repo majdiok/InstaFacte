@@ -1,7 +1,6 @@
 using System.Text.Json;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
-using FactuTrust.Application.Features.AI.Tools;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Records;
 using FactuTrust.Application.Features.Studio.Workflows;
@@ -50,9 +49,7 @@ public sealed class ListAutomationActionsQueryHandler : IRequestHandler<ListAuto
 {
     public Task<Result<IReadOnlyList<AutomationActionDto>>> Handle(ListAutomationActionsQuery request, CancellationToken cancellationToken)
     {
-        var actions = AiToolRegistry.All
-            .Where(StudioBridgeActionCatalog.IsBridgeable)
-            .OrderBy(t => t.Name, StringComparer.Ordinal)
+        var actions = StudioBridgeActionCatalog.List()
             .Select(t => new AutomationActionDto(
                 t.Name, t.Description,
                 t.Parameters.Select(p => new AutomationActionParamDto(
@@ -103,8 +100,7 @@ public sealed class UpsertAutomationCommandHandler : IRequestHandler<UpsertAutom
         if (string.IsNullOrWhiteSpace(req.Name))
             return Result.Failure<AutomationDto>(Error.Validation("name", "Le nom de l'automatisation est obligatoire."));
 
-        var tool = AiToolRegistry.GetToolDefinition(req.ActionKey);
-        if (tool is null || !StudioBridgeActionCatalog.IsBridgeable(tool))
+        if (StudioBridgeActionCatalog.Resolve(req.ActionKey) is null)
             return Result.Failure<AutomationDto>(Error.Validation("action", "Action ERP inconnue ou non autorisée."));
 
         var entity = await _entities.GetByIdAsync(tenantId, command.EntityId, cancellationToken);
