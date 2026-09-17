@@ -47,8 +47,8 @@ for (const name of ['non-empty-synthetic-schema', 'empty-low-level-schema-valid'
   });
 }
 
-function minimalGlb() {
-  const json = JSON.stringify({ asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ name: 'Synthetic' }] });
+function minimalGlb(document = { asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ name: 'Synthetic' }] }) {
+  const json = JSON.stringify(document);
   const padded = Buffer.from(json.padEnd(Math.ceil(json.length / 4) * 4, ' '));
   const bytes = Buffer.alloc(20 + padded.length);
   bytes.writeUInt32LE(0x46546c67, 0);
@@ -187,5 +187,26 @@ for (const args of [[], ['some-root', 'subset.glb'], ['--manifest', 'x', '--file
     const result = child(args);
     assert.equal(result.status, 1);
     assert.match(result.output.error, /cli.arguments/);
+  });
+}
+
+for (const [name, makeBytes, code] of [
+  ['invalid signature', () => { const bytes = minimalGlb(); bytes[0] = 0; return bytes; }, 'glb.magic'],
+  ['data URI', () => minimalGlb({ asset: { version: '2.0' }, buffers: [{ byteLength: 4, uri: 'data:application/octet-stream;base64,AAAAAA==' }] }), 'glb.uri'],
+  ['uninspected compression', () => minimalGlb({ asset: { version: '2.0' }, extensionsUsed: ['EXT_meshopt_compression'] }), 'glb.extension']
+]) {
+  test(`real CLI preflight rejects ${name} before gltf-validator with matching size/hash`, () => {
+    const fixture = fileFixture();
+    const bytes = makeBytes();
+    const asset = fixture.manifest.assets[0];
+    writeFileSync(join(fixture.versionRoot, asset.path), bytes);
+    asset.encodedBytes = bytes.length;
+    asset.sha256 = createHash('sha256').update(bytes).digest('hex');
+    fixture.save();
+    const before = hashes(fixture.root);
+    const result = child(fixture.args);
+    assert.equal(result.status, 1);
+    assert.ok(result.output.error.startsWith(`${code}:`), JSON.stringify(result.output));
+    assert.deepEqual(hashes(fixture.root), before);
   });
 }

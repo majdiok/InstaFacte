@@ -11,7 +11,7 @@ try {
   jasmine.exitOnCompletion = false;
   jasmine.loadConfig({
     spec_dir: 'build',
-    spec_files: ['3d/business-scene-contracts.spec.js'],
+    spec_files: ['3d/business-scene-contracts.spec.js', '3d/business-asset-preflight.spec.js'],
     random: false
   });
   const result = await jasmine.execute();

@@ -13,8 +13,8 @@ const featureRoot = join(webRoot, 'src/app/features/virtual-street');
 export function compileCatalogContracts({ tests = false } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'street-catalog-contracts-'));
   try {
-    const files = ['3d/business-scene-contracts.ts', '3d/business-scene-contract-validation.ts'];
-    if (tests) files.push('3d/business-scene-contracts.spec.ts', 'testing/business-catalog-validation-corpus.ts');
+    const files = ['3d/business-scene-contracts.ts', '3d/business-scene-contract-validation.ts', '3d/business-asset-preflight.ts'];
+    if (tests) files.push('3d/business-scene-contracts.spec.ts', 'testing/business-catalog-validation-corpus.ts', '3d/business-asset-preflight.spec.ts');
     const configFile = join(directory, 'tsconfig.json');
     writeFileSync(configFile, JSON.stringify({
       compilerOptions: {
@@ -22,7 +22,7 @@ export function compileCatalogContracts({ tests = false } = {}) {
         strict: true, noImplicitReturns: true, noPropertyAccessFromIndexSignature: true,
         esModuleInterop: true, resolveJsonModule: true, noEmitOnError: true,
         types: tests ? ['jasmine'] : [], typeRoots: [join(webRoot, 'node_modules/@types')],
-        lib: ['ES2022'], rootDir: featureRoot, outDir: join(directory, 'build')
+        lib: ['ES2022', 'DOM'], rootDir: featureRoot, outDir: join(directory, 'build')
       },
       files: files.map(file => join(featureRoot, file))
     }));
