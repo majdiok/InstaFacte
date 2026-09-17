@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using FactuTrust.Infrastructure.Services.Storefront;
@@ -10,6 +11,7 @@ public sealed class StorefrontExperienceStateProviderTests
     private const string Legacy = """
         {"schemaVersion":1,"configRevision":"cfg-1","mode":"legacy","catalogVersion":null,"leaseSeconds":50}
         """;
+    private static readonly TimeSpan CoordinationTimeout = TimeSpan.FromSeconds(10);
     private readonly ManualTimeProvider _time = new();
 
     [Fact]
@@ -154,6 +156,41 @@ public sealed class StorefrontExperienceStateProviderTests
     }
 
     [Fact]
+    public async Task Begin_reload_during_copy_rejects_old_generation_without_consuming_new_pending_reload()
+    {
+        var provider = CreateHealthy();
+        var older = provider.BeginReload();
+        var expectedState = provider.GetState();
+        long current = 0;
+
+        Assert.False(await CompleteWithPausedCopy(provider, older, () =>
+        {
+            current = provider.BeginReload();
+            AssertClosed(provider.GetState(), StorefrontExperienceSourceHealth.Unavailable);
+        }));
+
+        // The old completion must not publish its candidate or consume the newer pending token.
+        Assert.Equal(expectedState, provider.GetState());
+        Assert.True(provider.CompleteReload(current, Encoding.UTF8.GetBytes(Legacy.Replace("cfg-1", "cfg-2"))));
+        Assert.Equal("cfg-2", provider.GetState().Configuration.ConfigRevision);
+    }
+
+    [Fact]
+    public async Task Fail_reload_during_copy_rejects_same_generation_after_pending_is_cleared()
+    {
+        var provider = CreateHealthy();
+        var generation = provider.BeginReload();
+        var expectedState = provider.GetState();
+
+        Assert.False(await CompleteWithPausedCopy(provider, generation, () => provider.FailReload(generation)));
+
+        // Generation is unchanged: this specifically requires the second pending check.
+        Assert.Equal(expectedState, provider.GetState());
+        Assert.False(provider.CompleteReload(generation, Encoding.UTF8.GetBytes(Legacy)));
+        AssertClosed(provider.GetState(), StorefrontExperienceSourceHealth.Unavailable);
+    }
+
+    [Fact]
     public void Missing_watchdog_or_lost_event_expires_at_five_seconds()
     {
         var provider = CreateHealthy();
@@ -227,6 +264,56 @@ public sealed class StorefrontExperienceStateProviderTests
         Assert.Equal(health, state.Health);
         Assert.Equal("list", state.Configuration.Mode);
         Assert.Null(state.Configuration.CatalogVersion);
+    }
+
+    private static async Task<bool> CompleteWithPausedCopy(
+        StorefrontExperienceStateProvider provider, long generation, Action whileCopyPaused)
+    {
+        using var memory = new PausedCopyMemoryManager(Encoding.UTF8.GetBytes(Legacy.Replace("cfg-1", "cfg-obsolete")));
+        var document = memory.Document;
+        var completion = Task.Run(() => provider.CompleteReload(generation, document));
+        try
+        {
+            // ToArray accesses GetSpan only after CompleteReload has left its first lock.
+            await memory.CopyStarted.WaitAsync(CoordinationTimeout);
+            whileCopyPaused();
+        }
+        finally
+        {
+            memory.ReleaseCopy();
+            // Join before disposing the wait handle, even if an assertion above fails.
+            await completion.WaitAsync(CoordinationTimeout);
+        }
+
+        return await completion;
+    }
+
+    private sealed class PausedCopyMemoryManager(byte[] bytes) : MemoryManager<byte>
+    {
+        private readonly TaskCompletionSource _copyStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ManualResetEventSlim _releaseCopy = new(false);
+
+        // Base Memory would call GetSpan eagerly; CreateMemory leaves it for the actual copy.
+        public ReadOnlyMemory<byte> Document => CreateMemory(bytes.Length);
+        public Task CopyStarted => _copyStarted.Task;
+        public void ReleaseCopy() => _releaseCopy.Set();
+
+        public override Span<byte> GetSpan()
+        {
+            _copyStarted.TrySetResult();
+            if (!_releaseCopy.Wait(CoordinationTimeout))
+                throw new TimeoutException("The test did not release the paused document copy.");
+            return bytes;
+        }
+
+        public override MemoryHandle Pin(int elementIndex = 0) => throw new NotSupportedException();
+        public override void Unpin() => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _releaseCopy.Dispose();
+        }
     }
 
     private sealed class ManualTimeProvider : TimeProvider
