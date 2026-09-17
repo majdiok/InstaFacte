@@ -3,6 +3,7 @@ import math
 
 import bpy
 from mathutils import Vector
+from recipes import PALETTES, QUALITY_GEOMETRY, STYLES, validate_variant
 
 OWNER = "c12-original-metric-study"
 COLLECTIONS = ("Architecture", "Props", "BrandingAnchors", "CollisionGuides", "CameraGuides", "BakeSources")
@@ -46,13 +47,14 @@ def box(name, loc, size, mat, collection="Props", zone=None, bevel=0.012):
     if bevel:
         modifier = obj.modifiers.new("Small original edge bevel", "BEVEL")
         modifier.width = min(bevel, min(size) / 4)
-        modifier.segments = 2
+        modifier.segments = QUALITY_GEOMETRY[bpy.context.scene.get("study_quality", "standard")]["bevelSegments"]
     return obj
 
 
 def rod(name, a, b, radius, mat, zone=None):
     direction = Vector(b) - Vector(a)
-    bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=radius, depth=direction.length,
+    sides = QUALITY_GEOMETRY[bpy.context.scene.get("study_quality", "standard")]["rodSides"]
+    bpy.ops.mesh.primitive_cylinder_add(vertices=sides, radius=radius, depth=direction.length,
                                       location=(Vector(a) + Vector(b)) / 2)
     obj = assign(bpy.context.object, name, mat, zone=zone)
     obj.rotation_euler = direction.to_track_quat("Z", "Y").to_euler()
@@ -118,9 +120,13 @@ def garment(name, x, y, mat, metal, zone):
         rod(name + "-hanger-" + suffix, a, b, .007, metal, zone)
 
 
-def build_scene():
+def build_scene(style=1, quality="standard"):
+    validate_variant(style, quality)
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
+    scene["study_style"] = style
+    scene["study_style_name"] = STYLES[style]
+    scene["study_quality"] = quality
     scene.unit_settings.system = "METRIC"
     scene.unit_settings.scale_length = 1
     scene.unit_settings.length_unit = "METERS"
@@ -129,12 +135,12 @@ def build_scene():
     for name in COLLECTIONS:
         collection = bpy.data.collections.new(name)
         scene.collection.children.link(collection)
-    plaster = material("C12-Plaster-Temporary", (.68, .62, .51))
-    floor = material("C12-Stone-Temporary", (.48, .43, .35), .78)
-    wood = material("C12-WarmWood-Temporary", (.26, .12, .055), .5)
-    metal = material("C12-Bronze-Temporary", (.20, .12, .06), .3, .65)
-    fabric = [material("C12-Cloth-" + str(i), color) for i, color in enumerate(
-        ((.14, .21, .22), (.48, .26, .12), (.64, .58, .46), (.21, .24, .30)))]
+    palette = PALETTES[style]
+    plaster = material("C12-Plaster-Temporary", palette["plaster"])
+    floor = material("C12-Stone-Temporary", palette["floor"], .78)
+    wood = material("C12-WarmWood-Temporary", palette["wood"], palette["woodRoughness"])
+    metal = material("C12-Bronze-Temporary", palette["metal"], .3, palette["metallic"])
+    fabric = [material("C12-Cloth-" + str(i), color) for i, color in enumerate(palette["cloth"])]
     glass = material("C12-Glass-Alpha-Study", (.74, .83, .84), .18, .15, .12)
     mirror = material("C12-Mirror-Simulated", (.33, .42, .43), .24, .75)
     ivory = material("C12-AbstractForm-Temporary", (.65, .59, .47), .55)
@@ -145,7 +151,23 @@ def build_scene():
     box("Wall-back", (0, 10.1, 1.7), (6.4, .2, 3.4), plaster, architecture)
     box("Ceiling", (0, 5, 3.5), (6.4, 10.4, .2), plaster, architecture)
     box("Facade-header", (0, -.1, 3.025), (6.4, .22, .75), wood, architecture)
-    box("Facade-cornice", (0, -.18, 3.35), (6.5, .34, .12), plaster, architecture)
+    box("Facade-cornice", (0, -.18, 3.35), (6.5, .34, palette["corniceHeight"]), plaster, architecture)
+    # Original style-specific construction above the opening; no room/program change.
+    if style == 0:
+        for z in (2.70, 3.20):
+            box("Style-classic-stepped-moulding", (0, -.245, z), (6.32, .065, .035), plaster, architecture)
+    elif style == 1:
+        box("Style-modern-reveal", (0, -.235, 2.70), (6.32, .045, .04), metal, architecture)
+    elif style == 2:
+        for x in (-2.2, 2.2):
+            box("Style-vintage-inset-panel", (x, -.23, 3.0), (1.40, .04, .4), plaster, architecture)
+    elif style == 3:
+        box("Style-minimal-shadow-joint", (0, -.225, 2.675), (6.32, .025, .015), metal, architecture, bevel=0)
+    else:
+        for side in (-1, 1):
+            for i in range(6):
+                box("Style-artisan-timber-batten", (side*(1.35+i*.29), -.24, 3.0),
+                    (.065, .06, .55), wood, architecture)
     # Blank sign only. No third-party/bundled font, invented brand or tenant identity.
     box("Sign-blank", (0, -.23, 3.03), (2.25, .04, .37), plaster, architecture)
     for x in (-3, -.85, .85, 3):

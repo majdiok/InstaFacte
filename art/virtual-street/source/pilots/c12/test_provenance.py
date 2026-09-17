@@ -21,6 +21,7 @@ class ProvenanceTests(unittest.TestCase):
         (self.root / "release-spec").mkdir()
         self.head = "fixture-head-before-authoring"
         self.files = {"scene.py": b"VALUE = 'executed-before-edit'\n",
+                      "recipes.py": b"STYLES = ('Classic', 'Modern', 'Vintage', 'Minimal', 'Artisan')\n",
                       "shared_export.py": b"EXPORT_CAMERAS = False\n",
                       "registry.py": b"WIDTH = 6\n", "canonical36.csv": b"synthetic,fixture\n",
                       "v3-matrix-canonical.md": b"Synthetic test input, not the canonical matrix\n"}
@@ -53,7 +54,7 @@ class ProvenanceTests(unittest.TestCase):
                                    head_reader=lambda _: self.head)
 
     def test_reject_dependency_edit_including_export_helper(self):
-        for name in ("shared_export.py", "registry.py", "canonical36.csv", "v3-matrix-canonical.md"):
+        for name in ("shared_export.py", "recipes.py", "registry.py", "canonical36.csv", "v3-matrix-canonical.md"):
             with self.subTest(name=name):
                 path = self.source / name
                 path.write_bytes(self.files[name] + b"changed")
