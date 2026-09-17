@@ -1,13 +1,13 @@
 /**
  * Pure L0 validators for the business-scene contracts. No Three.js, no DOM, no
  * HTTP, no Angular: these functions take `unknown` wire data and return violation
- * lists, so the future loader (L1), unit tests and tooling share one normative
+ * lists, so the future loader (L3), unit tests and tooling share one normative
  * rule set. Readonly TypeScript types are not a trust boundary — every manifest,
  * reference or config crossing the wire must pass here before use.
  *
- * The Node build gate `scripts/validate-street-catalog.mjs` (parent-owned) enforces
- * the same core rules; this file is the strict, fully documented superset used by
- * the frontend. A catalog that fails here must never reach a renderer.
+ * The Node gate compiles and uses this exact module, without Angular or Three.
+ * These are declarative checks, not file safety, release approval or navigation
+ * evidence. A catalog that fails here must never reach a renderer.
  *
  * See docs/developer/virtual-street-contracts.md.
  */
@@ -40,7 +40,7 @@ export const CONTRACT_KEY_MAX_LENGTH = 64;
 /** GLB node / material names (legacy aliases like `Sign_Plane`, `StorefrontRoot_LOD1` stay valid). */
 export const NODE_NAME_PATTERN = /^[A-Za-z0-9_.-]{1,128}$/;
 
-/** Immutable delivery token; mirrors the parent build gate and adds a `..` ban (used as a directory). */
+/** Immutable delivery token; `..` is banned because this token names a directory. */
 export const CATALOG_VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z._-]*$/;
 export const CATALOG_VERSION_MAX_LENGTH = 64;
 
@@ -75,6 +75,20 @@ const PROFILE_STATUSES = ['active', 'retired'] as const;
 const ACTION_ROLES = ['exit', 'openStorefront', 'inspectScene'] as const;
 const EXPERIENCE_MODES = ['list', 'legacy', 'catalog-v2'] as const;
 
+/** Validation-work ceilings, not scene/GPU budgets or proof of release completeness. */
+export const CATALOG_VALIDATION_LIMITS = {
+  jsonBytes: 8 * 1024 * 1024,
+  jsonDepth: 32,
+  jsonValues: 250_000,
+  arrayEntries: 16_384,
+  stringLength: 4096,
+  assets: 4096,
+  scenes: 1024,
+  profiles: 512,
+  dependencyEdges: 16_384,
+  dependencyDepth: 64
+} as const;
+
 /* ---------------------------------- helpers --------------------------------- */
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -90,7 +104,7 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 function isNonNegativeInt(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 function fail(out: ContractViolation[], code: string, path: string, message: string): void {
@@ -99,21 +113,26 @@ function fail(out: ContractViolation[], code: string, path: string, message: str
 
 /* ----------------------------- format predicates ---------------------------- */
 
+// JS `$` can match before a final line terminator; tokens must match in full.
+function isUnpaddedString(value: unknown): value is string {
+  return typeof value === 'string' && value === value.trim();
+}
+
 export function isContractKey(value: unknown): value is string {
   return (
-    typeof value === 'string' &&
+    isUnpaddedString(value) &&
     value.length <= CONTRACT_KEY_MAX_LENGTH &&
     CONTRACT_KEY_PATTERN.test(value)
   );
 }
 
 export function isNodeName(value: unknown): value is string {
-  return typeof value === 'string' && NODE_NAME_PATTERN.test(value);
+  return isUnpaddedString(value) && NODE_NAME_PATTERN.test(value);
 }
 
 export function isAssetKey(value: unknown): value is string {
   return (
-    typeof value === 'string' &&
+    isUnpaddedString(value) &&
     value.length <= ASSET_KEY_MAX_LENGTH &&
     ASSET_KEY_PATTERN.test(value)
   );
@@ -121,7 +140,7 @@ export function isAssetKey(value: unknown): value is string {
 
 export function isValidCatalogVersionToken(value: unknown): value is string {
   return (
-    typeof value === 'string' &&
+    isUnpaddedString(value) &&
     value.length <= CATALOG_VERSION_MAX_LENGTH &&
     CATALOG_VERSION_PATTERN.test(value) &&
     !value.includes('..')
@@ -129,15 +148,15 @@ export function isValidCatalogVersionToken(value: unknown): value is string {
 }
 
 export function isValidEditorialRevision(value: unknown): value is string {
-  return typeof value === 'string' && EDITORIAL_REVISION_PATTERN.test(value);
+  return isUnpaddedString(value) && EDITORIAL_REVISION_PATTERN.test(value);
 }
 
 export function isValidSha256Hex(value: unknown): value is string {
-  return typeof value === 'string' && SHA256_HEX_PATTERN.test(value);
+  return isUnpaddedString(value) && SHA256_HEX_PATTERN.test(value);
 }
 
 export function isValidMimeType(value: unknown): value is string {
-  return typeof value === 'string' && MIME_TYPE_PATTERN.test(value);
+  return isUnpaddedString(value) && MIME_TYPE_PATTERN.test(value);
 }
 
 /**
@@ -159,7 +178,9 @@ export function isValidCatalogAssetPath(value: unknown): value is string {
   if (value.includes('..')) {
     return false;
   }
-  return value.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..');
+  // A closed filename alphabet also refuses encoded/double-encoded traversal,
+  // URL query/fragment delimiters and Unicode control/bidi characters.
+  return value.split('/').every(segment => isUnpaddedString(segment) && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(segment));
 }
 
 /* --------------------------- VisualProfileRef (§5.1) ------------------------ */
@@ -292,7 +313,7 @@ function validateAsset(asset: unknown, path: string, out: ContractViolation[]): 
     fail(out, 'asset.sha256', `${path}.sha256`, 'sha256 must be exactly 64 lowercase hex characters');
   }
   const encoded = asset['encodedBytes'];
-  if (!isFiniteNumber(encoded) || !Number.isInteger(encoded) || encoded <= 0) {
+  if (!isFiniteNumber(encoded) || !Number.isSafeInteger(encoded) || encoded <= 0) {
     fail(out, 'asset.encoded-bytes', `${path}.encodedBytes`, 'encodedBytes must be a positive integer');
   }
   if (!isNonNegativeInt(asset['estimatedDecodedBytes'])) {
@@ -427,8 +448,8 @@ function validateVariant(
     fail(out, 'variant.webgl', `${path}.requiredWebGlVersion`, 'requiredWebGlVersion must be 1 or 2');
   }
   const transfer = variant['transferBytes'];
-  if (!isFiniteNumber(transfer) || transfer <= 0) {
-    fail(out, 'variant.transfer', `${path}.transferBytes`, 'transferBytes (dependencies included) must be positive');
+  if (!isNonNegativeInt(transfer) || transfer === 0) {
+    fail(out, 'variant.transfer', `${path}.transferBytes`, 'transferBytes (dependencies included) must be a positive safe integer');
   }
   const budget = SCENE_VARIANT_BUDGETS[quality];
   const triangles = variant['triangles'];
@@ -779,6 +800,107 @@ function validateProfile(
 
 /* ------------------------------- manifest (§6) ------------------------------ */
 
+/** Bound all JSON-shaped input before field loops, including unknown additive data. */
+function validateManifestEnvelope(manifest: Record<string, unknown>, out: ContractViolation[]): void {
+  for (const field of ['assets', 'scenes', 'profiles'] as const) {
+    const list = manifest[field];
+    if (Array.isArray(list) && list.length > CATALOG_VALIDATION_LIMITS[field]) {
+      fail(out, `manifest.limit-${field}`, `manifest.${field}`, `${field} exceeds ${CATALOG_VALIDATION_LIMITS[field]}`);
+      return;
+    }
+  }
+  const stack: { value: unknown; depth: number }[] = [{ value: manifest, depth: 0 }];
+  let values = 1;
+  while (stack.length) {
+    const { value, depth } = stack.pop()!;
+    if (depth > CATALOG_VALIDATION_LIMITS.jsonDepth) {
+      fail(out, 'manifest.limit-depth', 'manifest', 'JSON nesting exceeds the validation ceiling');
+      return;
+    }
+    if (typeof value === 'string' && value.length > CATALOG_VALIDATION_LIMITS.stringLength) {
+      fail(out, 'manifest.limit-string', 'manifest', 'JSON string exceeds the validation ceiling');
+      return;
+    }
+    if (typeof value !== 'object' || value === null) continue;
+    if (Array.isArray(value) && value.length > CATALOG_VALIDATION_LIMITS.arrayEntries) {
+      fail(out, 'manifest.limit-array', 'manifest', 'JSON array exceeds the validation ceiling');
+      return;
+    }
+    // Do not allocate Object.entries on an unbounded object. No recursive descent.
+    for (const key in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+      if (++values > CATALOG_VALIDATION_LIMITS.jsonValues) {
+        fail(out, 'manifest.limit-values', 'manifest', 'JSON value count exceeds the validation ceiling');
+        return;
+      }
+      if (key.length > CATALOG_VALIDATION_LIMITS.stringLength) {
+        fail(out, 'manifest.limit-string', 'manifest', 'JSON key exceeds the validation ceiling');
+        return;
+      }
+      stack.push({ value: (value as Record<string, unknown>)[key], depth: depth + 1 });
+    }
+  }
+  let edges = 0;
+  const assets = manifest['assets'];
+  if (Array.isArray(assets)) {
+    for (const asset of assets) {
+      if (!isRecord(asset) || !Array.isArray(asset['dependencyAssetKeys'])) continue;
+      edges += asset['dependencyAssetKeys'].length;
+      if (edges > CATALOG_VALIDATION_LIMITS.dependencyEdges) {
+        fail(out, 'manifest.limit-edges', 'manifest.assets', 'Dependency edge count exceeds the validation ceiling');
+        return;
+      }
+    }
+  }
+}
+
+/** Kahn traversal: O(assets + edges), no call-stack recursion or growing trail strings. */
+function validateDependencyGraph(assets: ReadonlyMap<string, Record<string, unknown>>, out: ContractViolation[]): void {
+  const incoming = new Map<string, number>();
+  const adjacency = new Map<string, string[]>();
+  const depths = new Map<string, number>();
+  for (const key of assets.keys()) incoming.set(key, 0);
+  for (const [key, asset] of assets) {
+    const edges: string[] = [];
+    const deps = asset['dependencyAssetKeys'];
+    if (Array.isArray(deps)) {
+      for (const dep of deps) {
+        if (typeof dep !== 'string') continue;
+        if (!assets.has(dep)) {
+          fail(out, 'asset.dependency-ref', 'manifest.assets', `asset ${key} depends on unknown asset ${dep}`);
+        } else {
+          edges.push(dep);
+          incoming.set(dep, incoming.get(dep)! + 1);
+        }
+      }
+    }
+    adjacency.set(key, edges);
+  }
+  const queue: string[] = [];
+  for (const [key, count] of incoming) {
+    depths.set(key, 1);
+    if (count === 0) queue.push(key);
+  }
+  let excessiveDepth = false;
+  for (let head = 0; head < queue.length; head++) {
+    const key = queue[head];
+    for (const dep of adjacency.get(key)!) {
+      const depth = Math.max(depths.get(dep)!, depths.get(key)! + 1);
+      depths.set(dep, depth);
+      excessiveDepth ||= depth > CATALOG_VALIDATION_LIMITS.dependencyDepth;
+      const remaining = incoming.get(dep)! - 1;
+      incoming.set(dep, remaining);
+      if (remaining === 0) queue.push(dep);
+    }
+  }
+  if (queue.length !== assets.size) {
+    fail(out, 'asset.dependency-cycle', 'manifest.assets', 'Dependency graph contains a cycle');
+  }
+  if (excessiveDepth) {
+    fail(out, 'asset.dependency-depth', 'manifest.assets', `Dependency chains may contain at most ${CATALOG_VALIDATION_LIMITS.dependencyDepth} assets`);
+  }
+}
+
 /**
  * Full manifest validation. Never throws on malformed data; every rule breach is
  * returned as a stable-coded violation. Unknown extra fields are tolerated so a
@@ -790,6 +912,8 @@ export function validateBusinessCatalogManifest(manifest: unknown): ContractViol
     fail(out, 'manifest.type', 'manifest', 'manifest must be an object');
     return out;
   }
+  validateManifestEnvelope(manifest, out);
+  if (out.length) return out;
   if (manifest['schemaVersion'] !== BUSINESS_CATALOG_SCHEMA_VERSION) {
     fail(out, 'manifest.schema-version', 'manifest.schemaVersion', `schemaVersion must be ${BUSINESS_CATALOG_SCHEMA_VERSION}; an unknown major is a controlled rejection`);
   }
@@ -828,43 +952,7 @@ export function validateBusinessCatalogManifest(manifest: unknown): ContractViol
         }
       }
     });
-    // Cross-asset dependency resolution + cycle detection (a cyclic graph can never load).
-    const visiting = new Set<string>();
-    const done = new Set<string>();
-    const visit = (key: string, trail: string): void => {
-      if (done.has(key)) {
-        return;
-      }
-      if (visiting.has(key)) {
-        fail(out, 'asset.dependency-cycle', `manifest.assets`, `dependency cycle through ${trail} -> ${key}`);
-        return;
-      }
-      visiting.add(key);
-      const asset = assetByKey.get(key);
-      const deps = asset?.['dependencyAssetKeys'];
-      if (Array.isArray(deps)) {
-        for (const dep of deps) {
-          if (typeof dep === 'string' && assetByKey.has(dep)) {
-            visit(dep, `${trail} -> ${dep}`);
-          }
-        }
-      }
-      visiting.delete(key);
-      done.add(key);
-    };
-    for (const [key, asset] of assetByKey) {
-      const deps = asset['dependencyAssetKeys'];
-      if (Array.isArray(deps)) {
-        for (const dep of deps) {
-          if (typeof dep === 'string' && !assetByKey.has(dep)) {
-            fail(out, 'asset.dependency-ref', `manifest.assets`, `asset ${key} depends on unknown asset ${dep}`);
-          }
-        }
-      }
-    }
-    for (const key of assetByKey.keys()) {
-      visit(key, key);
-    }
+    validateDependencyGraph(assetByKey, out);
   }
 
   const scenes = manifest['scenes'];
