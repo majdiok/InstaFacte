@@ -153,4 +153,52 @@ public sealed class ChannelAwareCurrentUserTests
         Assert.True(user.IsClientPortal);
         Assert.Equal("203.0.113.7", user.IpAddress);
     }
+
+    [Fact]
+    public void Channel_snapshot_also_masks_the_portal_http_context()
+    {
+        // Même verrouillage que sous impersonation : le contexte portail HTTP ne fuit pas dans le canal.
+        var user = Build(portal: true);
+        Assert.True(user.IsClientPortal);
+        try
+        {
+            ChannelUserContext.Set(Channel());
+
+            Assert.False(user.IsClientPortal);
+            Assert.Null(user.PortalClientId);
+            Assert.False(user.IsAccountingFirmDelegatedContext);
+            Assert.Null(user.IpAddress);
+        }
+        finally
+        {
+            ChannelUserContext.Clear();
+        }
+
+        Assert.True(user.IsClientPortal);
+    }
+
+    [Fact]
+    public void Impersonation_snapshot_with_empty_permissions_never_falls_back()
+    {
+        // Permissions vides sur l'instantané : ni le canal ni les claims HTTP ne servent de repli.
+        var user = Build();
+        var empty = new ImpersonatedUserSnapshot(
+            WorkflowUserId, WorkflowTenantId, "workflow@instafact.tn", UserRole.SalesRep,
+            new HashSet<string>(StringComparer.Ordinal), "studio-workflow:0123456789abcdef0123456789abcdef");
+        try
+        {
+            ChannelUserContext.Set(Channel());
+            using (ImpersonatedUserContext.Enter(empty))
+            {
+                Assert.True(user.IsAuthenticated);
+                Assert.False(user.HasPermission("studio:records_write"));
+                Assert.False(user.HasPermission("ai:chat"));
+                Assert.False(user.HasPermission("invoices:read"));
+            }
+        }
+        finally
+        {
+            ChannelUserContext.Clear();
+        }
+    }
 }

@@ -91,4 +91,59 @@ public interface IStudioWorkflowRepository
 
     /// <summary>Nombre d'instances ouvertes d'une définition (D9 : alimente <c>WorkflowDefinitionDto.OpenInstances</c>).</summary>
     Task<int> CountOpenInstancesForDefinitionAsync(Guid tenantId, Guid definitionId, CancellationToken cancellationToken = default);
+
+    // ---- Runtime (4.2) ----
+
+    /// <summary>
+    /// Instances échues à reprendre : <c>Waiting</c> dont <c>DueAt</c> est atteint, ou
+    /// <c>WaitingApproval</c> dont <c>DueAt</c> est atteint sans approbation encore en attente (D-04,
+    /// même règle que <c>ApprovalStepHandler</c>). Le bail n'est pas filtré ici : c'est
+    /// <see cref="TryLeaseInstanceAsync"/> qui tranche. Tri <c>DueAt</c> croissant, borné à
+    /// <c>Math.Clamp(max, 1, 500)</c>.
+    /// </summary>
+    Task<IReadOnlyList<StudioWorkflowInstance>> ListDueAsync(
+        Guid tenantId, DateTime nowUtc, int max, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Instances ouvertes dont le bail (<c>LeasedAt</c>) est antérieur à <paramref name="leasedBeforeUtc"/>
+    /// (reaper du job différé). Tri <c>LeasedAt</c> croissant, borné à <c>Math.Clamp(max, 1, 500)</c>.
+    /// </summary>
+    Task<IReadOnlyList<StudioWorkflowInstance>> ListStaleLeasesAsync(
+        Guid tenantId, DateTime leasedBeforeUtc, int max, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Approbations <c>Pending</c> dont <c>DueAt</c> est atteint (expiration). Tri <c>DueAt</c> croissant,
+    /// borné à <c>Math.Clamp(max, 1, 500)</c>.
+    /// </summary>
+    Task<IReadOnlyList<StudioWorkflowApproval>> ListExpiredApprovalsAsync(
+        Guid tenantId, DateTime nowUtc, int max, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Approbations <c>Pending</c> assignées à l'utilisateur, directement (<c>AssigneeUserId</c>) ou via
+    /// son rôle (<c>AssigneeRole</c>). Tri <c>DueAt</c> puis <c>CreatedAt</c> croissants, borné à
+    /// <c>Math.Clamp(max, 1, 200)</c>.
+    /// </summary>
+    Task<IReadOnlyList<StudioWorkflowApproval>> ListPendingApprovalsForUserAsync(
+        Guid tenantId, Guid userId, string? role, int max, CancellationToken cancellationToken = default);
+
+    /// <summary>Même prédicat que <see cref="ListPendingApprovalsForUserAsync"/>, en nombre.</summary>
+    Task<int> CountPendingApprovalsForUserAsync(
+        Guid tenantId, Guid userId, string? role, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Supprime les instances terminales (<c>Completed</c>/<c>Failed</c>/<c>Cancelled</c>) achevées avant
+    /// <paramref name="completedBeforeUtc"/> avec leurs exécutions d'étapes et leurs approbations
+    /// (pas de FK : enfants d'abord). Retourne le nombre d'instances supprimées, borné à
+    /// <c>Math.Clamp(max, 1, 500)</c>.
+    /// </summary>
+    Task<int> PurgeTerminalOlderThanAsync(
+        Guid tenantId, DateTime completedBeforeUtc, int max, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pose le bail de reprise (D-01) : <see cref="StudioWorkflowInstance.TryLease"/> puis enregistrement ;
+    /// une course perdue sur le <c>RowVersion</c> (<c>DbUpdateConcurrencyException</c>) retourne
+    /// <c>false</c> — l'appelant abandonne l'instance pour ce tick, il ne la recharge pas.
+    /// </summary>
+    Task<bool> TryLeaseInstanceAsync(
+        StudioWorkflowInstance instance, DateTime nowUtc, TimeSpan leaseDuration, CancellationToken cancellationToken = default);
 }

@@ -239,4 +239,117 @@ public sealed class StudioWorkflowRepository : IStudioWorkflowRepository
         return await context.StudioWorkflowInstances
             .CountAsync(i => i.TenantId == tenantId && i.WorkflowDefinitionId == definitionId && OpenStatuses.Contains(i.Status), cancellationToken);
     }
+
+    // ---- Runtime (4.2) ----
+
+    public async Task<IReadOnlyList<StudioWorkflowInstance>> ListDueAsync(
+        Guid tenantId, DateTime nowUtc, int max, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.StudioWorkflowInstances
+            .Where(i => i.TenantId == tenantId
+                && i.DueAt <= nowUtc
+                && (i.Status == StudioWorkflowInstanceStatus.Waiting
+                    || (i.Status == StudioWorkflowInstanceStatus.WaitingApproval
+                        && !context.StudioWorkflowApprovals.Any(a =>
+                            a.TenantId == tenantId && a.InstanceId == i.Id
+                            && a.Status == StudioWorkflowApprovalStatus.Pending))))
+            .OrderBy(i => i.DueAt)
+            .Take(Math.Clamp(max, 1, 500))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<StudioWorkflowInstance>> ListStaleLeasesAsync(
+        Guid tenantId, DateTime leasedBeforeUtc, int max, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.StudioWorkflowInstances
+            .Where(i => i.TenantId == tenantId
+                && i.LeasedAt != null && i.LeasedAt < leasedBeforeUtc
+                && OpenStatuses.Contains(i.Status))
+            .OrderBy(i => i.LeasedAt)
+            .Take(Math.Clamp(max, 1, 500))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<StudioWorkflowApproval>> ListExpiredApprovalsAsync(
+        Guid tenantId, DateTime nowUtc, int max, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.StudioWorkflowApprovals
+            .Where(a => a.TenantId == tenantId && a.Status == StudioWorkflowApprovalStatus.Pending && a.DueAt <= nowUtc)
+            .OrderBy(a => a.DueAt)
+            .Take(Math.Clamp(max, 1, 500))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<StudioWorkflowApproval>> ListPendingApprovalsForUserAsync(
+        Guid tenantId, Guid userId, string? role, int max, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.StudioWorkflowApprovals
+            .Where(a => a.TenantId == tenantId && a.Status == StudioWorkflowApprovalStatus.Pending
+                && (a.AssigneeUserId == userId || (role != null && a.AssigneeRole == role)))
+            .OrderBy(a => a.DueAt)
+            .ThenBy(a => a.CreatedAt)
+            .Take(Math.Clamp(max, 1, 200))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> CountPendingApprovalsForUserAsync(
+        Guid tenantId, Guid userId, string? role, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.StudioWorkflowApprovals
+            .CountAsync(a => a.TenantId == tenantId && a.Status == StudioWorkflowApprovalStatus.Pending
+                && (a.AssigneeUserId == userId || (role != null && a.AssigneeRole == role)), cancellationToken);
+    }
+
+    public async Task<int> PurgeTerminalOlderThanAsync(
+        Guid tenantId, DateTime completedBeforeUtc, int max, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var ids = await context.StudioWorkflowInstances
+            .Where(i => i.TenantId == tenantId
+                && (i.Status == StudioWorkflowInstanceStatus.Completed
+                    || i.Status == StudioWorkflowInstanceStatus.Failed
+                    || i.Status == StudioWorkflowInstanceStatus.Cancelled)
+                && i.CompletedAt != null && i.CompletedAt < completedBeforeUtc)
+            .OrderBy(i => i.CompletedAt)
+            .Select(i => i.Id)
+            .Take(Math.Clamp(max, 1, 500))
+            .ToListAsync(cancellationToken);
+        if (ids.Count == 0)
+            return 0;
+
+        // Pas de FK entre les tables (0.11 point 4) : les enfants d'abord, puis les instances.
+        await context.StudioWorkflowStepRuns
+            .Where(r => r.TenantId == tenantId && ids.Contains(r.InstanceId))
+            .ExecuteDeleteAsync(cancellationToken);
+        await context.StudioWorkflowApprovals
+            .Where(a => a.TenantId == tenantId && ids.Contains(a.InstanceId))
+            .ExecuteDeleteAsync(cancellationToken);
+        return await context.StudioWorkflowInstances
+            .Where(i => i.TenantId == tenantId && ids.Contains(i.Id))
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    public async Task<bool> TryLeaseInstanceAsync(
+        StudioWorkflowInstance instance, DateTime nowUtc, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        if (!instance.TryLease(nowUtc, leaseDuration))
+            return false;
+
+        try
+        {
+            await UpdateInstanceAsync(instance, cancellationToken);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Course perdue sur le RowVersion : l'appelant abandonne l'instance pour ce tick (D-01).
+            return false;
+        }
+    }
 }
