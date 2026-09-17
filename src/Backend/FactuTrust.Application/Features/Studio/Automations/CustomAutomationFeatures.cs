@@ -4,6 +4,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Features.AI.Tools;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Records;
+using FactuTrust.Application.Features.Studio.Workflows;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Studio;
 using FactuTrust.Domain.Enums;
@@ -41,7 +42,7 @@ internal static class AutomationMapper
         new(r.Id, r.AutomationId, r.Status.ToString(), r.ResultJson, r.Error, r.RunAt);
 }
 
-// ---- List actions catalog (mutating tools usable as bridge actions) ----
+// ---- List actions catalog : actions pontables (mutantes, hors studio_*) — même catalogue que les workflows ----
 
 public sealed record ListAutomationActionsQuery : IRequest<Result<IReadOnlyList<AutomationActionDto>>>;
 
@@ -50,7 +51,7 @@ public sealed class ListAutomationActionsQueryHandler : IRequestHandler<ListAuto
     public Task<Result<IReadOnlyList<AutomationActionDto>>> Handle(ListAutomationActionsQuery request, CancellationToken cancellationToken)
     {
         var actions = AiToolRegistry.All
-            .Where(t => t.IsMutating)
+            .Where(StudioBridgeActionCatalog.IsBridgeable)
             .OrderBy(t => t.Name, StringComparer.Ordinal)
             .Select(t => new AutomationActionDto(
                 t.Name, t.Description,
@@ -103,7 +104,7 @@ public sealed class UpsertAutomationCommandHandler : IRequestHandler<UpsertAutom
             return Result.Failure<AutomationDto>(Error.Validation("name", "Le nom de l'automatisation est obligatoire."));
 
         var tool = AiToolRegistry.GetToolDefinition(req.ActionKey);
-        if (tool is null || !tool.IsMutating)
+        if (tool is null || !StudioBridgeActionCatalog.IsBridgeable(tool))
             return Result.Failure<AutomationDto>(Error.Validation("action", "Action ERP inconnue ou non autorisée."));
 
         var entity = await _entities.GetByIdAsync(tenantId, command.EntityId, cancellationToken);

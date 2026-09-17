@@ -268,3 +268,42 @@ instance annule ses approbations `pending` (moteur, D-20).
 | 7 | POST | `records/{entityKey}/{recordId}/workflows/{workflowKey}/run` | `custom_records:write` | 201 + `Location` vers `workflows/instances/{id}` |
 | 8 | POST | `workflows/instances/{instanceId}/cancel` | `custom_records:write` | 200 `WorkflowInstanceDto` |
 | 9 | POST | `workflows/instances/{instanceId}/remind` | `custom_records:write` | 200 (409 si < 24 h) |
+
+## IA (4.3)
+
+Le Studio IA peut **proposer** des workflows : le modèle appelle l'outil `studio_plan_workflow`
+(`AiToolRegistry`, visible seulement si les trois drapeaux `EnableStudioWorkflows &&
+EnableStudioAiWorkflowTools && EnableStudioAiPlanPreview` sont levés — règle unique
+`StudioAiPlanCreation.WorkflowToolsEnabled`), dont la spec est revue par `StudioAiWorkflowPlanner`
+(table existante et active, champs réels, `erp_action.action` pontable, `approval.assignee.kind`
+différent de `startedBy`, déclencheurs planifiés écartés avec avertissement) puis persistée comme plan
+`Workflow` (aperçu `summary.workflows[]` — contrat figé, voir `studio-ai-plans.md`). À la
+confirmation, `StudioAiPlanExecutor` délègue à `StudioAiWorkflowExecutor` (Infrastructure) :
+dépendance unique `IMediator`, création **inactive** par `CreateWorkflowCommand` (normalisation,
+conflit de clé, quota, validation contre le schéma réel, audit `Studio.Workflow.Created`), clé
+suffixée `_2` … `_9` si prise (base tronquée à 64, `_` finaux retirés), **tout-ou-rien** : au premier
+échec — `Result.Failure` **ou exception** après au moins une création — les workflows déjà créés sont
+supprimés par `DeleteWorkflowCommand` sous `CancellationToken.None` (dans l'ordre inverse) et un
+échec de suppression n'est jamais silencieux (étape `failed` + message persisté, borné à 2000
+caractères). La garde de l'exécuteur applique la règle unique des trois drapeaux (fail-closed,
+couvre le rejeu d'un plan terminal).
+
+```mermaid
+flowchart LR
+    M[Modèle<br/>studio_plan_workflow] --> P[StudioAiWorkflowPlanner<br/>revue de la spec]
+    P -->|bloquant| ERR[Erreur FR<br/>aucun plan]
+    P -->|ok| PLAN[Plan Workflow<br/>aperçu summary.workflows]
+    PLAN -->|confirmé + 3 drapeaux| EXE[StudioAiWorkflowExecutor]
+    EXE --> CW[CreateWorkflowCommand<br/>inactif, _2…_9]
+    EXE -->|échec / exception| RB[DeleteWorkflowCommand<br/>rollback, CancellationToken.None]
+```
+
+Résultat persisté (`ResultJson`) : `{ success, workflows: [{ id, key, entityKey, name, stepCount }],
+openUrl: "/studio/workflows", warnings, message }`.
+
+Le pont « automatisations » historique (`CustomAutomationFeatures`) consomme le **même** catalogue
+d'actions que les étapes `erp_action` des workflows : `StudioBridgeActionCatalog.IsBridgeable`
+(outil mutant **et** hors `studio_*`). Un outil `studio_plan_*` n'est donc plus proposé ni accepté
+comme action d'automatisation ; `StudioBridgeExecutor` (exécution) est inchangé (D-10). Une
+automatisation legacy existante ciblant déjà un outil `studio_*` continue de s'exécuter, mais toute
+ré-édition est désormais refusée (`Validation.action`).
