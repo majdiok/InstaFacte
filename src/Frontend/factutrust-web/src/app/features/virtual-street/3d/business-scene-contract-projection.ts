@@ -115,14 +115,14 @@ function scene(v: BusinessSceneDescriptor): BusinessSceneDescriptor {
     })),
     branding: {
       signNode: v.branding.signNode, logoNode: v.branding.logoNode,
-      colorMaterialNames: v.branding.colorMaterialNames.map(n => n), maxSignCharacters: v.branding.maxSignCharacters
+      colorMaterialNames: v.branding.colorMaterialNames.slice(), maxSignCharacters: v.branding.maxSignCharacters
     },
     lightmaps: v.lightmaps.map(l => ({ materialName: l.materialName, textureAssetKey: l.textureAssetKey, texCoord: l.texCoord, intensity: l.intensity }))
   };
 }
 
 const recipe = (v: BusinessStyleRecipe): BusinessStyleRecipe => ({
-  recipeKey: v.recipeKey, materialNames: v.materialNames.map(n => n), assetKeys: v.assetKeys.map(k => k)
+  recipeKey: v.recipeKey, materialNames: v.materialNames.slice(), assetKeys: v.assetKeys.slice()
 });
 
 function profile(v: BusinessCatalogProfile): BusinessCatalogProfile {
@@ -132,7 +132,7 @@ function profile(v: BusinessCatalogProfile): BusinessCatalogProfile {
     styleRecipes: { 0: recipe(v.styleRecipes[0]), 1: recipe(v.styleRecipes[1]), 2: recipe(v.styleRecipes[2]), 3: recipe(v.styleRecipes[3]), 4: recipe(v.styleRecipes[4]) },
     coverage: {
       exteriorRenderAssetKey: v.coverage.exteriorRenderAssetKey, interiorRenderAssetKey: v.coverage.interiorRenderAssetKey,
-      attributionAssetKeys: v.coverage.attributionAssetKeys.map(k => k)
+      attributionAssetKeys: v.coverage.attributionAssetKeys.slice()
     }
   };
 }
@@ -141,10 +141,10 @@ function asset(v: BusinessAssetDescriptor): BusinessAssetDescriptor {
   return {
     assetKey: v.assetKey, kind: v.kind, path: v.path, mimeType: v.mimeType, sha256: v.sha256,
     encodedBytes: v.encodedBytes, estimatedDecodedBytes: v.estimatedDecodedBytes,
-    dependencyAssetKeys: v.dependencyAssetKeys.map(k => k),
+    dependencyAssetKeys: v.dependencyAssetKeys.slice(),
     gltf: v.gltf === null ? null : {
-      requiredExtensions: v.gltf.requiredExtensions.map(e => e), allowedExtensions: v.gltf.allowedExtensions.map(e => e),
-      embeddedImageMimeTypes: v.gltf.embeddedImageMimeTypes.map(m => m)
+      requiredExtensions: v.gltf.requiredExtensions.slice(), allowedExtensions: v.gltf.allowedExtensions.slice(),
+      embeddedImageMimeTypes: v.gltf.embeddedImageMimeTypes.slice()
     },
     textures: v.textures.map(t => ({
       key: t.key, width: t.width, height: t.height, mipLevels: t.mipLevels, layers: t.layers,
