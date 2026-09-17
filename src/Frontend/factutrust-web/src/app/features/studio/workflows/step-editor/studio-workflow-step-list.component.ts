@@ -66,7 +66,7 @@ interface StepRow { step: WorkflowStepSpec; index: number; errors: number; entry
       <div class="wf-step-list__foot">
         <button pButton type="button" icon="fa-solid fa-plus" [label]="labels.designer.addStep" severity="secondary"
           [outlined]="true" class="wf-step-list__add" data-testid="wf-step-add" aria-haspopup="menu"
-          [disabled]="disabled() || steps().length >= limits.maxSteps" (click)="addMenu()?.toggle($event)"></button>
+          [disabled]="disabled() || steps().length >= limits.maxSteps" (click)="openAddMenu($event)"></button>
         <span class="studio-muted">{{ steps().length }}/{{ limits.maxSteps }}</span>
       </div>
       <p-menu #rowMenu [model]="rowMenuItems()" [popup]="true" appendTo="body" styleClass="studio-theme"></p-menu>
@@ -174,6 +174,14 @@ export class StudioWorkflowStepListComponent {
     });
   }
 
+  /**
+   * Ouvre le menu d'ajout typé. Passe par une méthode : dans le template, la référence
+   * `#addMenu` masque le signal `viewChild` (NG9 en AOT strict — correctif 4.4e1).
+   */
+  protected openAddMenu(event: Event): void {
+    this.addMenu()?.toggle(event);
+  }
+
   /** Menu contextuel d'une ligne : reconstruit à l'ouverture (items désactivés selon la position). */
   protected openRowMenu(event: Event, i: number): void {
     event.stopPropagation();
@@ -188,8 +196,8 @@ export class StudioWorkflowStepListComponent {
     this.rowMenu()?.toggle(event);
   }
 
-  /** Navigation clavier de la listbox (ArrowUp/ArrowDown sur l'`ol`). */
-  protected selectRelative(delta: -1 | 1, event: KeyboardEvent): void {
+  /** Navigation clavier de la listbox (ArrowUp/ArrowDown sur l'`ol`). `Event` : `strictDomEventTypes` est inactif (NG5 AOT — correctif 4.4e1). */
+  protected selectRelative(delta: -1 | 1, event: Event): void {
     const count = this.steps().length;
     if (!count) return;
     event.preventDefault();

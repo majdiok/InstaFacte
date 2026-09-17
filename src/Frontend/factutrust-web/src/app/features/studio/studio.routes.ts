@@ -167,6 +167,21 @@ export const STUDIO_CHILD_ROUTES: Routes = [
     loadComponent: () => import('./workflows/studio-workflows-hub.component').then(m => m.StudioWorkflowsHubComponent),
     title: 'Workflows - InstaFact'
   },
+  // Concepteur (4.4e1) : `workflows/new` AVANT `workflows/:id`, sinon `new` serait capturé comme identifiant.
+  {
+    path: 'workflows/new',
+    canActivate: [permissionGuard, capabilityGuard('workflowsEnabled', () => '/studio')],
+    data: { permissions: [PERMISSIONS.studio.designEntities] },
+    loadComponent: () => import('./workflows/studio-workflow-designer.component').then(m => m.StudioWorkflowDesignerComponent),
+    title: 'Nouveau workflow - InstaFact'
+  },
+  {
+    path: 'workflows/:id',
+    canActivate: [permissionGuard, capabilityGuard('workflowsEnabled', () => '/studio')],
+    data: { permissions: [PERMISSIONS.studio.designEntities] },
+    loadComponent: () => import('./workflows/studio-workflow-designer.component').then(m => m.StudioWorkflowDesignerComponent),
+    title: 'Workflow - InstaFact'
+  },
   {
     // Pas de capabilityGuard : les liens de notification (types 15–18, 4.4j) doivent mener à la
     // fiche même si le flag workflows est coupé ensuite (D6).
