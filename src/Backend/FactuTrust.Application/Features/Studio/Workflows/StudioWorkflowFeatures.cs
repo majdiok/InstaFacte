@@ -628,3 +628,222 @@ public sealed class DeleteWorkflowCommandHandler : IRequestHandler<DeleteWorkflo
         return Result.Success(new WorkflowDeletionResultDto(cancelled));
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Studio IA 4.1j2 — duplication, validation à blanc, catalogue des étapes, instances.
+// ---------------------------------------------------------------------------------------------
+
+// ---- Duplicate ----
+
+public sealed record DuplicateWorkflowCommand(Guid Id) : IRequest<Result<WorkflowDefinitionDto>>;
+
+public sealed class DuplicateWorkflowCommandHandler : IRequestHandler<DuplicateWorkflowCommand, Result<WorkflowDefinitionDto>>
+{
+    private const string CopySuffix = "_copie";
+    private const int MaxCopies = 9;
+
+    private readonly IStudioWorkflowRepository _workflows;
+    private readonly IStudioQuotaService _quota;
+    private readonly IAuditService _audit;
+    private readonly ICurrentUser _currentUser;
+
+    public DuplicateWorkflowCommandHandler(
+        IStudioWorkflowRepository workflows, IStudioQuotaService quota, IAuditService audit, ICurrentUser currentUser)
+    {
+        _workflows = workflows;
+        _quota = quota;
+        _audit = audit;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<WorkflowDefinitionDto>> Handle(DuplicateWorkflowCommand command, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out var userId, out var err))
+            return Result.Failure<WorkflowDefinitionDto>(err);
+
+        var source = await _workflows.GetDefinitionAsync(tenantId, command.Id, cancellationToken);
+        if (source is null)
+            return Result.Failure<WorkflowDefinitionDto>(Error.NotFound("StudioWorkflowDefinition", command.Id));
+
+        var count = await _workflows.CountByEntityAsync(tenantId, source.EntityDefinitionId, cancellationToken);
+        var quota = await _quota.EnsureUnderLimitAsync(
+            tenantId, StudioQuotas.MaxWorkflowsKey, count, StudioQuotas.MaxWorkflowsFallback, "workflows par table", cancellationToken);
+        if (quota.IsFailure)
+            return Result.Failure<WorkflowDefinitionDto>(quota.Error);
+
+        string? key = null;
+        for (var n = 1; n <= MaxCopies && key is null; n++)
+        {
+            var candidate = Suffix(source.Key, n == 1 ? CopySuffix : $"{CopySuffix}_{n}");
+            if (await _workflows.GetDefinitionByKeyAsync(tenantId, source.EntityDefinitionId, candidate, cancellationToken) is null)
+                key = candidate;
+        }
+        if (key is null)
+            return Result.Failure<WorkflowDefinitionDto>(Error.Conflict(
+                $"Impossible de dupliquer : les clés « {source.Key}{CopySuffix} » à « {source.Key}{CopySuffix}_{MaxCopies} » sont déjà utilisées."));
+
+        var name = Truncate($"{source.Name} (copie)", StudioWorkflowDefinition.NameMaxLength);
+
+        // Pas de revalidation des étapes : la source a été validée à l'enregistrement ; la copie est inactive.
+        var copy = StudioWorkflowDefinition.Create(
+            tenantId, source.EntityDefinitionId, key, name, source.Description, source.Trigger,
+            source.TriggerConfigJson, source.StepsJson, isActive: false, userId);
+        await _workflows.AddDefinitionAsync(copy, cancellationToken);
+
+        await StudioAudit.SafeLogAsync(
+            _audit, "Studio.Workflow.Duplicated", "StudioWorkflowDefinition", copy.Id,
+            null,
+            new { SourceId = source.Id, SourceKey = source.Key, copy.Key },
+            cancellationToken);
+
+        return Result.Success(StudioWorkflowMapping.ToDto(copy, 0));
+    }
+
+    /// <summary>Ajoute <paramref name="suffix"/> en tronquant la base (sans « _ » final) pour tenir dans 64 caractères.</summary>
+    internal static string Suffix(string baseKey, string suffix)
+    {
+        var max = StudioWorkflowDefinition.KeyMaxLength;
+        var head = baseKey.Length + suffix.Length <= max ? baseKey : baseKey[..(max - suffix.Length)].TrimEnd('_');
+        return head + suffix;
+    }
+
+    private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
+}
+
+// ---- Validate (à blanc) ----
+
+public sealed record ValidateWorkflowQuery(Guid EntityId, SaveWorkflowRequest Request) : IRequest<Result<WorkflowValidationResultDto>>;
+
+public sealed class ValidateWorkflowQueryHandler : IRequestHandler<ValidateWorkflowQuery, Result<WorkflowValidationResultDto>>
+{
+    private readonly ICustomEntityRepository _entities;
+    private readonly ICustomFieldRepository _fields;
+    private readonly ICurrentUser _currentUser;
+
+    public ValidateWorkflowQueryHandler(ICustomEntityRepository entities, ICustomFieldRepository fields, ICurrentUser currentUser)
+    {
+        _entities = entities;
+        _fields = fields;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<WorkflowValidationResultDto>> Handle(ValidateWorkflowQuery query, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
+            return Result.Failure<WorkflowValidationResultDto>(err);
+
+        var entity = await _entities.GetByIdAsync(tenantId, query.EntityId, cancellationToken);
+        if (entity is null)
+            return Result.Failure<WorkflowValidationResultDto>(Error.NotFound("CustomEntity", query.EntityId));
+
+        // Jamais de Result.Failure pour une définition invalide : 200 avec la liste des problèmes.
+        var issues = StudioWorkflowSaveSupport.NormalizeAsIssues(query.Request, out var normalized);
+        if (normalized is null)
+            return Result.Success(new WorkflowValidationResultDto(false, ToDto(issues), Array.Empty<WorkflowValidationIssueDto>(), 0));
+
+        var fields = await _fields.ListByEntityAsync(tenantId, entity.Id, includeInactive: false, cancellationToken);
+        var outcome = await StudioWorkflowSaveSupport.ValidateAsync(normalized, entity, fields, _entities, _fields, tenantId, cancellationToken);
+
+        return Result.Success(new WorkflowValidationResultDto(
+            issues.Count == 0 && outcome.IsValid,
+            ToDto(issues.Concat(outcome.Errors)),
+            ToDto(outcome.Warnings),
+            outcome.Spec?.Steps.Count ?? 0));
+    }
+
+    private static IReadOnlyList<WorkflowValidationIssueDto> ToDto(IEnumerable<WorkflowValidationIssue> issues)
+        => issues.Select(i => new WorkflowValidationIssueDto(i.Path, i.Message)).ToList();
+}
+
+// ---- Step catalog ----
+
+public sealed record GetWorkflowStepCatalogQuery() : IRequest<Result<WorkflowStepCatalogDto>>;
+
+public sealed class GetWorkflowStepCatalogQueryHandler : IRequestHandler<GetWorkflowStepCatalogQuery, Result<WorkflowStepCatalogDto>>
+{
+    // Pur et sans tenant : la policy du contrôleur protège l'accès (D-41-04 : Entries seul).
+    public Task<Result<WorkflowStepCatalogDto>> Handle(GetWorkflowStepCatalogQuery query, CancellationToken cancellationToken)
+    {
+        var entries = StudioWorkflowStepTypes.Catalog()
+            .Select(e => new StepCatalogEntryDto(
+                e.Type,
+                e.Label,
+                e.Description,
+                e.Properties.Select(p => new StepCatalogPropertyDto(p.Name, p.Kind, p.Required, p.Help, p.AllowedValues, p.Min, p.Max)).ToList()))
+            .ToList();
+        return Task.FromResult(Result.Success(new WorkflowStepCatalogDto(entries)));
+    }
+}
+
+// ---- Instances ----
+
+public sealed record ListWorkflowInstancesQuery(Guid WorkflowId, int Max = 50) : IRequest<Result<IReadOnlyList<WorkflowInstanceDto>>>;
+
+public sealed class ListWorkflowInstancesQueryHandler : IRequestHandler<ListWorkflowInstancesQuery, Result<IReadOnlyList<WorkflowInstanceDto>>>
+{
+    public const int MaxInstances = 200;
+
+    private readonly IStudioWorkflowRepository _workflows;
+    private readonly ICurrentUser _currentUser;
+
+    public ListWorkflowInstancesQueryHandler(IStudioWorkflowRepository workflows, ICurrentUser currentUser)
+    {
+        _workflows = workflows;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<IReadOnlyList<WorkflowInstanceDto>>> Handle(ListWorkflowInstancesQuery query, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
+            return Result.Failure<IReadOnlyList<WorkflowInstanceDto>>(err);
+
+        var definition = await _workflows.GetDefinitionAsync(tenantId, query.WorkflowId, cancellationToken);
+        if (definition is null)
+            return Result.Failure<IReadOnlyList<WorkflowInstanceDto>>(Error.NotFound("StudioWorkflowDefinition", query.WorkflowId));
+
+        var instances = await _workflows.ListInstancesForDefinitionAsync(
+            tenantId, definition.Id, Math.Clamp(query.Max, 1, MaxInstances), cancellationToken);
+
+        return Result.Success<IReadOnlyList<WorkflowInstanceDto>>(
+            instances.Select(i => StudioWorkflowMapping.ToDto(i, definition)).ToList());
+    }
+}
+
+public sealed record GetWorkflowInstanceQuery(Guid InstanceId) : IRequest<Result<WorkflowInstanceDetailDto>>;
+
+public sealed class GetWorkflowInstanceQueryHandler : IRequestHandler<GetWorkflowInstanceQuery, Result<WorkflowInstanceDetailDto>>
+{
+    private readonly IStudioWorkflowRepository _workflows;
+    private readonly ICurrentUser _currentUser;
+
+    public GetWorkflowInstanceQueryHandler(IStudioWorkflowRepository workflows, ICurrentUser currentUser)
+    {
+        _workflows = workflows;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<WorkflowInstanceDetailDto>> Handle(GetWorkflowInstanceQuery query, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
+            return Result.Failure<WorkflowInstanceDetailDto>(err);
+
+        var instance = await _workflows.GetInstanceAsync(tenantId, query.InstanceId, cancellationToken);
+        if (instance is null)
+            return Result.Failure<WorkflowInstanceDetailDto>(Error.NotFound("StudioWorkflowInstance", query.InstanceId));
+
+        // Définition possiblement supprimée (filtre IsDeleted) ⇒ WorkflowKey / WorkflowName null.
+        var definition = await _workflows.GetDefinitionAsync(tenantId, instance.WorkflowDefinitionId, cancellationToken);
+        var stepRuns = await _workflows.ListStepRunsAsync(tenantId, instance.Id, cancellationToken);
+        var approvals = await _workflows.ListApprovalsForInstanceAsync(tenantId, instance.Id, cancellationToken);
+
+        // Les données « avant » de l'enregistrement ne sortent pas de l'API : clé conservée, valeur masquée (D-41-09).
+        var context = StudioWorkflowMapping.ParseObject(instance.ContextJson);
+        context["previous"] = null;
+
+        return Result.Success(new WorkflowInstanceDetailDto(
+            StudioWorkflowMapping.ToDto(instance, definition),
+            stepRuns.OrderBy(r => r.StepIndex).ThenBy(r => r.StartedAt).Select(StudioWorkflowMapping.ToDto).ToList(),
+            approvals.Select(StudioWorkflowMapping.ToDto).ToList(),
+            context));
+    }
+}

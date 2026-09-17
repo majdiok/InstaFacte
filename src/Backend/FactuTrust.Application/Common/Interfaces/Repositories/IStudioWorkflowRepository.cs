@@ -83,6 +83,10 @@ public interface IStudioWorkflowRepository
     Task<IReadOnlyList<StudioWorkflowApproval>> ListPendingApprovalsForInstanceAsync(
         Guid tenantId, Guid instanceId, CancellationToken cancellationToken = default);
 
+    /// <summary>Toutes les approbations d'une instance, quel que soit leur statut, les plus anciennes d'abord (4.1j2, D-41-07).</summary>
+    Task<IReadOnlyList<StudioWorkflowApproval>> ListApprovalsForInstanceAsync(
+        Guid tenantId, Guid instanceId, CancellationToken cancellationToken = default);
+
     Task UpdateApprovalAsync(StudioWorkflowApproval approval, CancellationToken cancellationToken = default);
 
     /// <summary>Nombre d'instances ouvertes d'une définition (D9 : alimente <c>WorkflowDefinitionDto.OpenInstances</c>).</summary>
