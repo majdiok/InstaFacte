@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using FactuTrust.Infrastructure.Services.Storefront;
@@ -190,6 +191,53 @@ public sealed class StorefrontExperienceStateProviderTests
         AssertClosed(provider.GetState(), StorefrontExperienceSourceHealth.Unavailable);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Copy_coordination_does_not_require_the_callers_constrained_context(bool beginNewReload)
+    {
+        var provider = CreateHealthy();
+        var generation = provider.BeginReload();
+        var expectedState = provider.GetState();
+        using var allowCopyStart = new ManualResetEventSlim(false);
+        var context = new DeferredSynchronizationContext();
+        var previousContext = SynchronizationContext.Current;
+        Task<bool> completion;
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(context);
+            completion = CompleteWithPausedCopy(provider, generation, () =>
+            {
+                if (beginNewReload)
+                    provider.BeginReload();
+                else
+                    provider.FailReload(generation);
+            }, allowCopyStart);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+        }
+
+        // Force CopyStarted to be incomplete when the helper awaits it, avoiding a lucky
+        // synchronous completion that could hide a captured-context regression.
+        allowCopyStart.Set();
+        try
+        {
+            var finished = await Task.WhenAny(completion, context.PostAttempted).WaitAsync(CoordinationTimeout);
+            Assert.Same(completion, finished);
+            Assert.False(await completion);
+            Assert.False(context.PostAttempted.IsCompleted);
+            Assert.Equal(expectedState, provider.GetState());
+        }
+        finally
+        {
+            // On regression, dispatch queued callbacks so cleanup never strands the copy.
+            context.Resume();
+            await completion.WaitAsync(CoordinationTimeout);
+        }
+    }
+
     [Fact]
     public void Missing_watchdog_or_lost_event_expires_at_five_seconds()
     {
@@ -267,28 +315,62 @@ public sealed class StorefrontExperienceStateProviderTests
     }
 
     private static async Task<bool> CompleteWithPausedCopy(
-        StorefrontExperienceStateProvider provider, long generation, Action whileCopyPaused)
+        StorefrontExperienceStateProvider provider, long generation, Action whileCopyPaused,
+        ManualResetEventSlim? allowCopyStart = null)
     {
-        using var memory = new PausedCopyMemoryManager(Encoding.UTF8.GetBytes(Legacy.Replace("cfg-1", "cfg-obsolete")));
+        using var memory = new PausedCopyMemoryManager(
+            Encoding.UTF8.GetBytes(Legacy.Replace("cfg-1", "cfg-obsolete")), allowCopyStart);
         var document = memory.Document;
-        var completion = Task.Run(() => provider.CompleteReload(generation, document));
+        // The synchronous paused copy must not occupy a shared thread-pool worker.
+        var completion = Task.Factory.StartNew(() => provider.CompleteReload(generation, document),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         try
         {
             // ToArray accesses GetSpan only after CompleteReload has left its first lock.
-            await memory.CopyStarted.WaitAsync(CoordinationTimeout);
+            // Releasing it must not queue behind unrelated tests on xUnit's bounded context.
+            await memory.CopyStarted.WaitAsync(CoordinationTimeout).ConfigureAwait(false);
             whileCopyPaused();
         }
         finally
         {
             memory.ReleaseCopy();
             // Join before disposing the wait handle, even if an assertion above fails.
-            await completion.WaitAsync(CoordinationTimeout);
+            await completion.WaitAsync(CoordinationTimeout).ConfigureAwait(false);
         }
 
-        return await completion;
+        return await completion.ConfigureAwait(false);
     }
 
-    private sealed class PausedCopyMemoryManager(byte[] bytes) : MemoryManager<byte>
+    private sealed class DeferredSynchronizationContext : SynchronizationContext
+    {
+        private readonly ConcurrentQueue<(SendOrPostCallback Callback, object? State)> _callbacks = new();
+        private readonly TaskCompletionSource _postAttempted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _resumed;
+
+        public Task PostAttempted => _postAttempted.Task;
+
+        public override void Post(SendOrPostCallback callback, object? state)
+        {
+            _callbacks.Enqueue((callback, state));
+            _postAttempted.TrySetResult();
+            if (Volatile.Read(ref _resumed) != 0)
+                DispatchPending();
+        }
+
+        public void Resume()
+        {
+            Interlocked.Exchange(ref _resumed, 1);
+            DispatchPending();
+        }
+
+        private void DispatchPending()
+        {
+            while (_callbacks.TryDequeue(out var work))
+                ThreadPool.QueueUserWorkItem(static item => item.Callback(item.State), work, preferLocal: false);
+        }
+    }
+
+    private sealed class PausedCopyMemoryManager(byte[] bytes, ManualResetEventSlim? allowCopyStart = null) : MemoryManager<byte>
     {
         private readonly TaskCompletionSource _copyStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly ManualResetEventSlim _releaseCopy = new(false);
@@ -300,6 +382,8 @@ public sealed class StorefrontExperienceStateProviderTests
 
         public override Span<byte> GetSpan()
         {
+            if (allowCopyStart is not null && !allowCopyStart.Wait(CoordinationTimeout))
+                throw new TimeoutException("The test did not allow the document copy to start.");
             _copyStarted.TrySetResult();
             if (!_releaseCopy.Wait(CoordinationTimeout))
                 throw new TimeoutException("The test did not release the paused document copy.");
