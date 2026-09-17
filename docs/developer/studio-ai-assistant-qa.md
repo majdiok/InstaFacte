@@ -792,3 +792,51 @@ Désactiver l'utilisateur lanceur (ou lui donner un rôle plateforme) avant le t
 notification 17. `POST …/instances/{id}/cancel` avec un compte `custom_records:write` **sans**
 `studio:design_entities` ⇒ `200` `cancelled`. Couper `EnableStudioWorkflows=false` ⇒ les 9 routes
 runtime répondent `404` « Les workflows Studio ne sont pas activés. » sans aucun traitement.
+
+## Workflows par l'IA (PR 4.3)
+
+Outil `studio_plan_workflow` (drapeaux `EnableStudioWorkflows` **et** `EnableStudioAiWorkflowTools`,
+plus `EnableStudioAiPlanPreview`) ⇒ événement `studio_plan` de nature `Workflow` (aperçu
+`summary.workflows[]`) ⇒ confirmation ⇒ `StudioAiWorkflowExecutor` (création **inactive** tout-ou-rien).
+
+### 86. Flags off
+
+`EnableStudioAiWorkflowTools=false` (ou `EnableStudioWorkflows=false`) ⇒ `studio_plan_workflow` absent
+des outils envoyés au modèle, règle 14 « WORKFLOWS » absente du prompt StudioBuilder, capabilities
+`workflowToolsEnabled=false`. Un appel direct `studio_plan_workflow` (réponse LLM forgée ou rejeu) ⇒
+« Les workflows générés par l'IA ne sont pas activés. ». Un plan `Workflow` **déjà créé** dont la
+confirmation arrive après l'extinction de l'un des trois drapeaux ⇒ « Les workflows Studio ne sont pas
+activés. », aucun workflow créé (garde de l'exécuteur, y compris via le rejeu du plan).
+
+### 87. Plan nominal
+
+Drapeaux levés, demande « quand une facture passe à payée, notifie le commercial » ⇒ un événement
+`studio_plan` unique dans le flux de chat, `summary.kind = "Workflow"`, `summary.workflows[0]` porte
+clé, table (`entityKey` + `entityDisplayName`), déclencheur, étapes et `isActive:false`. Aperçu
+`GET api/studio/ai/plans/{id}/preview` ⇒ `200` (feuille workflow). Confirmation ⇒ workflow créé
+**inactif** (clé suffixée `_2…_9` si prise), `resultJson.workflows[0].id`, `openUrl: "/studio/workflows"`,
+message « 1 workflow créé — inactif : activez-le depuis le hub après relecture. », audits
+`Studio.Workflow.Created` et `Studio.AiPlan.Executed`. Le workflow n'a aucun effet tant qu'il n'est pas
+activé depuis le hub.
+
+### 88. Déclencheur planifié
+
+Demande « tous les lundis » ⇒ avertissement « bientôt disponible » (`warnings[]` du plan et du payload) et
+workflow ignoré ; si **tous** les workflows sont planifiés ⇒ erreur FR de la spec (« La spec ne contient
+aucun workflow réalisable (les déclencheurs planifiés ne sont pas encore disponibles). »), aucun plan créé.
+
+### 89. Champ / action inconnus bloqués
+
+Spec forçant `update_field.set.inexistant`, `erp_action.action = "studio_plan_app"` ou
+`approval.assignee.kind = "startedBy"` ⇒ erreur FR de l'outil (planner de revue), **aucun plan créé** ;
+le message cite `studio_get_table_schema` pour revérifier les noms. Tolérés : `condition.filters[].field`
+en `_previous.<champ connu>`, `_approval.*`, `_results.*`.
+
+### 90. Exécution tout-ou-rien + legacy pont
+
+Plan de 2 workflows dont le 2ᵉ dépasse le quota ⇒ aucun workflow restant après l'échec (rollback par
+`DeleteWorkflowCommand`, `CancellationToken.None`), plan `Failed` avec message (et, si une suppression de
+rollback échoue, « Annulation incomplète — workflow(s) inactif(s) à supprimer depuis le hub : … »). Côté
+pont legacy : `GET api/studio/automations/actions` ne liste **plus** les outils `studio_*`
+(`create_product` toujours présent) ; `POST api/studio/entities/{id}/automations` avec
+`actionKey = "studio_plan_app"` ⇒ `400` `Validation.action` « Action ERP inconnue ou non autorisée. ».

@@ -25,8 +25,10 @@ public sealed class AiContextBuilder : IAiContextBuilder
     /// v5 → v6 : règle 13 « vues enregistrées » du prompt StudioBuilder (PR 2.4).
     /// v6 → v7 : règle 8 enrichie — amendements reorder_fields / change_field_type /
     /// add_relation / assign_system / set_view (PR 3.1b).
+    /// v7 → v8 : règle 14 « workflows » (outil studio_plan_workflow) + préambule d'intention
+    /// « workflow » conditionnel (PR 4.3e).
     /// </summary>
-    private const string SystemPromptCacheRevision = "v7";
+    private const string SystemPromptCacheRevision = "v8";
     private readonly ICompanyRepository _companyRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IMemoryCache _memoryCache;
@@ -131,7 +133,8 @@ public sealed class AiContextBuilder : IAiContextBuilder
                 schemaDigest,
                 lastPlanDigest,
                 _ollamaSettings.EnableStudioManyToMany,
-                recordViewTools: StudioAiPlanCreation.RecordViewToolsEnabled(_ollamaSettings))
+                recordViewTools: StudioAiPlanCreation.RecordViewToolsEnabled(_ollamaSettings),
+                workflowTools: StudioAiPlanCreation.WorkflowToolsEnabled(_ollamaSettings))
                 + BuildTemporalContextSuffix();
         }
 
@@ -156,11 +159,12 @@ public sealed class AiContextBuilder : IAiContextBuilder
     /// </param>
     /// <param name="lastPlanDigest">Digest du dernier plan de l'utilisateur ; null/vide = section omise.</param>
     /// <param name="recordViewTools">PR 2.4 : règle 13 « vues enregistrées » (outil studio_plan_record_view).</param>
+    /// <param name="workflowTools">PR 4.3 : règle 14 « workflows » (outil studio_plan_workflow) + préambule d'intention.</param>
     private static string BuildStudioBuilderSystemPrompt(
         bool planPreview = false, bool modifyTools = false, bool viewTools = false,
         bool reportTools = false, string? reportSourceDigest = null,
         string? studioIntent = null, string? schemaDigest = null, string? lastPlanDigest = null,
-        bool manyToMany = false, bool recordViewTools = false)
+        bool manyToMany = false, bool recordViewTools = false, bool workflowTools = false)
     {
         // Flux plan → aperçu → confirmation : mêmes règles, mais les outils deviennent studio_plan_*
         // et le modèle ne doit JAMAIS prétendre que la création a déjà eu lieu.
@@ -169,7 +173,7 @@ public sealed class AiContextBuilder : IAiContextBuilder
 
         var sb = new StringBuilder();
         sb.AppendLine($"Tu es l'assistant « concepteur » du Studio low-code de {BrandConstants.Name}. Tu aides l'utilisateur à CONSTRUIRE des tables, des rapports et à saisir des données par langage naturel.");
-        var intentLabel = StudioIntentPreamble(studioIntent);
+        var intentLabel = StudioIntentPreamble(studioIntent, workflowTools);
         if (intentLabel is not null)
             sb.AppendLine($"INTENTION DE L'UTILISATEUR : {intentLabel}.");
         sb.AppendLine();
@@ -253,6 +257,14 @@ public sealed class AiContextBuilder : IAiContextBuilder
                 + "groupBy (champ Select uniquement), start/end (champ Date) }. Dans un système, ajoute au plus 3 \"views\" "
                 + "par entité. Ne crée jamais de vue sur une table inexistante : vérifie le SCHÉMA EXISTANT.");
         }
+        if (workflowTools)
+        {
+            sb.AppendLine("14. WORKFLOWS (« quand X arrive, fais Y puis Z » : validation, relance, facturation auto) : "
+                + "appelle studio_plan_workflow avec { workflows: [ { entityKey, name, trigger: on_create|on_update|field_changed|manual, "
+                + "steps: [ { type: condition|update_field|erp_action|notify|approval|wait|create_record, … } ] } ] } "
+                + "(5 max ; pas de déclencheur planifié). Workflows créés INACTIFS, activés par l'utilisateur après relecture. "
+                + "Vérifie table et champs dans le SCHÉMA EXISTANT.");
+        }
         sb.AppendLine();
         sb.AppendLine(manyToMany
             ? "EXEMPLE système formations : entities employes/formations/sessions + relations [{kind:\"many_to_many\", from:\"employes\", to:\"formations\"}] + relationTo sessions→formations."
@@ -261,10 +273,11 @@ public sealed class AiContextBuilder : IAiContextBuilder
     }
 
     /// <summary>
-    /// Libellé du préambule d'intention (≤ 120 caractères). Les intentions « bientôt » (workflow, page)
-    /// sont annoncées comme telles pour que le modèle n'invente pas d'outil.
+    /// Libellé du préambule d'intention (≤ 120 caractères). Les intentions « bientôt » (workflow sans
+    /// outil, page) sont annoncées comme telles pour que le modèle n'invente pas d'outil ; quand
+    /// <paramref name="workflowTools"/> est levé, l'intention « workflow » renvoie vers la règle 14.
     /// </summary>
-    internal static string? StudioIntentPreamble(string? normalizedIntent) => normalizedIntent switch
+    internal static string? StudioIntentPreamble(string? normalizedIntent, bool workflowTools = false) => normalizedIntent switch
     {
         "system" => "créer un système de plusieurs tables liées",
         "table" => "créer une table simple",
@@ -272,7 +285,9 @@ public sealed class AiContextBuilder : IAiContextBuilder
         "form" => "améliorer un formulaire",
         "reference_data" => "saisir des données de référence",
         "report" => "obtenir un état / rapport",
-        "workflow" => "automatiser un enchaînement d'étapes (bientôt disponible : explique-le sans inventer d'outil)",
+        "workflow" => workflowTools
+            ? "automatiser un enchaînement d'étapes (outil studio_plan_workflow, règle 14)"
+            : "automatiser un enchaînement d'étapes (bientôt disponible : explique-le sans inventer d'outil)",
         "page" => "composer une page (bientôt disponible : explique-le sans inventer d'outil)",
         _ => null
     };

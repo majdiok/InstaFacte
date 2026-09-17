@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FactuTrust.Application.Features.AI.DTOs;
+using FactuTrust.Application.Features.AI.Tools;
 using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Fields;
@@ -163,6 +164,41 @@ public sealed partial class AiToolExecutor
             StudioAiPlanSummary.ForRecordView(
                 StudioAiRecordViewSpec.ApplyResolution(spec, mode, definition), schema.Entity.DisplayName, warnings), ct);
     }
+
+    /// <summary>
+    /// PR 4.3 — plan de WORKFLOWS sur des tables Studio existantes : garde des trois drapeaux
+    /// (StudioAiPlanCreation.WorkflowToolsEnabled), schémas RÉELS relus (≤ 5 tables distinctes,
+    /// séquentiel), contrôles bloquants du planner (table/champ/action/approbateur), spec persistée en
+    /// forme canonique, résumé contrat § D (summary.workflows). Rien n'est créé avant confirmation.
+    /// </summary>
+    private async Task<AiToolResult> HandleStudioPlanWorkflow(Dictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!StudioAiPlanCreation.WorkflowToolsEnabled(_ollamaSettings))
+            return AiToolResult.Error("Les workflows générés par l'IA ne sont pas activés.");
+
+        var specJson = GetStringArg(args, "spec_json");
+        if (!StudioAiWorkflowSpec.TryParse(specJson, out var spec, out var parseError) || spec is null)
+            return AiToolResult.Error(parseError ?? "Spécification de workflows invalide.");
+
+        var schemas = new Dictionary<string, CustomEntitySchemaDto>(StringComparer.Ordinal);
+        foreach (var entityKey in spec.Workflows.Select(w => w.EntityKey).Distinct(StringComparer.Ordinal))
+        {
+            var schemaResult = await _mediator.Send(new GetCustomEntitySchemaQuery(entityKey), ct);
+            if (schemaResult.IsSuccess) schemas[entityKey] = schemaResult.Value;
+            // Échec ⇒ table absente du dictionnaire ⇒ erreur bloquante FR côté planner.
+        }
+
+        var review = StudioAiWorkflowPlanner.Review(spec, schemas, AiToolRegistry.GetToolDefinition);
+        if (review.IsBlocked)
+            return AiToolResult.Error(Truncate(string.Join(" ", review.BlockingErrors)
+                + " Vérifiez les noms avec studio_get_table_schema.", 600));
+
+        return await CreatePlanAsync(StudioAiPlanKind.Workflow,
+            StudioAiSpecCanonical.CanonicalWorkflow(spec),
+            StudioAiPlanSummary.ForWorkflow(spec, schemas, review.Warnings), ct);
+    }
+
+    private static string Truncate(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
 
     /// <summary>Tables SQL consultables (liste blanche vivante) — ancre le modèle sur le schéma réel.</summary>
     private async Task<AiToolResult> HandleStudioListSqlTables(Dictionary<string, object?> args, CancellationToken ct)

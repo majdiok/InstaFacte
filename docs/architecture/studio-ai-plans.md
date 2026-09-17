@@ -47,8 +47,10 @@ La spec **persistée** est re-parsée et re-projetée en `StudioAiPlanPreviewDto
 constructeur pur `StudioAiPlanPreviewBuilder` (aucune écriture, aucun appel LLM, déterministe) :
 `entities[]` (champs, `formLayout.sections[].fields[]` en objets `{key, width, labelOverride}`,
 vues, `seedCount` + échantillon borné à 3 lignes / 80 caractères), `relations[]`, `amendment`,
-`warnings[]`, `duplicates[]`, et `workflows` **toujours `[]`** en 3.x (contrat figé : 4.4 lira
-`summary.workflows[]`). Les flags `EnableStudioManyToMany` / `EnableStudioRecordViews` bornent
+`warnings[]`, `duplicates[]`, et `workflows` du DTO d'aperçu qui reste `[]` ; depuis 4.3, le **résumé**
+(`summary.workflows[]`) porte les workflows d'un plan `Workflow` (shape figé `{ key, name, entityKey,
+entityDisplayName, trigger, stepCount, steps: [{ key, type, label }], isActive }` — le frontend 4.4 le
+consomme) et, après confirmation, `resultJson.workflows[]` liste les workflows créés (inactifs). Les flags `EnableStudioManyToMany` / `EnableStudioRecordViews` bornent
 relations N-N et vues, comme à la création.
 
 Deux particularités :
