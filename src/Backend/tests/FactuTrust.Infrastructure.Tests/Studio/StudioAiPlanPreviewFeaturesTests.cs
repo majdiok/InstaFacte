@@ -222,6 +222,47 @@ public sealed class StudioAiPlanPreviewFeaturesTests
         _mediator.VerifyNoOtherCalls();
     }
 
+    /// <summary>
+    /// PR 4.3c — un plan Workflow est une « feuille » de l'aperçu : titre et avertissements relus du
+    /// summary (<c>StudioAiPlanSummary.ForWorkflow</c>), aucune entité ni relation, et
+    /// <c>Workflows</c> du DTO reste vide (contrat §12) — le détail est dans <c>summary.workflows</c>.
+    /// </summary>
+    [Fact]
+    public void Preview_of_a_workflow_plan_is_a_leaf_with_title_from_summary_and_empty_workflows_dto()
+    {
+        const string specJson = """
+            { "workflows": [ { "entityKey": "factures", "name": "Relance", "trigger": "manual",
+              "steps": [ { "type": "notify", "to": { "kind": "startedBy" }, "title": "Relance" } ] } ] }
+            """;
+        Assert.True(StudioAiWorkflowSpec.TryParse(specJson, out var spec, out var parseError), parseError);
+        var schemas = new Dictionary<string, CustomEntitySchemaDto>
+        {
+            ["factures"] = new(
+                new CustomEntityDto(Guid.NewGuid(), "factures", "Factures", "Factures", null, null, true, 2, null,
+                    DateTime.UtcNow, DateTime.UtcNow),
+                new[] { Field("numero", "Numéro", CustomFieldType.Text), Field("montant", "Montant", CustomFieldType.Number) },
+                new FormLayout())
+        };
+        var summaryJson = StudioAiPlanSummary.ForWorkflow(spec!, schemas, new[] { "Avertissement du résumé" });
+        var id = Guid.NewGuid();
+
+        var result = StudioAiPlanPreviewBuilder.Build(id, StudioAiPlanKind.Workflow, "Pending", specJson, summaryJson,
+            schema: null, manyToManyEnabled: false, recordViewsEnabled: false);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        var dto = result.Value;
+        Assert.Equal(id, dto.PlanId);
+        Assert.Equal("Workflow", dto.Kind);
+        Assert.Equal("Pending", dto.Status);
+        Assert.Equal("1 workflow sur Factures", dto.Title); // titre relu du summary
+        Assert.Empty(dto.Entities);
+        Assert.Empty(dto.Relations);
+        Assert.Null(dto.Amendment);
+        Assert.Empty(dto.Workflows); // contrat §12 : le frontend lit summary.workflows
+        Assert.Equal(new[] { "Avertissement du résumé" }, dto.Warnings);
+        Assert.Empty(dto.Duplicates);
+    }
+
     // ---- Replay : gardes ----
 
     [Fact]

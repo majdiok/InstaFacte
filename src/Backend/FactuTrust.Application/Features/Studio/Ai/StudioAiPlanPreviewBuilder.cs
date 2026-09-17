@@ -66,6 +66,7 @@ public static class StudioAiPlanPreviewBuilder
             StudioAiPlanKind.View => BuildView(planId, status, specJson, summary),
             StudioAiPlanKind.Report => BuildReport(planId, status, specJson, summary),
             StudioAiPlanKind.RecordView => BuildRecordView(planId, status, specJson, summary),
+            StudioAiPlanKind.Workflow => BuildWorkflow(planId, status, specJson, summary),
             _ => Result.Failure<StudioAiPlanPreviewDto>(Error.Validation("spec", $"Nature de plan inconnue : {kind}."))
         };
     }
@@ -212,6 +213,17 @@ public static class StudioAiPlanPreviewBuilder
         if (!StudioAiRecordViewSpec.TryParse(specJson, out var spec, out var error) || spec is null)
             return InvalidSpec(error);
         return Leaf(planId, StudioAiPlanKind.RecordView, status, summary, spec.DisplayName, Array.Empty<string>());
+    }
+
+    /// <summary>PR 4.3c — aperçu d'un plan Workflow : feuille (titre + avertissements). Le détail des
+    /// workflows est lu par le frontend dans <c>summary.workflows</c> ; <c>Workflows</c> du DTO reste []
+    /// (contrat §12 inchangé).</summary>
+    private static Result<StudioAiPlanPreviewDto> BuildWorkflow(Guid planId, string status, string specJson, SummaryInfo summary)
+    {
+        if (!StudioAiWorkflowSpec.TryParse(specJson, out var spec, out var error) || spec is null)
+            return InvalidSpec(error);
+        var fallback = $"{spec.Workflows.Count} workflow(s)";
+        return Leaf(planId, StudioAiPlanKind.Workflow, status, summary, fallback, spec.Warnings);
     }
 
     /// <summary>Aperçu « feuille » : aucune entité ni relation, seuls le titre et les avertissements.</summary>
