@@ -319,6 +319,41 @@ public sealed class StorefrontCaptchaValidatorTests
         Assert.False(await Create(client).IsValidAsync("token"));
     }
 
+    [Theory]
+    [InlineData("{\"success\":true,\"hostname\":\"\\uD800\"}", null)]
+    [InlineData("{\"success\":true,\"hostname\":\"\\uDC00\"}", null)]
+    [InlineData("{\"success\":true,\"hostname\":\"shop.example.com\",\"action\":\"\\uD800\"}", "order")]
+    [InlineData("{\"success\":true,\"hostname\":\"shop.example.com\",\"action\":\"\\uDC00\"}", "order")]
+    [InlineData("{\"\\uD800\":null,\"success\":true,\"hostname\":\"shop.example.com\"}", null)]
+    [InlineData("{\"\\uDC00\":null,\"success\":true,\"hostname\":\"shop.example.com\"}", null)]
+    [InlineData("{\"succe\\uD800\":null,\"success\":true,\"hostname\":\"shop.example.com\"}", null)]
+    [InlineData("{\"succe\\uDC00\":null,\"success\":true,\"hostname\":\"shop.example.com\"}", null)]
+    public async Task Isolated_escaped_surrogates_fail_closed_in_values_and_property_names(string body, string? expectedAction)
+    {
+        var options = ValidOptions();
+        options.TurnstileExpectedAction = expectedAction;
+        using var http = new FakeHandler((_, _) => Task.FromResult(Json(body)));
+        using var client = new HttpClient(http);
+        Assert.False(await Create(client, options).IsValidAsync("token"));
+        Assert.Equal(1, http.Calls);
+    }
+
+    [Fact]
+    public async Task Valid_escaped_property_names_remain_supported()
+    {
+        using var http = new FakeHandler((_, _) => Task.FromResult(Json("{\"succe\\u0073s\":true,\"host\\u006Eame\":\"shop.example.com\"}")));
+        using var client = new HttpClient(http);
+        Assert.True(await Create(client).IsValidAsync("token"));
+    }
+
+    [Fact]
+    public async Task Invalid_operation_outside_response_parsing_is_not_swallowed()
+    {
+        using var http = new FakeHandler((_, _) => throw new InvalidOperationException("synthetic handler failure"));
+        using var client = new HttpClient(http);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Create(client).IsValidAsync("token"));
+    }
+
     [Fact]
     public async Task Excessively_nested_json_is_rejected()
     {

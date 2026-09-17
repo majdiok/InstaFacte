@@ -73,19 +73,9 @@ public sealed class StorefrontCaptchaValidator : IStorefrontCaptchaValidator
             }
 
             deadline.Token.ThrowIfCancellationRequested();
-            ResponseEncoding.GetCharCount(buffer, 0, length); // Reject invalid UTF-8, rather than replacing it.
-            using var document = JsonDocument.Parse(buffer.AsMemory(0, length), new JsonDocumentOptions { MaxDepth = 16 });
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object
-                || !TryGetSingleProperty(root, "success", out var success) || success.ValueKind != JsonValueKind.True
-                || !TryGetSingleProperty(root, "hostname", out var hostname) || hostname.ValueKind != JsonValueKind.String
-                || !IsDnsHostname(hostname.GetString())
-                || !hostnames.Contains(hostname.GetString(), StringComparer.OrdinalIgnoreCase))
-                return false;
-
-            return string.IsNullOrEmpty(_options.TurnstileExpectedAction)
-                || (TryGetSingleProperty(root, "action", out var action) && action.ValueKind == JsonValueKind.String
-                    && string.Equals(action.GetString(), _options.TurnstileExpectedAction, StringComparison.Ordinal));
+            var isValid = IsValidResponse(buffer.AsMemory(0, length), hostnames, _options.TurnstileExpectedAction);
+            deadline.Token.ThrowIfCancellationRequested();
+            return isValid;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -101,12 +91,30 @@ public sealed class StorefrontCaptchaValidator : IStorefrontCaptchaValidator
             cancellationToken.ThrowIfCancellationRequested();
             return false;
         }
-        catch (JsonException)
+    }
+
+    private static bool IsValidResponse(ReadOnlyMemory<byte> body, string[] hostnames, string? expectedAction)
+    {
+        try
         {
-            return false;
+            ResponseEncoding.GetCharCount(body.Span); // Reject invalid UTF-8, rather than replacing it.
+            using var document = JsonDocument.Parse(body, new JsonDocumentOptions { MaxDepth = 16 });
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !TryGetSingleProperty(root, "success", out var success) || success.ValueKind != JsonValueKind.True
+                || !TryGetSingleProperty(root, "hostname", out var hostname) || hostname.ValueKind != JsonValueKind.String
+                || !IsDnsHostname(hostname.GetString())
+                || !hostnames.Contains(hostname.GetString(), StringComparer.OrdinalIgnoreCase))
+                return false;
+
+            return string.IsNullOrEmpty(expectedAction)
+                || (TryGetSingleProperty(root, "action", out var action) && action.ValueKind == JsonValueKind.String
+                    && string.Equals(action.GetString(), expectedAction, StringComparison.Ordinal));
         }
-        catch (DecoderFallbackException)
+        catch (Exception exception) when (exception is JsonException or DecoderFallbackException or InvalidOperationException)
         {
+            // Escaped lone UTF-16 surrogates fail during string decoding, not JsonDocument.Parse.
+            // Keep this boundary limited to response parsing, never HTTP/configuration operations.
             return false;
         }
     }
@@ -117,7 +125,8 @@ public sealed class StorefrontCaptchaValidator : IStorefrontCaptchaValidator
         var count = 0;
         foreach (var property in root.EnumerateObject())
         {
-            if (property.NameEquals(name))
+            // Decode every top-level property name, including short unknown names that NameEquals can skip.
+            if (string.Equals(property.Name, name, StringComparison.Ordinal))
             {
                 value = property.Value;
                 count++;
