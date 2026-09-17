@@ -144,7 +144,7 @@ internal sealed class StudioWorkflowRunner : IStudioWorkflowRunner
         await _workflows.UpdateInstanceAsync(instance, ct);
 
         var definition = await _workflows.GetDefinitionAsync(instance.TenantId, instance.WorkflowDefinitionId, ct);
-        var title = "« Workflow supprimé » en échec";
+        var title = "Workflow supprimé en échec";
         string? link = null;
         if (definition is not null)
         {
