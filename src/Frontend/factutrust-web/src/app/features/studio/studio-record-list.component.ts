@@ -51,6 +51,9 @@ import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
           @if (canDesign()) {
             <app-button variant="outline" icon="pi-wrench" routerLink="/studio/{{ e.id }}">Concevoir</app-button>
           }
+          @if (showWorkflowsButton()) {
+            <app-button variant="outline" icon="pi-sitemap" [routerLink]="['/studio', 'workflows']" [queryParams]="{ entity: e.id }" data-testid="wf-open">Workflows</app-button>
+          }
           @if (canWrite()) {
             <app-button variant="primary" icon="pi-plus" [routerLink]="['/studio/d', entityKey, 'new']">Ajouter</app-button>
           }
@@ -169,6 +172,10 @@ export class StudioRecordListComponent implements OnInit {
   readonly views = computed(() => this.schema()?.views ?? []);
   readonly recordViewsEnabled = computed(() =>
     this.capabilities.state() === 'ready' && this.capabilities.capabilities().recordViewsEnabled === true);
+  readonly workflowsEnabled = computed(() =>
+    this.capabilities.state() === 'ready' && this.capabilities.capabilities().workflowsEnabled === true);
+  // Bouton « Workflows » : capacité + concepteur (la route cible exige studio:design_entities, D-44-62).
+  readonly showWorkflowsButton = computed(() => this.workflowsEnabled() && this.canDesign());
   // Vue effective : `?view=<id>` si présente, sinon la vue `isDefault`, sinon la « Liste » brute.
   // Sans vue dans le schéma, l'écran est strictement celui d'avant 2.5a (zéro régression).
   readonly activeView = computed(() => {

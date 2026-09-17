@@ -53,6 +53,10 @@ import { StudioAiCapabilitiesService } from './ai/studio-ai-capabilities.service
           class="p-button-outlined p-button-sm" [routerLink]="['/studio/d', e.key]"></button>
         <button pButton type="button" label="Pont ERP" icon="fa-solid fa-bolt"
           class="p-button-outlined p-button-sm" [routerLink]="['/studio', e.id, 'automations']"></button>
+        @if (workflowsEnabled()) {
+          <button pButton type="button" label="Workflows" icon="fa-solid fa-route"
+            class="p-button-outlined p-button-sm" [routerLink]="['/studio', 'workflows']" [queryParams]="{ entity: e.id }" data-testid="wf-open"></button>
+        }
         @if (manyToManyEnabled()) {
           <button pButton type="button" [label]="runtimeLabels.relations.addManyToMany" icon="fa-solid fa-diagram-project"
             class="p-button-outlined p-button-sm" (click)="m2mVisible.set(true)" data-testid="m2m-open"></button>
@@ -297,6 +301,8 @@ export class StudioEntityDesignerComponent implements OnInit {
   readonly labels = STUDIO_AI_LABELS;
   readonly manyToManyEnabled = computed(() =>
     this.capabilities.state() === 'ready' && this.capabilities.capabilities().manyToManyEnabled === true);
+  readonly workflowsEnabled = computed(() =>
+    this.capabilities.state() === 'ready' && this.capabilities.capabilities().workflowsEnabled === true);
   readonly relations = signal<EntityRelationDto[]>([]);
   readonly relationsLoading = signal(false);
   readonly m2mVisible = signal(false);

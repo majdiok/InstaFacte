@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, RouterLink, convertToParamMap, provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
 import { MessageService } from 'primeng/api';
@@ -44,7 +44,7 @@ let fixture: ComponentFixture<StudioEntityDesignerComponent>;
 let component: StudioEntityDesignerComponent;
 let httpMock: HttpTestingController;
 
-function setup(manyToManyEnabled: boolean): void {
+function setup(manyToManyEnabled: boolean, workflowsEnabled = false, state: 'ready' | 'unavailable' = 'ready'): void {
   TestBed.configureTestingModule({
     imports: [StudioEntityDesignerComponent],
     providers: [
@@ -54,7 +54,7 @@ function setup(manyToManyEnabled: boolean): void {
       provideNoopAnimations(),
       MessageService,
       { provide: ConfirmationService, useValue: { confirm: () => {} } },
-      { provide: StudioAiCapabilitiesService, useValue: capabilitiesStub({ manyToManyEnabled }) },
+      { provide: StudioAiCapabilitiesService, useValue: capabilitiesStub({ manyToManyEnabled, workflowsEnabled }, state) },
       { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'e1' }) } } }
     ]
   });
@@ -104,6 +104,26 @@ describe('StudioEntityDesignerComponent — relations N-N (2.5f)', () => {
     httpMock.expectOne(req => req.url === `${API}/entities/e1/fields`).flush({ success: true, data: [], message: null, errors: [] });
     expect(toast.add).toHaveBeenCalled();
     expect(component.relations().length).toBe(2);
+  });
+});
+
+describe('StudioEntityDesignerComponent — accès workflows (4.4i)', () => {
+  afterEach(() => httpMock.verify());
+
+  it('affiche le bouton Workflows quand la capacité workflowsEnabled est vraie', () => {
+    setup(false, true);
+    const btn = fixture.debugElement.query(By.css('[data-testid="wf-open"]'));
+    expect(btn).not.toBeNull();
+    expect(btn.nativeElement.textContent).toContain('Workflows');
+    const link = btn.injector.get(RouterLink);
+    // Le hub 4.4d pré-filtre sur l'identifiant de table (?entity=<id>, H-5 / D-44-85).
+    expect(link.queryParams).toEqual({ entity: 'e1' });
+    expect(link.urlTree?.toString()).toBe('/studio/workflows?entity=e1');
+  });
+
+  it('masque le bouton Workflows quand la capacité est fausse ou indisponible', () => {
+    setup(false, true, 'unavailable');
+    expect(fixture.debugElement.query(By.css('[data-testid="wf-open"]'))).toBeNull();
   });
 });
 
