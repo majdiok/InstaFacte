@@ -389,9 +389,15 @@ public sealed class OllamaSettings
     /// <summary>
     /// Durée (minutes) du bail posé sur une instance de workflow avant sa reprise (D-01, D-19 : ajouté en
     /// 4.2c2 — 4.2d le consomme tel quel). Un worker mort sans relâcher son bail laisse l'instance
-    /// récupérable par le reaper après ce délai. Borné 5..120 par <c>StudioWorkflowRunner</c>.
+    /// récupérable par le reaper après ce délai. Borné 5..120 — voir <see cref="StudioWorkflowLeaseDuration"/>.
     /// </summary>
     public int StudioWorkflowLeaseMinutes { get; set; } = 30;
+
+    /// <summary>
+    /// Durée effective du bail de reprise : <see cref="StudioWorkflowLeaseMinutes"/> bornée à 5..120 minutes.
+    /// Source unique partagée par le runner (pose du bail) et le job (reaper) — calculée, jamais liée à la configuration.
+    /// </summary>
+    public TimeSpan StudioWorkflowLeaseDuration => TimeSpan.FromMinutes(Math.Clamp(StudioWorkflowLeaseMinutes, 5, 120));
 
     /// <summary>
     /// Taille de lot par tenant et par tick du job <c>studio-workflow-resume</c> (reaper, expirations,

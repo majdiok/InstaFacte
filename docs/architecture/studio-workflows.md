@@ -199,3 +199,72 @@ le 2026-09-17) et `D-41-01 → D-41-16` (tranches 4.1j1, 4.1j2, 4.1k, 4.1l). Poi
 issue (D-41-03), catalogue `{ entries }` seul (D-41-04), toggle sans jeton (D-41-05), duplication inactive
 `_copie` (D-41-06), `DELETE` ⇒ 200 (D-41-11), drapeaux `false` dans le dépôt (D-41-13), enveloppe d'erreur
 sans `code` (D-41-15), `toggle`/`DELETE` ⇒ 409 Studio sur `DbUpdateConcurrencyException` (D-41-16).
+
+## Exécution différée (4.2)
+
+Le moteur ne connaît ni Hangfire ni HTTP : toute reprise hors requête passe par le job récurrent
+`studio-workflow-resume` (cron `*/10 * * * *` UTC, `DisableConcurrentExecution 540 s`, `AutomaticRetry 0`),
+qui itère sur les tenants actifs et, pour chacun, moissonne les baux périmés, expire les approbations
+échues, reprend les instances dues et purge les instances terminales au-delà de la rétention
+(`docs/runbooks/studio-workflows-resume.md`).
+
+```mermaid
+sequenceDiagram
+    participant Job as StudioWorkflowResumeJob
+    participant Repo as IStudioWorkflowRepository
+    participant Runner as StudioWorkflowRunner
+    participant Resolver as ImpersonationSnapshotResolver
+    participant Ctx as ImpersonatedUserContext
+    participant Engine as StudioWorkflowEngine
+
+    Job->>Repo: ListDueAsync(tenant, now, batch)
+    Note over Repo: exclut les waiting_approval<br/>dont une approbation est encore pending (D-04)
+    loop chaque instance due
+        Job->>Runner: ResumeUnderStarterAsync(instance)
+        Runner->>Repo: TryLeaseInstanceAsync (bail = RowVersion, D-01)
+        Runner->>Resolver: cliché du lanceur (fail-closed, D-18)
+        Resolver-->>Runner: ImpersonatedUserSnapshot | null
+        alt cliché null
+            Runner->>Engine: Fail + notification 17 + audit InstanceFailed
+        else cliché valide
+            Runner->>Ctx: Enter(snapshot)
+            Runner->>Engine: ResumeAsync(instance)
+            Ctx-->>Runner: Dispose
+        end
+        Runner->>Repo: ReleaseLease + update (finally, D-25)
+    end
+```
+
+> **Note — déclencheurs système.** Les instances sans lanceur (`StartedBy` null : `on_create`,
+> `on_update`, déclencheurs ERP) sautent l'impersonation : le moteur tourne alors sans cliché, et le
+> branchement « cliché null ⇒ échec » du diagramme ne s'applique qu'aux instances lancées par un
+> utilisateur.
+
+### Identité courante : `ChannelAwareCurrentUser` (4.2b)
+
+Trois niveaux strictement ordonnés, jamais de repli partiel : **impersonation** (cliché posé par le
+runner autour du moteur) > **canal** (cliché du déclencheur : rappels, webhooks) > **HTTP**
+(utilisateur authentifié). Dès qu'un cliché est présent (`HasSnapshot`), le portail, la délégation,
+l'IP et l'agent utilisateur HTTP sont neutralisés.
+
+### Cycle d'une approbation
+
+`pending` → `approved` / `rejected` (décision utilisateur, commentaire obligatoire au refus, 404 si
+non assigné, 409 si déjà traitée) ou `expired` (job, à l'échéance) — la décision/expiration mémorise le
+statut dans le contexte (`_approval.{étape}`) et rend l'instance **due sans changer d'étape** (D-05) ;
+le moteur applique alors `onApprove` / `onReject` / `onTimeout` à la reprise. L'annulation d'une
+instance annule ses approbations `pending` (moteur, D-20).
+
+### API runtime (`api/studio`, gardée par le drapeau)
+
+| # | Verbe | Route | Policy | Succès |
+|---|---|---|---|---|
+| 1 | GET | `workflows/approvals/mine?max=100` | `custom_records:read` | 200 `WorkflowApprovalInboxItemDto[]` |
+| 2 | GET | `workflows/approvals/mine/count` | `custom_records:read` | 200 `{ count }` |
+| 3 | POST | `workflows/approvals/{approvalId}/approve` | `custom_records:write` | 200 `WorkflowInstanceDto` |
+| 4 | POST | `workflows/approvals/{approvalId}/reject` | `custom_records:write` | 200 `WorkflowInstanceDto` (400 sans commentaire) |
+| 5 | GET | `records/{entityKey}/{recordId}/workflow-instances?max=50` | `custom_records:read` | 200 `WorkflowInstanceDto[]` |
+| 6 | GET | `records/{entityKey}/workflows` | `custom_records:read` | 200 `RunnableWorkflowDto[]` |
+| 7 | POST | `records/{entityKey}/{recordId}/workflows/{workflowKey}/run` | `custom_records:write` | 201 + `Location` vers `workflows/instances/{id}` |
+| 8 | POST | `workflows/instances/{instanceId}/cancel` | `custom_records:write` | 200 `WorkflowInstanceDto` |
+| 9 | POST | `workflows/instances/{instanceId}/remind` | `custom_records:write` | 200 (409 si < 24 h) |

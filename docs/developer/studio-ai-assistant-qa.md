@@ -751,3 +751,44 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     absent ⇒ instance `failed`, step run `failed`, notification `StudioWorkflowStepFailed` (type 17) au
     lanceur avec lien `/studio/d/commandes/{recordId}/edit` ; `onFailure: "continue"` ⇒ step run `failed`,
     instance poursuivie jusqu'à `completed`.
+
+## Exécution des workflows (PR 4.2)
+
+Prérequis : `Ollama:EnableStudioWorkflows=true`, un compte `custom_records:write`, un workflow
+`manual` à 3 étapes dont une approbation « rôle Administrator, 1 h » sur une table de test.
+
+### 81. Lancement manuel
+
+`POST api/studio/records/{entityKey}/{recordId}/workflows/{key}/run` ⇒ `201` + en-tête `Location`
+vers `api/studio/workflows/instances/{id}`. `GET api/studio/records/{entityKey}/{recordId}/workflow-instances`
+liste l'instance en `waiting_approval`. Baisser le quota `MaxWorkflowInstancesPerRecord` à 1 sur le plan
+de test puis relancer ⇒ `400 Validation.Plan` (aucune instance supplémentaire créée).
+
+### 82. Boîte d'approbations
+
+Avec un compte **Administrator** : `GET api/studio/workflows/approvals/mine` liste l'élément (workflow,
+table, enregistrement, libellé) et `GET api/studio/workflows/approvals/mine/count` ⇒ `{ count: 1 }`.
+Avec un compte **Accountant** non assigné : liste vide, et `POST …/approvals/{id}/approve` ⇒ `404`
+(l'existence de l'approbation n'est pas révélée).
+
+### 83. Décision
+
+`POST …/approvals/{id}/reject` sans commentaire ⇒ `400 Validation.comment`. `POST …/approve` ⇒ `200`
+`WorkflowInstanceDto` dont le statut a avancé (`running` puis `completed`). Un second `approve` sur la
+même approbation ⇒ `409`. Le lanceur reçoit la notification 16 « Approbation « … » accordée ».
+
+### 84. Expiration et reprise par le job
+
+Créer une approbation à 1 h, avancer l'horloge (ou attendre). Au tick suivant du job
+`studio-workflow-resume` (10 min) : l'approbation passe `expired` et l'instance suit `onTimeout`
+(`reject` ⇒ `cancelled` « Approbation refusée » ; `approve` ⇒ la suite des étapes). Sur une instance
+encore en attente : `POST …/instances/{id}/remind` ⇒ `200` (notification « Rappel : … » ré-émise) puis
+un second appel immédiat ⇒ `409` (1 relance / 24 h).
+
+### 85. Fail-closed
+
+Désactiver l'utilisateur lanceur (ou lui donner un rôle plateforme) avant le tick : l'instance passe
+`failed` avec « Lanceur introuvable ou inactif : reprise refusée. » et le lanceur reçoit la
+notification 17. `POST …/instances/{id}/cancel` avec un compte `custom_records:write` **sans**
+`studio:design_entities` ⇒ `200` `cancelled`. Couper `EnableStudioWorkflows=false` ⇒ les 9 routes
+runtime répondent `404` « Les workflows Studio ne sont pas activés. » sans aucun traitement.
