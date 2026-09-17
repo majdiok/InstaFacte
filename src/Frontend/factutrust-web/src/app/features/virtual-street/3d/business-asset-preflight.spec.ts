@@ -33,12 +33,19 @@ function encodeText(text: string, binary?: Uint8Array): Uint8Array {
   if (binary) { view.setUint32(20 + padded, binary.length, true); view.setUint32(24 + padded, 0x004e4942, true); bytes.set(binary, 28 + padded); }
   return bytes;
 }
+function fnv1a(bytes: Uint8Array): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i++) hash = Math.imul(hash ^ bytes[i], 0x01000193);
+  return hash >>> 0;
+}
 function expectCode(bytes: Uint8Array, code: string): void {
-  const before = bytes.slice();
+  // Full equality diff for small inputs; cheap fingerprint for multi-MB fixtures.
+  const before: Uint8Array | number = bytes.length > 1_000_000 ? fnv1a(bytes) : bytes.slice();
   const result = preflightBusinessGlb(bytes);
   expect(result.ok).withContext(JSON.stringify(result)).toBeFalse();
   if (!result.ok) expect(result.code).toBe(code);
-  expect(bytes).withContext('preflight must not modify input').toEqual(before);
+  if (typeof before === 'number') expect(fnv1a(bytes)).withContext('preflight must not modify input').toBe(before);
+  else expect(bytes).withContext('preflight must not modify input').toEqual(before);
 }
 
 describe('bounded static GLB preflight', () => {
@@ -108,7 +115,20 @@ describe('bounded static GLB preflight', () => {
     ['scene refers to child', r => { r['nodes'] = [{ children: [1] }, {}]; r['scenes'] = [{ nodes: [1] }]; }, 'glb.scene-root'],
     ['node collection bound', r => r['nodes'] = Array(4097).fill({}), 'glb.collection-limit'],
     ['JSON nesting bound', r => { let extra: unknown = {}; for (let i = 0; i < 33; i++) extra = { nested: extra }; r['extras'] = extra; }, 'glb.json-depth'],
-    ['JSON string bound', r => r['extras'] = 'x'.repeat(4097), 'glb.json-string']
+    ['JSON string bound', r => r['extras'] = 'x'.repeat(4097), 'glb.json-string'],
+    ['JSON token bound', r => r['extras'] = Array(125001).fill('x'), 'glb.json-tokens'],
+    ['JSON array bound', r => r['extras'] = Array(16385).fill(0), 'glb.collection-limit'],
+    ['non-empty textures', r => r['textures'] = [{}], 'glb.unsupported-feature'],
+    ['mesh morph weights', r => entries(r['meshes'])[0]['weights'] = [], 'glb.unsupported-feature'],
+    ['node skin', r => entries(r['nodes'])[0]['skin'] = 0, 'glb.unsupported-feature'],
+    ['node camera', r => entries(r['nodes'])[0]['camera'] = 0, 'glb.unsupported-feature'],
+    ['node weights', r => entries(r['nodes'])[0]['weights'] = [], 'glb.unsupported-feature'],
+    ['unsupported vertex semantic', r => record(entries(entries(r['meshes'])[0]['primitives'])[0]['attributes'])['TEXCOORD_2'] = 0, 'glb.unsupported-feature'],
+    ['integer position component', r => entries(r['accessors'])[0]['componentType'] = 5123, 'glb.position-format'],
+    ['normalized position', r => entries(r['accessors'])[0]['normalized'] = true, 'glb.position-format'],
+    ['VEC2 position', r => entries(r['accessors'])[0]['type'] = 'VEC2', 'glb.position-format'],
+    ['normalized indices', r => entries(r['accessors'])[1]['normalized'] = true, 'glb.index-format'],
+    ['primitive budget across meshes', r => { const mesh = { primitives: Array(2050).fill({ attributes: { POSITION: 0 } }) }; r['meshes'] = [mesh, mesh]; }, 'glb.primitive-limit']
   ];
   for (const [name, change, code] of changes) it(`rejects ${name}`, () => {
     const root = triangle(); change(root); expectCode(encode(root, triangleBytes()), code);
@@ -131,5 +151,58 @@ describe('bounded static GLB preflight', () => {
   it('rejects truncated files and over-ceiling JSON chunks', () => {
     expectCode(new Uint8Array(19), 'glb.header');
     const bytes = encodeText(' '.repeat(BUSINESS_GLB_LIMITS.jsonBytes + 4)); expectCode(bytes, 'glb.json-limit');
+  });
+  it('rejects over-ceiling total bytes before copying the input', () => {
+    expectCode(new Uint8Array(BUSINESS_GLB_LIMITS.bytes + 4), 'glb.byte-limit');
+  });
+  it('rejects an empty JSON chunk and inconsistent BIN/buffer combinations', () => {
+    expectCode(encodeText(''), 'glb.json-limit');
+    expectCode(encode(triangle(), new Uint8Array(0)), 'glb.integer');
+    const noBuffers = triangle(); delete noBuffers['buffers'];
+    expectCode(encode(noBuffers, triangleBytes()), 'glb.buffer-length');
+    expectCode(encode(triangle(), new Uint8Array(48)), 'glb.buffer-length');
+  });
+  for (const [name, change] of [
+    ['float component', (accessor: Json) => { accessor['componentType'] = 5126; }],
+    ['non-scalar shape', (accessor: Json) => { accessor['type'] = 'VEC2'; }]
+  ] as const) {
+    it(`rejects ${name} indices`, () => {
+      const root = triangle();
+      change(entries(root['accessors'])[1]);
+      entries(root['bufferViews'])[1]['byteLength'] = 12;
+      entries(root['buffers'])[0]['byteLength'] = 48;
+      expectCode(encode(root, new Uint8Array(48)), 'glb.index-format');
+    });
+  }
+  it('rejects a non-indexed triangle count that is not a multiple of three', () => {
+    const root = triangle();
+    delete entries(entries(root['meshes'])[0]['primitives'])[0]['indices'];
+    entries(root['accessors'])[0]['count'] = 4;
+    entries(root['bufferViews'])[0]['byteLength'] = 48;
+    entries(root['buffers'])[0]['byteLength'] = 48;
+    expectCode(encode(root, new Uint8Array(48)), 'glb.triangle-count');
+  });
+  it('rejects expanded accessor work over the byte budget with overlapping views', () => {
+    const view = { buffer: 0, byteOffset: 0, byteLength: 16_000_000 };
+    const accessor = { componentType: 5126, count: 1_000_000, type: 'VEC4' };
+    const root: Json = { asset: { version: '2.0' }, buffers: [{ byteLength: 16_000_000 }],
+      bufferViews: [0, 1, 2, 3, 4].map(bufferView => ({ ...view, bufferView })),
+      accessors: [0, 1, 2, 3, 4].map(bufferView => ({ ...accessor, bufferView })) };
+    expectCode(encode(root, new Uint8Array(16_000_000)), 'glb.accessor-budget');
+  });
+  const triangleCeiling = (primitives: number, instances: number): Uint8Array => {
+    const root: Json = { asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }],
+      nodes: Array.from({ length: instances }, () => ({ mesh: 0 })),
+      buffers: [{ byteLength: 2_000_034 }],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }, { buffer: 0, byteOffset: 36, byteLength: 1_999_998 }],
+      accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3' }, { bufferView: 1, componentType: 5123, count: 999_999, type: 'SCALAR' }],
+      meshes: [{ primitives: Array.from({ length: primitives }, () => ({ attributes: { POSITION: 0 }, indices: 1 })) }] };
+    return encode(root, new Uint8Array(2_000_036));
+  };
+  it('rejects declared mesh triangles over the ceiling', () => {
+    expectCode(triangleCeiling(7, 1), 'glb.triangle-limit');
+  });
+  it('rejects instantiated triangles over the ceiling when the mesh alone fits', () => {
+    expectCode(triangleCeiling(4, 2), 'glb.triangle-limit');
   });
 });
