@@ -435,6 +435,8 @@ public static class DependencyInjection
         services.AddScoped<IEmailMessageQueryService, EmailMessageQueryService>();
         services.AddScoped<SendEmailJob>();
         services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+        // Studio IA 4.2a — identité impersonnée fail-closed des reprises de workflows (sans HTTP ni canal).
+        services.AddScoped<FactuTrust.Application.Common.Identity.IImpersonationSnapshotResolver, FactuTrust.Infrastructure.Services.Identity.ImpersonationSnapshotResolver>();
         // Phase 2 — moteur de règles sectorielles en base (plan §WP-B2). Static provider is a
         // process-lifetime singleton (zero-alloc snapshot); DB provider is scoped (uses the
         // per-request MasterDbContext); the composite (registered as ISectorCatalogProvider) picks
