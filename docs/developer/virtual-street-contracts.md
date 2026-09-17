@@ -1,11 +1,20 @@
 # Visite virtuelle réaliste — contrats L0 figés
 
-Statut : **L0 — contrats purs uniquement**. Aucun chargeur, résolveur de taxonomie ou
-catalogue de production n'est activé. Ces types et validateurs sont la référence commune
-des lots L1 (moteur/chargeur), L2 (référence publique consentie) et L3 (couverture)
-du plan approuvé `/code/.plans/v3-realistic-business-3d.md` (Volet I §§3–9, tâche 1).
+Statut : **L0 acquis + première tranche L0-R V4, validation déclarative commune**.
+Aucun chargeur, résolveur de taxonomie, catalogue de production ou intérieur n'est
+activé. Les versions wire 1/2/1, Angular 19 et Three r161 restent inchangées.
 
-Fichiers livrés (tous nouveaux, frontend uniquement) :
+| Lot canonique V4 | Responsabilité | Ancien alias documentaire L0 |
+|---|---|---|
+| L0 puis L0-R | Contrats/fixtures puis écarts et requalification | L0 acquis, pas reconstruit |
+| L1 | Consentement et référence publique | L2 référence publique consentie |
+| L2 | Configuration à chaud et fraîcheur | Aucun alias fiable |
+| L3 | Chargeur, registre et moteur | L1 moteur/chargeur |
+| L4 / L5 | Rue et routes / quatre intérieurs pilotes | Autrefois englobés dans moteur |
+| L6 | Couverture après acceptation des quatre pilotes | L3 couverture |
+| L7 | Qualification globale et réversibilité | G0–G4 sont des gates, pas des lots |
+
+Fichiers de référence (frontend/outillage uniquement) :
 
 | Fichier | Rôle |
 |---|---|
@@ -15,11 +24,17 @@ Fichiers livrés (tous nouveaux, frontend uniquement) :
 | `WEB/src/app/features/virtual-street/testing/business-taxonomy-fixture.ts` | Base taxonomique synthétique 36 + 6 + 24 + 8 |
 | `WEB/src/app/features/virtual-street/testing/business-taxonomy-fixture.spec.ts` | Parité de la base avec la source domaine + règle de couverture |
 
-La porte de build `WEB/scripts/validate-street-catalog.mjs` (script parent, hors
-périmètre L0) applique les mêmes règles cœur ; le validateur TypeScript est le
-sur-ensemble normatif strict (chemins avec `\`, complétude des recettes par thème,
-kinds de scènes, cycles de dépendances, etc.). Un catalogue refusé ici ne doit
-jamais atteindre un renderer.
+La porte Node `WEB/scripts/validate-street-catalog.mjs` compile le **même module
+TypeScript pur** en CommonJS dans un répertoire temporaire, nettoyé après exécution.
+Elle ne maintient plus de deuxième validation de versions, budgets, navigation,
+identités, dépendances ou attribution. La compilation ciblée utilise TypeScript
+existant ; elle ne charge ni Angular ni Three et ne génère aucun asset.
+Les 79 cas du corpus JSON partagé et de son adaptateur synthétique dans `VS/testing/`
+sont exécutés séparément dans les suites TS/Jasmine et Node, avec codes attendus
+explicites et roundtrip JSON côté Node. Ces assertions portent sur les résultats
+attendus, pas sur l'autocomparaison de deux appels au même validateur. Jasmine
+contrôle aussi la non-mutation ; des processus enfant vérifient les vrais résultats
+et codes de sortie CLI.
 
 ## 1. Les versions à ne pas confondre (plan §6.1)
 
@@ -36,8 +51,9 @@ jamais atteindre un renderer.
 **L'acceptation publique lie `profileKey` + `editorialRevision`** (type
 `VisualProfileIdentity`), pas `catalogVersion`. Une mise à jour technique de
 compression/LOD/matériaux change `catalogVersion` sans toucher l'identité éditoriale
-acceptée ; les livraisons N et N−1 conservent les couples acceptés ou produisent un
-repli neutre explicite.
+acceptée. La conservation N−1 n'autorise pas la consommation : les futurs
+consommateurs devront vérifier que la révision est toujours active, supportée et
+autorisée. Retrait/révocation prime sur fichiers conservés et consentement passé.
 
 ## 2. Formats normatifs (validateur pur)
 
@@ -49,11 +65,14 @@ repli neutre explicite.
 | `editorialRevision` | `^r[1-9][0-9]*$` | `isValidEditorialRevision` |
 | Nœuds/matériaux GLB | `^[A-Za-z0-9_.-]{1,128}$` (conserve `Sign_Plane`, `StorefrontRoot_LOD1`) | `isNodeName` |
 | `sha256` | exactement 64 hex minuscules | `isValidSha256Hex` |
-| `path` d'asset | relatif immuable sous `<catalogVersion>/` ; **aucune URI** (`http:`, `data:`, `blob:`…), aucun chemin absolu, aucun `..`, aucun `\`, aucun segment vide | `isValidCatalogAssetPath` |
+| `path` d'asset | relatif immuable sous `<catalogVersion>/` ; **aucune URI** (`http:`, `data:`, `blob:`…), aucun chemin absolu, aucun `..`, aucun `\`, aucun segment vide ; segments ASCII `[A-Za-z0-9_-][A-Za-z0-9._-]*`, donc sans `%`, `?`, `#`, `:`, espaces ou contrôles Unicode | `isValidCatalogAssetPath` |
 
 Les champs inconnus supplémentaires sont **tolérés** (évolution additive) ; les valeurs
 inconnues des champs connus sont rejetées. Les types readonly ne sont pas une frontière
 de confiance : toute donnée reçue passe par les validateurs avant usage.
+La validation ne nettoie ni ne clone le manifeste : le futur consommateur doit
+construire ses objets internes par allowlist et ne jamais réémettre les champs
+inconnus. Cette projection n'est **pas** livrée par cette tranche.
 
 ## 3. Manifeste (plan §6.2) — points de contrôle
 
@@ -109,7 +128,7 @@ domaines, ordre compris. Huit paires seedées exigent en outre une scène
 chacun exige façade **et** intérieur. Les replis neutres restent de l'affichage et ne
 couvrent aucun domaine — y compris l'alias `(segment, autre)` des lignes sans domaine.
 Toute classification privée (segment/domaine réel d'un tenant) n'apparaît jamais dans
-un DTO public : la résolution privée est une décision serveur (L2), hors de ce fichier.
+un DTO public : la résolution privée est une décision serveur (L1), hors de ce fichier.
 
 ## 7. Hors périmètre L0 (lots suivants)
 
@@ -118,3 +137,74 @@ propriétaire et `experience-config` ; runtime `business-scene.runtime.ts`, regi
 loader, navigation ; validation de GLB réels et assets pilotes ; activation
 production. Le catalogue legacy (5 GLB, budgets historiques, alias de nœuds) reste
 inchangé et validé par ses propres outils.
+
+
+## 8. Première tranche L0-R : contrôles et limites explicites
+
+### Exécution sans serveur ni génération
+
+Depuis `WEB` :
+
+```bash
+npm run test:street-catalog
+node --test scripts/validate-street-catalog.spec.mjs
+npm run validate:street-catalog -- --schema-only --manifest /tmp/synthetic-manifest.json --json
+npm run validate:street-catalog -- --catalog-root src/assets/virtual-street/catalogs --version v4-pilots-r1 --manifest src/assets/virtual-street/catalogs/v4-pilots-r1/manifest-v2.json --json
+```
+
+La commande de test compile les specs pures Jasmine existantes et le corpus partagé,
+puis lance les tests Node. Elle n'est pas un test Angular/WebGL/API ou une recette
+artistique. Les exemples de manifests nécessitent des fichiers fournis explicitement ;
+aucun catalogue de production n'est ajouté ici.
+
+- Le manifeste canonique est `<catalog-root>/<catalogVersion>/manifest-v2.json`.
+  Les chemins d'assets restent relatifs **au répertoire de cette version**.
+- Aucun défaut mutable `/catalogs/manifest-v2.json`, argument positionnel historique,
+  liste arbitraire de fichiers, option inconnue ou option dupliquée n'est accepté.
+- `--schema-only` est explicitement **non qualifiant**. Le manifeste vide reste
+  valide au niveau bas ; il est refusé en mode fichiers (`release.empty`).
+- Le mode fichiers parcourt **tous** les descripteurs, y compris `render` et
+  `attribution` : frontière réelle du répertoire, refus des symlinks du sous-arbre,
+  fichier régulier, taille effective et SHA-256, puis glTF validator sur les GLB.
+  La lecture refuse les fichiers non réguliers avant ouverture et recontrôle le
+  descripteur ; l'ouverture non bloquante, lorsqu'elle est disponible, évite une
+  attente sur FIFO remplacé entre ces contrôles. Les régressions POSIX utilisent
+  des FIFO sans writer et des processus enfant avec timeout de cinq secondes,
+  pour le manifeste (deux modes), un rendu et une attribution.
+  Un succès vaut `file-integrity-only`, jamais une release complète ; le résultat
+  contient toujours `productionReleaseQualified: false`.
+- `quality:gate:street-catalog` n'est pas encore une gate V4 de publication : son
+  orchestration/forwarding de flags et son raccord CI sont à reprendre dans la
+  prochaine tranche. Utiliser les commandes ciblées ci-dessus pour ce checkpoint.
+
+### Bornes communes avant validation détaillée
+
+`CATALOG_VALIDATION_LIMITS` fixe 4 096 assets, 1 024 scènes, 512 profils,
+16 384 arêtes, des chaînes d'au plus 64 assets, 250 000 valeurs JSON,
+32 niveaux, 16 384 entrées par tableau et 4 096 caractères par chaîne/clé.
+Les champs supplémentaires sont également bornés. Le graphe utilise un parcours
+topologique itératif O(assets + arêtes), sans DFS récursif ni accumulation de chemins.
+Les graphes partagés et l'ordre inversé sont couverts ; la profondeur ne dépend pas
+de l'ordre du manifeste. Les comptes/tailles déclarés sont des entiers sûrs ;
+triangles/draw calls/textures peuvent rester à zéro dans un fixture bas niveau,
+mais les octets encodés/transférés sont strictement positifs et entiers.
+
+La CLI refuse les fichiers JSON > 8 Mio avant allocation/parse et les assets >
+64 Mio avant lecture. Ces bornes d'outillage ne relèvent **aucun budget de scène**.
+Elles ne prouvent pas une borne de mémoire/temps du décodeur glTF.
+
+### Tranche suivante requise — L0-R n'est pas clos
+
+| Scénario V4 | Acquis ici | Prochaine tranche / preuve manquante |
+|---|---|---|
+| V06 | Chemins lexicaux fermés, version explicite, dépendances, realpath/symlinks statiques, fichiers render/attribution hashés | Transport/redirects et allowlist runtime ; robustesse contre remplacement concurrent des fichiers dans un espace non fiable |
+| V07 | Schéma commun, enums MIME/extensions déclarées, glTF validator existant | Magic bytes/MIME réels de chaque format, contenu incorporé et URI/buffers/images, décodeurs approuvés et aucun fetch implicite |
+| V08 | JSON/collections/graphe bornés, tailles de fichiers contrôlées avant lecture | Inspection bornée GLB/accessors/nœuds/offsets, textures réelles/mips/layers/décompression, limites CPU/mémoire du runner r161 ; budgets transitifs mesurés |
+| V19 | Corpus positif/négatif à résultats attendus partagé entre TS/Jasmine et Node, enfants réellement rouges, hashes inchangés | Manifest d'attendus de release non vide, couverture/droits approuvés, orchestration CI bloquante et attestation liée au candidat |
+
+La navigation, les UV/ancrages, les estimations, les images et l'attribution restent
+déclaratifs : une scène synthétique sans géométrie peut passer ces checks, **pas**
+être publiée. L'index immuable N/N−1 et l'allowlist dérivée, la projection interne
+par allowlist, l'union de demande neutre, le runtime et la baseline WebGL requalifiée
+restent aussi à livrer. Aucun nouveau consentement, art, publication ou activation UI
+n'est autorisé implicitement par cette tranche.

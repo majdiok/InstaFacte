@@ -247,7 +247,7 @@ export const MAX_EXPERIENCE_LEASE_SECONDS = 60;
  */
 export const BUSINESS_CATALOG_ROOT = 'assets/virtual-street/catalogs';
 
-/** Manifest filename served at the catalog root (parent-owned build gate default). */
+/** Immutable manifest: <BUSINESS_CATALOG_ROOT>/<catalogVersion>/manifest-v2.json. */
 export const BUSINESS_CATALOG_MANIFEST_FILENAME = 'manifest-v2.json';
 
 /**
