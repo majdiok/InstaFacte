@@ -1,6 +1,7 @@
 import { Route } from '@angular/router';
 import { StudioShellComponent } from './shared/studio-shell.component';
 import { permissionGuard } from '@core/guards/permission.guard';
+import { PERMISSIONS } from '@core/config/permission-keys';
 import { STUDIO_CHILD_ROUTES, STUDIO_ROUTES } from './studio.routes';
 
 describe('STUDIO_ROUTES', () => {
@@ -70,6 +71,26 @@ describe('STUDIO_ROUTES', () => {
     const relations = child('relations');
     expect(relations.canActivate?.length).toBe(2);
     expect(relations.canActivate?.[0]).toBe(permissionGuard);
+  });
+
+  it('déclare workflows et records/:key/:id avant relations et :id, gardés par permissionGuard (+ capabilityGuard pour workflows)', () => {
+    const paths = STUDIO_CHILD_ROUTES.map(r => r.path);
+    const idx = (p: string) => paths.indexOf(p);
+    expect(idx('workflows')).toBeGreaterThan(-1);
+    expect(idx('records/:key/:id')).toBeGreaterThan(-1);
+    expect(idx('workflows')).toBeLessThan(idx('relations'));
+    expect(idx('records/:key/:id')).toBeLessThan(idx('relations'));
+    expect(idx('records/:key/:id')).toBeLessThan(idx(':id'));
+    const workflows = child('workflows');
+    expect(workflows.canActivate?.length).toBe(2);
+    expect(workflows.canActivate?.[0]).toBe(permissionGuard);
+    expect(workflows.data?.['permissions']).toEqual([PERMISSIONS.studio.designEntities]);
+    // Pas de capabilityGuard sur la redirection : les liens de notification doivent fonctionner
+    // même si le flag workflows est coupé ensuite (D6/D-44-19).
+    const redirect = child('records/:key/:id');
+    expect(redirect.canActivate?.length).toBe(1);
+    expect(redirect.canActivate?.[0]).toBe(permissionGuard);
+    expect(redirect.data?.['permissions']).toEqual([PERMISSIONS.customData.recordsRead]);
   });
 });
 

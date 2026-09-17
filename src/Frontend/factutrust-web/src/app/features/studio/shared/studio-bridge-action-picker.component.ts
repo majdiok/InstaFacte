@@ -69,7 +69,7 @@ export class StudioBridgeActionPickerComponent {
 
   protected readonly selectedAction = computed(() => this.actions().find(a => a.name === this.action()) ?? null);
   protected readonly sourceOptions = computed(() =>
-    this.allowTemplate() ? [...BASE_SOURCES, { label: 'Modèle de texte', value: 'template' as const }] : BASE_SOURCES);
+    this.allowTemplate() ? [...BASE_SOURCES, { label: 'Modèle de texte', value: 'template' as const }] : [...BASE_SOURCES]);
   protected readonly fieldOptions = computed(() =>
     this.fields().filter(f => f.isActive).map(f => ({ label: `${f.label} (${f.key})`, value: f.key })));
 
