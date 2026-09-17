@@ -159,6 +159,23 @@ export const STUDIO_CHILD_ROUTES: Routes = [
     loadComponent: () => import('./studio-automations.component').then(m => m.StudioAutomationsComponent),
     title: 'Pont ERP - InstaFact'
   },
+  // Workflows (4.4d/4.4e1) : routes plates déclarées avant `relations` et `:id` (P11).
+  {
+    path: 'workflows',
+    canActivate: [permissionGuard, capabilityGuard('workflowsEnabled', () => '/studio')],
+    data: { permissions: [PERMISSIONS.studio.designEntities] },
+    loadComponent: () => import('./workflows/studio-workflows-hub.component').then(m => m.StudioWorkflowsHubComponent),
+    title: 'Workflows - InstaFact'
+  },
+  {
+    // Pas de capabilityGuard : les liens de notification (types 15–18, 4.4j) doivent mener à la
+    // fiche même si le flag workflows est coupé ensuite (D6).
+    path: 'records/:key/:id',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.customData.recordsRead] },
+    loadComponent: () => import('./workflows/studio-record-redirect.component').then(m => m.StudioRecordRedirectComponent),
+    title: 'Enregistrement - InstaFact'
+  },
   // Déclarée avant `:id` pour que `relations` ne soit pas capturé comme un identifiant de table (V5/E5).
   {
     path: 'relations',

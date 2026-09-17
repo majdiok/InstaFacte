@@ -37,7 +37,16 @@ export const STUDIO_WORKFLOW_LABELS = {
     duplicated: 'Copie créée (inactive).',
     toggled: 'Workflow {state}.',
     tooManyTables: 'Choisissez une table : plus de 25 tables actives.',
-    loadError: 'Chargement des workflows impossible.'
+    loadError: 'Chargement des workflows impossible.',
+    /** 4.4d — compléments du hub (libellés manquants ajoutés selon l'annexe, cités en PR). */
+    edit: 'Modifier',
+    duplicate: 'Dupliquer',
+    delete: 'Supprimer',
+    deleteTitle: 'Supprimer le workflow',
+    deleteMessage: 'Supprimer « {name} » ? Cette action est irréversible.',
+    deleteWithInstances: 'Supprimer « {name} » ? {count} instance(s) ouverte(s) seront annulées.',
+    stateActive: 'activé',
+    stateInactive: 'désactivé'
   },
 
   triggers: {
