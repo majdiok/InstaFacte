@@ -393,7 +393,12 @@ public sealed class StorefrontCaptchaValidatorTests
         if (callerCancels)
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => validator.IsValidAsync("token", cancellation.Token));
         else
-            Assert.False(await validator.IsValidAsync("token", cancellation.Token).WaitAsync(TimeSpan.FromSeconds(10)));
+        {
+            // Match ASP.NET Core's lack of a synchronization context: unrelated parallel tests
+            // must not hold the body-read continuation behind xUnit's bounded worker queue.
+            Assert.False(await Task.Run(() => validator.IsValidAsync("token", cancellation.Token))
+                .WaitAsync(TimeSpan.FromSeconds(10)));
+        }
         Assert.True(stream.WasDisposed);
     }
 
