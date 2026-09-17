@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal, untracked } from '@angular/core';
 import { AuthService } from '@core/services/auth.service';
 import {
   ALL_NAV_ITEMS,
@@ -79,8 +79,11 @@ export class AppNavService {
     this.stockFeaturesStore.features();
 
     if (this.auth.hasPermission(PERMISSIONS.studio.designEntities)) {
-      this.studioCapabilities.ensureLoaded(); // 403 pour les autres profils : on ne l'appelle pas
-      this.approvalsBadge.start(); // D23 : idempotent (g1)
+      // NG0600 : écritures de signaux interdites dans un computed — différées hors tracking.
+      untracked(() => {
+        this.studioCapabilities.ensureLoaded(); // 403 pour les autres profils : on ne l'appelle pas
+        this.approvalsBadge.start(); // D23 : idempotent (g1)
+      });
     }
 
     if (this.auth.isAccountingFirm()) {

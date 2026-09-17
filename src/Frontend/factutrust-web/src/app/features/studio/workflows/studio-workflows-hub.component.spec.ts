@@ -4,7 +4,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { MessageService } from 'primeng/api';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { environment } from '@environments/environment';
 import { StudioWorkflowsHubComponent } from './studio-workflows-hub.component';
 import { STUDIO_WORKFLOW_LABELS } from './studio-workflow-labels';

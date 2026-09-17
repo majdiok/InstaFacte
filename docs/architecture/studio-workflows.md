@@ -177,10 +177,48 @@ majuscules est déjà refusée en `400 Validation.key` avant d'atteindre ce cont
 
 ## Frontend
 
-Rien de livré en PR 4.1. Le concepteur (hub par table, éditeur d'étapes, détail d'instance), la page
-« Mes approbations » et l'onglet Workflow de l'aperçu IA arrivent en PR 4.4 (11 méthodes de conception
-ci-dessus + 9 méthodes d'exécution de la PR 4.2). Les déclencheurs et les variables de gabarit ne sont
-**pas** exposés par le catalogue (`entries` seul) : le client les code à partir de ce document.
+Livré en PR 4.4 (tranches a1 → l2). Arborescence :
+
+- `features/studio/workflows/` — **modèles** (`studio-workflows.models.ts` : DTO, unions snake_case,
+  `WORKFLOW_LIMITS`, `WORKFLOW_TRIGGERS`, `TEMPLATE_VARIABLES`, `STEP_KEY_REGEX`, sévérités,
+  `isOpenInstance`, `slugifyWorkflowKey`) ; **libellés** (`studio-workflow-labels.ts` :
+  `STUDIO_WORKFLOW_LABELS`, `formatWorkflowLabel`, `STEP_TYPE_ICONS`) ; **service**
+  (`studio-workflows.service.ts` : 20 méthodes — 11 conception + 9 exécution — `skipErrorUi` sur les
+  sondes et écritures gérées localement, `workflowErrorMessage` pour l'enveloppe
+  `{ success, data, message, error }`).
+- **Hub** `studio-workflows-hub.component.ts` (`/studio/workflows`, `?entity=`, borné à 25 tables) :
+  création, activation, duplication, suppression confirmée.
+- **Concepteur** `studio-workflow-designer.component.ts` (`/studio/workflows/new`, `/studio/workflows/:id`,
+  grille `1fr · 320 px · 250 px`, `p-drawer` < 1 280 px) : éditeur d'étapes
+  (`step-editor/`), liste réordonnable, arbre de condition en lecture, validation côté serveur avant
+  enregistrement (`rowVersion`, issues mappées par étape), panneau « instances récentes ».
+- **Exécution** : `studio-workflow-status-tag.component.ts` (étiquette de statut partagée),
+  `studio-workflow-instance-detail.component.ts` (tiroir `p-drawer` piloté par `?instance=` : résumé,
+  `p-timeline` des étapes, approbations, annulation avec motif ≤ 500, relance des approbateurs —
+  409 ⇒ « déjà relancés il y a moins de 24 h »),
+  `studio-record-workflows-tab.component.ts` (onglet « Workflows » de la fiche enregistrement :
+  badge d'instances ouvertes, lancement manuel par clé).
+- `features/studio/approvals/` — **page « Mes approbations »** (`/studio/approvals` : KPI,
+  table, dialog de décision, commentaire obligatoire au refus), **panneau de détail**
+  (colonne fixe ≥ 1 280 px, tiroir sinon), **badge** (`studio-approvals-badge.service.ts` : sonde
+  `approvals/mine/count` toutes les 60 s, arrêt définitif sur 403/404) et **garde**
+  (`approvals-access.guard.ts` : 404 ⇒ `/studio`, 403 ⇒ `/access-denied`, panne réseau ⇒ passage).
+- **Navigation** (`core/`) : entrées « Workflows » (concepteurs) et « Mes approbations » (badge rouge)
+  sous capacité `workflowsEnabled` ; notifications types 15–18 rafraîchissent le badge et suivent le
+  `linkUrl` du serveur (repli `/studio/approvals`).
+- **Aperçu IA** (`features/studio/ai/`) : les plans « Workflow » (4.3) sont compris — cartes-chronologies
+  depuis `summary.workflows[]` (onglet Workflow, spec facultative), carte d'intention désactivée avec
+  info-bulle quand `workflowToolsEnabled` est faux, carte de résultat « Workflow créé » →
+  `/studio/workflows/<id>`.
+
+Routes et gardes : `permissionGuard` + `capabilityGuard('workflowsEnabled')` sur `workflows*` (hub et
+concepteur, `studio:design_entities`) ; `approvals` = `permissionGuard` (`custom_records:read`) +
+`approvalsAccessGuard` ; `records/:key/:id` = redirection legacy vers la fiche. Le détail d'instance
+(`GET workflows/instances/{id}`) reste une route de **conception** : les boutons « Voir l'instance » /
+« Détail » ne sont rendus qu'avec `studio:design_entities` (fail-closed, aucun appel 403).
+
+Les déclencheurs et les variables de gabarit ne sont **pas** exposés par le catalogue (`entries` seul) :
+le client les code à partir de ce document (`WORKFLOW_TRIGGERS`, `TEMPLATE_VARIABLES`).
 
 ## Réversibilité
 
