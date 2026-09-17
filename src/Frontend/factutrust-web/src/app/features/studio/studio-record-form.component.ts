@@ -14,6 +14,10 @@ import { AuthService } from '@core/services/auth.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { StudioRecordTabsComponent, StudioRecordTab } from './shared/studio-record-tabs.component';
 import { StudioLinkedRecordsTabComponent } from './relations/studio-linked-records-tab.component';
+import { StudioRecordWorkflowsTabComponent } from './workflows/studio-record-workflows-tab.component';
+import { StudioWorkflowsService } from './workflows/studio-workflows.service';
+import { STUDIO_WORKFLOW_LABELS } from './workflows/studio-workflow-labels';
+import { WorkflowInstanceDto, isOpenInstance } from './workflows/studio-workflows.models';
 import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
 
 /** Clé d'onglet « Liés » d'une relation N-N (jonction si connue, sinon la cible). */
@@ -24,7 +28,7 @@ function linkedTabKey(r: { junctionEntityKey?: string | null; targetEntityKey: s
 @Component({
   selector: 'app-studio-record-form',
   standalone: true,
-  imports: [CommonModule, RouterModule, ToastModule, DynamicFormComponent, StudioPageShellComponent, SkeletonTableComponent, StudioRecordTabsComponent, StudioLinkedRecordsTabComponent],
+  imports: [CommonModule, RouterModule, ToastModule, DynamicFormComponent, StudioPageShellComponent, SkeletonTableComponent, StudioRecordTabsComponent, StudioLinkedRecordsTabComponent, StudioRecordWorkflowsTabComponent],
   template: `
     <p-toast></p-toast>
     @if (entity(); as e) {
@@ -56,6 +60,10 @@ function linkedTabKey(r: { junctionEntityKey?: string | null; targetEntityKey: s
                 <a [routerLink]="['/studio', e.id]">Ajoutez des champs</a> avant de saisir des données.
               </p>
             }
+          }
+          @case ('workflows') {
+            <app-studio-record-workflows-tab [entityKey]="entityKey" [recordId]="recordId!" [instances]="workflowInstances() ?? []"
+              [canWrite]="canWrite()" [canDesign]="canDesign()" (changed)="loadWorkflowInstances()" />
           }
           @default {
             @if (activeRelation(); as rel) {
@@ -89,13 +97,23 @@ export class StudioRecordFormComponent implements OnInit {
 
   readonly canWrite = computed(() => this.auth.hasPermission(PERMISSIONS.customData.recordsWrite));
   readonly manyToMany = computed(() => (this.schema()?.relations ?? []).filter(r => r.kind === 'many_to_many'));
-  readonly showTabs = computed(() => !!this.recordId && this.manyToMany().length > 0);
+  private readonly workflows = inject(StudioWorkflowsService);
+  /** Sonde `listRecordInstances` : null = module coupé / droit absent (403-404) ⇒ onglet masqué (fail-closed, 4.4h2). */
+  readonly workflowInstances = signal<WorkflowInstanceDto[] | null>(null);
+  readonly canDesign = computed(() => this.auth.hasPermission(PERMISSIONS.studio.designEntities));
+  /** Badge de l'onglet : instances OUVERTES seulement, `null` si 0 pour ne pas afficher « 0 » (D-44-58). */
+  readonly openWorkflowCount = computed(() => (this.workflowInstances() ?? []).filter(i => isOpenInstance(i.status)).length);
+  readonly showWorkflowsTab = computed(() => !!this.recordId && this.workflowInstances() !== null);
+  readonly showTabs = computed(() => !!this.recordId && (this.manyToMany().length > 0 || this.showWorkflowsTab()));
   readonly tabs = computed<StudioRecordTab[]>(() => [
     { key: 'form', label: 'Fiche' },
     ...this.manyToMany().map(r => ({
       key: linkedTabKey(r),
       label: `${this.runtimeLabels.linked.tabLabel} — ${r.targetLabel}`
-    }))
+    })),
+    ...(this.showWorkflowsTab()
+      ? [{ key: 'workflows', label: STUDIO_WORKFLOW_LABELS.recordTab.tabLabel, badge: this.openWorkflowCount() || null }]
+      : [])
   ]);
   readonly activeRelation = computed(() => {
     const key = this.activeTab();
@@ -124,6 +142,8 @@ export class StudioRecordFormComponent implements OnInit {
             next: r => { this.loading.set(false); if (r.success) this.model.set(r.data.data ?? {}); },
             error: () => { this.loading.set(false); this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Enregistrement introuvable.' }); }
           });
+          // Sonde « Workflows » en parallèle de getRecord (D-44-59 : pas de latence ajoutée à la fiche).
+          this.loadWorkflowInstances();
         } else {
           this.loading.set(false);
           this.model.set({});
@@ -133,6 +153,15 @@ export class StudioRecordFormComponent implements OnInit {
         this.loading.set(false);
         this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Schéma introuvable.' });
       }
+    });
+  }
+
+  /** Sonde des instances du record (GET records/{key}/{id}/workflow-instances?max=20, skipErrorUi côté service). */
+  loadWorkflowInstances(): void {
+    if (!this.recordId) return;
+    this.workflows.listRecordInstances(this.entityKey, this.recordId, 20).subscribe({
+      next: res => this.workflowInstances.set(res.success ? (res.data ?? []) : []),
+      error: () => this.workflowInstances.set(null)   // 403/404 : fail-closed silencieux, onglet absent
     });
   }
 

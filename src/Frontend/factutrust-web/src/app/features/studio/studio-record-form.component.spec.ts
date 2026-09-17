@@ -9,8 +9,19 @@ import { environment } from '@environments/environment';
 import { AuthService } from '@core/services/auth.service';
 import { StudioRecordFormComponent } from './studio-record-form.component';
 import { EntityRelationDto } from './relations/studio-relations.models';
+import { WorkflowInstanceDto } from './workflows/studio-workflows.models';
 
 const API = `${environment.apiUrl}/studio/records/interventions`;
+
+/** Instance de workflow minimale pour la sonde `listRecordInstances` (4.4h2). */
+function wfInstance(id: string, status: WorkflowInstanceDto['status']): WorkflowInstanceDto {
+  return {
+    id, workflowDefinitionId: 'd1', entityDefinitionId: 'e1', workflowKey: 'relance', workflowName: 'Relance',
+    definitionVersion: 1, recordId: 'r1', trigger: 'manual', status, currentStepIndex: 0,
+    currentStepKey: null, dueAt: null, startedBy: null, startedAt: '2026-09-16T09:00:00Z',
+    completedAt: null, depth: 0, originInstanceId: null, error: null
+  };
+}
 
 const m2m: EntityRelationDto = {
   kind: 'many_to_many',
@@ -34,7 +45,7 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
   let component: StudioRecordFormComponent;
   let httpMock: HttpTestingController;
 
-  function setup(recordId: string | null, relations: EntityRelationDto[] | null, canWrite = true): void {
+  function setup(recordId: string | null, relations: EntityRelationDto[] | null, canWrite = true, instances: WorkflowInstanceDto[] | 'off' = []): void {
     TestBed.configureTestingModule({
       imports: [StudioRecordFormComponent],
       providers: [
@@ -54,6 +65,16 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
     httpMock.expectOne(`${API}/schema`).flush({ success: true, data: schema(relations), message: null, errors: [] });
     if (recordId) {
       httpMock.expectOne(`${API}/${recordId}`).flush({ success: true, data: { id: recordId, data: { nom: 'X' }, createdAt: '', updatedAt: '' }, message: null, errors: [] });
+      // 4.4h2 : la sonde « workflow-instances » part en parallèle de getRecord (D-44-59) — toujours drainée,
+      // sinon `httpMock.verify()` échoue. 'off' = module coupé / droit absent ⇒ 404 (onglet absent).
+      const probe = httpMock.expectOne(r => r.url.includes('/workflow-instances'));
+      expect(probe.request.method).toBe('GET');
+      expect(probe.request.params.get('max')).toBe('20');
+      if (instances === 'off') {
+        probe.flush({}, { status: 404, statusText: 'Not Found' });
+      } else {
+        probe.flush({ success: true, data: instances, message: null, error: null });
+      }
     }
     fixture.detectChanges();
   }
@@ -61,26 +82,26 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
   afterEach(() => httpMock.verify());
 
   it('sans relation N-N ⇒ pas d\'onglets, formulaire seul', () => {
-    setup('r1', []);
+    setup('r1', [], true, 'off');   // sonde drainée en 404 : contrat inchangé (4.4h2)
     expect(component.showTabs()).toBeFalse();
     expect(fixture.debugElement.query(By.css('app-studio-record-tabs'))).toBeNull();
     expect(fixture.debugElement.query(By.css('app-dynamic-form'))).not.toBeNull();
   });
 
   it('sans relations dans le schéma (null) ⇒ pas d\'onglets', () => {
-    setup('r1', null);
+    setup('r1', null, true, 'off');
     expect(component.showTabs()).toBeFalse();
   });
 
   it('en création (recordId null) ⇒ pas d\'onglets même avec N-N', () => {
-    setup(null, [m2m]);
+    setup(null, [m2m], true, 'off');
     expect(component.recordId).toBeNull();
     expect(component.showTabs()).toBeFalse();
     expect(fixture.debugElement.query(By.css('app-studio-record-tabs'))).toBeNull();
   });
 
   it('en édition avec N-N ⇒ onglets Fiche puis Liés — <cible>, formulaire actif par défaut', () => {
-    setup('r1', [m2o, m2m]);
+    setup('r1', [m2o, m2m], true, 'off');
     expect(component.showTabs()).toBeTrue();
     expect(component.tabs().map(t => t.key)).toEqual(['form', 'linked:intervention_technicien']);
     expect(component.tabs()[1].label).toBe('Liés — Techniciens');
@@ -101,6 +122,48 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
     httpMock.match(r => r.urlWithParams.startsWith(`${API.replace('/interventions','')}/techniciens?page=1`)).forEach(req => {
       if (!req.cancelled) req.flush({ success: true, data: { items: [], page: 1, pageSize: 20, totalCount: 0, totalPages: 0 }, message: null, errors: [] });
     });
+  });
+
+  it("ajoute l'onglet Workflows avec le nombre d'instances ouvertes quand la sonde répond", () => {
+    setup('r1', [], true, [wfInstance('i1', 'waiting_approval'), wfInstance('i2', 'completed')]);
+
+    expect(component.showWorkflowsTab()).toBeTrue();
+    expect(component.showTabs()).toBeTrue();                       // onglet présent même sans relation N-N
+    expect(component.tabs().map(t => t.key)).toEqual(['form', 'workflows']);
+    expect(component.tabs()[1].label).toBe('Workflows');
+    expect(component.tabs()[1].badge).toBe(1);                     // instances OUVERTES seulement (D-44-58)
+    fixture.detectChanges();
+    const tab = fixture.nativeElement.querySelector('[data-testid="studio-tab-workflows"]') as HTMLElement;
+    expect(tab).not.toBeNull();
+    expect(tab.querySelector('.studio-tab__badge')?.textContent?.trim()).toBe('1');
+
+    component.activeTab.set('workflows');
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('app-studio-record-workflows-tab'))).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('app-dynamic-form'))).toBeNull();
+  });
+
+  it("n'affiche pas l'onglet Workflows quand la sonde répond 404 ou 403", () => {
+    setup('r1', [m2m], true, 'off');                               // 404 au chargement
+    expect(component.workflowInstances()).toBeNull();
+    expect(component.showWorkflowsTab()).toBeFalse();
+    expect(component.tabs().map(t => t.key)).toEqual(['form', 'linked:intervention_technicien']);
+    expect(fixture.nativeElement.querySelector('[data-testid="studio-tab-workflows"]')).toBeNull();
+
+    component.loadWorkflowInstances();                             // variante 403 (policy refusée)
+    httpMock.expectOne(r => r.url.includes('/workflow-instances'))
+      .flush({}, { status: 403, statusText: 'Forbidden' });
+    fixture.detectChanges();
+    expect(component.workflowInstances()).toBeNull();
+    expect(component.showWorkflowsTab()).toBeFalse();
+    expect(fixture.nativeElement.querySelector('[data-testid="studio-tab-workflows"]')).toBeNull();
+  });
+
+  it("n'interroge pas la sonde en création (recordId absent)", () => {
+    setup(null, [m2m], true, 'off');
+    httpMock.expectNone(r => r.url.includes('/workflow-instances'));
+    expect(component.showWorkflowsTab()).toBeFalse();
+    expect(component.showTabs()).toBeFalse();
   });
 
 });
