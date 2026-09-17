@@ -99,4 +99,34 @@ describe('StudioAiCapabilitiesService', () => {
     http.expectOne(url).flush({ success: true, data: capabilities, message: null, errors: [] });
     expect(service.state()).toBe('ready');
   });
+
+  it('expose workflowsEnabled à true seulement quand l\'état est prêt et la capacité vraie', () => {
+    expect(service.workflowsEnabled()).toBeFalse();
+
+    service.ensureLoaded();
+    http.expectOne(url).flush({ success: true, data: { ...capabilities, workflowsEnabled: true }, message: null, errors: [] });
+    expect(service.workflowsEnabled()).toBeTrue();
+
+    service.reset();
+    service.ensureLoaded();
+    http.expectOne(url).flush({ success: true, data: { ...capabilities, workflowsEnabled: false }, message: null, errors: [] });
+    expect(service.workflowsEnabled()).toBeFalse();
+  });
+
+  it('expose workflowToolsEnabled à false quand le serveur répond 403 (fail-closed)', () => {
+    service.ensureLoaded();
+    http.expectOne(url).flush('', { status: 403, statusText: 'Forbidden' });
+
+    expect(service.state()).toBe('unavailable');
+    expect(service.workflowToolsEnabled()).toBeFalse();
+  });
+
+  it('remet workflowsEnabled à false après reset()', () => {
+    service.ensureLoaded();
+    http.expectOne(url).flush({ success: true, data: { ...capabilities, workflowsEnabled: true }, message: null, errors: [] });
+    expect(service.workflowsEnabled()).toBeTrue();
+
+    service.reset();
+    expect(service.workflowsEnabled()).toBeFalse();
+  });
 });
