@@ -134,7 +134,9 @@ public interface IStudioWorkflowRepository
     /// Supprime les instances terminales (<c>Completed</c>/<c>Failed</c>/<c>Cancelled</c>) achevées avant
     /// <paramref name="completedBeforeUtc"/> avec leurs exécutions d'étapes et leurs approbations
     /// (pas de FK : enfants d'abord). Retourne le nombre d'instances supprimées, borné à
-    /// <c>Math.Clamp(max, 1, 500)</c>.
+    /// <c>Math.Clamp(max, 1, 500)</c>. Les trois suppressions ne sont pas atomiques : la purge est
+    /// exécutée par le job Hangfire sous <c>DisableConcurrentExecution</c> (4.2d) et les tables sont sans
+    /// FK par conception (0.11 point 4) — une insertion concurrente d'enfants y laisserait des orphelins.
     /// </summary>
     Task<int> PurgeTerminalOlderThanAsync(
         Guid tenantId, DateTime completedBeforeUtc, int max, CancellationToken cancellationToken = default);
@@ -142,7 +144,9 @@ public interface IStudioWorkflowRepository
     /// <summary>
     /// Pose le bail de reprise (D-01) : <see cref="StudioWorkflowInstance.TryLease"/> puis enregistrement ;
     /// une course perdue sur le <c>RowVersion</c> (<c>DbUpdateConcurrencyException</c>) retourne
-    /// <c>false</c> — l'appelant abandonne l'instance pour ce tick, il ne la recharge pas.
+    /// <c>false</c> — l'appelant abandonne l'instance pour ce tick, il ne la recharge pas. Après un retour
+    /// <c>false</c>, l'<paramref name="instance"/> peut être partiellement mutée (<c>LeasedAt</c>) : l'appelant
+    /// la jette et la recharge depuis le dépôt s'il retente.
     /// </summary>
     Task<bool> TryLeaseInstanceAsync(
         StudioWorkflowInstance instance, DateTime nowUtc, TimeSpan leaseDuration, CancellationToken cancellationToken = default);

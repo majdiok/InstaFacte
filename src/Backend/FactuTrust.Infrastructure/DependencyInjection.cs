@@ -405,6 +405,8 @@ public static class DependencyInjection
         // Workflows Studio (PR 4.1) — dépôt SQL multi-tenant.
         services.AddScoped<IStudioWorkflowRepository, Repositories.Studio.StudioWorkflowRepository>();
         services.AddScoped<IStudioWorkflowEngine, Services.Studio.Workflows.StudioWorkflowEngine>();
+        // Runner runtime (PR 4.2c2) : bail + impersonation autour du moteur.
+        services.AddScoped<FactuTrust.Application.Features.Studio.Workflows.Engine.IStudioWorkflowRunner, Services.Studio.Workflows.StudioWorkflowRunner>();
         services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.ConditionStepHandler>();
         services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.UpdateFieldStepHandler>();
         services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.ErpActionStepHandler>();

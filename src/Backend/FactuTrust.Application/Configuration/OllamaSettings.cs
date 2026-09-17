@@ -386,6 +386,13 @@ public sealed class OllamaSettings
     /// <summary>Durée max (s) d'un segment d'exécution synchrone du moteur de workflows (borné 1..30).</summary>
     public int StudioWorkflowMaxSegmentSeconds { get; set; } = 5;
 
+    /// <summary>
+    /// Durée (minutes) du bail posé sur une instance de workflow avant sa reprise (D-01, D-19 : ajouté en
+    /// 4.2c2 — 4.2d le consomme tel quel). Un worker mort sans relâcher son bail laisse l'instance
+    /// récupérable par le reaper après ce délai. Borné 5..120 par <c>StudioWorkflowRunner</c>.
+    /// </summary>
+    public int StudioWorkflowLeaseMinutes { get; set; } = 30;
+
     /// <summary>Cartes maximales chargées par une vue Kanban (au-delà, <c>truncated = true</c>). Défaut 500.</summary>
     public int StudioRecordViewMaxKanbanCards { get; set; } = 500;
 

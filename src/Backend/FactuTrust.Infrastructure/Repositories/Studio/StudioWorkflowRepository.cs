@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Entities.Studio.Workflows;
 using FactuTrust.Domain.Enums;
@@ -283,13 +284,17 @@ public sealed class StudioWorkflowRepository : IStudioWorkflowRepository
             .ToListAsync(cancellationToken);
     }
 
+    /// <summary>Prédicat partagé liste/compteur : en attente, assignée à l'utilisateur directement ou via son rôle.</summary>
+    private static Expression<Func<StudioWorkflowApproval, bool>> PendingForUser(Guid tenantId, Guid userId, string? role)
+        => a => a.TenantId == tenantId && a.Status == StudioWorkflowApprovalStatus.Pending
+            && (a.AssigneeUserId == userId || (role != null && a.AssigneeRole == role));
+
     public async Task<IReadOnlyList<StudioWorkflowApproval>> ListPendingApprovalsForUserAsync(
         Guid tenantId, Guid userId, string? role, int max, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
         return await context.StudioWorkflowApprovals
-            .Where(a => a.TenantId == tenantId && a.Status == StudioWorkflowApprovalStatus.Pending
-                && (a.AssigneeUserId == userId || (role != null && a.AssigneeRole == role)))
+            .Where(PendingForUser(tenantId, userId, role))
             .OrderBy(a => a.DueAt)
             .ThenBy(a => a.CreatedAt)
             .Take(Math.Clamp(max, 1, 200))
@@ -300,9 +305,7 @@ public sealed class StudioWorkflowRepository : IStudioWorkflowRepository
         Guid tenantId, Guid userId, string? role, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
-        return await context.StudioWorkflowApprovals
-            .CountAsync(a => a.TenantId == tenantId && a.Status == StudioWorkflowApprovalStatus.Pending
-                && (a.AssigneeUserId == userId || (role != null && a.AssigneeRole == role)), cancellationToken);
+        return await context.StudioWorkflowApprovals.CountAsync(PendingForUser(tenantId, userId, role), cancellationToken);
     }
 
     public async Task<int> PurgeTerminalOlderThanAsync(
