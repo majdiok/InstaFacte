@@ -37,7 +37,9 @@ public sealed class StudioWorkflowEngine : IStudioWorkflowEngine
     private const string WorkflowDisabledMessage = "Workflow désactivé";
 
     private const string InstanceStartedAction = "Studio.Workflow.InstanceStarted";
-    private const string InstanceFailedAction = "Studio.Workflow.InstanceFailed";
+
+    // internal : partagé avec StudioWorkflowRunner (chemin « lanceur indisponible ») — source unique du nom d'audit.
+    internal const string InstanceFailedAction = "Studio.Workflow.InstanceFailed";
     private const string InstanceCancelledAction = "Studio.Workflow.InstanceCancelled";
 
     private const int MaxStepRunResultBytes = 8 * 1024;

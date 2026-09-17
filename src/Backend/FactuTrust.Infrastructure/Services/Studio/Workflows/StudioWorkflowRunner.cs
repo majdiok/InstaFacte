@@ -26,7 +26,6 @@ namespace FactuTrust.Infrastructure.Services.Studio.Workflows;
 /// </summary>
 internal sealed class StudioWorkflowRunner : IStudioWorkflowRunner
 {
-    private const string InstanceFailedAction = "Studio.Workflow.InstanceFailed";
     private const string StarterUnavailableReason = "Lanceur introuvable ou inactif : reprise refusée.";
 
     private readonly IStudioWorkflowRepository _workflows;
@@ -70,7 +69,7 @@ internal sealed class StudioWorkflowRunner : IStudioWorkflowRunner
         if (instance.IsTerminal)
             return StudioWorkflowRunOutcome.Skipped;
 
-        var lease = TimeSpan.FromMinutes(Math.Clamp(_settings.StudioWorkflowLeaseMinutes, 5, 120));
+        var lease = _settings.StudioWorkflowLeaseDuration;
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         if (!await _workflows.TryLeaseInstanceAsync(instance, now, lease, ct))
             return StudioWorkflowRunOutcome.LeaseBusy;
@@ -172,7 +171,7 @@ internal sealed class StudioWorkflowRunner : IStudioWorkflowRunner
         }
 
         await StudioAudit.SafeLogAsync(
-            _audit, InstanceFailedAction, "StudioWorkflowInstance", instance.Id, null,
+            _audit, StudioWorkflowEngine.InstanceFailedAction, "StudioWorkflowInstance", instance.Id, null,
             new { Reason = "starter-unavailable" }, ct);
     }
 }

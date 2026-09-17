@@ -105,7 +105,7 @@ public sealed class StudioWorkflowResumeJob
 
         var now = _time.GetUtcNow().UtcDateTime;
         var batch = Math.Clamp(_options.StudioWorkflowResumeBatchSize, 10, 500);
-        var lease = TimeSpan.FromMinutes(Math.Clamp(_options.StudioWorkflowLeaseMinutes, 5, 120));
+        var lease = _options.StudioWorkflowLeaseDuration;
 
         // 1. Reaper : relâcher les baux périmés (worker mort avant le finally du runner).
         var leasesReleased = 0;
@@ -136,14 +136,10 @@ public sealed class StudioWorkflowResumeJob
                 var instance = await repo.GetInstanceAsync(tenantId, approval.InstanceId, ct);
                 if (instance is not null && !instance.IsTerminal)
                 {
-                    var context = StudioWorkflowContext.Parse(instance.ContextJson);
-                    context.SetApproval(
-                        approval.StepKey, StudioWorkflowEnumNames.ApprovalStatusName(approval.Status), null, null, now);
-                    var serialized = context.Serialize();
-                    if (!serialized.IsSuccess)
+                    if (!StudioWorkflowDecisionSync.Apply(
+                            instance, approval.StepKey, StudioWorkflowEnumNames.ApprovalStatusName(approval.Status), null, null, now))
                         _logger.LogWarning(
                             "Contexte trop volumineux : statut « expired » perdu {ApprovalId}", approval.Id);
-                    instance.Suspend(instance.Status, now, serialized.IsSuccess ? serialized.Value : instance.ContextJson);
                     await repo.UpdateInstanceAsync(instance, ct);
 
                     if (instance.StartedBy is { } recipient)

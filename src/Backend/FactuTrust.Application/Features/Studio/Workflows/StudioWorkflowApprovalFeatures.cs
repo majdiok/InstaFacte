@@ -253,15 +253,11 @@ public sealed class DecideApprovalCommandHandler : IRequestHandler<DecideApprova
 
         if (!instance.IsTerminal)
         {
-            // La décision est mémorisée au contexte et l'instance devient due sans changer d'étape (D-05).
-            var context = StudioWorkflowContext.Parse(instance.ContextJson);
-            context.SetApproval(
-                approval.StepKey, StudioWorkflowEnumNames.ApprovalStatusName(approval.Status), comment, userId.Value, now);
-            var serialized = context.Serialize();
-            // Contrat moteur : si la sérialisation échoue (contexte trop volumineux), l'ancien JSON est
-            // conservé — le marqueur de décision n'y figure pas et le moteur l'ignorera au prochain tick ;
-            // cas extrême accepté (la décision, elle, est déjà persistée sur l'approbation).
-            instance.Suspend(instance.Status, now, serialized.IsSuccess ? serialized.Value : instance.ContextJson);
+            // La décision est mémorisée au contexte et l'instance devient due sans changer d'étape (D-05 ;
+            // contrat de repli JSON documenté sur StudioWorkflowDecisionSync — la décision, elle, est
+            // déjà persistée sur l'approbation).
+            StudioWorkflowDecisionSync.Apply(
+                instance, approval.StepKey, StudioWorkflowEnumNames.ApprovalStatusName(approval.Status), comment, userId.Value, now);
             // Non atomique avec UpdateApprovalAsync (revue 4.2e) : si cette écriture échoue, l'approbation
             // est décidée mais l'instance n'est pas due — le job studio-workflow-resume réconcilie au tick
             // suivant (ListDueAsync), une nouvelle tentative utilisateur renvoie 409.
