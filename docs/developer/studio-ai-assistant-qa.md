@@ -837,6 +837,6 @@ en `_previous.<champ connu>`, `_approval.*`, `_results.*`.
 Plan de 2 workflows dont le 2ᵉ dépasse le quota ⇒ aucun workflow restant après l'échec (rollback par
 `DeleteWorkflowCommand`, `CancellationToken.None`), plan `Failed` avec message (et, si une suppression de
 rollback échoue, « Annulation incomplète — workflow(s) inactif(s) à supprimer depuis le hub : … »). Côté
-pont legacy : `GET api/studio/entities/{id}/automations/actions` ne liste **plus** les outils `studio_*`
+pont legacy : `GET api/studio/automations/actions` ne liste **plus** les outils `studio_*`
 (`create_product` toujours présent) ; `POST api/studio/entities/{id}/automations` avec
 `actionKey = "studio_plan_app"` ⇒ `400` `Validation.action` « Action ERP inconnue ou non autorisée. ».
