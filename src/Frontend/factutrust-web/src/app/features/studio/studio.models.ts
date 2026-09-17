@@ -355,7 +355,7 @@ export interface AutomationAction {
 
 export interface BridgeParamMapping {
   param: string;
-  source: 'field' | 'const';
+  source: 'field' | 'const' | 'template';
   value: string | null;
 }
 
