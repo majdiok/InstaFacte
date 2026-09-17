@@ -711,7 +711,8 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     `{ "key": "relance", "name": "Relance", "trigger": "field_changed", "triggerConfig": { "field": "statut", "to": "valide" }, "steps": { "version": 1, "steps": [ { "key": "verif", "type": "condition", "filters": [{ "field": "montant", "op": "gt", "value": 100 }] }, { "key": "maj", "type": "update_field", "set": { "traite_le": "{{ _now }}" } } ] }, "isActive": true }`
     ⇒ `201`, en-tête `Location` vers `GET api/studio/workflows/{id}`, `version=1`, `stepCount=2`,
     `openInstances=0`, `rowVersion` base64 ; ligne d'audit `Studio.Workflow.Created`. Re-`POST` avec la même
-    clé (ou `RELANCE`) ⇒ `409` « Un workflow avec la clé « relance » existe déjà pour cette table. ». Créer
+    clé ⇒ `409` « Un workflow avec la clé « relance » existe déjà pour cette table. » ; `POST` avec `RELANCE`
+    ⇒ `400` (forme de clé refusée en amont de l'unicité : minuscules, chiffres et `_` uniquement). Créer
     ensuite jusqu'à 20 workflows puis un 21ᵉ ⇒ `400` message de quota (`Validation.Plan`). `GET …/entities/{entityId}/workflows`
     liste les 20, actifs et inactifs. Modifier un enregistrement de `commandes` en passant `statut` à `valide` avec
     `montant > 100` ⇒ `GET api/studio/workflows/{id}/instances` montre une instance `completed`, `trigger=field_changed`,

@@ -125,7 +125,8 @@ une instance `failed` **traçable** (step run `definition`) plutôt qu'un refus 
 étape notifie le lanceur (`NotificationType.StudioWorkflowStepFailed`, lien
 `/studio/d/{entityKey}/{recordId}/edit`).
 
-Contexte (`ContextJson`, racine `"version": 1`) : `record` (instantané des champs), `startedBy`,
+Contexte (`ContextJson`, racine `"version": 1`) : `record` (`{ id, entityKey }` — les valeurs des champs
+sont lues en direct par `StudioTemplateRenderer`, pas figées), `startedBy`,
 `previous` (valeurs avant la mise à jour ; **masqué** — renvoyé `null` — par l'API de lecture),
 `approval` (décisions par clé d'étape), `results` (résultats `saveResultAs`), `vars`. Gabarits
 `StudioTemplateRenderer` : `{{ <champ> }}`, `{{ _now }}` (ISO 8601 UTC), `{{ _record.* }}`,
@@ -146,9 +147,9 @@ médiateur**. Erreurs via `StudioErrorMapping` : 409 `Conflict`, 404 `*.NotFound
 | `GET entities/{entityId}/workflows` | — | 200 `WorkflowDefinitionDto[]` (actifs et inactifs, `openInstances`) | 404 `CustomEntity.NotFound` |
 | `GET workflows/{id}` | — | 200 `WorkflowDefinitionDto` | 404 `StudioWorkflowDefinition.NotFound` |
 | `POST entities/{entityId}/workflows` | `SaveWorkflowRequest` | **201** + `Location` → `GET workflows/{id}`, `version = 1` | 400 `Validation.trigger` / `Validation.steps[i].<prop>` (1ʳᵉ issue + « (+n autre(s) erreur(s) …) ») / `Validation.Plan` (quota 20) ; 409 `Conflict` (clé prise) ; 404 |
-| `PUT workflows/{id}` | `SaveWorkflowRequest` (`rowVersion` **obligatoire**, `key` immuable) | 200 `WorkflowDefinitionDto` (`version` + 1 si les étapes changent) | 400 `Validation.rowVersion` / `Validation.key` / étapes ; 409 `Conflict` (jeton périmé) ; 404 |
-| `POST workflows/{id}/toggle` | `{ "isActive": true }` | 200 `WorkflowDefinitionDto` (idempotent, sans jeton) | 404 |
-| `DELETE workflows/{id}` | — | **200** `WorkflowDeletionResultDto { cancelledInstances }` (soft delete + annulation des instances ouvertes) | 404 |
+| `PUT workflows/{id}` | `SaveWorkflowRequest` (`rowVersion` **obligatoire**, `key` immuable) | 200 `WorkflowDefinitionDto` (`version` + 1 si `trigger`, `triggerConfig` ou `steps` changent, comparaison textuelle du JSON) | 400 `Validation.rowVersion` / `Validation.key` / étapes ; 409 `Conflict` (jeton périmé) ; 404 |
+| `POST workflows/{id}/toggle` | `{ "isActive": true }` | 200 `WorkflowDefinitionDto` (idempotent, sans jeton) | 404 ; 409 `Conflict` (course perdue à l'écriture, D-41-16) |
+| `DELETE workflows/{id}` | — | **200** `WorkflowDeletionResultDto { cancelledInstances }` (soft delete + annulation des instances ouvertes) | 404 ; 409 `Conflict` (course perdue à l'écriture, D-41-16) |
 | `POST workflows/{id}/duplicate` | — | **201** copie **inactive** « <nom> (copie) », clé `<clé>_copie` … `_copie_9` | 400 `Validation.Plan` ; 409 `Conflict` (copies épuisées) ; 404 |
 | `POST entities/{entityId}/workflows/validate` | `SaveWorkflowRequest` | 200 `WorkflowValidationResultDto { isValid, errors[{path,message}], warnings[], stepCount }` — **même invalide** | 404 `CustomEntity.NotFound` |
 | `GET workflows/{id}/instances?max=50` | — | 200 `WorkflowInstanceDto[]` (`max` borné 1..200 côté Application) | 404 |
@@ -156,7 +157,8 @@ médiateur**. Erreurs via `StudioErrorMapping` : 409 `Conflict`, 404 `*.NotFound
 
 `SaveWorkflowRequest` : `key`, `name`, `description`, `trigger`, `triggerConfig`, `steps`, `isActive`,
 `rowVersion` (base64). La clé commence par une minuscule et ne contient que minuscules, chiffres et `_` (2 à 64 caractères) ; elle ne change plus après
-création ; l'unicité est insensible à la casse (collation SQL + index filtré).
+création ; l'unicité est insensible à la casse (collation SQL + index filtré) — mais une clé contenant des
+majuscules est déjà refusée en `400 Validation.key` avant d'atteindre ce contrôle.
 
 ## Quota, capability, audit, notifications
 
@@ -190,8 +192,8 @@ ci-dessus + 9 méthodes d'exécution de la PR 4.2). Les déclencheurs et les var
 
 Le Journal des écarts de la PR 4.1 (`docs/plans/2026-09-11-studio-ia-programme-continuation.md`,
 section « Journal des écarts ») consigne les lignes `D-4.1-01 → D-4.1-17` (code fusionné 4.1a → 4.1i relu
-le 2026-09-17) et `D-41-01 → D-41-15` (tranches 4.1j1, 4.1j2, 4.1k, 4.1l). Points saillants :
+le 2026-09-17) et `D-41-01 → D-41-16` (tranches 4.1j1, 4.1j2, 4.1k, 4.1l). Points saillants :
 `CustomEntity.NotFound` (D-41-01), quota `Validation.Plan` (D-41-02), code d'erreur = chemin de la première
 issue (D-41-03), catalogue `{ entries }` seul (D-41-04), toggle sans jeton (D-41-05), duplication inactive
 `_copie` (D-41-06), `DELETE` ⇒ 200 (D-41-11), drapeaux `false` dans le dépôt (D-41-13), enveloppe d'erreur
-sans `code` (D-41-15).
+sans `code` (D-41-15), `toggle`/`DELETE` ⇒ 409 Studio sur `DbUpdateConcurrencyException` (D-41-16).
