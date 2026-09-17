@@ -1,5 +1,14 @@
 # Production artistique hors ligne — socle A0
 
+## Tranche d'étude dépendante (A1 partiel, non approuvé)
+
+Le blockout original C12 est désormais décrit dans
+[`source/pilots/c12/README.md`](source/pilots/c12/README.md) : source Python Blender
+reproductible, contrôles géométriques et sorties d'étude sous `build/` ignoré.
+Ce travail Classic n'altère pas le registre canonique Modern, ne livre pas les
+cinq styles et ne débloque aucun préflight de release. Les constats A0 ci-dessous
+décrivent le socle, pas une acceptation de cette nouvelle étude.
+
 Ce dossier prépare la production originale du V4 approuvé (Volet II et annexe
 II-A). **Aucun modèle, rendu final, droit, consentement propriétaire, budget réel
 ou résultat artistique n'est livré ou validé par ce socle.** Ce n'est ni le
