@@ -11,6 +11,7 @@ import { compileCatalogContracts } from './street-catalog-contracts.mjs';
 const compiled = compileCatalogContracts({ tests: true });
 const { CATALOG_VALIDATION_CASES: corpus } = compiled.load('testing/business-catalog-validation-corpus.js');
 const { validManifest } = compiled.load('testing/business-catalog-validation-fixture.js');
+const { poisonUnknownFields } = compiled.load('testing/business-catalog-projection-fixture.js');
 const directory = mkdtempSync(join(tmpdir(), 'street-catalog-tests-'));
 const script = join(dirname(fileURLToPath(import.meta.url)), 'validate-street-catalog.mjs');
 after(() => { compiled.close(); rmSync(directory, { recursive: true, force: true }); });
@@ -21,6 +22,9 @@ for (const entry of corpus) {
     const manifest = JSON.parse(JSON.stringify(entry.create()));
     const violations = compiled.contracts.validateBusinessCatalogManifest(manifest);
     assert.deepEqual([...new Set(violations.map(v => v.code))].sort(), [...entry.expectedCodes].sort());
+    const projected = compiled.projection.projectBusinessCatalogManifest(manifest);
+    assert.equal(projected.ok, violations.length === 0);
+    if (!projected.ok) assert.deepEqual(projected.violations, violations);
   });
 }
 
@@ -100,6 +104,31 @@ test('file integrity checks every asset without generating or rewriting anything
   assert.equal(result.output.qualification, 'file-integrity-only');
   assert.equal(result.output.productionReleaseQualified, false);
   assert.deepEqual(hashes(fixture.root), before);
+});
+
+test('pure Node projection drops all poison and the real CLI consumes the same validated catalogue', () => {
+  const fixture = fileFixture();
+  const expected = JSON.parse(JSON.stringify(fixture.manifest));
+  poisonUnknownFields(fixture.manifest);
+  fixture.save();
+  const before = hashes(fixture.root);
+  const projected = compiled.projection.parseBusinessCatalogManifestJson(readFileSync(fixture.manifestFile, 'utf8'));
+  assert.equal(projected.ok, true);
+  assert.deepEqual(projected.value, expected);
+  assert.ok(Object.isFrozen(projected.value.scenes[0].navigation.spawn.position));
+  const result = child(fixture.args);
+  assert.equal(result.status, 0, JSON.stringify(result.output));
+  assert.equal(result.output.productionReleaseQualified, false);
+  assert.ok(!JSON.stringify(result.output).includes('never-reemit'));
+  assert.deepEqual(hashes(fixture.root), before);
+});
+
+test('real CLI rejects malformed UTF-8 instead of replacing bytes before JSON parsing', () => {
+  const file = join(directory, 'invalid-utf8.json');
+  writeFileSync(file, Buffer.concat([Buffer.from('{"private":"'), Buffer.from([0xff]), Buffer.from('"}')]));
+  const result = child(['--schema-only', '--manifest', file]);
+  assert.equal(result.status, 1);
+  assert.equal(result.output.qualification, 'none');
 });
 
 for (const kind of ['render', 'attribution']) {

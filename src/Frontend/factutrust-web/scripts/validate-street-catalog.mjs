@@ -94,9 +94,12 @@ export async function runCatalogCli(args) {
       if (manifestFile !== resolve(versionRoot, 'manifest-v2.json')) fail('file.manifest-path: manifest must be <catalog-root>/<version>/manifest-v2.json');
       manifestFile = catalogFile(versionRoot, manifestFile);
     }
-    const manifest = JSON.parse(readBounded(manifestFile, contracts.CATALOG_VALIDATION_LIMITS.jsonBytes).toString('utf8'));
-    const violations = contracts.validateBusinessCatalogManifest(manifest);
-    if (violations.length) return { exitCode: 1, json, result: { qualification: 'none', violations } };
+    const projected = compiled.projection.parseBusinessCatalogManifestJson(
+      new TextDecoder('utf-8', { fatal: true }).decode(readBounded(manifestFile, contracts.CATALOG_VALIDATION_LIMITS.jsonBytes))
+    );
+    if (!projected.ok) return { exitCode: 1, json, result: { qualification: 'none', violations: projected.violations } };
+    // From here onward only the validated, detached allowlist record is consumed.
+    const manifest = projected.value;
     if (!options['--schema-only']) {
       if (manifest.catalogVersion !== options['--version']) fail('file.version-mismatch: manifest version does not match its directory');
       if (!manifest.profiles.length || !manifest.scenes.length || !manifest.assets.length) fail('release.empty: an empty schema fixture is not a release');
