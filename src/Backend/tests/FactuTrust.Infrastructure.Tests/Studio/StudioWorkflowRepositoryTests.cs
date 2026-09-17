@@ -264,6 +264,61 @@ public sealed class StudioWorkflowRepositoryTests : IClassFixture<StudioWorkflow
             pendingApprovals.Select(a => a.Id).ToHashSet());
     }
 
+    [SkippableFact]
+    public async Task ListApprovalsForInstanceAsync_returns_every_status_ordered_by_creation()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+
+        var tenantId = Guid.NewGuid();
+        var otherTenantId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
+        var repo = _sql.NewRepository();
+
+        var definition = NewDefinition(tenantId, entityId, "all_approvals");
+        await repo.AddDefinitionAsync(definition);
+        var instance = NewInstance(tenantId, definition, Guid.NewGuid());
+        await repo.AddInstanceAsync(instance);
+
+        var otherDefinition = NewDefinition(otherTenantId, entityId, "all_approvals");
+        await repo.AddDefinitionAsync(otherDefinition);
+        var otherTenantInstance = NewInstance(otherTenantId, otherDefinition, Guid.NewGuid());
+        await repo.AddInstanceAsync(otherTenantInstance);
+
+        var now = DateTime.UtcNow;
+        var pending = StudioWorkflowApproval.Create(tenantId, instance.Id, "step_c", null, "Administrators", "Approbation en attente", null, null);
+        SetCreatedAt(pending, now.AddMinutes(-1));
+        var approved = StudioWorkflowApproval.Create(tenantId, instance.Id, "step_a", null, "Administrators", "Approbation approuvée", null, null);
+        SetCreatedAt(approved, now.AddMinutes(-3));
+        approved.Decide(StudioWorkflowApprovalStatus.Approved, Guid.NewGuid(), null, now);
+        var cancelled = StudioWorkflowApproval.Create(tenantId, instance.Id, "step_b", null, "Administrators", "Approbation annulée", null, null);
+        SetCreatedAt(cancelled, now.AddMinutes(-2));
+        cancelled.Cancel(now);
+        // Même instance Id impossible pour un autre tenant : on vérifie le filtre tenant sur une instance étrangère.
+        var foreign = StudioWorkflowApproval.Create(otherTenantId, otherTenantInstance.Id, "step_a", null, "Administrators", "Étrangère", null, null);
+
+        // Insertions volontairement désordonnées.
+        await repo.AddApprovalAsync(pending);
+        await repo.AddApprovalAsync(cancelled);
+        await repo.AddApprovalAsync(approved);
+        await repo.AddApprovalAsync(foreign);
+
+        var all = await repo.ListApprovalsForInstanceAsync(tenantId, instance.Id);
+
+        Assert.Equal(new[] { approved.Id, cancelled.Id, pending.Id }, all.Select(a => a.Id).ToArray());
+        Assert.Equal(
+            new[] { StudioWorkflowApprovalStatus.Approved, StudioWorkflowApprovalStatus.Cancelled, StudioWorkflowApprovalStatus.Pending },
+            all.Select(a => a.Status).ToArray());
+
+        var onlyPending = await repo.ListPendingApprovalsForInstanceAsync(tenantId, instance.Id);
+        Assert.Equal(new[] { pending.Id }, onlyPending.Select(a => a.Id).ToArray());
+
+        Assert.Empty(await repo.ListApprovalsForInstanceAsync(otherTenantId, instance.Id));
+        Assert.Empty(await repo.ListApprovalsForInstanceAsync(tenantId, otherTenantInstance.Id));
+    }
+
+    private static void SetCreatedAt(StudioWorkflowApproval approval, DateTime createdAt)
+        => typeof(StudioWorkflowApproval).GetProperty(nameof(StudioWorkflowApproval.CreatedAt))!.SetValue(approval, createdAt);
+
     private static StudioWorkflowDefinition NewDefinition(
         Guid tenantId, Guid entityId, string key, bool isActive = true,
         StudioWorkflowTriggerKind trigger = StudioWorkflowTriggerKind.OnCreate)

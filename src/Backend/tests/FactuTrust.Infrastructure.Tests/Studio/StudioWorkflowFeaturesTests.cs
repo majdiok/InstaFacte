@@ -4,6 +4,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Features.Studio.Workflows;
 using FactuTrust.Application.Features.Studio.Workflows.Engine;
+using FactuTrust.Application.Features.Studio.Workflows.Spec;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Studio;
 using FactuTrust.Domain.Entities.Studio.Workflows;
@@ -16,10 +17,12 @@ using Xunit;
 namespace FactuTrust.Infrastructure.Tests.Studio;
 
 /// <summary>
-/// Studio IA — 4.1j1 : handlers de conception des workflows (dépôts mockés, aucun SQL).
+/// Studio IA — 4.1j1 / 4.1j2 : handlers de conception des workflows (dépôts mockés, aucun SQL).
 /// Create (version 1, audit, clé dupliquée ⇒ 409, déclencheur planifié ⇒ 400, quota ⇒ Validation.Plan,
 /// table inconnue ⇒ 404, première erreur d'étape avec son chemin), Update (jeton obligatoire / périmé,
-/// clé immuable, Version incrémentée), Toggle idempotent et Delete (soft + annulation des instances ouvertes).
+/// clé immuable, Version incrémentée), Toggle idempotent, Delete (soft + annulation des instances ouvertes),
+/// Duplicate (copie inactive « _copie » … « _copie_9 »), Validate à blanc (200 même invalide), catalogue
+/// des étapes, instances (clamp 1..200, clé du workflow, « previous » masqué).
 /// </summary>
 public sealed class StudioWorkflowFeaturesTests
 {
@@ -125,6 +128,18 @@ public sealed class StudioWorkflowFeaturesTests
 
     private DeleteWorkflowCommandHandler DeleteHandler() =>
         new(_workflows.Object, _engine.Object, _audit.Object, _currentUser.Object, NullLogger<DeleteWorkflowCommandHandler>.Instance);
+
+    private DuplicateWorkflowCommandHandler DuplicateHandler() =>
+        new(_workflows.Object, _quota.Object, _audit.Object, _currentUser.Object);
+
+    private ValidateWorkflowQueryHandler ValidateHandler() =>
+        new(_entities.Object, _fields.Object, _currentUser.Object);
+
+    private ListWorkflowInstancesQueryHandler ListInstancesHandler() =>
+        new(_workflows.Object, _currentUser.Object);
+
+    private GetWorkflowInstanceQueryHandler GetInstanceHandler() =>
+        new(_workflows.Object, _currentUser.Object);
 
     private void VerifyAudit(string action, Times times) =>
         _audit.Verify(a => a.LogAsync(action, "StudioWorkflowDefinition", It.IsAny<Guid?>(), It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), times);
@@ -419,5 +434,241 @@ public sealed class StudioWorkflowFeaturesTests
         var missing = await DeleteHandler().Handle(new DeleteWorkflowCommand(unknown), CancellationToken.None);
         Assert.True(missing.IsFailure);
         Assert.Equal("StudioWorkflowDefinition.NotFound", missing.Error.Code);
+    }
+
+    // ---- Duplicate (4.1j2) ----
+
+    [Fact]
+    public async Task Duplicate_creates_an_inactive_copy_with_the_copie_suffix()
+    {
+        var source = Definition(key: "relance", isActive: true);
+        SetupDefinition(source);
+        StudioWorkflowDefinition? added = null;
+        _workflows.Setup(w => w.CountByEntityAsync(Tid, Entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        _workflows.Setup(w => w.GetDefinitionByKeyAsync(Tid, Entity.Id, "relance_copie", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StudioWorkflowDefinition?)null);
+        _workflows.Setup(w => w.AddDefinitionAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<CancellationToken>()))
+            .Callback<StudioWorkflowDefinition, CancellationToken>((d, _) => added = d)
+            .Returns(Task.CompletedTask);
+
+        var result = await DuplicateHandler().Handle(new DuplicateWorkflowCommand(source.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.NotNull(added);
+        Assert.Equal("relance_copie", result.Value.Key);
+        Assert.Equal("Relance (copie)", result.Value.Name);
+        Assert.False(result.Value.IsActive);
+        Assert.Equal(1, result.Value.Version);
+        Assert.Equal(0, result.Value.OpenInstances);
+        Assert.Equal(source.StepsJson, added!.StepsJson);
+        Assert.Equal(source.TriggerConfigJson, added.TriggerConfigJson);
+        Assert.Equal(source.Trigger, added.Trigger);
+        Assert.NotEqual(source.Id, added.Id);
+        VerifyAudit("Studio.Workflow.Duplicated", Times.Once());
+
+        // Définition inconnue ⇒ 404.
+        var unknown = Guid.NewGuid();
+        _workflows.Setup(w => w.GetDefinitionAsync(Tid, unknown, It.IsAny<CancellationToken>())).ReturnsAsync((StudioWorkflowDefinition?)null);
+        var missing = await DuplicateHandler().Handle(new DuplicateWorkflowCommand(unknown), CancellationToken.None);
+        Assert.Equal("StudioWorkflowDefinition.NotFound", missing.Error.Code);
+    }
+
+    [Fact]
+    public async Task Duplicate_falls_back_to_numbered_suffixes_and_fails_after_nine()
+    {
+        var source = Definition(key: "relance");
+        SetupDefinition(source);
+        _workflows.Setup(w => w.CountByEntityAsync(Tid, Entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(3);
+        var taken = new HashSet<string>(StringComparer.Ordinal) { "relance_copie", "relance_copie_2" };
+        _workflows.Setup(w => w.GetDefinitionByKeyAsync(Tid, Entity.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, Guid _, string key, CancellationToken _) => taken.Contains(key) ? Definition(key: key) : null);
+        _workflows.Setup(w => w.AddDefinitionAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var third = await DuplicateHandler().Handle(new DuplicateWorkflowCommand(source.Id), CancellationToken.None);
+        Assert.True(third.IsSuccess, third.Error.Description);
+        Assert.Equal("relance_copie_3", third.Value.Key);
+
+        // Les 9 clés candidates sont prises ⇒ 409 figé, aucune écriture supplémentaire.
+        taken.Add("relance_copie_3");
+        foreach (var n in Enumerable.Range(4, 6)) taken.Add($"relance_copie_{n}");
+        var exhausted = await DuplicateHandler().Handle(new DuplicateWorkflowCommand(source.Id), CancellationToken.None);
+        Assert.True(exhausted.IsFailure);
+        Assert.Equal("Conflict", exhausted.Error.Code);
+        Assert.Equal("Impossible de dupliquer : les clés « relance_copie » à « relance_copie_9 » sont déjà utilisées.", exhausted.Error.Description);
+        _workflows.Verify(w => w.AddDefinitionAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<CancellationToken>()), Times.Once);
+
+        // Quota atteint ⇒ Validation.Plan avant toute recherche de clé.
+        _quota.Setup(q => q.EnsureUnderLimitAsync(Tid, "MaxWorkflowsPerEntity", 3, 20, "workflows par table", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Validation("Plan", "Quota atteint.")));
+        var quota = await DuplicateHandler().Handle(new DuplicateWorkflowCommand(source.Id), CancellationToken.None);
+        Assert.Equal("Validation.Plan", quota.Error.Code);
+
+        // Clé longue (62 caractères) ⇒ candidat tronqué à 64 au plus, sans « _ » final avant le suffixe.
+        var longKey = "a" + new string('b', 60) + "_";
+        Assert.Equal(62, longKey.Length);
+        var suffixed = DuplicateWorkflowCommandHandler.Suffix(longKey, "_copie");
+        Assert.True(suffixed.Length <= 64);
+        Assert.EndsWith("_copie", suffixed);
+        Assert.DoesNotContain("__", suffixed);
+        Assert.Equal("relance_copie_2", DuplicateWorkflowCommandHandler.Suffix("relance", "_copie_2"));
+    }
+
+    // ---- Validate à blanc (4.1j2) ----
+
+    [Fact]
+    public async Task Validate_returns_success_with_issues_for_an_invalid_definition()
+    {
+        // Déclencheur planifié + étape invalide ⇒ 200, IsValid false, deux erreurs localisées, StepCount renseigné.
+        var invalidSteps = Steps("""{ "key": "aa", "type": "update_field", "set": { "fantome": 1 } }""", UpdateStep);
+        var result = await ValidateHandler().Handle(
+            new ValidateWorkflowQuery(Entity.Id, Request(trigger: "scheduled", steps: invalidSteps)), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.False(result.Value.IsValid);
+        Assert.Contains(result.Value.Errors, e => e.Path == "trigger" && e.Message == "Déclencheur planifié : bientôt disponible.");
+        Assert.Contains(result.Value.Errors, e => e.Path == "steps[0].set");
+        Assert.Equal(2, result.Value.StepCount);
+        Assert.Empty(result.Value.Warnings);
+
+        // Déclencheur inconnu ⇒ issue « trigger » seule, StepCount 0, RowVersion ignoré.
+        var unknownTrigger = await ValidateHandler().Handle(
+            new ValidateWorkflowQuery(Entity.Id, Request(trigger: "on_full_moon", rowVersion: "ignored")), CancellationToken.None);
+        Assert.True(unknownTrigger.IsSuccess);
+        Assert.False(unknownTrigger.Value.IsValid);
+        var only = Assert.Single(unknownTrigger.Value.Errors);
+        Assert.Equal("trigger", only.Path);
+        Assert.Equal("Déclencheur inconnu : « on_full_moon ». Valeurs acceptées : on_create, on_update, field_changed, manual.", only.Message);
+        Assert.Equal(0, unknownTrigger.Value.StepCount);
+
+        // Définition valide ⇒ IsValid true (avertissements de lint possibles), StepCount 2 ; unicité de clé non vérifiée.
+        var valid = await ValidateHandler().Handle(new ValidateWorkflowQuery(Entity.Id, Request()), CancellationToken.None);
+        Assert.True(valid.IsSuccess);
+        Assert.True(valid.Value.IsValid);
+        Assert.Empty(valid.Value.Errors);
+        Assert.Equal(2, valid.Value.StepCount);
+        _workflows.VerifyNoOtherCalls();
+
+        // Table inconnue ⇒ 404 (seul échec possible).
+        var foreign = Guid.NewGuid();
+        _entities.Setup(e => e.GetByIdAsync(Tid, foreign, It.IsAny<CancellationToken>())).ReturnsAsync((CustomEntityDefinition?)null);
+        var missing = await ValidateHandler().Handle(new ValidateWorkflowQuery(foreign, Request()), CancellationToken.None);
+        Assert.Equal("CustomEntity.NotFound", missing.Error.Code);
+    }
+
+    // ---- Catalogue (4.1j2) ----
+
+    [Fact]
+    public async Task Step_catalog_mirrors_the_seven_step_types()
+    {
+        var result = await new GetWorkflowStepCatalogQueryHandler().Handle(new GetWorkflowStepCatalogQuery(), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(7, result.Value.Entries.Count);
+        Assert.Equal(StudioWorkflowStepTypes.All, result.Value.Entries.Select(e => e.Type).ToList());
+        var erpAction = Assert.Single(result.Value.Entries, e => e.Type == "erp_action");
+        var action = Assert.Single(erpAction.Properties, p => p.Name == "action");
+        Assert.True(action.Required);
+        Assert.All(result.Value.Entries, e =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(e.Label));
+            Assert.False(string.IsNullOrWhiteSpace(e.Description));
+        });
+    }
+
+    // ---- Instances (4.1j2) ----
+
+    [Fact]
+    public async Task List_instances_clamps_max_and_carries_the_workflow_key()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        var instance = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.FieldChanged, Uid, "{}", 0, null);
+        var requestedMax = new List<int>();
+        _workflows.Setup(w => w.ListInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, Guid, int, CancellationToken>((_, _, max, _) => requestedMax.Add(max))
+            .ReturnsAsync(new[] { instance });
+
+        var big = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id, Max: 500), CancellationToken.None);
+        var zero = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id, Max: 0), CancellationToken.None);
+        var dflt = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id), CancellationToken.None);
+
+        Assert.Equal(new[] { 200, 1, 50 }, requestedMax);
+        Assert.True(big.IsSuccess && zero.IsSuccess && dflt.IsSuccess);
+        var dto = Assert.Single(big.Value);
+        Assert.Equal(instance.Id, dto.Id);
+        Assert.Equal(def.Key, dto.WorkflowKey);
+        Assert.Equal(def.Name, dto.WorkflowName);
+        Assert.Equal("field_changed", dto.Trigger);
+        Assert.Equal("running", dto.Status);
+        Assert.Equal(def.Version, dto.DefinitionVersion);
+        Assert.Equal(Uid, dto.StartedBy);
+
+        var unknown = Guid.NewGuid();
+        _workflows.Setup(w => w.GetDefinitionAsync(Tid, unknown, It.IsAny<CancellationToken>())).ReturnsAsync((StudioWorkflowDefinition?)null);
+        var missing = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(unknown), CancellationToken.None);
+        Assert.Equal("StudioWorkflowDefinition.NotFound", missing.Error.Code);
+    }
+
+    [Fact]
+    public async Task Get_instance_masks_previous_and_returns_steps_and_approvals()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        const string contextJson = """{ "record": { "statut": "valide" }, "previous": { "statut": "brouillon", "secret": "x" }, "vars": { "a": 1 } }""";
+        var instance = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.OnUpdate, Uid, contextJson, 1, Guid.NewGuid());
+        _workflows.Setup(w => w.GetInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(instance);
+
+        var now = DateTime.UtcNow;
+        var runB = StudioWorkflowStepRun.Record(Tid, instance.Id, 1, "maj", "update_field", StudioWorkflowStepRunStatus.Succeeded,
+            StudioWorkflowStepOutcome.Continue, null, """{ "updated": ["montant"] }""", null, now.AddSeconds(1), now.AddSeconds(2), Uid);
+        var runA = StudioWorkflowStepRun.Record(Tid, instance.Id, 0, "verif", "condition", StudioWorkflowStepRunStatus.Succeeded,
+            StudioWorkflowStepOutcome.Continue, null, "pas-un-objet", null, now, now.AddSeconds(1), Uid);
+        _workflows.Setup(w => w.ListStepRunsAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { runB, runA });
+
+        var approved = StudioWorkflowApproval.Create(Tid, instance.Id, "validation", null, "Administrators", "Valider ?", null, null);
+        approved.Decide(StudioWorkflowApprovalStatus.Approved, Uid, "OK", now);
+        var pending = StudioWorkflowApproval.Create(Tid, instance.Id, "validation2", Uid, null, "Encore ?", "Merci", now.AddDays(1));
+        _workflows.Setup(w => w.ListApprovalsForInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { approved, pending });
+
+        var result = await GetInstanceHandler().Handle(new GetWorkflowInstanceQuery(instance.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        var detail = result.Value;
+        Assert.Equal(instance.Id, detail.Instance.Id);
+        Assert.Equal("relance", detail.Instance.WorkflowKey);
+        Assert.Equal(1, detail.Instance.Depth);
+        Assert.NotNull(detail.Instance.OriginInstanceId);
+
+        // « previous » : clé conservée, valeur masquée ; le reste du contexte est intact.
+        Assert.True(detail.Context.ContainsKey("previous"));
+        Assert.Null(detail.Context["previous"]);
+        Assert.Equal("valide", detail.Context["record"]!["statut"]!.GetValue<string>());
+        Assert.Equal(1, detail.Context["vars"]!["a"]!.GetValue<int>());
+        Assert.DoesNotContain("brouillon", detail.Context.ToJsonString(), StringComparison.Ordinal);
+
+        // Étapes triées par index ; Result reparsé (objet) ou null (JSON non objet).
+        Assert.Equal(new[] { 0, 1 }, detail.Steps.Select(s => s.StepIndex).ToArray());
+        Assert.Null(detail.Steps[0].Result);
+        Assert.Equal("montant", detail.Steps[1].Result!["updated"]![0]!.GetValue<string>());
+        Assert.Equal("succeeded", detail.Steps[1].Status);
+        Assert.Equal("continue", detail.Steps[1].Outcome);
+
+        // Approbations : toutes les statuts (méthode additive), snake_case.
+        Assert.Equal(2, detail.Approvals.Count);
+        Assert.Contains(detail.Approvals, a => a.Status == "approved" && a.DecidedBy == Uid && a.Comment == "OK");
+        Assert.Contains(detail.Approvals, a => a.Status == "pending" && a.AssigneeUserId == Uid && a.DueAt is not null);
+        _workflows.Verify(w => w.ListPendingApprovalsForInstanceAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        // Instance inconnue ⇒ 404 ; définition supprimée ⇒ WorkflowKey null.
+        var unknown = Guid.NewGuid();
+        _workflows.Setup(w => w.GetInstanceAsync(Tid, unknown, It.IsAny<CancellationToken>())).ReturnsAsync((StudioWorkflowInstance?)null);
+        var missing = await GetInstanceHandler().Handle(new GetWorkflowInstanceQuery(unknown), CancellationToken.None);
+        Assert.Equal("StudioWorkflowInstance.NotFound", missing.Error.Code);
+
+        _workflows.Setup(w => w.GetDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>())).ReturnsAsync((StudioWorkflowDefinition?)null);
+        var orphan = await GetInstanceHandler().Handle(new GetWorkflowInstanceQuery(instance.Id), CancellationToken.None);
+        Assert.True(orphan.IsSuccess);
+        Assert.Null(orphan.Value.Instance.WorkflowKey);
+        Assert.Null(orphan.Value.Instance.WorkflowName);
     }
 }

@@ -214,6 +214,17 @@ public sealed class StudioWorkflowRepository : IStudioWorkflowRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<StudioWorkflowApproval>> ListApprovalsForInstanceAsync(
+        Guid tenantId, Guid instanceId, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.StudioWorkflowApprovals
+            .Where(a => a.TenantId == tenantId && a.InstanceId == instanceId)
+            .OrderBy(a => a.CreatedAt)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task UpdateApprovalAsync(StudioWorkflowApproval approval, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
