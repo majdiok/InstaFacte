@@ -130,13 +130,55 @@ public sealed class ImpersonationSnapshotResolverTests
     }
 
     [Fact]
+    public async Task Returns_null_when_user_has_any_platform_role()
+    {
+        await using var master = BuildMaster();
+        master.Users.Add(User(TenantId));
+        // Chaque rôle plateforme connu refuse, pas seulement PlatformAdmin (revue 4.2a).
+        GrantRole(master, UserRole.Administrator.ToString());
+        GrantRole(master, PlatformRoles.SupportAgent);
+        await master.SaveChangesAsync();
+
+        var snapshot = await Resolver(master).ResolveAsync(TenantId, UserId, Origin, CancellationToken.None);
+
+        Assert.Null(snapshot);
+        _effective.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Returns_null_when_application_role_is_ambiguous()
+    {
+        await using var master = BuildMaster();
+        master.Users.Add(User(TenantId));
+        // Deux rôles applicatifs : le cliché ne peut pas garantir rôle et permissions cohérents ⇒ refus.
+        GrantRole(master, UserRole.Administrator.ToString());
+        GrantRole(master, UserRole.SalesRep.ToString());
+        await master.SaveChangesAsync();
+
+        var snapshot = await Resolver(master).ResolveAsync(TenantId, UserId, Origin, CancellationToken.None);
+
+        Assert.Null(snapshot);
+        _effective.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Returns_null_for_empty_identifiers()
+    {
+        await using var master = BuildMaster();
+        var resolver = Resolver(master);
+
+        Assert.Null(await resolver.ResolveAsync(Guid.Empty, UserId, Origin, CancellationToken.None));
+        Assert.Null(await resolver.ResolveAsync(TenantId, Guid.Empty, Origin, CancellationToken.None));
+        _effective.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task Returns_null_when_no_role_is_parsable_and_reflects_deactivation_on_next_call()
     {
         await using var master = BuildMaster();
         var user = User(TenantId);
         master.Users.Add(user);
-        // Rôle plateforme non-admin et rôle inconnu : aucun ne se convertit en UserRole ⇒ refus (pas de repli Accountant).
-        GrantRole(master, PlatformRoles.SupportAgent);
+        // Rôle inconnu seulement : il ne se convertit pas en UserRole ⇒ refus (pas de repli Accountant).
         GrantRole(master, "Gestionnaire");
         await master.SaveChangesAsync();
 

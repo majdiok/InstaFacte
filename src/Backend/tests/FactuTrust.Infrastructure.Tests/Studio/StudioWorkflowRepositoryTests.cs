@@ -316,8 +316,308 @@ public sealed class StudioWorkflowRepositoryTests : IClassFixture<StudioWorkflow
         Assert.Empty(await repo.ListApprovalsForInstanceAsync(tenantId, otherTenantInstance.Id));
     }
 
+    // ---- Runtime (4.2c1) ----
+
+    [SkippableFact]
+    public async Task ListDueAsync_returns_waiting_due_instances_and_skips_waiting_approval_with_pending_approval()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+
+        var tenantId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
+        var repo = _sql.NewRepository();
+        var definition = NewDefinition(tenantId, entityId, "due");
+        await repo.AddDefinitionAsync(definition);
+
+        var now = DateTime.UtcNow;
+
+        // Waiting échue ⇒ à reprendre.
+        var waitingDue = NewInstance(tenantId, definition, Guid.NewGuid());
+        waitingDue.Suspend(StudioWorkflowInstanceStatus.Waiting, now.AddMinutes(-10), "{}");
+        await repo.AddInstanceAsync(waitingDue);
+
+        // WaitingApproval échue mais approbation encore en attente ⇒ PAS de reprise (D-04).
+        var approvalPending = NewInstance(tenantId, definition, Guid.NewGuid());
+        approvalPending.Suspend(StudioWorkflowInstanceStatus.WaitingApproval, now.AddMinutes(-8), "{}");
+        await repo.AddInstanceAsync(approvalPending);
+        await repo.AddApprovalAsync(StudioWorkflowApproval.Create(
+            tenantId, approvalPending.Id, "step_a", null, "Administrators", "À décider", null, now.AddHours(1)));
+
+        // WaitingApproval échue dont l'approbation est déjà décidée ⇒ à reprendre.
+        var approvalDecided = NewInstance(tenantId, definition, Guid.NewGuid());
+        approvalDecided.Suspend(StudioWorkflowInstanceStatus.WaitingApproval, now.AddMinutes(-6), "{}");
+        await repo.AddInstanceAsync(approvalDecided);
+        var decided = StudioWorkflowApproval.Create(
+            tenantId, approvalDecided.Id, "step_a", null, "Administrators", "Décidée", null, null);
+        decided.Decide(StudioWorkflowApprovalStatus.Approved, Guid.NewGuid(), null, now);
+        await repo.AddApprovalAsync(decided);
+
+        var due = await repo.ListDueAsync(tenantId, now, 50);
+
+        // Tri DueAt croissant ; l'instance encore en attente d'une décision est exclue.
+        Assert.Equal(new[] { waitingDue.Id, approvalDecided.Id }, due.Select(i => i.Id).ToArray());
+    }
+
+    [SkippableFact]
+    public async Task ListDueAsync_ignores_other_tenants_and_future_due_dates()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+
+        var tenantId = Guid.NewGuid();
+        var otherTenantId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
+        var repo = _sql.NewRepository();
+        var definition = NewDefinition(tenantId, entityId, "due_scope");
+        await repo.AddDefinitionAsync(definition);
+        var otherDefinition = NewDefinition(otherTenantId, entityId, "due_scope");
+        await repo.AddDefinitionAsync(otherDefinition);
+
+        var now = DateTime.UtcNow;
+
+        var future = NewInstance(tenantId, definition, Guid.NewGuid());
+        future.Suspend(StudioWorkflowInstanceStatus.Waiting, now.AddHours(2), "{}");
+        await repo.AddInstanceAsync(future);
+
+        var noDueDate = NewInstance(tenantId, definition, Guid.NewGuid());
+        noDueDate.Suspend(StudioWorkflowInstanceStatus.WaitingApproval, null, "{}");
+        await repo.AddInstanceAsync(noDueDate);
+
+        var foreign = NewInstance(otherTenantId, otherDefinition, Guid.NewGuid());
+        foreign.Suspend(StudioWorkflowInstanceStatus.Waiting, now.AddMinutes(-5), "{}");
+        await repo.AddInstanceAsync(foreign);
+
+        Assert.Empty(await repo.ListDueAsync(tenantId, now, 50));
+    }
+
+    [SkippableFact]
+    public async Task ListStaleLeasesAsync_returns_only_open_instances_leased_before_threshold()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+
+        var tenantId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
+        var repo = _sql.NewRepository();
+        var definition = NewDefinition(tenantId, entityId, "stale");
+        await repo.AddDefinitionAsync(definition);
+
+        var now = DateTime.UtcNow;
+        var lease = TimeSpan.FromMinutes(30);
+
+        // Bail ancien sur instance ouverte ⇒ à récupérer.
+        var stale = NewInstance(tenantId, definition, Guid.NewGuid());
+        Assert.True(stale.TryLease(now.AddHours(-2), lease));
+        await repo.AddInstanceAsync(stale);
+
+        // Bail encore frais ⇒ pas de récupération.
+        var fresh = NewInstance(tenantId, definition, Guid.NewGuid());
+        Assert.True(fresh.TryLease(now, lease));
+        await repo.AddInstanceAsync(fresh);
+
+        // Bail ancien mais instance terminée (Complete ne relâche pas le bail) ⇒ hors périmètre.
+        var terminal = NewInstance(tenantId, definition, Guid.NewGuid());
+        Assert.True(terminal.TryLease(now.AddHours(-3), lease));
+        terminal.Complete("{}");
+        await repo.AddInstanceAsync(terminal);
+
+        // Jamais de bail ⇒ rien à récupérer.
+        var unleased = NewInstance(tenantId, definition, Guid.NewGuid());
+        await repo.AddInstanceAsync(unleased);
+
+        var staleList = await repo.ListStaleLeasesAsync(tenantId, now.AddMinutes(-31), 50);
+
+        Assert.Equal(new[] { stale.Id }, staleList.Select(i => i.Id).ToArray());
+    }
+
+    [SkippableFact]
+    public async Task ListExpiredApprovalsAsync_returns_pending_past_due_only()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+
+        var tenantId = Guid.NewGuid();
+        var otherTenantId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
+        var repo = _sql.NewRepository();
+        var definition = NewDefinition(tenantId, entityId, "expired");
+        await repo.AddDefinitionAsync(definition);
+        var otherDefinition = NewDefinition(otherTenantId, entityId, "expired");
+        await repo.AddDefinitionAsync(otherDefinition);
+        var instance = NewInstance(tenantId, definition, Guid.NewGuid());
+        await repo.AddInstanceAsync(instance);
+        var otherInstance = NewInstance(otherTenantId, otherDefinition, Guid.NewGuid());
+        await repo.AddInstanceAsync(otherInstance);
+
+        var now = DateTime.UtcNow;
+
+        var expired = StudioWorkflowApproval.Create(tenantId, instance.Id, "step_a", null, "Administrators", "Échue", null, now.AddHours(-1));
+        var future = StudioWorkflowApproval.Create(tenantId, instance.Id, "step_b", null, "Administrators", "Pas encore échue", null, now.AddHours(2));
+        var noDueDate = StudioWorkflowApproval.Create(tenantId, instance.Id, "step_c", null, "Administrators", "Sans échéance", null, null);
+        var decided = StudioWorkflowApproval.Create(tenantId, instance.Id, "step_d", null, "Administrators", "Déjà décidée", null, now.AddHours(-3));
+        decided.Decide(StudioWorkflowApprovalStatus.Rejected, Guid.NewGuid(), null, now);
+        var foreign = StudioWorkflowApproval.Create(otherTenantId, otherInstance.Id, "step_a", null, "Administrators", "Étrangère échue", null, now.AddHours(-2));
+        await repo.AddApprovalAsync(expired);
+        await repo.AddApprovalAsync(future);
+        await repo.AddApprovalAsync(noDueDate);
+        await repo.AddApprovalAsync(decided);
+        await repo.AddApprovalAsync(foreign);
+
+        var expiredList = await repo.ListExpiredApprovalsAsync(tenantId, now, 50);
+
+        Assert.Equal(new[] { expired.Id }, expiredList.Select(a => a.Id).ToArray());
+    }
+
+    [SkippableFact]
+    public async Task ListPendingApprovalsForUserAsync_and_count_match_by_user_or_role_and_ignore_decided()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+
+        var tenantId = Guid.NewGuid();
+        var otherTenantId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
+        var repo = _sql.NewRepository();
+        var definition = NewDefinition(tenantId, entityId, "for_user");
+        await repo.AddDefinitionAsync(definition);
+        var otherDefinition = NewDefinition(otherTenantId, entityId, "for_user");
+        await repo.AddDefinitionAsync(otherDefinition);
+        var instance = NewInstance(tenantId, definition, Guid.NewGuid());
+        await repo.AddInstanceAsync(instance);
+        var otherInstance = NewInstance(otherTenantId, otherDefinition, Guid.NewGuid());
+        await repo.AddInstanceAsync(otherInstance);
+
+        var now = DateTime.UtcNow;
+        var userId = Guid.NewGuid();
+
+        var direct = StudioWorkflowApproval.Create(tenantId, instance.Id, "step_a", userId, null, "Directe", null, now.AddHours(4));
+        var byRole = StudioWorkflowApproval.Create(tenantId, instance.Id, "step_b", null, "Administrators", "Par rôle", null, now.AddHours(1));
+        var other = StudioWorkflowApproval.Create(tenantId, instance.Id, "step_c", Guid.NewGuid(), "Auditors", "Pour un autre", null, now.AddHours(2));
+        var decided = StudioWorkflowApproval.Create(tenantId, instance.Id, "step_d", userId, null, "Décidée", null, null);
+        decided.Decide(StudioWorkflowApprovalStatus.Approved, Guid.NewGuid(), null, now);
+        var foreign = StudioWorkflowApproval.Create(otherTenantId, otherInstance.Id, "step_a", userId, null, "Étrangère", null, null);
+        await repo.AddApprovalAsync(direct);
+        await repo.AddApprovalAsync(byRole);
+        await repo.AddApprovalAsync(other);
+        await repo.AddApprovalAsync(decided);
+        await repo.AddApprovalAsync(foreign);
+
+        var list = await repo.ListPendingApprovalsForUserAsync(tenantId, userId, "Administrators", 50);
+        // Tri DueAt croissant : byRole (+1 h) avant direct (+4 h).
+        Assert.Equal(new[] { byRole.Id, direct.Id }, list.Select(a => a.Id).ToArray());
+        Assert.Equal(2, await repo.CountPendingApprovalsForUserAsync(tenantId, userId, "Administrators"));
+
+        // Sans rôle : seules les assignations directes.
+        var directOnly = await repo.ListPendingApprovalsForUserAsync(tenantId, userId, null, 50);
+        Assert.Equal(new[] { direct.Id }, directOnly.Select(a => a.Id).ToArray());
+        Assert.Equal(1, await repo.CountPendingApprovalsForUserAsync(tenantId, userId, null));
+    }
+
+    [SkippableFact]
+    public async Task PurgeTerminalOlderThanAsync_deletes_instances_with_step_runs_and_approvals_and_keeps_open_and_recent()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+
+        var tenantId = Guid.NewGuid();
+        var otherTenantId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
+        var repo = _sql.NewRepository();
+        var definition = NewDefinition(tenantId, entityId, "purge");
+        await repo.AddDefinitionAsync(definition);
+        var otherDefinition = NewDefinition(otherTenantId, entityId, "purge");
+        await repo.AddDefinitionAsync(otherDefinition);
+
+        var now = DateTime.UtcNow;
+        var threshold = now.AddDays(-30);
+
+        async Task<StudioWorkflowInstance> AddTerminalAsync(StudioWorkflowInstance instance)
+        {
+            await repo.AddInstanceAsync(instance);
+            // Complete/Fail/Cancel datent à UtcNow : on vieillit au-delà du seuil.
+            SetProperty(instance, nameof(StudioWorkflowInstance.CompletedAt), now.AddDays(-40));
+            await repo.UpdateInstanceAsync(instance);
+            return instance;
+        }
+
+        var completed = NewInstance(tenantId, definition, Guid.NewGuid());
+        completed.Complete("{}");
+        await AddTerminalAsync(completed);
+        var failed = NewInstance(tenantId, definition, Guid.NewGuid());
+        failed.Fail("boom");
+        await AddTerminalAsync(failed);
+        var cancelled = NewInstance(tenantId, definition, Guid.NewGuid());
+        cancelled.Cancel("plus utile");
+        await AddTerminalAsync(cancelled);
+
+        // Enfants d'une instance purgée : ils doivent partir avec elle (pas de FK).
+        await repo.AddStepRunAsync(StudioWorkflowStepRun.Record(
+            tenantId, completed.Id, 0, "step_a", "notify", StudioWorkflowStepRunStatus.Succeeded,
+            StudioWorkflowStepOutcome.Continue, null, null, null, now.AddDays(-40), now.AddDays(-40), null));
+        await repo.AddApprovalAsync(StudioWorkflowApproval.Create(
+            tenantId, completed.Id, "step_b", null, "Administrators", "Historique", null, null));
+
+        // Récente (au-dessus du seuil) et encore ouverte : conservées.
+        var recent = NewInstance(tenantId, definition, Guid.NewGuid());
+        recent.Complete("{}");
+        await repo.AddInstanceAsync(recent);
+        var open = NewInstance(tenantId, definition, Guid.NewGuid());
+        await repo.AddInstanceAsync(open);
+
+        // Autre tenant, pourtant ancienne : conservée.
+        var foreign = NewInstance(otherTenantId, otherDefinition, Guid.NewGuid());
+        foreign.Complete("{}");
+        await repo.AddInstanceAsync(foreign);
+        SetProperty(foreign, nameof(StudioWorkflowInstance.CompletedAt), now.AddDays(-40));
+        await repo.UpdateInstanceAsync(foreign);
+
+        var purged = await repo.PurgeTerminalOlderThanAsync(tenantId, threshold, 500);
+
+        Assert.Equal(3, purged);
+        Assert.Null(await repo.GetInstanceAsync(tenantId, completed.Id));
+        Assert.Null(await repo.GetInstanceAsync(tenantId, failed.Id));
+        Assert.Null(await repo.GetInstanceAsync(tenantId, cancelled.Id));
+        Assert.Empty(await repo.ListStepRunsAsync(tenantId, completed.Id));
+        Assert.Empty(await repo.ListApprovalsForInstanceAsync(tenantId, completed.Id));
+        Assert.NotNull(await repo.GetInstanceAsync(tenantId, recent.Id));
+        Assert.NotNull(await repo.GetInstanceAsync(tenantId, open.Id));
+        Assert.NotNull(await repo.GetInstanceAsync(otherTenantId, foreign.Id));
+    }
+
+    [SkippableFact]
+    public async Task TryLeaseInstanceAsync_second_lease_on_stale_row_version_returns_false()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+
+        var tenantId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
+        var repo = _sql.NewRepository();
+        var definition = NewDefinition(tenantId, entityId, "lease");
+        await repo.AddDefinitionAsync(definition);
+        var instance = NewInstance(tenantId, definition, Guid.NewGuid());
+        await repo.AddInstanceAsync(instance);
+
+        var now = DateTime.UtcNow;
+        var lease = TimeSpan.FromMinutes(30);
+
+        // Deux lectures du même enregistrement (deux workers concurrents).
+        var first = await repo.GetInstanceAsync(tenantId, instance.Id);
+        var second = await repo.GetInstanceAsync(tenantId, instance.Id);
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+
+        // Premier arrivé : bail posé.
+        Assert.True(await repo.TryLeaseInstanceAsync(first!, now, lease));
+
+        // Second : son RowVersion est périmé ⇒ course perdue, false sans exception.
+        Assert.False(await repo.TryLeaseInstanceAsync(second!, now, lease));
+
+        // Relecture : le bail du premier est bien en base et encore frais ⇒ refus en mémoire.
+        var reloaded = await repo.GetInstanceAsync(tenantId, instance.Id);
+        Assert.NotNull(reloaded!.LeasedAt);
+        Assert.False(await repo.TryLeaseInstanceAsync(reloaded, now.AddMinutes(5), lease));
+    }
+
     private static void SetCreatedAt(StudioWorkflowApproval approval, DateTime createdAt)
         => typeof(StudioWorkflowApproval).GetProperty(nameof(StudioWorkflowApproval.CreatedAt))!.SetValue(approval, createdAt);
+
+    private static void SetProperty<TEntity>(TEntity entity, string propertyName, object? value)
+        => typeof(TEntity).GetProperty(propertyName)!.SetValue(entity, value);
 
     private static StudioWorkflowDefinition NewDefinition(
         Guid tenantId, Guid entityId, string key, bool isActive = true,

@@ -30,17 +30,17 @@ public sealed class ChannelAwareCurrentUser : ICurrentUser
 
     private static ImpersonatedUserSnapshot? Impersonated => ImpersonatedUserContext.Current;
 
-    private static ChannelUserSnapshot? Snapshot => ChannelUserContext.Current;
+    private static ChannelUserSnapshot? ChannelSnapshot => ChannelUserContext.Current;
 
-    private static bool HasSnapshot => Impersonated is not null || Snapshot is not null;
+    private static bool HasSnapshot => Impersonated is not null || ChannelSnapshot is not null;
 
-    public Guid? UserId => Impersonated is { } i ? i.UserId : Snapshot is { } s ? s.UserId : _inner.UserId;
+    public Guid? UserId => Impersonated is { } i ? i.UserId : ChannelSnapshot is { } s ? s.UserId : _inner.UserId;
 
-    public string? Email => Impersonated is { } i ? i.Email : Snapshot is { } s ? s.Email : _inner.Email;
+    public string? Email => Impersonated is { } i ? i.Email : ChannelSnapshot is { } s ? s.Email : _inner.Email;
 
-    public Guid? TenantId => Impersonated is { } i ? i.TenantId : Snapshot is { } s ? s.TenantId : _inner.TenantId;
+    public Guid? TenantId => Impersonated is { } i ? i.TenantId : ChannelSnapshot is { } s ? s.TenantId : _inner.TenantId;
 
-    public UserRole? Role => Impersonated is { } i ? i.Role : Snapshot is { } s ? s.Role : _inner.Role;
+    public UserRole? Role => Impersonated is { } i ? i.Role : ChannelSnapshot is { } s ? s.Role : _inner.Role;
 
     public bool IsAuthenticated => HasSnapshot || _inner.IsAuthenticated;
 
@@ -57,7 +57,7 @@ public sealed class ChannelAwareCurrentUser : ICurrentUser
     /// </summary>
     public bool HasPermission(string permission) =>
         Impersonated is { } i ? i.Permissions.Contains(permission)
-        : Snapshot is { } s ? s.Permissions.Contains(permission)
+        : ChannelSnapshot is { } s ? s.Permissions.Contains(permission)
         : _inner.HasPermission(permission);
 
     public string? IpAddress => HasSnapshot ? null : _inner.IpAddress;
