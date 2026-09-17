@@ -18,7 +18,8 @@ namespace FactuTrust.Infrastructure.Services.Studio;
 /// <summary>
 /// Exécute un plan Studio IA confirmé par l'utilisateur. Routage par nature de plan :
 /// CreateSystem → <see cref="StudioAiSystemOrchestrator"/> (rollback conservé) ;
-/// CreateApp → création directe table + champs + rapport (mêmes commandes que studio_generate_app).
+/// CreateApp → création directe table + champs + rapport (mêmes commandes que studio_generate_app) ;
+/// Workflow → <see cref="StudioAiWorkflowExecutor"/> (tout-ou-rien, workflows créés inactifs, PR 4.3f).
 /// Orchestration mince uniquement — toute la validation/quotas/permissions/audit reste dans les
 /// commandes CQRS Studio sous-jacentes.
 /// </summary>
@@ -89,6 +90,16 @@ public sealed class StudioAiPlanExecutor : IStudioAiPlanExecutor
                 if (!StudioAiRecordViewSpec.TryParse(plan.SpecJson, out var spec, out var error) || spec is null)
                     return (false, error ?? "Spécification de vue enregistrée invalide.", null);
                 return await ExecuteRecordViewAsync(spec, progress, cancellationToken);
+            }
+            case StudioAiPlanKind.Workflow:
+            {
+                // PR 4.3f — fail-closed (D-43-22) : un plan confirmé après désactivation du moteur ne crée rien.
+                if (_settings is null || !_settings.EnableStudioWorkflows)
+                    return (false, "Les workflows Studio ne sont pas activés.", null);
+                if (!StudioAiWorkflowSpec.TryParse(plan.SpecJson, out var spec, out var error) || spec is null)
+                    return (false, error ?? "Spécification de workflows invalide.", null);
+                var executor = new StudioAiWorkflowExecutor(_mediator);
+                return await executor.ExecuteAsync(spec, progress, cancellationToken);
             }
             default:
                 return (false, $"Type de plan non pris en charge : {plan.Kind}.", null);
