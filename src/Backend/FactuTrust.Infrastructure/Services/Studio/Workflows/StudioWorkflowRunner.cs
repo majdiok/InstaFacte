@@ -20,6 +20,9 @@ namespace FactuTrust.Infrastructure.Services.Studio.Workflows;
 /// cliché d'impersonation du lanceur (<see cref="IImpersonationSnapshotResolver"/>, fail-closed) puis
 /// exécute le moteur dans ce périmètre ; le bail est relâché en <c>finally</c> même si le moteur lève.
 /// Aucune donnée d'instance n'est loguée ; le cliché n'est jamais mis en cache (résolution à chaque tick).
+/// Le ctor dépasse la fiche 4.2c2 de <see cref="ICustomEntityRepository"/> et
+/// <see cref="IAuditService"/> : le chemin « lanceur indisponible » doit le nom de la définition, la clé
+/// d'entité (lien de la notification 17) et l'audit <c>Studio.Workflow.InstanceFailed</c> (écart consigné).
 /// </summary>
 internal sealed class StudioWorkflowRunner : IStudioWorkflowRunner
 {
@@ -109,6 +112,12 @@ internal sealed class StudioWorkflowRunner : IStudioWorkflowRunner
                 // Une écriture concurrente a gagné pendant l'exécution : le reaper (4.2d) rattrapera.
                 _logger.LogWarning("Workflow {InstanceId} : relâchement du bail sur RowVersion périmé.", instance.Id);
             }
+            catch (Exception persistEx)
+            {
+                // Jamais masquer l'exception du moteur par celle du relâchement (revue 4.2c2) : on
+                // journalise et on laisse l'originale (ou le retour) se propager ; le reaper rattrapera.
+                _logger.LogError(persistEx, "Workflow {InstanceId} : échec du relâchement du bail ; le reaper rattrapera.", instance.Id);
+            }
         }
     }
 
@@ -135,7 +144,7 @@ internal sealed class StudioWorkflowRunner : IStudioWorkflowRunner
         await _workflows.UpdateInstanceAsync(instance, ct);
 
         var definition = await _workflows.GetDefinitionAsync(instance.TenantId, instance.WorkflowDefinitionId, ct);
-        var title = "Workflow en échec";
+        var title = "« Workflow supprimé » en échec";
         string? link = null;
         if (definition is not null)
         {
