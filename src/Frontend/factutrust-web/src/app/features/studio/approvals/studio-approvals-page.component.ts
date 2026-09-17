@@ -1,11 +1,12 @@
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
+import { DrawerModule } from 'primeng/drawer';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { TextareaModule } from 'primeng/textarea';
@@ -18,7 +19,9 @@ import { StudioPageShellComponent } from '../shared/studio-page-shell.component'
 import { STUDIO_BREADCRUMBS } from '../shared/studio-breadcrumb.util';
 import { STUDIO_WORKFLOW_LABELS } from '../workflows/studio-workflow-labels';
 import { workflowErrorMessage } from '../workflows/studio-workflow-http.util';
+import { StudioWorkflowInstanceDetailComponent } from '../workflows/studio-workflow-instance-detail.component';
 import { StudioWorkflowsService } from '../workflows/studio-workflows.service';
+import { StudioApprovalDetailPanelComponent } from './studio-approval-detail-panel.component';
 import { StudioApprovalsBadgeService } from './studio-approvals-badge.service';
 import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toApprovalRow } from './studio-approvals.util';
 
@@ -30,9 +33,16 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
  * Les boutons de décision et le lien vers la fiche ne sont rendus qu'avec `custom_records:write`
  * (R17, D-44-53 : la route `edit` exige `recordsWrite`) ; sinon la page est en lecture seule.
  * Pas de colonne « Demandé par » (D-44-79 : `startedBy` est un Guid sans nom) — « Lancé le »
- * affiche `startedAt`. Pas de bouton « Détail » : le panneau de détail arrive en 4.4h1 (D-44-54).
- * Après une décision : retrait local de la ligne + `badge.refresh()` ; après un 409/404
- * (déjà traitée / plus assignée), rechargement complet de la liste (D-44-55, vérité serveur).
+ * affiche `startedAt`. Après une décision : retrait local de la ligne + `badge.refresh()` ;
+ * après un 409/404 (déjà traitée / plus assignée), rechargement complet de la liste
+ * (D-44-55, vérité serveur).
+ * 4.4h1 : bouton « Détail » par ligne (rendu aussi en lecture seule, D-44-57) ouvrant le
+ * panneau `app-studio-approval-detail-panel` — colonne fixe 372 px à partir de 1 280 px
+ * (signal `wide` sur `matchMedia`, D-44-56), `p-drawer` en dessous ; le bouton
+ * « Voir l'instance » du panneau n'existe qu'avec `studio:design_entities` (D-44-25/D-44-82,
+ * `getInstance` est une route de conception) et ouvre EN PLACE le drawer 4.4f
+ * `[(instanceId)]` (D-44-83 : l'item ne porte pas `workflowDefinitionId`) — son état
+ * inline « Détail indisponible. » couvre la course où la permission serait retirée.
  */
 @Component({
   selector: 'app-studio-approvals-page',
@@ -40,8 +50,8 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     DatePipe, FormsModule, RouterLink,
-    ButtonModule, DialogModule, TableModule, TagModule, TextareaModule, ToastModule, TooltipModule,
-    StudioPageShellComponent, SkeletonTableComponent
+    ButtonModule, DialogModule, DrawerModule, TableModule, TagModule, TextareaModule, ToastModule, TooltipModule,
+    StudioPageShellComponent, SkeletonTableComponent, StudioApprovalDetailPanelComponent, StudioWorkflowInstanceDetailComponent
   ],
   template: `
     <app-studio-page-shell [title]="labels.title" [subtitle]="labels.subtitle" [breadcrumbs]="breadcrumbs">
@@ -78,8 +88,9 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
       } @else if (loading()) {
         <app-skeleton-table [rows]="5" [columns]="skeletonColumns" />
       } @else {
-        <div class="ft-table-card">
-          <p-table [value]="items()" dataKey="id" styleClass="p-datatable-sm" [rowHover]="true">
+        <div class="sap-layout" [class.sap-layout--panel]="wide() && selected()">
+          <div class="ft-table-card">
+            <p-table [value]="items()" dataKey="id" styleClass="p-datatable-sm" [rowHover]="true">
             <ng-template pTemplate="header">
               <tr>
                 <th>{{ labels.colWorkflow }}</th>
@@ -91,7 +102,7 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
               </tr>
             </ng-template>
             <ng-template pTemplate="body" let-item>
-              <tr [attr.data-testid]="'sap-row-' + item.id">
+              <tr [attr.data-testid]="'sap-row-' + item.id" [class.sap-row--selected]="selected()?.id === item.id">
                 <td>
                   <strong>{{ item.workflowName }}</strong>
                   <div class="studio-muted">{{ item.stepTitle }}</div>
@@ -111,6 +122,8 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
                     [value]="dueLabel(item)" />
                 </td>
                 <td class="sap-actions-col">
+                  <p-button [label]="labels.detail" icon="fa-solid fa-eye" size="small" severity="secondary" [text]="true"
+                    (onClick)="select(item)" [attr.data-testid]="'sap-detail-' + item.id" />
                   @if (canDecide()) {
                     <p-button [label]="labels.approve" icon="fa-solid fa-check" size="small" severity="success" [outlined]="true"
                       (onClick)="openDecision(item, 'approve')" [attr.data-testid]="'sap-approve-' + item.id" />
@@ -129,9 +142,32 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
               </tr>
             </ng-template>
           </p-table>
+          </div>
+          @if (selected(); as sel) {
+            @if (wide()) {
+              <aside class="sap-panel" data-testid="sap-panel-column">
+                <app-studio-approval-detail-panel [item]="sel" [canDecide]="canDecide()" [canOpenInstance]="canOpenInstance()" [busy]="busy()" [nowMs]="now()"
+                  (approve)="openDecision($event, 'approve')" (reject)="openDecision($event, 'reject')" (openInstance)="openInstanceId.set($event)" (close)="clearSelection()" />
+              </aside>
+            }
+          }
         </div>
       }
     </app-studio-page-shell>
+
+    @if (selected(); as sel) {
+      @if (!wide()) {
+        <p-drawer [visible]="true" (visibleChange)="$event || clearSelection()" position="right" appendTo="body" styleClass="studio-theme sap-drawer"
+          [style]="{ width: '420px', maxWidth: '100vw' }">
+          <app-studio-approval-detail-panel [item]="sel" [canDecide]="canDecide()" [canOpenInstance]="canOpenInstance()" [busy]="busy()" [nowMs]="now()"
+            (approve)="openDecision($event, 'approve')" (reject)="openDecision($event, 'reject')" (openInstance)="openInstanceId.set($event)" (close)="clearSelection()" />
+        </p-drawer>
+      }
+    }
+    @if (canOpenInstance()) {
+      <!-- 4.4f (drawer 480 px, appendTo body) : changed ⇒ l'approbation a pu être annulée avec l'instance ⇒ rechargement + badge -->
+      <app-studio-workflow-instance-detail [(instanceId)]="openInstanceId" [entityKey]="selected()?.entityKey ?? null" (changed)="onInstanceChanged()" />
+    }
 
     <p-dialog [visible]="dialogVisible()" (visibleChange)="$event || closeDecision()" [modal]="true" [draggable]="false"
       appendTo="body" styleClass="studio-theme" [style]="{ width: '480px', maxWidth: '95vw' }"
@@ -173,6 +209,10 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
     .sap-dialog__label { display: block; font-weight: 600; font-size: var(--font-size-sm); margin: .75rem 0 .375rem; }
     .sap-dialog__error { display: block; color: var(--p-red-600, #dc2626); margin-top: .375rem; }
     .sap-dialog__actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
+    .sap-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; align-items: start; }
+    .sap-layout--panel { grid-template-columns: minmax(0, 1fr) 372px; }
+    .sap-panel { position: sticky; top: 1rem; border: 1px solid var(--studio-border, var(--color-border-subtle, #e2e8f0)); border-radius: .75rem; padding: 1rem; background: var(--studio-surface, var(--color-neutral-50, #f8fafc)); }
+    .sap-row--selected > td { background: var(--studio-surface-hover, var(--color-neutral-100, #f1f5f9)); }
   `]
 })
 export class StudioApprovalsPageComponent implements OnInit {
@@ -197,14 +237,38 @@ export class StudioApprovalsPageComponent implements OnInit {
   readonly commentMissing = computed(() => this.decision()?.kind === 'reject' && this.comment().trim().length === 0);
   readonly dialogVisible = computed(() => this.decision() !== null);
 
+  // 4.4h1 — sélection + panneau de détail (D-44-56/57) + hôte du drawer d'instance 4.4f (H-8)
+  readonly selected = signal<ApprovalRow | null>(null);
+  readonly canOpenInstance = computed(() => this.auth.hasPermission(PERMISSIONS.studio.designEntities));   // D-44-25/D-44-82 : fail-closed, évite le GET 403
+  readonly openInstanceId = signal<string | null>(null);
+  private readonly mq = typeof window !== 'undefined' && 'matchMedia' in window ? window.matchMedia('(min-width: 1280px)') : null;
+  readonly wide = signal(this.mq?.matches ?? true);
+
+  constructor() {
+    const onChange = (e: MediaQueryListEvent) => this.wide.set(e.matches);
+    this.mq?.addEventListener('change', onChange);
+    inject(DestroyRef).onDestroy(() => this.mq?.removeEventListener('change', onChange));
+  }
+
   ngOnInit(): void { this.load(); }
+
+  select(item: ApprovalRow): void { this.selected.set(item); }
+  clearSelection(): void { this.selected.set(null); }
+
+  /** Après annulation/relance depuis le drawer 4.4f : rechargement de la boîte + badge. */
+  onInstanceChanged(): void {
+    this.load();
+    this.badge.refresh();
+  }
 
   load(): void {
     this.loading.set(true);
     this.error.set(null);
     this.workflows.listMyApprovals().subscribe({                              // GET workflows/approvals/mine?max=50 (skipErrorUi côté service)
       next: res => {
-        this.items.set(res.success ? (res.data ?? []).map(toApprovalRow) : []);
+        const list = res.success ? (res.data ?? []).map(toApprovalRow) : [];
+        this.items.set(list);
+        this.selected.update(s => (s && list.some(i => i.id === s.id) ? s : null));   // la ligne sélectionnée a pu disparaître (décision ailleurs, instance annulée)
         this.now.set(Date.now());
         this.loading.set(false);
       },
@@ -233,6 +297,7 @@ export class StudioApprovalsPageComponent implements OnInit {
     call.subscribe({
       next: () => {
         this.items.update(list => list.filter(i => i.id !== d.item.id));
+        if (this.selected()?.id === d.item.id) this.selected.set(null);
         this.toast.add({ severity: 'success', summary: this.labels.title, detail: d.kind === 'approve' ? this.labels.approved : this.labels.rejected });
         this.badge.refresh();
         this.busy.set(false);
