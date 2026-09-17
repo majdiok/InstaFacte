@@ -24,14 +24,13 @@ ROUTES = {
 }
 
 
-def assign(obj, name, material, collection="Props", zone=None, obstacle=True):
+def assign(obj, name, material, collection="Props", zone=None):
     obj.name = name
     for old in list(obj.users_collection):
         old.objects.unlink(obj)
     bpy.data.collections[collection].objects.link(obj)
     obj["study_owner"] = OWNER
     obj["exportable"] = collection in ("Architecture", "Props")
-    obj["obstacle"] = obstacle
     if zone:
         obj["zone"] = zone
     if material:
@@ -39,9 +38,9 @@ def assign(obj, name, material, collection="Props", zone=None, obstacle=True):
     return obj
 
 
-def box(name, loc, size, mat, collection="Props", zone=None, obstacle=True, bevel=0.012):
+def box(name, loc, size, mat, collection="Props", zone=None, bevel=0.012):
     bpy.ops.mesh.primitive_cube_add(size=1, location=loc)
-    obj = assign(bpy.context.object, name, mat, collection, zone, obstacle)
+    obj = assign(bpy.context.object, name, mat, collection, zone)
     obj.dimensions = size
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     if bevel:
@@ -140,11 +139,11 @@ def build_scene():
     mirror = material("C12-Mirror-Simulated", (.33, .42, .43), .24, .75)
     ivory = material("C12-AbstractForm-Temporary", (.65, .59, .47), .55)
     architecture = "Architecture"
-    box("Floor", (0, 5, -.10), (6.4, 10.4, .2), floor, architecture, obstacle=False)
+    box("Floor", (0, 5, -.10), (6.4, 10.4, .2), floor, architecture)
     box("Wall-left", (-3.1, 5, 1.7), (.2, 10.4, 3.4), plaster, architecture)
     box("Wall-right", (3.1, 5, 1.7), (.2, 10.4, 3.4), plaster, architecture)
     box("Wall-back", (0, 10.1, 1.7), (6.4, .2, 3.4), plaster, architecture)
-    box("Ceiling", (0, 5, 3.5), (6.4, 10.4, .2), plaster, architecture, obstacle=False)
+    box("Ceiling", (0, 5, 3.5), (6.4, 10.4, .2), plaster, architecture)
     box("Facade-header", (0, -.1, 3.025), (6.4, .22, .75), wood, architecture)
     box("Facade-cornice", (0, -.18, 3.35), (6.5, .34, .12), plaster, architecture)
     # Blank sign only. No third-party/bundled font, invented brand or tenant identity.
@@ -203,7 +202,7 @@ def build_scene():
     for i in range(4):
         box("Back-folded-cloth", (1.65+i*.3, 9.7, 1.68), (.24, .26, .10), fabric[i])
     for y in (2.5, 5.5, 8.5):
-        box("Ceiling-light-housing", (0, y, 3.34), (1.6, .15, .08), metal, architecture, obstacle=False)
+        box("Ceiling-light-housing", (0, y, 3.34), (1.6, .15, .08), metal, architecture)
         area("Offline-ceiling-light", (0, y, 3.22), (0, y, 0), 220, 2.0)
     area("Offline-daylight", (0, -3, 5), (0, 4, 1), 1100, 7)
     area("Offline-facade-fill", (-5, -6, 4), (0, 0, 1), 700, 5)
@@ -220,7 +219,7 @@ def build_scene():
         obj.location = (*xy, 1.65)
     # Explicit closed-space guide, never exported or rendered.
     guide = box("Interior-metric-envelope", (0, 5, 1.7), (6, 10, 3.4), None,
-                "CollisionGuides", obstacle=False, bevel=0)
+                "CollisionGuides", bevel=0)
     guide.hide_render = True
     guide.display_type = "WIRE"
     bpy.context.view_layer.update()

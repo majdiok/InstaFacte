@@ -23,6 +23,17 @@ def export_objects():
     return sorted((o for o in bpy.context.scene.objects if o.get("exportable")), key=lambda o: o.name)
 
 
+def export_study_glb(path):
+    """Use exactly the same uncompressed export in the build and reimport test."""
+    bpy.ops.object.select_all(action="DESELECT")
+    for obj in export_objects():
+        obj.select_set(True)
+    bpy.ops.export_scene.gltf(filepath=str(path), export_format="GLB",
+                              use_selection=True, export_apply=True, export_yup=True,
+                              export_cameras=False, export_lights=False, export_extras=False)
+    return validate_glb(path)
+
+
 def bounds(obj):
     evaluated = obj.evaluated_get(bpy.context.evaluated_depsgraph_get())
     corners = [evaluated.matrix_world @ Vector(v) for v in evaluated.bound_box]

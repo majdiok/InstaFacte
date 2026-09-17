@@ -26,6 +26,8 @@ blender -b -t 6 --python-exit-code 1 \
 blender -b -t 2 --python-exit-code 1 \
   --python art/virtual-street/source/pilots/c12/test_scene.py
 
+python3 art/virtual-street/source/pilots/c12/test_provenance.py -v
+
 python3 art/virtual-street/source/production.py validate
 python3 -m unittest discover -s art/virtual-street/source/tests -v
 python3 art/virtual-street/source/production.py preflight
@@ -47,6 +49,35 @@ aux versions Blender/exporteur, aux caméras et aux temps effectivement mesurés
 Le commit de checkout est indiqué comme base, pas faussement comme commit des
 sources si elles sont encore non committées. Les PNG sont des masters d'étude,
 pas des images web finales optimisées à 300 KiB.
+
+### Provenance figée avant authoring
+
+`build.py` capture HEAD avant tout import d'authoring. Il réexécute son lanceur
+depuis les octets capturés et charge de la même manière `provenance.py`, puis
+vérifie que ces octets correspondent à la capture. Tous les Python de `source/`
+(y compris les futurs helpers d'export), `registry.py`, les deux entrées
+canoniques et leur lock sont copiés sans écrasement dans le
+`source-snapshot/` du run. `authoring.py`, `scene.py` et `validation.py` sont
+importés uniquement depuis cette copie neuve, sans pycache ; le registre lit
+également les **entrées copiées**, pas les fichiers de travail pendant le rendu.
+Un processus Blender neuf est exigé : un module projet déjà importé est refusé.
+La stdlib et Blender/exporteur installés restent des dépendances de toolchain,
+pas des créations locales copiées ; leurs versions restent enregistrées.
+
+Juste avant la création exclusive du ledger, `provenance.py` compare HEAD,
+contenu **et liste** des entrées originales et de leur snapshot. Une édition,
+addition, suppression ou dérive du snapshot fait échouer le run **sans ledger
+finalisé**. Les hashes écrits proviennent des octets capturés, jamais d'une
+nouvelle lecture tardive présentée comme source exécutée. Un run interrompu
+peut laisser des fichiers de travail, mais pas une preuve finalisée.
+
+Les huit tests stdlib utilisent seulement des fixtures synthétiques temporaires :
+exécution d'une copie puis édition explicite de l'original avant finalisation,
+bootstrap différent, dépendances dont helper d'export, module ajouté/supprimé,
+HEAD modifié, snapshot modifié, succès et refus d'écrasement. Aucun `sleep`,
+course de timing ou changement des entrées canoniques réelles. Les nouvelles
+preuves `validated-v2` restent des études non approuvées ; aucun indice ne
+démontre que les images antérieures aient subi une dérive de source.
 
 ## Géométrie et provenance
 
@@ -104,6 +135,10 @@ sont pas un bake transférable au runtime.
 - GLB non vide, signature/longueur/JSON/meshes, aucune URI libre ni guide exporté ;
 - test d'export **et réimport Blender dans une scène vide**, comparaison des bornes
   évaluées de chaque mesh avec celles de l'original.
+
+Le build et ce test utilisent le même petit helper `export_study_glb` : sélection
+seule, modifiers appliqués, +Y haut, caméras/lumières/extras exclus. Les obstacles
+sont toujours détectés géométriquement ; aucun flag déclaratif ne les désactive.
 
 Tests négatifs : déplacement réel d'un mur, unité centimétrique, matériau sans
 provenance, zone absente, proxy décalé, vraie obstruction du seuil correctement

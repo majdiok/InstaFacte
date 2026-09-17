@@ -8,7 +8,7 @@ import bpy
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from scene import build_scene
-from validation import StudyError, bounds, create_proxies, export_objects, validate_glb, validate_scene
+from validation import StudyError, bounds, create_proxies, export_objects, export_study_glb, validate_glb, validate_scene
 
 
 class SceneTests(unittest.TestCase):
@@ -91,12 +91,7 @@ class SceneTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="c12-test-") as tmp:
             path = Path(tmp) / "study.glb"
             before = {o.name: bounds(o) for o in export_objects()}
-            bpy.ops.object.select_all(action="DESELECT")
-            for obj in export_objects():
-                obj.select_set(True)
-            bpy.ops.export_scene.gltf(filepath=str(path), export_format="GLB", use_selection=True,
-                                      export_apply=True, export_yup=True, export_extras=False)
-            result = validate_glb(path)
+            result = export_study_glb(path)
             self.assertGreater(result["bytes"], 10000)
             # Reimport into a clean scene, so names are not collision-renamed.
             # Blender maps glTF +Y-up back to source Z-up; compare evaluated bounds.
