@@ -1,0 +1,349 @@
+using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.Workflows;
+using FactuTrust.Application.Features.Studio.Workflows.Engine;
+using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Entities.Studio;
+using FactuTrust.Domain.Entities.Studio.Workflows;
+using FactuTrust.Domain.Enums;
+using Moq;
+using Xunit;
+
+namespace FactuTrust.Infrastructure.Tests.Studio;
+
+/// <summary>
+/// 4.2f — runtime « onglet Workflows » d'une fiche : instances de l'enregistrement, workflows lançables,
+/// lancement manuel (quota), annulation (moteur), relance des approbateurs (1 / 24 h).
+/// </summary>
+public class StudioWorkflowRuntimeFeaturesTests
+{
+    private static readonly Guid TenantId = Guid.NewGuid();
+    private static readonly Guid Uid = Guid.NewGuid();
+    private static readonly Guid StartedBy = Guid.NewGuid();
+
+    private readonly Mock<IStudioWorkflowRepository> _workflows = new(MockBehavior.Strict);
+    private readonly Mock<ICustomEntityRepository> _entities = new(MockBehavior.Strict);
+    private readonly Mock<ICustomRecordRepository> _records = new(MockBehavior.Strict);
+    private readonly Mock<IStudioWorkflowRunner> _runner = new(MockBehavior.Strict);
+    private readonly Mock<IStudioWorkflowEngine> _engine = new(MockBehavior.Strict);
+    private readonly Mock<IStudioQuotaService> _quota = new(MockBehavior.Strict);
+    private readonly Mock<INotificationService> _notifications = new(MockBehavior.Strict);
+    private readonly Mock<IAuditService> _audit = new(MockBehavior.Strict);
+    private readonly Mock<ICurrentUser> _currentUser = new(MockBehavior.Strict);
+    private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 9, 17, 10, 0, 0, TimeSpan.Zero));
+
+    private readonly CustomEntityDefinition _entity =
+        CustomEntityDefinition.Create(TenantId, "customer", "Client", "Clients", null, null, null);
+
+    public StudioWorkflowRuntimeFeaturesTests()
+    {
+        _currentUser.Setup(c => c.TenantId).Returns(TenantId);
+        _currentUser.Setup(c => c.UserId).Returns(Uid);
+        _currentUser.Setup(c => c.Role).Returns(UserRole.SalesRep);
+    }
+
+    private void SetupReadPermission(bool granted = true) =>
+        _currentUser.Setup(c => c.HasPermission(Permissions.CustomData.RecordsRead)).Returns(granted);
+
+    private void SetupWritePermission(bool granted = true) =>
+        _currentUser.Setup(c => c.HasPermission(Permissions.CustomData.RecordsWrite)).Returns(granted);
+
+    private void SetupEntityAndRecord(CustomRecord? record)
+    {
+        _entities.Setup(r => r.GetByKeyAsync(TenantId, "customer", It.IsAny<CancellationToken>())).ReturnsAsync(_entity);
+        if (record is not null)
+            _records.Setup(r => r.GetAsync(TenantId, _entity.Id, record.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(record);
+    }
+
+    [Fact]
+    public async Task ListRecordWorkflowInstances_returns_dtos_and_clamps_max()
+    {
+        var record = CustomRecord.Create(TenantId, _entity.Id, "{}", Uid);
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        var instance = NewInstance(definition, record.Id);
+        SetupReadPermission();
+        SetupEntityAndRecord(record);
+        _workflows.Setup(r => r.ListInstancesForRecordAsync(TenantId, record.Id, 200, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StudioWorkflowInstance> { instance });
+        _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(definition);
+
+        var handler = new ListRecordWorkflowInstancesQueryHandler(
+            _workflows.Object, _entities.Object, _records.Object, _currentUser.Object);
+        var result = await handler.Handle(
+            new ListRecordWorkflowInstancesQuery("customer", record.Id, Max: 10_000), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var dto = Assert.Single(result.Value);
+        Assert.Equal(instance.Id, dto.Id);
+        Assert.Equal(definition.Key, dto.WorkflowKey);
+        Assert.Equal(definition.Name, dto.WorkflowName);
+    }
+
+    [Fact]
+    public async Task ListRecordWorkflowInstances_returns_NotFound_for_record_of_another_tenant()
+    {
+        var recordId = Guid.NewGuid();
+        SetupReadPermission();
+        SetupEntityAndRecord(null);
+        _records.Setup(r => r.GetAsync(TenantId, _entity.Id, recordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CustomRecord?)null);
+
+        var handler = new ListRecordWorkflowInstancesQueryHandler(
+            _workflows.Object, _entities.Object, _records.Object, _currentUser.Object);
+        var result = await handler.Handle(
+            new ListRecordWorkflowInstancesQuery("customer", recordId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("CustomRecord.NotFound", result.Error.Code);
+    }
+
+    [Fact]
+    public async Task GetRecordWorkflows_returns_only_active_manual_definitions_with_step_count()
+    {
+        var twoSteps = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual,
+            stepsJson: """{ "version": 1, "steps": [{ "key": "sa", "type": "wait", "hours": 1 }, { "key": "sb", "type": "wait", "hours": 2 }] }""");
+        var oneStep = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual,
+            key: "wf-second", name: "Second",
+            stepsJson: """{ "version": 1, "steps": [{ "key": "sa", "type": "wait", "hours": 1 }] }""");
+        SetupReadPermission();
+        _entities.Setup(r => r.GetByKeyAsync(TenantId, "customer", It.IsAny<CancellationToken>())).ReturnsAsync(_entity);
+        // Le dépôt filtre déjà (actives + Manual) : le handler mappe et compte les étapes.
+        _workflows.Setup(r => r.ListActiveByTriggerAsync(TenantId, _entity.Id, StudioWorkflowTriggerKind.Manual,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StudioWorkflowDefinition> { twoSteps, oneStep });
+
+        var handler = new GetRecordWorkflowsQueryHandler(_workflows.Object, _entities.Object, _currentUser.Object);
+        var result = await handler.Handle(new GetRecordWorkflowsQuery("customer"), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value.Count);
+        Assert.Equal(2, result.Value[0].StepCount);
+        Assert.Equal(1, result.Value[1].StepCount);
+        Assert.Equal("wf-second", result.Value[1].Key);
+    }
+
+    [Fact]
+    public async Task Run_starts_instance_under_current_user_and_returns_dto()
+    {
+        var record = CustomRecord.Create(TenantId, _entity.Id, "{}", Uid);
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        var started = NewInstance(definition, record.Id);
+        SetupWritePermission();
+        SetupEntityAndRecord(record);
+        _workflows.Setup(r => r.GetDefinitionByKeyAsync(TenantId, _entity.Id, definition.Key,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(definition);
+        _workflows.Setup(r => r.CountInstancesForRecordAsync(TenantId, record.Id, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        _quota.Setup(q => q.EnsureUnderLimitAsync(TenantId, StudioQuotas.MaxWorkflowInstancesPerRecordKey, 0,
+                StudioQuotas.MaxWorkflowInstancesPerRecordFallback, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        _runner.Setup(r => r.StartUnderCurrentUserAsync(definition, record.Id, StudioWorkflowTriggerKind.Manual,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(started));
+
+        var handler = NewRunHandler();
+        var result = await handler.Handle(
+            new RunWorkflowCommand("customer", record.Id, definition.Key), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(started.Id, result.Value.Id);
+        Assert.Equal(definition.Key, result.Value.WorkflowKey);
+    }
+
+    [Fact]
+    public async Task Run_returns_NotFound_when_definition_is_inactive_or_not_manual()
+    {
+        var record = CustomRecord.Create(TenantId, _entity.Id, "{}", Uid);
+        var inactive = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual, isActive: false);
+        var onCreate = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.OnCreate, key: "wf-auto");
+        SetupWritePermission();
+        SetupEntityAndRecord(record);
+        _workflows.Setup(r => r.GetDefinitionByKeyAsync(TenantId, _entity.Id, inactive.Key, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inactive);
+        _workflows.Setup(r => r.GetDefinitionByKeyAsync(TenantId, _entity.Id, onCreate.Key, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(onCreate);
+        _workflows.Setup(r => r.GetDefinitionByKeyAsync(TenantId, _entity.Id, "wf-inconnu", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StudioWorkflowDefinition?)null);
+
+        var handler = NewRunHandler();
+        foreach (var key in new[] { inactive.Key, onCreate.Key, "wf-inconnu" })
+        {
+            var result = await handler.Handle(new RunWorkflowCommand("customer", record.Id, key), CancellationToken.None);
+            Assert.False(result.IsSuccess);
+            Assert.Equal("NotFound", result.Error.Code);
+            Assert.Contains("non lançable à la main", result.Error.Description);
+        }
+        _runner.Verify(r => r.StartUnderCurrentUserAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<Guid>(),
+            It.IsAny<StudioWorkflowTriggerKind>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Run_returns_Validation_Plan_when_open_instances_reach_quota()
+    {
+        var record = CustomRecord.Create(TenantId, _entity.Id, "{}", Uid);
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        SetupWritePermission();
+        SetupEntityAndRecord(record);
+        _workflows.Setup(r => r.GetDefinitionByKeyAsync(TenantId, _entity.Id, definition.Key,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(definition);
+        _workflows.Setup(r => r.CountInstancesForRecordAsync(TenantId, record.Id, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(200);
+        _quota.Setup(q => q.EnsureUnderLimitAsync(TenantId, StudioQuotas.MaxWorkflowInstancesPerRecordKey, 200,
+                StudioQuotas.MaxWorkflowInstancesPerRecordFallback, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Validation("Plan", "Quota atteint.")));
+
+        var result = await NewRunHandler().Handle(
+            new RunWorkflowCommand("customer", record.Id, definition.Key), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("Validation.Plan", result.Error.Code);
+        _runner.Verify(r => r.StartUnderCurrentUserAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<Guid>(),
+            It.IsAny<StudioWorkflowTriggerKind>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Cancel_requires_records_write_and_cancels_open_instance_with_reason()
+    {
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        var instance = NewInstance(definition, Guid.NewGuid());
+        instance.Suspend(StudioWorkflowInstanceStatus.Waiting, DateTime.UtcNow.AddHours(1), "{}");
+
+        // Sans la permission : Unauthorized, le moteur n'est jamais appelé.
+        SetupWritePermission(granted: false);
+        var handler = new CancelInstanceCommandHandler(_workflows.Object, _engine.Object, _currentUser.Object);
+        var denied = await handler.Handle(new CancelInstanceCommand(instance.Id, "Plus utile"), CancellationToken.None);
+        Assert.False(denied.IsSuccess);
+        Assert.Equal("Unauthorized", denied.Error.Code);
+        _engine.Verify(e => e.CancelAsync(It.IsAny<StudioWorkflowInstance>(), It.IsAny<string>(),
+            It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        // Avec la permission : le moteur annule (raison tronquée à 500), le DTO est retourné.
+        SetupWritePermission();
+        _workflows.Setup(r => r.GetInstanceAsync(TenantId, instance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(instance);
+        _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(definition);
+        var longReason = new string('x', 600);
+        _engine.Setup(e => e.CancelAsync(instance, It.Is<string>(s => s.Length == 500), Uid,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var ok = await handler.Handle(new CancelInstanceCommand(instance.Id, longReason), CancellationToken.None);
+
+        Assert.True(ok.IsSuccess);
+        Assert.Equal(instance.Id, ok.Value.Id);
+        _engine.Verify(e => e.CancelAsync(instance, It.IsAny<string>(), Uid, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Cancel_returns_Conflict_when_instance_is_terminal()
+    {
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        var instance = NewInstance(definition, Guid.NewGuid());
+        instance.Fail("boom");
+        SetupWritePermission();
+        _workflows.Setup(r => r.GetInstanceAsync(TenantId, instance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(instance);
+
+        var handler = new CancelInstanceCommandHandler(_workflows.Object, _engine.Object, _currentUser.Object);
+        var result = await handler.Handle(new CancelInstanceCommand(instance.Id, null), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("Conflict", result.Error.Code);
+    }
+
+    [Fact]
+    public async Task Remind_reemits_pending_approval_notifications_and_marks_reminded()
+    {
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        var instance = NewInstance(definition, Guid.NewGuid());
+        instance.Suspend(StudioWorkflowInstanceStatus.WaitingApproval, DateTime.UtcNow.AddHours(-2), "{}");
+        var toUser = StudioWorkflowApproval.Create(TenantId, instance.Id, "approve", Uid, null, "Accord ?", null, null);
+        var toRole = StudioWorkflowApproval.Create(TenantId, instance.Id, "approve2", null, nameof(UserRole.Administrator), "Budget ?", "Message", null);
+        var decided = StudioWorkflowApproval.Create(TenantId, instance.Id, "approve3", Uid, null, "Ancienne", null, null);
+        decided.Decide(StudioWorkflowApprovalStatus.Approved, Uid, null, DateTime.UtcNow.AddHours(-3));
+
+        SetupWritePermission();
+        _workflows.Setup(r => r.GetInstanceAsync(TenantId, instance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(instance);
+        _workflows.Setup(r => r.ListApprovalsForInstanceAsync(TenantId, instance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StudioWorkflowApproval> { toUser, toRole, decided });
+        _notifications.Setup(n => n.CreateAsync(TenantId, null, NotificationType.StudioWorkflowApprovalRequested,
+                "Rappel : Accord ?", string.Empty, "/studio/approvals", Uid, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        _notifications.Setup(n => n.CreateAsync(TenantId, nameof(UserRole.Administrator),
+                NotificationType.StudioWorkflowApprovalRequested, "Rappel : Budget ?", "Message", "/studio/approvals",
+                null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        _workflows.Setup(r => r.UpdateInstanceAsync(instance, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _audit.Setup(a => a.LogAsync("Studio.Workflow.InstanceReminded", "StudioWorkflowInstance", instance.Id, null,
+                It.IsAny<object?>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(definition);
+
+        var handler = new RemindInstanceCommandHandler(
+            _workflows.Object, _notifications.Object, _audit.Object, _currentUser.Object, _time);
+        var result = await handler.Handle(new RemindInstanceCommand(instance.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(_time.GetUtcNow().UtcDateTime, instance.LastRemindedAt);
+        // Seules les deux approbations Pending sont ré-émises (jamais la déjà décidée).
+        _notifications.Verify(n => n.CreateAsync(It.IsAny<Guid>(), It.IsAny<string?>(),
+            It.IsAny<NotificationType>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
+            It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task Remind_returns_Conflict_within_24_hours_or_without_pending_approval()
+    {
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        var remindedRecently = NewInstance(definition, Guid.NewGuid());
+        remindedRecently.Suspend(StudioWorkflowInstanceStatus.WaitingApproval, DateTime.UtcNow.AddHours(-2), "{}");
+        remindedRecently.MarkReminded(_time.GetUtcNow().UtcDateTime.AddHours(-1));
+        var notWaiting = NewInstance(definition, Guid.NewGuid()); // Start ⇒ statut Running
+
+        SetupWritePermission();
+        foreach (var instance in new[] { remindedRecently, notWaiting })
+            _workflows.Setup(r => r.GetInstanceAsync(TenantId, instance.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(instance);
+
+        var handler = new RemindInstanceCommandHandler(
+            _workflows.Object, _notifications.Object, _audit.Object, _currentUser.Object, _time);
+        var within24h = await handler.Handle(new RemindInstanceCommand(remindedRecently.Id), CancellationToken.None);
+        var noPending = await handler.Handle(new RemindInstanceCommand(notWaiting.Id), CancellationToken.None);
+
+        Assert.False(within24h.IsSuccess);
+        Assert.Equal("Conflict", within24h.Error.Code);
+        Assert.Contains("24 h", within24h.Error.Description);
+        Assert.False(noPending.IsSuccess);
+        Assert.Equal("Conflict", noPending.Error.Code);
+        _notifications.Verify(n => n.CreateAsync(It.IsAny<Guid>(), It.IsAny<string?>(),
+            It.IsAny<NotificationType>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
+            It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private RunWorkflowCommandHandler NewRunHandler() =>
+        new(_workflows.Object, _entities.Object, _records.Object, _runner.Object, _quota.Object, _currentUser.Object);
+
+    private static StudioWorkflowDefinition NewDefinition(
+        Guid entityId, StudioWorkflowTriggerKind trigger, string key = "wf-manuel", string name = "Relance manuelle",
+        bool isActive = true, string stepsJson = "[]") =>
+        StudioWorkflowDefinition.Create(TenantId, entityId, key, name, null, trigger, "{}", stepsJson, isActive, StartedBy);
+
+    private static StudioWorkflowInstance NewInstance(StudioWorkflowDefinition definition, Guid recordId) =>
+        StudioWorkflowInstance.Start(TenantId, definition, recordId, StudioWorkflowTriggerKind.Manual,
+            StartedBy, "{}", 0, null);
+
+    /// <summary>Horloge figée (pas de dépendance au package Microsoft.Extensions.TimeProvider.Testing).</summary>
+    private sealed class FakeTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+}
