@@ -51,6 +51,9 @@ public static class StudioAiSpecCanonical
             case StudioAiPlanKind.RecordView:
                 if (!StudioAiRecordViewSpec.TryParse(specJson, out var recordView, out error) || recordView is null) return null;
                 return CanonicalRecordView(recordView);
+            case StudioAiPlanKind.Workflow:
+                if (!StudioAiWorkflowSpec.TryParse(specJson, out var workflow, out error) || workflow is null) return null;
+                return CanonicalWorkflow(workflow);
             default:
                 error = $"Nature de plan « {kind} » non prise en charge.";
                 return null;
@@ -350,6 +353,40 @@ public static class StudioAiSpecCanonical
         return Serialize(root);
     }
 
+    // ---- Workflows (PR 4.3) -----------------------------------------------------------------
+
+    /// <summary>
+    /// Forme canonique d'une spec de workflows : <c>{ "workflows": [ … ] }</c> triée par
+    /// <c>entityKey</c> puis <c>key</c> ; chaque workflow dans l'ordre fixe
+    /// <c>entityKey, key, name, description?, trigger (snake_case), triggerConfig, steps, isActive</c>
+    /// avec <c>triggerConfig</c> et <c>steps</c> à clés triées récursivement (les tableaux gardent
+    /// leur ordre — il est significatif). Jamais d'avertissements ici : la forme canonique est la
+    /// clé du cache d'aperçu et la forme rejouée à la confirmation (4.3f).
+    /// </summary>
+    public static string CanonicalWorkflow(ParsedWorkflowPlanSpec spec)
+    {
+        var workflows = spec.Workflows
+            .OrderBy(w => w.EntityKey, StringComparer.Ordinal)
+            .ThenBy(w => w.Key, StringComparer.Ordinal)
+            .Select(w =>
+            {
+                var node = new JsonObject
+                {
+                    ["entityKey"] = w.EntityKey,
+                    ["key"] = w.Key,
+                    ["name"] = w.Name
+                };
+                if (w.Description is not null) node["description"] = w.Description;
+                node["trigger"] = StudioWorkflowEnumNames.TriggerName(w.Trigger);
+                node["triggerConfig"] = SortedDeep(w.TriggerConfig);
+                node["steps"] = SortedDeep(w.Steps);
+                node["isActive"] = false; // D-08 : toujours inactif, quelle que soit la spec émise.
+                return node;
+            })
+            .ToArray();
+        return Serialize(new JsonObject { ["workflows"] = new JsonArray(workflows) });
+    }
+
     /// <summary>Vue embarquée dans une spec système : jamais de clé « entity » (entité implicite).</summary>
     private static JsonObject RecordViewJson(ParsedRecordViewSpec view)
     {
@@ -529,6 +566,29 @@ public static class StudioAiSpecCanonical
 
     private static JsonArray SortJson(IReadOnlyList<ReportSort> sorts) =>
         new(sorts.Select(s => (JsonNode)new JsonObject { ["field"] = s.Field, ["dir"] = s.Dir }).ToArray());
+
+    /// <summary>
+    /// Copie profonde à clés d'objets triées (ordinal) récursivement ; les tableaux conservent leur
+    /// ordre (significatif : étapes, colonnes). Base des formes canoniques à JSON imbriqué libre (4.3).
+    /// </summary>
+    private static JsonNode? SortedDeep(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                var sorted = new JsonObject();
+                foreach (var prop in obj.OrderBy(p => p.Key, StringComparer.Ordinal))
+                    sorted[prop.Key] = SortedDeep(prop.Value);
+                return sorted;
+            case JsonArray arr:
+                var copy = new JsonArray();
+                foreach (var item in arr)
+                    copy.Add(SortedDeep(item));
+                return copy;
+            default:
+                return node?.DeepClone();
+        }
+    }
 
     private static JsonArray StringArray(IReadOnlyList<string> values) =>
         new(values.Select(v => (JsonNode)JsonValue.Create(v)).ToArray());

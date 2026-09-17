@@ -926,4 +926,103 @@ public sealed class StudioAiSpecCanonicalTests
             SuiviReclamationsCanonicalGolden.Replace("\r\n", "\n"),
             canonical.Replace("\r\n", "\n"));
     }
+
+    /// <summary>Spec telle que le LLM la produit (anglais, clés dans le désordre).</summary>
+    private const string WorkflowSpecEnglish = """
+    { "workflows": [
+        { "entityKey": "invoices", "key": "relance", "name": "Relance", "description": "Après échéance.",
+          "trigger": "manual", "triggerConfig": {},
+          "steps": [ { "key": "s1", "type": "notify", "label": "Prévenir", "title": "T", "to": { "kind": "startedBy" } } ] },
+        { "entityKey": "clients", "key": "accueil", "name": "Accueil", "trigger": "on_create",
+          "steps": [ { "type": "wait", "hours": 2 } ] } ] }
+    """;
+
+    /// <summary>La MÊME spec avec alias FR/accents, ordre différent et clés d'étape dérivées.</summary>
+    private const string WorkflowSpecFrenchAliases = """
+    { "automatisations": [
+        { "entite": "Clients", "cle": "accueil", "nom": "Accueil", "déclencheur": "creation",
+          "etapes": [ { "type": "attendre", "heures": 2 } ] },
+        { "table": "invoices", "key": "relance", "nom": "Relance", "description": "Après échéance.",
+          "trigger": "manuel", "config": {},
+          "steps": [ { "label": "Prévenir", "type": "notifier", "titre": "T", "destinataire": { "kind": "startedBy" }, "key": "s1" } ] } ] }
+    """;
+
+    /// <summary>Forme canonique attendue, en dur : tri entityKey puis key, clés triées récursivement.</summary>
+    private const string WorkflowCanonicalGolden = """
+    {
+      "workflows": [
+        {
+          "entityKey": "clients",
+          "key": "accueil",
+          "name": "Accueil",
+          "trigger": "on_create",
+          "triggerConfig": {},
+          "steps": {
+            "steps": [
+              {
+                "hours": 2,
+                "key": "etape_1",
+                "type": "wait"
+              }
+            ],
+            "version": 1
+          },
+          "isActive": false
+        },
+        {
+          "entityKey": "invoices",
+          "key": "relance",
+          "name": "Relance",
+          "description": "Après échéance.",
+          "trigger": "manual",
+          "triggerConfig": {},
+          "steps": {
+            "steps": [
+              {
+                "key": "s1",
+                "label": "Prévenir",
+                "title": "T",
+                "to": {
+                  "kind": "startedBy"
+                },
+                "type": "notify"
+              }
+            ],
+            "version": 1
+          },
+          "isActive": false
+        }
+      ]
+    }
+    """;
+
+    /// <summary>
+    /// PR 4.3 : deux specs équivalentes (alias ≠, ordre ≠, espaces ≠, clés d'étape dérivées ou non)
+    /// produisent la MÊME forme canonique, à l'octet près (clé du cache d'aperçu et forme rejouée en 4.3f).
+    /// </summary>
+    [Fact]
+    public void CanonicalWorkflow_is_byte_stable_for_equivalent_specs()
+    {
+        var canonical1 = StudioAiSpecCanonical.CanonicalFor(StudioAiPlanKind.Workflow, WorkflowSpecEnglish, out var e1);
+        var canonical2 = StudioAiSpecCanonical.CanonicalFor(StudioAiPlanKind.Workflow, WorkflowSpecFrenchAliases, out var e2);
+
+        Assert.Null(e1);
+        Assert.Null(e2);
+        Assert.NotNull(canonical1);
+        Assert.Equal(canonical1, canonical2);
+        // Repli LF des deux côtés (motif suivi-reclamations) : WriteIndented émet Environment.NewLine.
+        Assert.Equal(
+            WorkflowCanonicalGolden.Replace("\r\n", "\n"),
+            canonical1!.Replace("\r\n", "\n"));
+    }
+
+    /// <summary>PR 4.3 : une spec workflows invalide ⇒ null + erreur en clair (jamais de canonique partielle).</summary>
+    [Fact]
+    public void CanonicalFor_Workflow_returns_null_and_error_on_invalid_spec()
+    {
+        var result = StudioAiSpecCanonical.CanonicalFor(StudioAiPlanKind.Workflow, "{ \"workflows\": [] }", out var error);
+
+        Assert.Null(result);
+        Assert.NotNull(error);
+    }
 }
