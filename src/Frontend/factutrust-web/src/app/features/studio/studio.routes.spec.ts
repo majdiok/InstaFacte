@@ -85,6 +85,18 @@ describe('STUDIO_ROUTES', () => {
     expect(workflows.canActivate?.length).toBe(2);
     expect(workflows.canActivate?.[0]).toBe(permissionGuard);
     expect(workflows.data?.['permissions']).toEqual([PERMISSIONS.studio.designEntities]);
+    // 4.4e1 : `workflows/new` avant `workflows/:id` (sinon `new` serait capturé comme identifiant),
+    // les deux avant `relations`, mêmes gardes que le hub.
+    expect(idx('workflows/new')).toBeGreaterThan(idx('workflows'));
+    expect(idx('workflows/new')).toBeLessThan(idx('workflows/:id'));
+    expect(idx('workflows/:id')).toBeLessThan(idx('relations'));
+    for (const path of ['workflows/new', 'workflows/:id']) {
+      const route = child(path);
+      expect(route.canActivate?.length).withContext(path).toBe(2);
+      expect(route.canActivate?.[0]).withContext(path).toBe(permissionGuard);
+      expect(route.data?.['permissions']).withContext(path).toEqual([PERMISSIONS.studio.designEntities]);
+      expect(typeof route.loadComponent).withContext(path).toBe('function');
+    }
     // Pas de capabilityGuard sur la redirection : les liens de notification doivent fonctionner
     // même si le flag workflows est coupé ensuite (D6/D-44-19).
     const redirect = child('records/:key/:id');
