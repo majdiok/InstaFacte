@@ -168,7 +168,9 @@ aucun catalogue de production n'est ajouté ici.
   valide au niveau bas ; il est refusé en mode fichiers (`release.empty`).
 - Le mode fichiers parcourt **tous** les descripteurs, y compris `render` et
   `attribution` : frontière réelle du répertoire, refus des symlinks du sous-arbre,
-  fichier régulier, taille effective et SHA-256, puis glTF validator sur les GLB.
+  fichier régulier, taille effective et SHA-256, puis **préflight GLB borné**
+  (signature/chunks/UTF-8, bornes de travail JSON, plafonds structurels et budgets,
+  sous-ensemble statique fermé sans URI ni extension) avant glTF validator sur les GLB.
   La lecture refuse les fichiers non réguliers avant ouverture et recontrôle le
   descripteur ; l'ouverture non bloquante, lorsqu'elle est disponible, évite une
   attente sur FIFO remplacé entre ces contrôles. Les régressions POSIX utilisent
@@ -202,7 +204,7 @@ Elles ne prouvent pas une borne de mémoire/temps du décodeur glTF.
 |---|---|---|
 | V06 | Chemins lexicaux fermés, version explicite, dépendances, realpath/symlinks statiques, fichiers render/attribution hashés | Transport/redirects et allowlist runtime ; robustesse contre remplacement concurrent des fichiers dans un espace non fiable |
 | V07 | Schéma commun, enums MIME/extensions déclarées, glTF validator existant | Magic bytes/MIME réels de chaque format, contenu incorporé et URI/buffers/images, décodeurs approuvés et aucun fetch implicite |
-| V08 | JSON/collections/graphe bornés, tailles de fichiers contrôlées avant lecture | Inspection bornée GLB/accessors/nœuds/offsets, textures réelles/mips/layers/décompression, limites CPU/mémoire du runner r161 ; budgets transitifs mesurés |
+| V08 | JSON/collections/graphe bornés, tailles de fichiers contrôlées avant lecture ; inspection bornée GLB (header/chunks/JSON/accessors/nœuds/offsets, sous-ensemble statique fermé) avant gltf-validator | Textures réelles/mips/layers/décompression, limites CPU/mémoire du runner r161 ; budgets transitifs mesurés |
 | V19 | Corpus positif/négatif à résultats attendus partagé entre TS/Jasmine et Node, enfants réellement rouges, hashes inchangés | Manifest d'attendus de release non vide, couverture/droits approuvés, orchestration CI bloquante et attestation liée au candidat |
 
 La navigation, les UV/ancrages, les estimations, les images et l'attribution restent

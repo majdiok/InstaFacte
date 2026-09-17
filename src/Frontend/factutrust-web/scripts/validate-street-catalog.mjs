@@ -108,6 +108,9 @@ export async function runCatalogCli(args) {
         const bytes = readBounded(file, 64 * 1024 * 1024, asset.encodedBytes);
         if (asset.sha256 !== createHash('sha256').update(bytes).digest('hex')) fail(`file.sha256: ${asset.assetKey} hash mismatch`);
         if (asset.kind === 'glb') {
+          const { preflightBusinessGlb } = compiled.load('3d/business-asset-preflight.js');
+          const preflight = preflightBusinessGlb(bytes);
+          if (!preflight.ok) fail(`${preflight.code}: ${asset.assetKey} ${preflight.path}: ${preflight.message}`);
           const { validateBytes } = await import('gltf-validator');
           const report = await validateBytes(new Uint8Array(bytes), {
             externalResourceFunction: async () => fail('glb.external-resource: external resource inspection is not supported')

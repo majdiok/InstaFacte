@@ -22,7 +22,7 @@ export function compileCatalogContracts({ tests = false } = {}) {
         strict: true, noImplicitReturns: true, noPropertyAccessFromIndexSignature: true,
         esModuleInterop: true, resolveJsonModule: true, noEmitOnError: true,
         types: tests ? ['jasmine'] : [], typeRoots: [join(webRoot, 'node_modules/@types')],
-        lib: ['ES2022'], rootDir: featureRoot, outDir: join(directory, 'build')
+        lib: ['ES2022', 'DOM'], rootDir: featureRoot, outDir: join(directory, 'build')
       },
       files: files.map(file => join(featureRoot, file))
     }));
