@@ -1,0 +1,127 @@
+# C12 — étude métrique originale, Classic (A1 partiel)
+
+**Blockout incomplet et non approuvé. Aucune release, aucun rendu canonique,
+aucune navigation navigateur ni acceptation juridique/artistique.**
+
+Cette tranche dépend du socle A0 et ne remplace pas son registre. Elle ne contient
+que l'étude `commerce/textile-habillement` C12, intérieur **6 × 10 × 3,4 m**.
+Cette variante exploratoire **Classic**, parmi les cinq styles autorisés, est
+**non canonique** ; la revue canonique **Modern** reste inchangée dans
+`canonical36.csv`.
+Les cinq styles finaux et les profils economy/standard ne sont pas produits ici.
+
+## Reproduire sans réseau (depuis la racine du dépôt)
+
+Prérequis : Blender **4.0.2**, exporteur glTF livré avec ce Blender, Python inclus.
+Aucun pip, npm, font, image, HDRI, service externe ou ressource téléchargée.
+Le Blender Ubuntu disponible n'inclut pas OpenImageDenoiser : débruitage désactivé,
+échantillons CPU bornés, grain possible. L'avertissement de bibliothèque Draco
+absente concerne une compression optionnelle **non utilisée**.
+
+```sh
+blender -b -t 6 --python-exit-code 1 \
+  --python art/virtual-street/source/pilots/c12/build.py -- \
+  --run-id c12-review-001 --samples 32
+
+blender -b -t 2 --python-exit-code 1 \
+  --python art/virtual-street/source/pilots/c12/test_scene.py
+
+python3 art/virtual-street/source/production.py validate
+python3 -m unittest discover -s art/virtual-street/source/tests -v
+python3 art/virtual-street/source/production.py preflight
+# Le dernier doit toujours retourner 2 (release bloquée).
+```
+
+Un run doit être nouveau : aucune réécriture, aucun chemin de destination libre,
+aucune sortie hors `art/virtual-street/build/c12-*` ignoré. `--no-render` permet
+une itération géométrie/export, **pas** une livraison de deux images. Les échantillons
+acceptés vont de 4 à 64 (défaut 24), 1600 × 1000 px, Cycles CPU, six threads,
+seed 12, cinq rebonds, pas de débruitage. Les lumières sont originales mais hors
+export : aucune fidélité de lumière Three/r161 n'est démontrée par les PNG.
+
+Sorties de travail : `.blend` éditable, GLB non compressé PBR, deux PNG
+`*-facade-offline-study.png` / `*-interior-offline-study.png` et
+`study-evidence.json`. Le JSON lie les deux images au même fingerprint des
+vertices/triangles/matériaux évalués, aux hashes des scripts, aux octets GLB,
+aux versions Blender/exporteur, aux caméras et aux temps effectivement mesurés.
+Le commit de checkout est indiqué comme base, pas faussement comme commit des
+sources si elles sont encore non committées. Les PNG sont des masters d'étude,
+pas des images web finales optimisées à 300 KiB.
+
+## Géométrie et provenance
+
+Tout est dessiné localement dans `scene.py` : volumes architecturaux avec
+épaisseur, profilés fins, porte physiquement ouverte, portants/cintres/vêtements
+extrudés sans marque, table basse et pliages, rideau replié, miroir visuel simulé,
+comptoir décoratif. Deux formes d'étalage facettées sur pied complètent les
+vitrines : **sans tête, visage, membres, anatomie ni personne médicale**.
+Aucun texte/font, image de référence, logo, prix, terminal de paiement,
+transaction ou donnée de tenant. Enseigne laissée vierge.
+
+Les matériaux temporaires sont uniquement des constantes Principled PBR
+originales (albédo/roughness/metallic/alpha). Vitrage alpha simple, pas de
+transmission obligatoire ; miroir teinté métallique **simulé**, pas de capture
+secondaire runtime. Pas d'UV lightmap ni de baking : une future lightmap doit
+exporter `TEXCOORD_1 → uv1` avec `lightMap.channel = 1` sur **Three r161**.
+Aucune montée de moteur et aucune URI libre dans le GLB d'étude.
+
+Repère Blender : X transversal, Y profondeur intérieure, Z haut ; seuil à
+`(0, 0, 0)`. L'exporteur convertit vers glTF +Y haut, +Z vers la façade.
+Les dimensions 6×10×3,4 sont **intérieures libres** ; murs de 0,20 m, sol et
+plafond occupent une enveloppe extérieure plus grande, mesurée séparément.
+Aucun redimensionnement au slot de rue legacy n'est effectué. La façade d'étude
+n'est pas encore un raccord runtime qualifié.
+
+| Zone | Disposition métrique Blender XY |
+|---|---|
+| Deux vitrines | Rives avant, plinthes de 1,55 × 0,95 m ; entrée centrale libre |
+| Portants latéraux | X ±2,56 m, Y 2,95–6,15 m ; rail à 1,78 m |
+| Table basse | 1,30 × 2,40 m, dessus à 0,70 m ; centre Y 4,40 m |
+| Boucle piétonne | Axes X ±1,40 m, Y 2,50–6,60 m, sweep libre 1,20 m |
+| Essayage | Fond gauche, cloison/rideau ouvert/miroir, approche X −1,50 m |
+| Caisse décorative | Fond droit, 1,60 × 0,70 m, dessus à 1,07 m |
+| Entrée/sortie | Même seuil dégagé, baie entre montants de 1,60 m ; pas de seconde issue réglementaire revendiquée |
+
+La caméra intérieure est à hauteur piétonne 1,65 m dans l'entrée dégagée, pas
+une coupe sans murs. La vue façade et la vue intérieure utilisent **le même
+modèle**, sans masquage des murs/plafond/mobilier entre les deux. Collections
+`Architecture`/`Props` seules exportées ; `CollisionGuides`, `CameraGuides`,
+`BakeSources` et `BrandingAnchors` restent hors GLB. Les éclairages offline ne
+sont pas un bake transférable au runtime.
+
+## Contrôles réellement géométriques
+
+`validation.py` lit les meshes **évalués** avec modifiers et matrices monde :
+- cotes intérieures calculées depuis murs/sol/plafond, enveloppe totale distincte ;
+- mètres, bornes finies non dégénérées, scène non vide, statut non publiable ;
+- sept zones présentes avec contrôle de l'emplacement réel de leurs objets ;
+- propriété de chaque objet/matériau et absence de données externes ;
+- un proxy AABB conservateur par obstacle réel, exactitude proxy/mesh et exclusion
+  des guides de l'export ;
+- balayages rectangulaires continus **1,20 m** sur tous les segments/virages,
+  puis recherche de connexité indépendante sur grille 10 cm avec rayon 0,30 m
+  jusqu'au spawn, aux deux côtés de table, à l'essayage et au fond ;
+- GLB non vide, signature/longueur/JSON/meshes, aucune URI libre ni guide exporté ;
+- test d'export **et réimport Blender dans une scène vide**, comparaison des bornes
+  évaluées de chaque mesh avec celles de l'original.
+
+Tests négatifs : déplacement réel d'un mur, unité centimétrique, matériau sans
+provenance, zone absente, proxy décalé, vraie obstruction du seuil correctement
+proxyfiée et export vide. Un résultat vert prouve seulement cette géométrie
+statique et l'export de travail. Ce n'est ni un solveur de collisions runtime,
+une conformité d'accessibilité bâtiment, une mesure FPS/GPU/draw calls, ni une
+preuve du parcours rue–fiche–intérieur dans le navigateur.
+
+## Gates conservés
+
+Les droits de ces nouvelles sources restent **à revoir**, sans ajout artificiel
+`reviewed` au registre `licenses.csv`. La provenance locale est déclarée ; elle
+ne vaut pas décision juridique. Aucun `.blend` sous le chemin final attendu,
+aucune spécification release débloquée et aucune copie sous assets Angular.
+
+Les quatre pilotes C12/C17/C19/C05 doivent toujours recevoir une revue humaine
+commune **avant les 32 restants**. Le besoin des huit grands extérieurs demeure.
+Cette étude n'ajoute pas une composition au quota et n'est pas A1 complet.
+Prochaines étapes de C12 : critique humaine métrique/artistique, reprise des
+formes/matières, fidélité r161, deux qualités/cinq styles, droits et budgets,
+parcours applicatif réel et images canoniques seulement après ces contrôles.
