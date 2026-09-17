@@ -1,14 +1,15 @@
-# C12 — étude métrique originale, Classic (A1 partiel)
+# C12 — cinq recettes d'étude, deux coûts géométriques (A1 partiel)
 
 **Blockout incomplet et non approuvé. Aucune release, aucun rendu canonique,
 aucune navigation navigateur ni acceptation juridique/artistique.**
 
 Cette tranche dépend du socle A0 et ne remplace pas son registre. Elle ne contient
 que l'étude `commerce/textile-habillement` C12, intérieur **6 × 10 × 3,4 m**.
-Cette variante exploratoire **Classic**, parmi les cinq styles autorisés, est
-**non canonique** ; la revue canonique **Modern** reste inchangée dans
-`canonical36.csv`.
-Les cinq styles finaux et les profils economy/standard ne sont pas produits ici.
+La comparaison principale est désormais **Modern (1), standard**, conformément
+à la revue V3 inchangée dans `canonical36.csv`. Les anciennes images Classic du
+parent ne sont ni renommées ni réattribuées. Les cinq recettes et deux qualités
+ci-dessous sont des **études géométriques/export**, pas une qualification finale
+du réalisme, du rendu r161 ou des budgets runtime.
 
 ## Reproduire sans réseau (depuis la racine du dépôt)
 
@@ -21,12 +22,15 @@ absente concerne une compression optionnelle **non utilisée**.
 ```sh
 blender -b -t 6 --python-exit-code 1 \
   --python art/virtual-street/source/pilots/c12/build.py -- \
-  --run-id c12-review-001 --samples 32
+  --run-id c12-modern-standard-review-001 --style 1 --quality standard --samples 32
 
 blender -b -t 2 --python-exit-code 1 \
   --python art/virtual-street/source/pilots/c12/test_scene.py
 
 python3 art/virtual-street/source/pilots/c12/test_provenance.py -v
+
+blender -b -t 2 --python-exit-code 1 \
+  --python art/virtual-street/source/pilots/c12/test_variants.py
 
 python3 art/virtual-street/source/production.py validate
 python3 -m unittest discover -s art/virtual-street/source/tests -v
@@ -50,6 +54,52 @@ Le commit de checkout est indiqué comme base, pas faussement comme commit des
 sources si elles sont encore non committées. Les PNG sont des masters d'étude,
 pas des images web finales optimisées à 300 KiB.
 
+## Recettes concrètes, programme commun intégral
+
+`--style 0..4` et `--quality economy|standard` sélectionnent une recette de
+`recipes.py` ; défaut **1/standard**. Le nom des sorties inclut style et qualité.
+Les valeurs hors domaine sont refusées, sans transformation silencieuse.
+
+| Style | Surfaces PBR temporaires et construction hors passage |
+|---|---|
+| 0 Classic | Enduit crème, bois brun, bronze ; deux moulures étagées au bandeau |
+| 1 Modern | Enduit clair neutre, sol gris, habillage sombre, métal ; joint horizontal fin |
+| 2 Vintage | Crème sourd, vert sauge, laiton mat ; deux panneaux encastrés au bandeau |
+| 3 Minimal | Tons pierre clairs, métal gris ; corniche fine et joint d'ombre |
+| 4 Artisan | Terre cuite, bois brun mat, métal sombre ; douze tasseaux verticaux au bandeau |
+
+Le rôle et le nom des onze matériaux restent adressables/stables. Les recettes
+ne sont pas des copies de nouveaux métiers : même pièce, même seuil, mêmes
+sept zones, 18 vêtements et leurs 72 parties de cintres, deux portants complets,
+table/pliages, alcôve/rideau/miroir, caisse décorative et vitrines/formes abstraites.
+Les différences d'architecture sont en hauteur au-dessus de la baie, pas dans
+la circulation. Aucun changement d'éclairage par recette, aucune lightmap.
+
+**Economy** conserve tous les objets et les vraies épaisseurs ; les cylindres
+passent de 12 à 6 côtés et les biseaux de 2 à 1 segment. Il ne retire ni vêtement,
+cintre, zone, issue ni prop. Les silhouettes fines sont plus facettées : cette
+perte mesurée de détail doit encore recevoir une revue visuelle humaine. Les
+deux tests matriciels construisent réellement les dix variantes, vérifient
+leurs triangles GLB et bornes après réimport, et exigent pour chacune une
+réduction economy de plus de 20 % des triangles et 15 % des octets GLB face à
+son standard. Il s'agit d'un objectif de cette étude, **pas** d'un plafond V4
+augmenté ou d'un budget global qualifié.
+
+Chaque combinaison subit aussi quatre corruptions déterministes : table
+essentielle retirée de l'export, matériau sans propriétaire, qualité déclarée
+incompatible avec ses biseaux, véritable obstruction de sortie correctement
+proxyfiée. Le contrôle de programme compte les objets effectivement exportables,
+pas un simple drapeau déclarant la couverture. Les sept paramètres invalides
+sont testés avant réinitialisation de la scène. La provenance vérifie également
+qu'une modification de `recipes.py` empêche la finalisation.
+
+Le ledger mesure triangles, octets GLB, buffers et primitives du binaire ;
+**un mesh ou une primitive n'est pas une mesure de draw calls toutes passes**.
+Textures/lightmaps, GPU, FPS, mémoire, latence et budgets de scène complète
+restent non mesurés. Seule la paire Modern standard de cette tranche est rendue ;
+les neuf autres exports ne valent pas neuf revues visuelles ni les 80 captures
+runtime requises pour les quatre pilotes.
+
 ### Provenance figée avant authoring
 
 `build.py` capture HEAD avant tout import d'authoring. Il réexécute son lanceur
@@ -57,7 +107,7 @@ depuis les octets capturés et charge de la même manière `provenance.py`, puis
 vérifie que ces octets correspondent à la capture. Tous les Python de `source/`
 (y compris les futurs helpers d'export), `registry.py`, les deux entrées
 canoniques et leur lock sont copiés sans écrasement dans le
-`source-snapshot/` du run. `authoring.py`, `scene.py` et `validation.py` sont
+`source-snapshot/` du run. `authoring.py`, `scene.py`, `recipes.py` et `validation.py` sont
 importés uniquement depuis cette copie neuve, sans pycache ; le registre lit
 également les **entrées copiées**, pas les fichiers de travail pendant le rendu.
 Un processus Blender neuf est exigé : un module projet déjà importé est refusé.
@@ -158,5 +208,5 @@ Les quatre pilotes C12/C17/C19/C05 doivent toujours recevoir une revue humaine
 commune **avant les 32 restants**. Le besoin des huit grands extérieurs demeure.
 Cette étude n'ajoute pas une composition au quota et n'est pas A1 complet.
 Prochaines étapes de C12 : critique humaine métrique/artistique, reprise des
-formes/matières, fidélité r161, deux qualités/cinq styles, droits et budgets,
+formes/matières, revue visuelle finale des deux qualités/cinq styles, fidélité r161, droits et budgets,
 parcours applicatif réel et images canoniques seulement après ces contrôles.

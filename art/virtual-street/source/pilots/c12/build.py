@@ -24,6 +24,8 @@ def main(entry_source):
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--samples", type=int, default=24, choices=range(4, 65))
+    parser.add_argument("--style", type=int, default=1, choices=range(5), help="0 Classic, 1 Modern, 2 Vintage, 3 Minimal, 4 Artisan")
+    parser.add_argument("--quality", default="standard", choices=("economy", "standard"))
     parser.add_argument("--no-render", action="store_true", help="Geometry/export iteration only; not two-image readiness")
     args = parser.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else [])
     import re

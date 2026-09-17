@@ -8,6 +8,18 @@ import bpy
 from mathutils import Vector
 
 from scene import OWNER, ROUTES, ZONES, box
+from recipes import STYLES, QUALITY_GEOMETRY, validate_variant
+
+PROGRAM_COUNTS = {"Window-pane": 2, "Window-display-plinth": 2, "Abstract-headless-display-form": 2,
+                  "Abstract-form-stand": 2, "Door-open-leaf": 1, "Rack-upright": 4, "Rack-foot": 4,
+                  "Rack-rail": 2, "Table-top": 1, "Table-leg": 4, "Folded-cloth": 9,
+                  "Fitting-partition": 1, "Fitting-header": 1, "Curtain-rail": 1,
+                  "Gathered-curtain-fold": 7, "Mirror-frame": 1, "Mirror-simulated-face": 1,
+                  "Checkout-decorative-counter": 1, "Checkout-slab": 1,
+                  "Back-display-shelf": 1, "Back-folded-cloth": 4}
+STYLE_TRIMS = (("Style-classic-stepped-moulding", 2), ("Style-modern-reveal", 1),
+               ("Style-vintage-inset-panel", 2), ("Style-minimal-shadow-joint", 1),
+               ("Style-artisan-timber-batten", 12))
 
 
 class StudyError(ValueError):
@@ -100,6 +112,19 @@ def validate_scene():
             scene.get("study_status") == "metric-blockout-incomplete-unapproved", "status: study only")
     objects = export_objects()
     require(len(objects) > 30 and all(o.type == "MESH" for o in objects), "geometry: nonempty mesh model required")
+    style, quality = scene.get("study_style"), scene.get("study_quality")
+    validate_variant(style, quality)
+    require(scene.get("study_style_name") == STYLES[style], "variant: style label differs")
+    trim, trim_count = STYLE_TRIMS[style]
+    require(sum(o.name.startswith(trim) for o in objects) == trim_count, "variant: architecture recipe differs")
+    inventory = {name: sum(o.name.split(".")[0] == name for o in objects) for name in PROGRAM_COUNTS}
+    for name, expected in PROGRAM_COUNTS.items():
+        require(inventory[name] == expected, "program: missing/extra " + name)
+    inventory["Garments"] = sum(o.name.startswith("Garment-") and "-hanger-" not in o.name for o in objects)
+    inventory["Hanger-parts"] = sum("-hanger-" in o.name for o in objects)
+    require(inventory["Garments"] == 18 and inventory["Hanger-parts"] == 72, "program: full garments/hangers required in both qualities")
+    require(all(m.segments == QUALITY_GEOMETRY[quality]["bevelSegments"]
+                for o in objects for m in o.modifiers if m.type == "BEVEL"), "variant: bevel quality differs")
     b = {name: bounds(bpy.data.objects[name]) for name in ("Wall-left", "Wall-right", "Wall-back", "Floor", "Ceiling")}
     interior = [b["Wall-right"][0][0] - b["Wall-left"][1][0], b["Wall-back"][0][1],
                 b["Ceiling"][0][2] - b["Floor"][1][2]]
@@ -158,6 +183,7 @@ def validate_scene():
     fingerprint, triangles = geometry_fingerprint()
     require(triangles > 100, "geometry: empty triangle export")
     return {"interiorLxPxHMetres": interior, "modelBoundsBlenderXYZ": scene_bounds(objects),
+            "style": style, "quality": quality, "programInventory": inventory,
             "meshObjects": len(objects), "trianglesEvaluated": triangles,
             "materials": len({m.name for o in objects for m in o.data.materials}),
             "obstacleProxies": len(proxies), "zones": list(ZONES), "testedRouteSegments": segments,
@@ -186,5 +212,12 @@ def validate_glb(path):
     require(document.get("meshes") and document.get("accessors") and document.get("buffers"), "export: nonempty mesh required")
     require(not document.get("extensionsRequired"), "export: no required extension for this study")
     require(not any(n.get("name", "").startswith(("Collision-", "Study-", "Offline-", "Interior-metric-")) for n in document.get("nodes", [])), "export: guide leaked")
+    primitives = [p for mesh in document["meshes"] for p in mesh["primitives"]]
+    require(all(p.get("mode", 4) == 4 and "indices" in p for p in primitives), "export: indexed triangles required")
+    triangle_count = sum(document["accessors"][p["indices"]]["count"] // 3 for p in primitives)
+    require(triangle_count > 100, "export: nonempty actual triangles required")
     return {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
-            "meshes": len(document["meshes"]), "extensionsUsed": document.get("extensionsUsed", [])}
+            "meshes": len(document["meshes"]), "triangles": triangle_count,
+            "primitives": len(primitives), "bufferBytes": sum(b["byteLength"] for b in document["buffers"]),
+            "costQualification": "geometry/export only; primitives are not measured runtime draw calls",
+            "extensionsUsed": document.get("extensionsUsed", [])}
