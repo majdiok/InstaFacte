@@ -125,6 +125,9 @@ public sealed class StudioWorkflowRunnerTests
         _engine.VerifyNoOtherCalls();
         _impersonation.VerifyNoOtherCalls();
         _workflows.Verify(w => w.UpdateInstanceAsync(It.IsAny<StudioWorkflowInstance>(), It.IsAny<CancellationToken>()), Times.Never);
+        _notifications.VerifyNoOtherCalls();
+        _entities.VerifyNoOtherCalls();
+        _audit.VerifyNoOtherCalls();
     }
 
     [Fact]
@@ -216,6 +219,27 @@ public sealed class StudioWorkflowRunnerTests
         _workflows.VerifyNoOtherCalls();
         _engine.VerifyNoOtherCalls();
         _impersonation.VerifyNoOtherCalls();
+        _notifications.VerifyNoOtherCalls();
+        _entities.VerifyNoOtherCalls();
+        _audit.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Resume_preserves_engine_exception_when_release_persistence_fails()
+    {
+        // Revue 4.2c2 : une panne SQL pendant le relâchement du bail ne doit pas masquer l'exception moteur.
+        var instance = SuspendedInstance(startedBy: null);
+        LeaseSucceeds();
+        _workflows.Setup(w => w.UpdateInstanceAsync(instance, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("sql down"));
+        _engine.Setup(e => e.ResumeAsync(instance, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("moteur"));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Runner().ResumeUnderStarterAsync(instance, CancellationToken.None));
+
+        Assert.Equal("moteur", ex.Message);
+        Assert.Null(instance.LeasedAt);
     }
 
     [Fact]

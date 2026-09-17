@@ -393,6 +393,18 @@ public sealed class OllamaSettings
     /// </summary>
     public int StudioWorkflowLeaseMinutes { get; set; } = 30;
 
+    /// <summary>
+    /// Taille de lot par tenant et par tick du job <c>studio-workflow-resume</c> (reaper, expirations,
+    /// reprises, purge). Borné 10..500 par le job (4.2d).
+    /// </summary>
+    public int StudioWorkflowResumeBatchSize { get; set; } = 100;
+
+    /// <summary>
+    /// Rétention (jours) des instances de workflow terminales avant purge par le job
+    /// <c>studio-workflow-resume</c>. Borné 30..3650 par le job (4.2d).
+    /// </summary>
+    public int StudioWorkflowRetentionDays { get; set; } = 180;
+
     /// <summary>Cartes maximales chargées par une vue Kanban (au-delà, <c>truncated = true</c>). Défaut 500.</summary>
     public int StudioRecordViewMaxKanbanCards { get; set; } = 500;
 

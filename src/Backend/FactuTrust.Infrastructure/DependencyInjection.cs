@@ -406,7 +406,7 @@ public static class DependencyInjection
         services.AddScoped<IStudioWorkflowRepository, Repositories.Studio.StudioWorkflowRepository>();
         services.AddScoped<IStudioWorkflowEngine, Services.Studio.Workflows.StudioWorkflowEngine>();
         // Runner runtime (PR 4.2c2) : bail + impersonation autour du moteur.
-        services.AddScoped<FactuTrust.Application.Features.Studio.Workflows.Engine.IStudioWorkflowRunner, Services.Studio.Workflows.StudioWorkflowRunner>();
+        services.AddScoped<IStudioWorkflowRunner, Services.Studio.Workflows.StudioWorkflowRunner>();
         services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.ConditionStepHandler>();
         services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.UpdateFieldStepHandler>();
         services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.ErpActionStepHandler>();
@@ -509,6 +509,8 @@ public static class DependencyInjection
         // Enregistré inconditionnellement : le job porte lui-même la garde du flag, comme les
         // autres jobs Hangfire du produit.
         services.AddScoped<FactuTrust.Infrastructure.Services.Background.CashFlowRecomputationJob>();
+        // Job récurrent des workflows Studio (PR 4.2d) : même garde de flag (EnableStudioWorkflows).
+        services.AddScoped<Services.Studio.Workflows.StudioWorkflowResumeJob>();
 
         // Lot C5 — Providers paiement (Konnect / Paymee / Virement) + webhooks signés HMAC
         services.AddScoped<FactuTrust.Infrastructure.Services.Billing.PaymentProviderConfigService>();
