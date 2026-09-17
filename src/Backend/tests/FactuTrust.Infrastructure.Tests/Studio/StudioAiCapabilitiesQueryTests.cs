@@ -356,6 +356,29 @@ public sealed class StudioAiCapabilitiesQueryTests
         Assert.Equal("qwen2.5:7b-instruct", result.Value.StandardModelLabel);
     }
 
+    /// <summary>
+    /// PR 4.3 : les outils de workflows ne s'annoncent que si les TROIS drapeaux sont levés
+    /// (<c>EnableStudioWorkflows</c> + <c>EnableStudioAiWorkflowTools</c> +
+    /// <c>EnableStudioAiPlanPreview</c> — règle centralisée <c>StudioAiPlanCreation.WorkflowToolsEnabled</c>).
+    /// </summary>
+    [Theory]
+    [InlineData(true, true, true, true)]
+    [InlineData(false, true, true, false)]
+    [InlineData(true, false, true, false)]
+    [InlineData(true, true, false, false)]
+    public async Task Workflow_tools_enabled_only_when_workflows_ai_workflow_tools_and_preview_flags_are_all_on(
+        bool workflows, bool workflowTools, bool preview, bool expected)
+    {
+        var result = await CreateHandler(new OllamaSettings
+        {
+            EnableStudioWorkflows = workflows,
+            EnableStudioAiWorkflowTools = workflowTools,
+            EnableStudioAiPlanPreview = preview
+        }).Handle(new StudioAiCapabilitiesQuery(), CancellationToken.None);
+
+        Assert.Equal(expected, result.Value.WorkflowToolsEnabled);
+    }
+
     private StudioAiCapabilitiesQueryHandler CreateHandler(OllamaSettings settings) => new(
         Options.Create(settings),
         _platformAiSettings.Object,
