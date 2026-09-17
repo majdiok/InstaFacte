@@ -189,6 +189,27 @@ describe('StudioAiSessionStore', () => {
       expect(store.spec()).toBeNull();
     });
 
+    it('tolère un plan Workflow sans spec lisible : pas d’erreur, spec nulle, canConfirm vrai', () => {
+      const events = new Subject<ChatStreamEvent>();
+      stream.streamChat.and.returnValue(events.asObservable());
+      builds.getPlanSpec.and.returnValue(of({
+        success: true,
+        data: { kind: 'Workflow', spec: '{"workflows":[]}', rowVersion: 'v2', expiresAt: null },
+        message: null,
+        errors: []
+      }) as never);
+
+      store.send('Créer un workflow');
+      events.next({ type: 'studio_plan', content: JSON.stringify({ planId: 'p-1', summary: summary({ kind: 'Workflow' }) }) });
+
+      expect(store.error()).withContext('D12 : un plan Workflow n’a pas de StudioSystemSpec').toBeNull();
+      expect(store.spec()).toBeNull();
+      expect(store.plan()?.kind).toBe('Workflow');
+      expect(store.plan()?.rowVersion).toBe('v2');
+      expect(store.canConfirm()).withContext('canConfirm ne dépend pas de la spec').toBeTrue();
+      expect(store.canEdit()).toBeFalse();
+    });
+
     it('keeps the plan when the chat stream fails after the plan arrived', () => {
       const events = new Subject<ChatStreamEvent>();
       stream.streamChat.and.returnValue(events.asObservable());
@@ -1056,7 +1077,7 @@ describe('StudioAiSessionStore', () => {
   describe('pure helpers', () => {
     it('normalizeSummary fills the missing collections', () => {
       const normalized = normalizeSummary({ title: 'X' } as StudioPlanSummary);
-      expect(normalized).toEqual({ kind: '', title: 'X', steps: [], entities: [], warnings: [], duplicates: [] });
+      expect(normalized).toEqual({ kind: '', title: 'X', steps: [], entities: [], warnings: [], duplicates: [], workflows: [] });
     });
 
     it('parsePlanSummary reads a JSON summary and rejects junk', () => {

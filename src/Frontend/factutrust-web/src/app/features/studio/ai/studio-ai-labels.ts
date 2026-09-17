@@ -567,12 +567,26 @@ export const STUDIO_AI_LABELS = {
     addFilter: 'Filtres de la vue'
   },
 
-  /** Onglet « Workflows » (état vide en 3.x, P4). */
+  /** Onglet « Workflows » de l'aperçu (cartes depuis `summary.workflows[]`, 4.4k1 ; état vide sinon). */
   workflows: {
     title: 'Workflows',
     emptyTitle: 'Aucun workflow dans cette proposition',
-    emptyHint: 'Les workflows de statut arrivent avec le programme 4.x ; cette proposition n’en contient pas.',
-    steps: '{count} étapes'
+    emptyHint: 'Décrivez le circuit souhaité (déclencheur, étapes, approbation) pour obtenir une proposition.',
+    steps: '{count} étapes',
+    trigger: 'Déclencheur',
+    /** Clés = `WorkflowTrigger` snake_case (Q-6) ; l'onglet lit `triggers[trigger] ?? trigger`. */
+    triggers: {
+      on_create: 'À la création',
+      on_update: 'À la modification',
+      field_changed: 'Au changement d’un champ',
+      manual: 'Manuel',
+      scheduled: 'Planifié (bientôt)'
+    },
+    active: 'Actif',
+    inactive: 'Inactif',
+    inactiveNote: 'Les workflows créés par l’assistant sont inactifs : activez-les depuis le hub Workflows après relecture.',
+    noSpecTitle: 'Proposition de workflow',
+    soonForWorkflows: 'Indisponible pour une proposition de workflow.'
   },
 
   /** Mode Tester : formulaire / rapport simulés, 0 écriture (3.4f). */

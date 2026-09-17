@@ -8,8 +8,9 @@ import { ReportResult } from '@shared/studio-runtime/studio-runtime.models';
 import { StudioAiCapabilitiesService } from '../studio-ai-capabilities.service';
 import { STUDIO_AI_LABELS, formatLabel } from '../studio-ai-labels';
 import { StudioAiSessionStore } from '../studio-ai-session.store';
-import { StudioAiPreviewTab } from '../studio-ai.models';
+import { StudioAiPreviewMode, StudioAiPreviewTab } from '../studio-ai.models';
 import { counterChips } from '../studio-ai-spec.util';
+import { isWorkflowPlanKind } from './studio-ai-workflow-summary.util';
 import { StudioAiDuplicatesBannerComponent } from './studio-ai-duplicates-banner.component';
 import { StudioAiFormsTabComponent } from './studio-ai-forms-tab.component';
 import { StudioAiMenuTabComponent } from './studio-ai-menu-tab.component';
@@ -66,6 +67,8 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
               [changeCount]="store.changeCount()"
               [previewUnavailable]="store.previewUnavailable()"
               [busy]="store.busy()"
+              [disabledModes]="disabledModes()"
+              [disabledTooltip]="workflowLabels.soonForWorkflows"
               (modeChange)="store.setMode($event)"
               (regenerate)="regenerateExpired()" />
             <p-button
@@ -131,6 +134,11 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
           <strong>{{ labels.emptyTitle }}</strong>
           <span>{{ labels.emptyHint }}</span>
         </div>
+      } @else if (isWorkflowPlan() && !spec()) {
+        <!-- Plan Workflow sans spec (D12, 4.4k1) : l'onglet « Workflow » seul, alimenté par le résumé. -->
+        <section class="sai-body" data-testid="sai-workflow-only">
+          <app-studio-ai-workflows-tab [spec]="null" [summary]="summary()" />
+        </section>
       } @else if (store.specLoading() || !spec()) {
         <div class="sai-body" aria-busy="true" aria-live="polite">
           <p class="sai-hint">{{ labels.loadingSpec }}</p>
@@ -223,7 +231,7 @@ import { StudioAiWorkflowsTabComponent } from './studio-ai-workflows-tab.compone
                 (viewChange)="store.updateView($event.ref, $event.index, $event.patch)" />
             </p-tabpanel>
             <p-tabpanel value="workflow">
-              <app-studio-ai-workflows-tab [spec]="spec()!" />
+              <app-studio-ai-workflows-tab [spec]="spec()" [summary]="summary()" />
             </p-tabpanel>
             <p-tabpanel value="menu">
               <app-studio-ai-menu-tab [spec]="spec()!" />
@@ -272,6 +280,7 @@ export class StudioAiPreviewComponent {
   readonly tabs = STUDIO_AI_LABELS.tabs;
   readonly customizeLabels = STUDIO_AI_LABELS.customize;
   readonly modeLabels = STUDIO_AI_LABELS.modes;
+  readonly workflowLabels = STUDIO_AI_LABELS.workflows;
 
   /** Table à mettre en avant dans l'onglet Tables (clic dans la Vue d'ensemble). */
   readonly selectedRef = signal<string | null>(null);
@@ -280,6 +289,12 @@ export class StudioAiPreviewComponent {
   readonly previewEnabled = computed(() => this.capabilitiesService.capabilities().planPreviewEnabled);
   /** Échantillon de rapport calculé par le serveur (`summary.sample`, P5) pour le mode Tester. */
   readonly reportSample = computed<ReportResult | null>(() => this.store.plan()?.summary.sample ?? null);
+  /** Plan de type Workflow (casse tolérée, 4.4k1) : pas de `StudioSystemSpec`, résumé seul. */
+  readonly isWorkflowPlan = computed(() => isWorkflowPlanKind(this.store.plan()?.kind));
+  /** Résumé du plan (porteur de `workflows[]` pour un plan Workflow). */
+  readonly summary = computed(() => this.store.plan()?.summary ?? null);
+  /** Tester/Personnaliser exigent une spec : désactivés pour une proposition de workflow. */
+  readonly disabledModes = computed<StudioAiPreviewMode[]>(() => this.isWorkflowPlan() ? ['test', 'customize'] : []);
 
   readonly headerTitle = computed(
     () => this.spec()?.system?.displayName || this.store.plan()?.summary.title || this.labels.title
