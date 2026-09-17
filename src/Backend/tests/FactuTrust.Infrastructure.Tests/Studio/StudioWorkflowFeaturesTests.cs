@@ -369,6 +369,32 @@ public sealed class StudioWorkflowFeaturesTests
     // ---- Toggle / Delete ----
 
     [Fact]
+    public async Task Toggle_and_delete_map_a_lost_write_race_to_a_conflict()
+    {
+        const string expectedMessage = "Le workflow a été modifié entre-temps. Rechargez-le avant de réessayer.";
+        var def = Definition(isActive: true);
+        SetupDefinition(def, openInstances: 1);
+        _workflows.Setup(w => w.UpdateDefinitionWithConcurrencyAsync(def, null, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new DbUpdateConcurrencyException("race"));
+        _workflows.Setup(w => w.ListOpenInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.Manual, Uid, "{}", 0, null) });
+
+        var toggled = await ToggleHandler().Handle(new ToggleWorkflowCommand(def.Id, IsActive: false), CancellationToken.None);
+        Assert.True(toggled.IsFailure);
+        Assert.Equal("Conflict", toggled.Error.Code);
+        Assert.Equal(expectedMessage, toggled.Error.Description);
+        VerifyAudit("Studio.Workflow.Toggled", Times.Never());
+
+        var deleted = await DeleteHandler().Handle(new DeleteWorkflowCommand(def.Id), CancellationToken.None);
+        Assert.True(deleted.IsFailure);
+        Assert.Equal("Conflict", deleted.Error.Code);
+        Assert.Equal(expectedMessage, deleted.Error.Description);
+        // Aucune instance n'est annulée et aucun audit n'est écrit quand la suppression n'est pas persistée.
+        _engine.Verify(e => e.CancelAsync(It.IsAny<StudioWorkflowInstance>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        VerifyAudit("Studio.Workflow.Deleted", Times.Never());
+    }
+
+    [Fact]
     public async Task Toggle_and_delete_update_state_and_cancel_open_instances()
     {
         var def = Definition(isActive: true);

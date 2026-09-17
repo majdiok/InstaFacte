@@ -201,18 +201,19 @@ internal static class StudioWorkflowSaveSupport
     }
 
     /// <summary>
-    /// Validation des étapes (§1.4-B) : résout les tables cibles des étapes <c>create_record</c>
-    /// (inconnue, inactive ou jonction ⇒ null) puis délègue à <see cref="StudioWorkflowStepsSpec.Validate"/>.
+    /// Validation des étapes (§1.4-B) : charge les champs actifs de la table, résout les tables cibles des
+    /// étapes <c>create_record</c> (inconnue, inactive ou jonction ⇒ null) puis délègue à
+    /// <see cref="StudioWorkflowStepsSpec.Validate"/>.
     /// </summary>
     public static async Task<WorkflowValidationOutcome> ValidateAsync(
         NormalizedWorkflowSave save,
         CustomEntityDefinition entity,
-        IReadOnlyList<CustomFieldDefinition> fields,
         ICustomEntityRepository entities,
         ICustomFieldRepository fieldsRepo,
         Guid tenantId,
         CancellationToken ct)
     {
+        var fields = await fieldsRepo.ListByEntityAsync(tenantId, entity.Id, includeInactive: false, ct);
         var resolved = new Dictionary<string, IReadOnlyList<CustomFieldDefinition>?>(StringComparer.Ordinal);
 
         var parsed = StudioWorkflowStepsSpec.Parse(save.StepsJson);
@@ -220,8 +221,6 @@ internal static class StudioWorkflowSaveSupport
         {
             foreach (var key in StudioWorkflowStepsSpec.ReferencedEntityKeys(parsed.Value))
             {
-                if (resolved.ContainsKey(key))
-                    continue;
                 var target = await entities.GetByKeyAsync(tenantId, key, ct);
                 if (target is null || !target.IsActive || target.Kind == CustomEntityKind.Junction)
                     resolved[key] = null;
@@ -387,8 +386,7 @@ public sealed class CreateWorkflowCommandHandler : IRequestHandler<CreateWorkflo
         if (quota.IsFailure)
             return Result.Failure<WorkflowDefinitionDto>(quota.Error);
 
-        var fields = await _fields.ListByEntityAsync(tenantId, entity.Id, includeInactive: false, cancellationToken);
-        var outcome = await StudioWorkflowSaveSupport.ValidateAsync(save, entity, fields, _entities, _fields, tenantId, cancellationToken);
+        var outcome = await StudioWorkflowSaveSupport.ValidateAsync(save, entity, _entities, _fields, tenantId, cancellationToken);
         if (!outcome.IsValid)
             return Result.Failure<WorkflowDefinitionDto>(StudioWorkflowSaveSupport.ToError(outcome));
 
@@ -469,8 +467,7 @@ public sealed class UpdateWorkflowCommandHandler : IRequestHandler<UpdateWorkflo
         if (entity is null)
             return Result.Failure<WorkflowDefinitionDto>(Error.NotFound("CustomEntity", definition.EntityDefinitionId));
 
-        var fields = await _fields.ListByEntityAsync(tenantId, entity.Id, includeInactive: false, cancellationToken);
-        var outcome = await StudioWorkflowSaveSupport.ValidateAsync(save, entity, fields, _entities, _fields, tenantId, cancellationToken);
+        var outcome = await StudioWorkflowSaveSupport.ValidateAsync(save, entity, _entities, _fields, tenantId, cancellationToken);
         if (!outcome.IsValid)
             return Result.Failure<WorkflowDefinitionDto>(StudioWorkflowSaveSupport.ToError(outcome));
 
@@ -546,8 +543,16 @@ public sealed class ToggleWorkflowCommandHandler : IRequestHandler<ToggleWorkflo
             return Result.Success(StudioWorkflowMapping.ToDto(definition, open));
 
         definition.SetActive(command.IsActive, userId);
-        // Sans jeton (D-41-05) : la bascule ne porte que sur IsActive.
-        await _workflows.UpdateDefinitionWithConcurrencyAsync(definition, null, cancellationToken);
+        // Sans jeton (D-41-05) : la bascule ne porte que sur IsActive. Une course perdue à l'écriture
+        // (RowVersion chargé ≠ RowVersion en base) reste un 409 de l'enveloppe Studio (D-41-16).
+        try
+        {
+            await _workflows.UpdateDefinitionWithConcurrencyAsync(definition, null, cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result.Failure<WorkflowDefinitionDto>(Error.Conflict(StudioWorkflowSaveSupport.ConcurrencyConflictMessage));
+        }
 
         await StudioAudit.SafeLogAsync(
             _audit, "Studio.Workflow.Toggled", "StudioWorkflowDefinition", definition.Id,
@@ -600,7 +605,15 @@ public sealed class DeleteWorkflowCommandHandler : IRequestHandler<DeleteWorkflo
         var openInstances = await _workflows.ListOpenInstancesForDefinitionAsync(tenantId, definition.Id, cancellationToken);
 
         definition.SoftDelete(userId);
-        await _workflows.UpdateDefinitionWithConcurrencyAsync(definition, null, cancellationToken);
+        try
+        {
+            await _workflows.UpdateDefinitionWithConcurrencyAsync(definition, null, cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Rien n'est annulé si la définition a bougé entre-temps : le client recharge puis réessaie (D-41-16).
+            return Result.Failure<WorkflowDeletionResultDto>(Error.Conflict(StudioWorkflowSaveSupport.ConcurrencyConflictMessage));
+        }
 
         var cancelled = 0;
         foreach (var instance in openInstances)
@@ -741,12 +754,12 @@ public sealed class ValidateWorkflowQueryHandler : IRequestHandler<ValidateWorkf
         if (normalized is null)
             return Result.Success(new WorkflowValidationResultDto(false, ToDto(issues), Array.Empty<WorkflowValidationIssueDto>(), 0));
 
-        var fields = await _fields.ListByEntityAsync(tenantId, entity.Id, includeInactive: false, cancellationToken);
-        var outcome = await StudioWorkflowSaveSupport.ValidateAsync(normalized, entity, fields, _entities, _fields, tenantId, cancellationToken);
+        var outcome = await StudioWorkflowSaveSupport.ValidateAsync(normalized, entity, _entities, _fields, tenantId, cancellationToken);
 
+        // « normalized » non null ⇒ aucune issue de forme : seul le verdict des étapes compte.
         return Result.Success(new WorkflowValidationResultDto(
-            issues.Count == 0 && outcome.IsValid,
-            ToDto(issues.Concat(outcome.Errors)),
+            outcome.IsValid,
+            ToDto(outcome.Errors),
             ToDto(outcome.Warnings),
             outcome.Spec?.Steps.Count ?? 0));
     }
