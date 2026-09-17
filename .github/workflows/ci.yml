@@ -1,6 +1,6 @@
 name: CI
 
-# checkout/setup-node utilisent Node.js 24 ; les builds applicatifs restent sur Node.js 20.
+# checkout/setup-node/setup-dotnet/upload-artifact utilisent Node.js 24 ; les builds applicatifs restent sur Node.js 20 et .NET 8.
 # Dépôt actuellement sans remote : ce workflow s'activera automatiquement
 # dès que le dépôt sera poussé sur GitHub. En attendant, utiliser
 # scripts/verify-all.ps1 en local (mêmes étapes).
@@ -21,7 +21,7 @@ jobs:
       FACTUTRUST_TEST_MASTER_CONNECTION: Server=(localdb)\MSSQLLocalDB;Database=FactuTrust_Master_CI;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
       - name: Démarrer LocalDB
@@ -36,7 +36,7 @@ jobs:
         run: dotnet test src/Backend/FactuTrust.sln --configuration Release --no-build --verbosity minimal --logger "trx;LogFileName=backend-tests.trx"
       - name: Upload backend test results
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-test-results
           path: "**/backend-tests.trx"
@@ -99,7 +99,7 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: src/Frontend/factutrust-web/package-lock.json
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
       - name: Wait for SQL Server
@@ -121,7 +121,7 @@ jobs:
             sed -E 's/(Password=)[^;]*/\1***REDACTED***/gi' api-e2e.log > api-e2e-sanitized.log
           fi
         working-directory: .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: api-e2e-log
