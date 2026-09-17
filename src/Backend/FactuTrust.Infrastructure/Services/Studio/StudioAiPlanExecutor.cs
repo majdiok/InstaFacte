@@ -93,8 +93,9 @@ public sealed class StudioAiPlanExecutor : IStudioAiPlanExecutor
             }
             case StudioAiPlanKind.Workflow:
             {
-                // PR 4.3f — fail-closed (D-43-22) : un plan confirmé après désactivation du moteur ne crée rien.
-                if (_settings is null || !_settings.EnableStudioWorkflows)
+                // PR 4.3f — fail-closed (D-43-22, D-43-29) : règle UNIQUE des trois drapeaux (moteur, outil IA,
+                // aperçu) — un plan confirmé (ou rejoué) après l'extinction de l'un d'eux ne crée rien.
+                if (_settings is null || !StudioAiPlanCreation.WorkflowToolsEnabled(_settings))
                     return (false, "Les workflows Studio ne sont pas activés.", null);
                 if (!StudioAiWorkflowSpec.TryParse(plan.SpecJson, out var spec, out var error) || spec is null)
                     return (false, error ?? "Spécification de workflows invalide.", null);

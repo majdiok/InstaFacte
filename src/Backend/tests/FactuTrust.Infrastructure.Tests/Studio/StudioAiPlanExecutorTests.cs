@@ -216,25 +216,38 @@ public sealed class StudioAiPlanExecutorTests
     private static StudioAiBuildPlan WorkflowPlan(string specJson) =>
         StudioAiBuildPlan.Create(TenantId, StudioAiPlanKind.Workflow, specJson, "{}", UserId, StudioAiPlanDefaults.Lifetime);
 
-    private static StudioAiPlanExecutor WithWorkflows(Mock<IMediator> mediator, Mock<ICurrentUser> currentUser, bool enabled = true) =>
-        new(mediator.Object, currentUser.Object, settings: Options.Create(new OllamaSettings { EnableStudioWorkflows = enabled }));
-
-    [Fact]
-    public async Task Workflow_plan_is_refused_when_the_workflows_flag_is_off()
-    {
-        // Fail-closed (D-43-22) : réglages absents OU drapeau à false ⇒ refus net, aucune commande envoyée.
-        foreach (var executor in new[]
-                 {
-                     new StudioAiPlanExecutor(_mediator.Object, _currentUser.Object),
-                     WithWorkflows(_mediator, _currentUser, enabled: false)
-                 })
+    /// <summary>Exécuteur avec les TROIS drapeaux de la règle unique <c>WorkflowToolsEnabled</c> (chacun débrayable).</summary>
+    private static StudioAiPlanExecutor WithWorkflows(Mock<IMediator> mediator, Mock<ICurrentUser> currentUser,
+        bool workflows = true, bool aiTools = true, bool planPreview = true) =>
+        new(mediator.Object, currentUser.Object, settings: Options.Create(new OllamaSettings
         {
-            var (success, error, payload) = await executor.ExecuteAsync(WorkflowPlan(WorkflowSpec), null, CancellationToken.None);
+            EnableStudioWorkflows = workflows,
+            EnableStudioAiWorkflowTools = aiTools,
+            EnableStudioAiPlanPreview = planPreview
+        }));
 
-            Assert.False(success);
-            Assert.Null(payload);
-            Assert.Equal("Les workflows Studio ne sont pas activés.", error);
-        }
+    [Theory]
+    [InlineData("settings_null")]
+    [InlineData("workflows_off")]
+    [InlineData("ai_tools_off")]
+    [InlineData("plan_preview_off")]
+    public async Task Workflow_plan_is_refused_when_the_workflows_flag_is_off(string scenario)
+    {
+        // Fail-closed (D-43-22, D-43-29) : réglages absents OU l'un des trois drapeaux à false ⇒ refus net,
+        // aucune commande envoyée — l'outil IA reste un coupe-circuit effectif même via le rejeu d'un plan.
+        var executor = scenario switch
+        {
+            "settings_null" => new StudioAiPlanExecutor(_mediator.Object, _currentUser.Object),
+            "workflows_off" => WithWorkflows(_mediator, _currentUser, workflows: false),
+            "ai_tools_off" => WithWorkflows(_mediator, _currentUser, aiTools: false),
+            _ => WithWorkflows(_mediator, _currentUser, planPreview: false)
+        };
+
+        var (success, error, payload) = await executor.ExecuteAsync(WorkflowPlan(WorkflowSpec), null, CancellationToken.None);
+
+        Assert.False(success);
+        Assert.Null(payload);
+        Assert.Equal("Les workflows Studio ne sont pas activés.", error);
         _mediator.VerifyNoOtherCalls();
     }
 
