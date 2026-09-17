@@ -167,6 +167,11 @@ public sealed class StudioAiWorkflowExecutorTests
         Assert.Null(StudioAiWorkflowExecutor.FreeKey("relance", allTaken));
         allTaken.Remove("relance_9");
         Assert.Equal("relance_9", StudioAiWorkflowExecutor.FreeKey("relance", allTaken));
+
+        // Base tronquée sur un « _ » ⇒ « _ » finaux retirés (même règle que la duplication) : jamais « __2 ».
+        var underscored = new string('b', 61) + "_cd";                                   // 64 caractères
+        var trimmed = StudioAiWorkflowExecutor.FreeKey(underscored, new HashSet<string>(StringComparer.Ordinal) { underscored });
+        Assert.Equal(new string('b', 61) + "_2", trimmed);
     }
 
     [Fact]
@@ -243,6 +248,70 @@ public sealed class StudioAiWorkflowExecutorTests
         Assert.Contains("« Relance » (clé « relance ») : Accès refusé", error2);
         Assert.Contains(steps, s => s.Phase == "failed" && s.Status == "error"
             && s.Label == "Annulation de « Relance » impossible" && s.EntityRef == "factures" && s.Detail == "Accès refusé");
+    }
+
+    /// <summary>Trois workflows sur « factures » (A, B, puis C).</summary>
+    private const string ThreeOnFactures = """
+    { "workflows": [
+        { "entityKey": "factures", "name": "Relance", "trigger": "manual",
+          "steps": [ { "type": "notify", "to": { "kind": "startedBy" }, "title": "Relance" } ] },
+        { "entityKey": "factures", "name": "Validation", "trigger": "on_create",
+          "steps": [ { "type": "notify", "to": { "kind": "startedBy" }, "title": "À valider" } ] },
+        { "entityKey": "factures", "name": "Clôture", "key": "cloture", "trigger": "manual",
+          "steps": [ { "type": "notify", "to": { "kind": "startedBy" }, "title": "Clôture" } ] } ] }
+    """;
+
+    [Fact]
+    public async Task Thrown_exception_after_a_creation_rolls_back_in_reverse_order_with_a_generic_french_message()
+    {
+        var idA = Guid.NewGuid();
+        var idB = Guid.NewGuid();
+        var deletes = new List<(DeleteWorkflowCommand Command, CancellationToken Token)>();
+        _mediator.Setup(m => m.Send(It.IsAny<DeleteWorkflowCommand>(), It.IsAny<CancellationToken>()))
+            .Callback((IRequest<Result<WorkflowDeletionResultDto>> c, CancellationToken t) => deletes.Add(((DeleteWorkflowCommand)c, t)))
+            .ReturnsAsync(Result.Success(new WorkflowDeletionResultDto(0)));
+        _mediator.Setup(m => m.Send(It.Is<CreateWorkflowCommand>(c => c.Request.Key == "relance"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CreateWorkflowCommand c, CancellationToken _) => Result.Success(Dto(c, idA)));
+        _mediator.Setup(m => m.Send(It.Is<CreateWorkflowCommand>(c => c.Request.Key == "validation"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CreateWorkflowCommand c, CancellationToken _) => Result.Success(Dto(c, idB)));
+        _mediator.Setup(m => m.Send(It.Is<CreateWorkflowCommand>(c => c.Request.Key == "cloture"), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Violation of UNIQUE KEY constraint 'UX_StudioWorkflowDefinitions_Key'"));
+        using var cts = new CancellationTokenSource();
+        var steps = new List<StudioBuildStep>();
+
+        var (success, error, payload) = await Execute(ThreeOnFactures, steps, cts.Token);
+
+        // Invariant tout-ou-rien même sur exception : B puis A supprimés, jeton None, message générique sans SQL.
+        Assert.False(success);
+        Assert.Null(payload);
+        Assert.Equal(StudioAiWorkflowExecutor.UnexpectedErrorMessage, error);
+        Assert.DoesNotContain("UNIQUE", error);
+        Assert.Equal(new[] { idB, idA }, deletes.Select(d => d.Command.Id));
+        Assert.All(deletes, d => Assert.Equal(CancellationToken.None, d.Token));
+        Assert.Contains(steps, s => s.Phase == "failed" && s.Status == "error" && s.Detail == error);
+        Assert.DoesNotContain(steps, s => s.Phase == "completed");
+
+        // Sans création préalable, rien à défaire : l'exception remonte au handler de confirmation.
+        deletes.Clear();
+        _mediator.Setup(m => m.Send(It.Is<CreateWorkflowCommand>(c => c.Request.Key == "relance"), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Execute(OneOnFactures));
+        Assert.Empty(deletes);
+
+        // Les « X with ID … was not found » techniques (course de suppression) sont traduits.
+        _mediator.Setup(m => m.Send(It.Is<CreateWorkflowCommand>(c => c.Request.Key == "relance"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<WorkflowDefinitionDto>(Error.NotFound("CustomEntity", FacturesId)));
+        var (success3, error3, _) = await Execute(OneOnFactures);
+        Assert.False(success3);
+        Assert.Equal("Workflow « Relance » : Table « factures » introuvable.", error3);
+
+        // Message persisté borné (ErrorMessage = 2048).
+        _mediator.Setup(m => m.Send(It.Is<CreateWorkflowCommand>(c => c.Request.Key == "relance"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<WorkflowDefinitionDto>(Error.Validation("Plan", new string('x', 3000))));
+        var (_, error4, _) = await Execute(OneOnFactures);
+        Assert.NotNull(error4);
+        Assert.Equal(StudioAiWorkflowExecutor.MaxErrorLength, error4!.Length);
+        Assert.EndsWith("…", error4);
     }
 
     [Fact]

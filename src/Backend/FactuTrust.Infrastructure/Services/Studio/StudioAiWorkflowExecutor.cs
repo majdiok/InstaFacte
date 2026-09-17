@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Fields;
 using FactuTrust.Application.Features.Studio.Workflows;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Studio.Workflows;
 using MediatR;
 
@@ -20,6 +21,12 @@ public sealed class StudioAiWorkflowExecutor
     /// <summary>Nombre maximal de variantes de clé essayées : la clé demandée puis <c>_2</c> … <c>_9</c>.</summary>
     public const int MaxKeyAttempts = 9;
 
+    /// <summary>Longueur maximale du message d'erreur renvoyé (colonne <c>ErrorMessage</c> = 2048, marge comprise).</summary>
+    public const int MaxErrorLength = 2000;
+
+    /// <summary>Message générique d'une exception échappée après au moins une création (jamais <c>ex.Message</c> : il peut porter du SQL).</summary>
+    public const string UnexpectedErrorMessage = "Erreur inattendue lors de la création des workflows.";
+
     /// <summary>Un workflow créé par ce plan (shape du contrat §D, repris tel quel dans le payload).</summary>
     public sealed record CreatedWorkflow(Guid Id, string Key, string EntityKey, string Name, int StepCount);
 
@@ -37,46 +44,58 @@ public sealed class StudioAiWorkflowExecutor
         var entities = new Dictionary<string, Guid>(StringComparer.Ordinal);          // entityKey → Id
         var takenKeys = new Dictionary<Guid, HashSet<string>>();                     // entityId → clés existantes
 
-        foreach (var item in spec.Workflows)
+        try
         {
-            var stepCount = item.Steps["steps"] is JsonArray a ? a.Count : 0;
-            Report("creating_workflows", $"Workflow « {item.Name} »", "running", item.EntityKey, $"{stepCount} étape(s)");
-
-            // 1. Table cible relue (schéma réel) — inactive ⇒ échec.
-            if (!entities.TryGetValue(item.EntityKey, out var entityId))
+            foreach (var item in spec.Workflows)
             {
-                Report("reading_schema", $"Lecture de « {item.EntityKey} »", "running");
-                var schema = await _mediator.Send(new GetCustomEntitySchemaQuery(item.EntityKey), ct);
-                if (!schema.IsSuccess || !schema.Value.Entity.IsActive)
-                    return await RollbackAsync($"Table « {item.EntityKey} » introuvable ou inactive.", created, Report);
-                entityId = schema.Value.Entity.Id;
-                entities[item.EntityKey] = entityId;
-                Report("reading_schema", $"Lecture de « {item.EntityKey} »", "done");
-            }
+                var stepCount = item.Steps["steps"] is JsonArray a ? a.Count : 0;
+                Report("creating_workflows", $"Workflow « {item.Name} »", "running", item.EntityKey, $"{stepCount} étape(s)");
 
-            // 2. Clé libre : clés existantes lues UNE fois par table, puis _2 … _9.
-            if (!takenKeys.TryGetValue(entityId, out var taken))
-            {
-                var list = await _mediator.Send(new ListWorkflowsQuery(entityId), ct);
-                if (!list.IsSuccess) return await RollbackAsync(list.Error.Description, created, Report);
-                taken = list.Value.Select(d => d.Key).ToHashSet(StringComparer.Ordinal);
-                takenKeys[entityId] = taken;
-            }
-            var key = FreeKey(item.Key, taken);
-            if (key is null)
-                return await RollbackAsync($"Workflow « {item.Name} » : clé « {item.Key} » indisponible ({MaxKeyAttempts} variantes essayées).", created, Report);
+                // 1. Table cible relue (schéma réel) — inactive ⇒ échec.
+                if (!entities.TryGetValue(item.EntityKey, out var entityId))
+                {
+                    Report("reading_schema", $"Lecture de « {item.EntityKey} »", "running");
+                    var schema = await _mediator.Send(new GetCustomEntitySchemaQuery(item.EntityKey), ct);
+                    if (!schema.IsSuccess || !schema.Value.Entity.IsActive)
+                        return await RollbackAsync($"Table « {item.EntityKey} » introuvable ou inactive.", created, Report);
+                    entityId = schema.Value.Entity.Id;
+                    entities[item.EntityKey] = entityId;
+                    Report("reading_schema", $"Lecture de « {item.EntityKey} »", "done");
+                }
 
-            // 3. Création INACTIVE par la commande existante (IsActive: false figé par ToSaveRequest).
-            var request = StudioAiWorkflowSpec.ToSaveRequest(item) with { Key = key };
-            var result = await _mediator.Send(new CreateWorkflowCommand(entityId, request), ct);
-            if (!result.IsSuccess)
-            {
-                Report("creating_workflows", $"Workflow « {item.Name} »", "error", item.EntityKey, result.Error.Description);
-                return await RollbackAsync($"Workflow « {item.Name} » : {result.Error.Description}", created, Report);
+                // 2. Clé libre : clés existantes lues UNE fois par table, puis _2 … _9.
+                if (!takenKeys.TryGetValue(entityId, out var taken))
+                {
+                    var list = await _mediator.Send(new ListWorkflowsQuery(entityId), ct);
+                    if (!list.IsSuccess)
+                        return await RollbackAsync(Describe(list.Error, $"Table « {item.EntityKey} » introuvable."), created, Report);
+                    taken = list.Value.Select(d => d.Key).ToHashSet(StringComparer.Ordinal);
+                    takenKeys[entityId] = taken;
+                }
+                var key = FreeKey(item.Key, taken);
+                if (key is null)
+                    return await RollbackAsync($"Workflow « {item.Name} » : clé « {item.Key} » indisponible ({MaxKeyAttempts} variantes essayées).", created, Report);
+
+                // 3. Création INACTIVE par la commande existante (IsActive: false figé par ToSaveRequest).
+                var request = StudioAiWorkflowSpec.ToSaveRequest(item) with { Key = key };
+                var result = await _mediator.Send(new CreateWorkflowCommand(entityId, request), ct);
+                if (!result.IsSuccess)
+                {
+                    var why = Describe(result.Error, $"Table « {item.EntityKey} » introuvable.");
+                    Report("creating_workflows", $"Workflow « {item.Name} »", "error", item.EntityKey, why);
+                    return await RollbackAsync($"Workflow « {item.Name} » : {why}", created, Report);
+                }
+                taken.Add(key);
+                created.Add(new CreatedWorkflow(result.Value.Id, result.Value.Key, item.EntityKey, result.Value.Name, result.Value.StepCount));
+                Report("creating_workflows", $"Workflow « {item.Name} »", "done", item.EntityKey, $"clé « {key} » · inactif");
             }
-            taken.Add(key);
-            created.Add(new CreatedWorkflow(result.Value.Id, result.Value.Key, item.EntityKey, result.Value.Name, result.Value.StepCount));
-            Report("creating_workflows", $"Workflow « {item.Name} »", "done", item.EntityKey, $"clé « {key} » · inactif");
+        }
+        catch (Exception) when (created.Count > 0)
+        {
+            // Défaut bruyant (SQL, course sur l'index unique, annulation…) APRÈS une création : l'invariant
+            // tout-ou-rien prime — rollback puis message générique. Sans création préalable, rien à défaire :
+            // l'exception remonte au handler de confirmation (plan marqué en échec, exception journalisée).
+            return await RollbackAsync(UnexpectedErrorMessage, created, Report);
         }
 
         Report("completed", $"{created.Count} workflow(s) créé(s)", "done");
@@ -101,7 +120,8 @@ public sealed class StudioAiWorkflowExecutor
         {
             var suffix = $"_{n}";
             var maxRoot = StudioWorkflowDefinition.KeyMaxLength - suffix.Length;
-            var candidate = (baseKey.Length > maxRoot ? baseKey[..maxRoot] : baseKey) + suffix;
+            // Base tronquée puis débarrassée des « _ » finaux (même règle que la duplication de workflow).
+            var candidate = (baseKey.Length > maxRoot ? baseKey[..maxRoot].TrimEnd('_') : baseKey) + suffix;
             if (!taken.Contains(candidate)) return candidate;
         }
         return null;
@@ -118,14 +138,25 @@ public sealed class StudioAiWorkflowExecutor
             var deleted = await _mediator.Send(new DeleteWorkflowCommand(c.Id), CancellationToken.None);
             if (!deleted.IsSuccess)
             {
-                report("failed", $"Annulation de « {c.Name} » impossible", "error", c.EntityKey, deleted.Error.Description);
-                leftovers.Add($"« {c.Name} » (clé « {c.Key} ») : {deleted.Error.Description}");
+                var why = Describe(deleted.Error, "workflow déjà supprimé");
+                report("failed", $"Annulation de « {c.Name} » impossible", "error", c.EntityKey, why);
+                leftovers.Add($"« {c.Name} » (clé « {c.Key} ») : {why}");
             }
         }
         // Jamais silencieux : un delete raté est aussi porté par le message persisté du plan (le flux de
         // progression est transitoire) — le workflow restant est inactif, donc sans effet.
         if (leftovers.Count > 0)
             error = $"{(error.EndsWith('.') ? error : error + ".")} Annulation incomplète — workflow(s) inactif(s) à supprimer depuis le hub : {string.Join(" ; ", leftovers)}.";
+        // Le message est persisté dans ErrorMessage (2048) : borné pour ne jamais faire échouer la mise à jour du plan.
+        if (error.Length > MaxErrorLength)
+            error = error[..(MaxErrorLength - 1)] + "…";
         return (false, error, null);
     }
+
+    /// <summary>
+    /// Les commandes renvoient des « X with ID … was not found » techniques (course de suppression entre la lecture
+    /// et l'écriture) : traduits pour l'utilisateur ; les autres descriptions sont déjà en français.
+    /// </summary>
+    private static string Describe(Error error, string frenchNotFound) =>
+        error.Code.EndsWith(".NotFound", StringComparison.Ordinal) ? frenchNotFound : error.Description;
 }
