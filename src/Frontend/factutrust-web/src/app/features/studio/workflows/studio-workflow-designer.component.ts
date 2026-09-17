@@ -1,7 +1,7 @@
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, OnInit, computed, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -29,6 +29,7 @@ import { StudioWorkflowStepEditorComponent } from './step-editor/studio-workflow
 import { StudioWorkflowStepListComponent } from './step-editor/studio-workflow-step-list.component';
 import { STUDIO_WORKFLOW_LABELS, formatWorkflowLabel } from './studio-workflow-labels';
 import { workflowErrorMessage } from './studio-workflow-http.util';
+import { StudioWorkflowInstanceDetailComponent } from './studio-workflow-instance-detail.component';
 import { StudioWorkflowInstancesPanelComponent } from './studio-workflow-instances-panel.component';
 import {
   COMPUTED_FIELD_TYPES,
@@ -86,7 +87,9 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
  * sous-formulaire `field_changed`, puis grille 3 colonnes `1fr · 320 px · 250 px` (D-44-21) :
  * liste d'étapes + arbre de branchements en `@defer` (col. 1), éditeur d'étape 4.4c1 (col. 2),
  * aperçu/instances récentes (col. 3, panneau 4.4e2 rafraîchi via `refreshToken` ; le clic pose
- * `?instance=<id>`, D20 — le drawer de détail arrive en 4.4f). Sous 1280 px, les colonnes 2–3
+ * `?instance=<id>`, D20 — le drawer de détail 4.4f `app-studio-workflow-instance-detail` est
+ * branché sur `openInstanceId`, alimenté par ce paramètre, et sa fermeture le retire de l'URL).
+ * Sous 1280 px, les colonnes 2–3
  * passent en `p-drawer` (D-44-22, première utilisation de `primeng/drawer`).
  * Enregistrement TOUJOURS précédé d'une validation serveur (D-44-02) dont les erreurs sont
  * remontées par étape/propriété (`steps[i].prop`) à la liste et à l'éditeur.
@@ -100,6 +103,7 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
     CommonModule, FormsModule, ButtonModule, DrawerModule, InputTextModule, MessageModule, SelectModule,
     SkeletonModule, TagModule, TextareaModule, ToggleSwitchModule, StudioPageShellComponent,
     StudioWorkflowStepListComponent, StudioWorkflowStepEditorComponent, StudioWorkflowInstancesPanelComponent,
+    StudioWorkflowInstanceDetailComponent,
     // Référencé UNIQUEMENT dans le bloc `@defer` ci-dessous : Angular l'isole dans un chunk
     // chargé à la demande (primeng/tree reste hors du bundle initial — 4.4c2 §3).
     StudioWorkflowConditionTreeComponent
@@ -273,6 +277,11 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
         }
       }
 
+      <!-- Détail d'instance (4.4f) : drawer droit piloté par ?instance= (D20) ; hors du bloc de
+           chargement pour s'ouvrir directement à l'arrivée sur /studio/workflows/<id>?instance=<iid>. -->
+      <app-studio-workflow-instance-detail [(instanceId)]="openInstanceId" [entityKey]="entity()?.key ?? null"
+        (changed)="onInstanceChanged()" />
+
       <ng-template #editorTpl>
         @if (selectedIndex() !== null && steps()[selectedIndex()!]; as step) {
           <app-studio-workflow-step-editor [step]="step" (stepChange)="replaceStep(selectedIndex()!, $event)"
@@ -340,8 +349,14 @@ export class StudioWorkflowDesignerComponent implements OnInit {
   readonly openInstances = signal(0);
   /** Incrémenté après chaque enregistrement — le panneau d'instances (4.4e2) se rafraîchit dessus. */
   readonly refreshToken = signal(0);
-  /** Instance ouverte via `?instance=` (D20, posé par `openInstance`) — consommé par le drawer de détail en 4.4f. */
+  /** `?instance=` lu en continu (D20). */
   readonly instanceId = toSignal(this.route.queryParamMap.pipe(map(q => q.get('instance'))), { initialValue: null });
+  /**
+   * Instance ouverte dans le drawer de détail (4.4f) : suit `?instance=` (arrivée directe ou clic
+   * dans le panneau 4.4e2) et peut être remise à `null` par le drawer — la remise à `null`
+   * retire alors le paramètre de l'URL (effet ci-dessous).
+   */
+  readonly openInstanceId = linkedSignal<string | null>(() => this.instanceId());
   private readonly snapshot = signal('');
 
   // ---- Réactif écran étroit (D-44-21 : colonnes 2–3 en tiroir sous 1280 px) ----
@@ -353,6 +368,14 @@ export class StudioWorkflowDesignerComponent implements OnInit {
 
   readonly title = computed(() => this.name().trim() || (this.id ? this.L.designer.title : this.L.designer.newTitle));
   readonly breadcrumbs = computed(() => STUDIO_BREADCRUMBS.workflowDesigner(this.name()));
+  /** Fermeture du drawer de détail (`openInstanceId` remis à `null` par le composant) ⇒ retire `?instance=` (D20). */
+  private readonly syncInstanceParamOnClose = effect(() => {
+    if (this.openInstanceId() === null && this.instanceId() !== null) {
+      untracked(() => void this.router.navigate([], {
+        relativeTo: this.route, queryParams: { instance: null }, queryParamsHandling: 'merge', replaceUrl: true
+      }));
+    }
+  });
   readonly tooLarge = computed(() => stepsJsonBytes({ version: 1, steps: this.steps() }) > WORKFLOW_LIMITS.maxStepsJsonBytes);
   readonly triggerConfigTooLarge = computed(() => {
     const c = this.triggerConfig();
@@ -445,7 +468,12 @@ export class StudioWorkflowDesignerComponent implements OnInit {
     if (this.narrow() && index !== null) this.editorDrawer.set(true);
   }
 
-  /** Clic sur une instance de la colonne 3 (4.4e2) : l'URL porte l'instance ouverte (D20) ; le drawer arrive en 4.4f. */
+  /** Après annulation/relance réussie dans le drawer (4.4f) : rafraîchit le panneau d'instances. */
+  protected onInstanceChanged(): void {
+    this.refreshToken.update(n => n + 1);
+  }
+
+  /** Clic sur une instance de la colonne 3 (4.4e2) : l'URL porte l'instance ouverte (D20) ⇒ le drawer 4.4f s'ouvre. */
   openInstance(i: WorkflowInstanceDto): void {
     void this.router.navigate([], { relativeTo: this.route, queryParams: { instance: i.id }, queryParamsHandling: 'merge' });
   }
