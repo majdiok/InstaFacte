@@ -292,7 +292,31 @@ export const STUDIO_WORKFLOW_LABELS = {
       status: 'Statut',
       currentStep: 'Étape courante',
       startedBy: 'Démarré par'
-    }
+    },
+    // 4.4h2 (H-3, ajout additif) — les clés déjà définies en 4.4a1 (`label`, `launch`, `run`
+    // = « Lancer », `started`, `empty` = « Aucun workflow exécuté sur cet enregistrement. »…)
+    // gardent leur libellé d'origine ; l'onglet n'utilise que les clés plates ci-dessous
+    // (même motif que les `colXxx` de `approvals` en 4.4g2).
+    tabLabel: 'Workflows',
+    title: 'Workflows',
+    hint: 'Instances de workflow liées à cet enregistrement.',
+    runTitle: 'Lancer un workflow',
+    runPlaceholder: 'Choisir un workflow',
+    runEmpty: 'Aucun workflow actif à lancement manuel pour cette table.',
+    alreadyRunning: 'Une instance de ce workflow est déjà en cours pour cet enregistrement.',
+    runError: 'Le workflow n\'a pas pu être lancé.',
+    cancel: 'Annuler',
+    cancelled: 'Instance annulée.',
+    remind: 'Relancer les approbateurs',
+    reminded: 'Rappel envoyé.',
+    actionError: 'L\'action n\'a pas pu être effectuée.',
+    detail: 'Détail',
+    close: 'Fermer',
+    colWorkflow: 'Workflow',
+    colStatus: 'Statut',
+    colStep: 'Étape',
+    colStarted: 'Démarré le',
+    colDue: 'Échéance'
   },
 
   soon: 'Bientôt'
