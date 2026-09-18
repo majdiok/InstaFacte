@@ -11,7 +11,9 @@ import { StudioWorkflowsService } from '../workflows/studio-workflows.service';
  * sonde `countMyApprovals()` (drapeau coupé ou droit absent) arrête le polling
  * définitivement jusqu'à `reset()` (déconnexion / changement de tenant).
  * La sonde porte déjà le contexte `SKIP_ERROR_TOAST` (4.4a2, D-44-03) : aucun
- * toast global n'est ajouté ici.
+ * toast global n'est ajouté ici. `available` : la sonde a répondu 200 au moins une
+ * fois (sert à la navigation des lecteurs sans capacités, 4.5d1) ; retombe à false
+ * sur arrêt définitif ou `reset()`.
  */
 @Injectable({ providedIn: 'root' })
 export class StudioApprovalsBadgeService {
@@ -25,6 +27,8 @@ export class StudioApprovalsBadgeService {
 
   readonly count = signal(0);
   readonly polling = signal(false);
+  /** true dès la première réponse 200 de la sonde ; false après un arrêt définitif (403/404) ou `reset()`. */
+  readonly available = signal(false);
   readonly visible = computed(() => this.count() > 0);
 
   /** Idempotent : ne relance rien si un polling tourne ou si la sonde a répondu 403/404 (D2, D23). */
@@ -43,7 +47,10 @@ export class StudioApprovalsBadgeService {
       )),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(value => {
-      if (value !== null) this.count.set(value);
+      if (value !== null) {
+        this.count.set(value);
+        this.available.set(true);
+      }
     });
   }
 
@@ -65,6 +72,7 @@ export class StudioApprovalsBadgeService {
     if (permanent) {
       this.stopped = true;
       this.count.set(0);
+      this.available.set(false);
     }
   }
 
@@ -73,5 +81,6 @@ export class StudioApprovalsBadgeService {
     this.stop(false);
     this.stopped = false;
     this.count.set(0);
+    this.available.set(false);
   }
 }

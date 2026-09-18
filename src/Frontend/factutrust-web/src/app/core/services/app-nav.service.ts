@@ -63,6 +63,13 @@ export class AppNavService {
 
   private readonly activeClients = signal<FirmClientDossier[]>([]);
 
+  /** Concepteur : la capacité `workflowsEnabled` fait foi. Lecteur : la sonde du badge (seul endpoint accessible), 4.5d1. */
+  private readonly approvalsVisible = computed(() =>
+    this.auth.hasPermission(PERMISSIONS.studio.designEntities)
+      ? this.studioCapabilities.workflowsEnabled()
+      : this.approvalsBadge.available()
+  );
+
   readonly dashboardHomeLink = computed(() =>
     this.auth.isAccountingFirm() ? '/firm/dashboard' : '/dashboard'
   );
@@ -78,11 +85,13 @@ export class AppNavService {
     this.stockFeaturesStore.ensureLoaded();
     this.stockFeaturesStore.features();
 
-    if (this.auth.hasPermission(PERMISSIONS.studio.designEntities)) {
+    const isDesigner = this.auth.hasPermission(PERMISSIONS.studio.designEntities);
+    const isReader = this.auth.hasPermission(PERMISSIONS.customData.recordsRead);
+    if (isDesigner || isReader) {
       // NG0600 : écritures de signaux interdites dans un computed — différées hors tracking.
       untracked(() => {
-        this.studioCapabilities.ensureLoaded(); // 403 pour les autres profils : on ne l'appelle pas
-        this.approvalsBadge.start(); // D23 : idempotent (g1)
+        if (isDesigner) this.studioCapabilities.ensureLoaded(); // 403 pour les autres profils : on ne l'appelle pas
+        this.approvalsBadge.start(); // D23 : idempotent ; 403/404 ⇒ arrêt définitif jusqu'à reset() (4.5d1 : lecteurs aussi)
       });
     }
 
@@ -366,7 +375,11 @@ export class AppNavService {
               icon: 'fa-solid fa-route',
               modules: [AppModule.Studio],
               permissionsAll: [PERMISSIONS.studio.designEntities]
-            },
+            }
+          ] satisfies NavSubItem[])
+        : []),
+      ...(this.approvalsVisible()
+        ? ([
             {
               label: 'Mes approbations',
               route: '/studio/approvals',

@@ -61,6 +61,31 @@ describe('StudioApprovalsBadgeService', () => {
     http.expectNone(COUNT_URL);
   }));
 
+  it('expose available=true après une sonde 200, false après un 404 définitif ou reset()', fakeAsync(() => {
+    expect(service.available()).toBe(false); // aucun flash avant la première réponse
+
+    service.start();
+    tick(0);
+    http.expectOne(COUNT_URL).flush({ success: true, data: { count: 3 }, message: null, error: null });
+    expect(service.available()).toBe(true);
+
+    tick(StudioApprovalsBadgeService.POLL_INTERVAL_MS);
+    http.expectOne(COUNT_URL).flush('introuvable', { status: 404, statusText: 'Not Found' });
+    expect(service.available()).toBe(false);
+    expect(service.polling()).toBe(false);
+
+    service.reset();
+    expect(service.available()).toBe(false);
+    service.start();
+    tick(0);
+    http.expectOne(COUNT_URL).flush({ success: true, data: { count: 0 }, message: null, error: null });
+    expect(service.available()).toBe(true); // 200 avec 0 demande : disponible quand même
+    expect(service.visible()).toBe(false);
+
+    service.reset();
+    expect(service.available()).toBe(false);
+  }));
+
   it('garde la dernière valeur sur une erreur réseau puis réessaie', fakeAsync(() => {
     service.start();
     tick(0);

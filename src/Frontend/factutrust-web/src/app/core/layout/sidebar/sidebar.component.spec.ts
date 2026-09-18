@@ -62,8 +62,8 @@ function makeCapsStub(): { ensureLoaded: jasmine.Spy; workflowsEnabled: Writable
   return { ensureLoaded: jasmine.createSpy('ensureLoaded'), workflowsEnabled: signal(false) };
 }
 
-function makeBadgeStub(): { start: jasmine.Spy; count: WritableSignal<number> } {
-  return { start: jasmine.createSpy('start'), count: signal(0) };
+function makeBadgeStub(): { start: jasmine.Spy; count: WritableSignal<number>; available: WritableSignal<boolean> } {
+  return { start: jasmine.createSpy('start'), count: signal(0), available: signal(false) };
 }
 
 describe('SidebarComponent — firm navigation', () => {
