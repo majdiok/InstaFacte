@@ -310,6 +310,12 @@ export const STUDIO_WORKFLOW_LABELS = {
     remind: 'Relancer les approbateurs',
     reminded: 'Rappel envoyé.',
     actionError: 'L\'action n\'a pas pu être effectuée.',
+    /** 4.6d2 (D-44-96) — confirmation d'annulation inline, même motif et libellés que le tiroir (D-44-26). */
+    cancelConfirmTitle: 'Annuler cette instance ?',
+    cancelReason: 'Motif (optionnel, 500 caractères max.)',
+    cancelConfirm: 'Confirmer l\'annulation',
+    cancelBack: 'Retour',
+    colActions: 'Actions',
     detail: 'Détail',
     close: 'Fermer',
     colWorkflow: 'Workflow',
