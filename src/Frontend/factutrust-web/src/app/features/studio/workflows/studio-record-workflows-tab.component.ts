@@ -54,7 +54,7 @@ import { StudioWorkflowsService } from './studio-workflows.service';
         <ng-template pTemplate="header">
           <tr>
             <th>{{ labels.colWorkflow }}</th><th>{{ labels.colStatus }}</th><th>{{ labels.colStep }}</th>
-            <th>{{ labels.colStarted }}</th><th>{{ labels.colDue }}</th><th></th>
+            <th>{{ labels.colStarted }}</th><th>{{ labels.colRequestedBy }}</th><th>{{ labels.colDue }}</th><th></th>
           </tr>
         </ng-template>
         <ng-template pTemplate="body" let-row>
@@ -63,6 +63,8 @@ import { StudioWorkflowsService } from './studio-workflows.service';
             <td><app-studio-workflow-status-tag [status]="row.status" /></td>
             <td>{{ row.currentStepKey ?? '—' }}</td>
             <td>{{ row.startedAt | date:'dd/MM/yyyy HH:mm' }}</td>
+            <!-- 4.6c1 (D-46-F03) : nom du lanceur (4.6b1) ; « — » si inconnu ou backend non déployé. -->
+            <td [attr.data-testid]="'srw-requested-by-' + row.id">{{ row.startedByName ?? '—' }}</td>
             <td>{{ row.dueAt ? (row.dueAt | date:'dd/MM/yyyy HH:mm') : '—' }}</td>
             <td class="srw-actions">
               <p-button icon="fa-solid fa-eye" [text]="true" size="small" [pTooltip]="labels.detail"
@@ -77,7 +79,7 @@ import { StudioWorkflowsService } from './studio-workflows.service';
           </tr>
         </ng-template>
         <ng-template pTemplate="emptymessage">
-          <tr><td colspan="6" class="ft-empty">{{ labels.empty }}</td></tr>
+          <tr><td colspan="7" class="ft-empty">{{ labels.empty }}</td></tr>
         </ng-template>
       </p-table>
     </div>

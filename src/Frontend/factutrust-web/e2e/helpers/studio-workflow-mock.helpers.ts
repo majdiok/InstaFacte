@@ -165,7 +165,8 @@ export const WF_INSTANCES = [
     completedAt: null,
     depth: 0,
     originInstanceId: null,
-    error: null
+    error: null,
+    startedByName: 'Alice Martin' // 4.6b1 : « Demandé par » sur l'onglet fiche (null toléré)
   },
   {
     id: 'inst-2',

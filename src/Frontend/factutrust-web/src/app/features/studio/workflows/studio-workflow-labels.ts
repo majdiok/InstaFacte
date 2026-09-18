@@ -316,6 +316,8 @@ export const STUDIO_WORKFLOW_LABELS = {
     colStatus: 'Statut',
     colStep: 'Étape',
     colStarted: 'Démarré le',
+    /** 4.6c1 (D-46-F03) — nom du lanceur servi par `WorkflowInstanceDto.startedByName` (4.6b1) ; « — » si inconnu. */
+    colRequestedBy: 'Demandé par',
     colDue: 'Échéance'
   },
 

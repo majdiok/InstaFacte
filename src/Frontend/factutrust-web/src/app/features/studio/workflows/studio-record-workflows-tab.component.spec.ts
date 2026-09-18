@@ -116,6 +116,22 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     expect(row2.querySelector('p-tag[data-status="running"]')).not.toBeNull();
   });
 
+  // 4.6c1 (D-46-F03) — colonne « Demandé par » : nom du lanceur servi par 4.6b1, « — » sinon.
+  it('affiche la colonne « Demandé par » (nom du lanceur, « — » si inconnu)', () => {
+    setup({
+      instances: [
+        instance('i1', 'waiting_approval', { startedByName: 'Alice Martin' }),
+        instance('i2', 'running')
+      ]
+    });
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('th') as NodeListOf<HTMLElement>)
+      .map(th => th.textContent?.trim());
+    expect(headers).toContain('Demandé par');
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-requested-by-i1"]').textContent.trim()).toBe('Alice Martin');
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-requested-by-i2"]').textContent.trim()).toBe('—');
+  });
+
   it('masque Lancer / Annuler / Relancer sans custom_records:write', () => {
     setup({ canWrite: false, instances: [instance('i1', 'running')] });
 
