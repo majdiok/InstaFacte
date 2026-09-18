@@ -213,4 +213,63 @@ describe('StudioAiPreviewComponent', () => {
     expect(text()).toContain(STUDIO_AI_LABELS.preview.loadingSpec);
     expect((fixture.nativeElement as HTMLElement).querySelector('p-skeleton')).not.toBeNull();
   });
+
+  /** Amène le store dans l'état « plan Workflow sans spec » (4.4k1 : le résumé seul alimente l'aperçu). */
+  function loadWorkflowPlan(): void {
+    store.plan.set({
+      planId: 'plan-1',
+      kind: 'Workflow',
+      expiresAt: null,
+      rowVersion: 'v1',
+      summary: {
+        kind: 'Workflow',
+        title: 'Validation congés',
+        steps: [],
+        entities: [],
+        warnings: [],
+        workflows: [
+          {
+            key: 'validation-conges', name: 'Validation des congés', trigger: 'on_create', isActive: false,
+            stepCount: 2,
+            steps: [
+              { key: 'appro', type: 'approval', label: 'Approbation du manager' },
+              { key: 'notif', type: 'notify', label: 'Notifier le salarié' }
+            ]
+          }
+        ]
+      }
+    });
+    store.spec.set(null);
+    store.draft.set(null);
+    store.specLoading.set(false);
+    store.phase.set('awaiting_confirmation');
+    fixture.detectChanges();
+  }
+
+  it('affiche l’onglet Workflow seul et garde « Créer maintenant » actif pour un plan Workflow sans spec', () => {
+    loadWorkflowPlan();
+    const host = fixture.nativeElement as HTMLElement;
+
+    expect(host.querySelector('[data-testid="sai-workflow-only"]')).not.toBeNull();
+    expect(host.querySelector('p-tabs')).withContext('les dix onglets ne sont pas rendus').toBeNull();
+    expect(host.querySelector('p-skeleton')).withContext('le skeleton est court-circuité').toBeNull();
+    expect(host.querySelector('[data-component-id="sai-workflow-cards"]')).not.toBeNull();
+    expect(text()).toContain('Validation des congés');
+
+    const create = Array.from(host.querySelectorAll('button'))
+      .find(b => b.textContent?.includes(STUDIO_AI_LABELS.preview.createNow));
+    expect(create?.disabled).withContext('canConfirm ne dépend pas de la spec').toBeFalse();
+  });
+
+  it('désactive Tester et Personnaliser pour un plan Workflow', () => {
+    loadWorkflowPlan();
+    const host = fixture.nativeElement as HTMLElement;
+
+    const modes = Array.from(host.querySelectorAll<HTMLButtonElement>('.sai-modebar__btn'));
+    expect(modes.find(b => b.dataset['mode'] === 'test')?.disabled)
+      .withContext('Tester exige une spec').toBeTrue();
+    expect(modes.find(b => b.dataset['mode'] === 'customize')?.disabled)
+      .withContext('Personnaliser exige une spec').toBeTrue();
+    expect(modes.find(b => b.dataset['mode'] === 'preview')?.disabled).toBeFalse();
+  });
 });

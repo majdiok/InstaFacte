@@ -37,9 +37,9 @@ interface ModeEntry {
           class="sai-modebar__btn"
           [attr.data-mode]="entry.id"
           [attr.aria-pressed]="mode() === entry.id"
-          [disabled]="locked()"
-          [pTooltip]="entry.id === 'test' && previewUnavailable() ? labels.previewUnavailable : ''"
-          [tooltipDisabled]="entry.id !== 'test' || !previewUnavailable()"
+          [disabled]="locked() || disabledModes().includes(entry.id)"
+          [pTooltip]="disabledModes().includes(entry.id) ? disabledTooltip() : (entry.id === 'test' && previewUnavailable() ? labels.previewUnavailable : '')"
+          [tooltipDisabled]="!disabledModes().includes(entry.id) && (entry.id !== 'test' || !previewUnavailable())"
           tooltipPosition="bottom"
           (click)="select(entry.id)">
           <i [class]="entry.icon" aria-hidden="true"></i>
@@ -83,6 +83,10 @@ export class StudioAiModeBarComponent {
   readonly changeCount = input(0);
   readonly previewUnavailable = input(false);
   readonly busy = input(false);
+  /** Modes désactivés pour ce plan (4.4k1 : Tester/Personnaliser d'un plan Workflow, sans spec). */
+  readonly disabledModes = input<readonly StudioAiPreviewMode[]>([]);
+  /** Info-bulle commune des modes de `disabledModes` (ex. `soonForWorkflows`). */
+  readonly disabledTooltip = input('');
 
   readonly modeChange = output<StudioAiPreviewMode>();
   readonly regenerate = output<void>();

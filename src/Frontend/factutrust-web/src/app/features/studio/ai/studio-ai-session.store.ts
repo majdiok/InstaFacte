@@ -20,6 +20,7 @@ import {
 } from '../studio-ai-build.service';
 import { stripStudioAssistantText } from '../studio-ai-builder.component';
 import { STUDIO_AI_LABELS, formatLabel } from './studio-ai-labels';
+import { isWorkflowPlanKind } from './preview/studio-ai-workflow-summary.util';
 import { cloneSpec, diffSpec, parseSpecPayload, serializeSpec, slugify, studioAiHttpError, uniqueKey } from './studio-ai-spec.util';
 import {
   ImportCustomSystemRequest,
@@ -542,8 +543,21 @@ export class StudioAiSessionStore implements OnDestroy {
     this.builds.getPlanSpec(planId).subscribe({
       next: res => {
         this.specLoading.set(false);
+        const kind = res?.data?.kind || this.plan()?.kind;
         const parsed = res?.success ? parseSpecPayload(res.data?.spec) : null;
-        if (!parsed) { this.error.set(STUDIO_AI_LABELS.errors.invalidSpec); return; }
+        if (!parsed) {
+          if (res?.success && isWorkflowPlanKind(kind)) {
+            // D12 : un plan Workflow n'a pas de StudioSystemSpec — le résumé porte tout l'affichage.
+            this.spec.set(null);
+            this.draft.set(null);
+            this.plan.update(p => p
+              ? { ...p, kind: kind || p.kind, rowVersion: res.data.rowVersion, expiresAt: res.data.expiresAt }
+              : p);
+            return;
+          }
+          this.error.set(STUDIO_AI_LABELS.errors.invalidSpec);
+          return;
+        }
         const view = toSystemSpecView(parsed);
         this.spec.set(view);
         this.draft.set(cloneSpec(view));
@@ -554,6 +568,8 @@ export class StudioAiSessionStore implements OnDestroy {
       },
       error: err => {
         this.specLoading.set(false);
+        // D-44-68 : pour un plan Workflow, le résumé suffit à l'affichage (confirmation côté serveur).
+        if (isWorkflowPlanKind(this.plan()?.kind)) return;
         this.error.set(studioAiHttpError(err, 'plan'));
       }
     });
@@ -1127,7 +1143,8 @@ export function normalizeSummary(summary: StudioPlanSummary): StudioPlanSummary 
     steps: summary.steps ?? [],
     entities: summary.entities ?? [],
     warnings: summary.warnings ?? [],
-    duplicates: Array.isArray(summary.duplicates) ? summary.duplicates : []
+    duplicates: Array.isArray(summary.duplicates) ? summary.duplicates : [],
+    workflows: Array.isArray(summary.workflows) ? summary.workflows : []
   };
 }
 

@@ -42,6 +42,13 @@ export interface StudioPlanEntity {
   viewCount?: number;
 }
 
+export interface StudioSummaryWorkflowStep { key: string; type: string; label: string; }
+export interface StudioSummaryWorkflow {
+  key: string; name: string; trigger: string; stepCount: number; steps: StudioSummaryWorkflowStep[]; isActive: boolean;
+  /** Additifs (D-43-03, Q-1) : table cible du workflow ; `summary.entities[0]` reste le repli. */
+  entityKey?: string; entityDisplayName?: string;
+}
+
 /** Contenu de `summaryJson` — miroir de `StudioAiPlanSummary.PlanSummary` côté backend. */
 export interface StudioPlanSummary {
   kind: string;
@@ -55,6 +62,8 @@ export interface StudioPlanSummary {
   duplicates?: StudioDuplicateHint[];
   /** Relations N-N déclarées (PR 2.2) ; `null`/omis avant. */
   relations?: StudioSummaryRelation[] | null;
+  /** Workflows proposés (PR 4.3c, plan `Workflow`) ; `[]` sinon. Contrat figé A-43/A-44b. */
+  workflows?: StudioSummaryWorkflow[] | null;
 }
 
 /** Payload de l'événement SSE `studio_report_result` (retour de l'outil studio_run_report). */
