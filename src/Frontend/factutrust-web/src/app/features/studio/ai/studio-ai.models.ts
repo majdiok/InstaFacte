@@ -588,10 +588,18 @@ export interface StudioAppBuildResult {
   message: string;
 }
 
-export type StudioBuildResult = StudioSystemBuildResult | StudioAppBuildResult;
+/** Résultat d'exécution d'un plan `Workflow` (PR 4.3f) — contrat figé A-43/A-44b. */
+export interface StudioWorkflowBuildResultItem { id: string; key: string; entityKey: string; name: string; stepCount: number; }
+export interface StudioWorkflowBuildResult { success?: boolean; workflows: StudioWorkflowBuildResultItem[]; openUrl?: string; warnings?: string[]; message?: string; }   // forme 4.3f1 (N-10) ; `openUrl` non utilisé (D-44-73)
+
+export type StudioBuildResult = StudioSystemBuildResult | StudioAppBuildResult | StudioWorkflowBuildResult;
 
 export function isSystemBuildResult(result: StudioBuildResult | null | undefined): result is StudioSystemBuildResult {
   return !!result && typeof (result as StudioSystemBuildResult).systemKey === 'string';
+}
+
+export function isWorkflowBuildResult(result: StudioBuildResult | null | undefined): result is StudioWorkflowBuildResult {
+  return !!result && Array.isArray((result as StudioWorkflowBuildResult).workflows) && !isSystemBuildResult(result);
 }
 
 // ---------------------------------------------------------------------------------------------

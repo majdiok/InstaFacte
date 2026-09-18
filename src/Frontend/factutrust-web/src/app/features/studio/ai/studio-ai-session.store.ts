@@ -42,6 +42,7 @@ import {
   STUDIO_SPEC_LIMITS,
   countSpec,
   isSystemBuildResult,
+  isWorkflowBuildResult,
   specPayloadForKind,
   toSystemSpecView
 } from './studio-ai.models';
@@ -906,10 +907,12 @@ export class StudioAiSessionStore implements OnDestroy {
     if (target) void this.router.navigateByUrl(target);
   }
 
-  /** URL principale du résultat (système ou table). */
+  /** URL principale du résultat (système, table ou premier workflow créé). */
   resultUrl(): string | null {
     const r = this.result();
     if (!r) return null;
+    // Résultat d'un plan Workflow (4.3f1) : le concepteur du premier workflow créé (D24/D-44-73).
+    if (isWorkflowBuildResult(r)) return r.workflows[0] ? `/studio/workflows/${r.workflows[0].id}` : null;
     return (isSystemBuildResult(r) ? r.systemUrl : r.openUrl) || null;
   }
 

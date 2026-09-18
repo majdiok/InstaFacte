@@ -34,7 +34,8 @@ const INTENT_TO_TAB: Partial<Record<StudioAiIntent, StudioAiPreviewTab>> = {
   relations: 'relations',
   form: 'forms',
   reference_data: 'seed',
-  report: 'reports'
+  report: 'reports',
+  workflow: 'workflow'
 };
 
 /**

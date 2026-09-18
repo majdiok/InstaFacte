@@ -146,6 +146,12 @@ describe('StudioAiPageComponent', () => {
       expect(fixture.componentInstance.previewTab()).toBe('reports');
     });
 
+    it('présélectionne l’onglet Workflow quand la carte Workflow est choisie', () => {
+      const card = STUDIO_AI_LABELS.intents.find(c => c.intent === 'workflow')!;
+      fixture.componentInstance.pickIntent({ ...card, available: true, prompt: 'x' });
+      expect(fixture.componentInstance.previewTab()).toBe('workflow');
+    });
+
     it('ignore les cartes « Bientôt »', () => {
       const card = STUDIO_AI_LABELS.intents.find(c => !c.available)!;
       fixture.componentInstance.pickIntent(card);

@@ -320,6 +320,20 @@ describe('StudioAiSessionStore', () => {
       expect(nav.refresh).toHaveBeenCalled();
     });
 
+    it('resultUrl pointe vers le premier workflow créé pour un résultat workflow', () => {
+      store.result.set({
+        success: true,
+        workflows: [{ id: 'w1', key: 'validation_conges', entityKey: 'demandes_conge', name: 'Validation des congés', stepCount: 3 }],
+        openUrl: '/studio/workflows',
+        warnings: [],
+        message: 'Workflow créé.'
+      });
+      expect(store.resultUrl()).toBe('/studio/workflows/w1');
+
+      store.result.set({ workflows: [] });
+      expect(store.resultUrl()).toBeNull();
+    });
+
     it('fails and clears the plan when the execution stream errors', () => {
       withPlan();
       builds.confirm.and.returnValue(throwError(() => new Error('boom')) as never);

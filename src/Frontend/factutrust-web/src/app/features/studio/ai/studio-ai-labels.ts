@@ -153,7 +153,7 @@ export const STUDIO_AI_LABELS = {
       icon: 'fa-solid fa-sitemap',
       prompt: '',
       available: false,
-      soonTooltip: 'Disponible dans une prochaine version (workflow de statut).'
+      soonTooltip: 'Génération de workflows désactivée par l’administrateur.'
     },
     {
       intent: 'page',
@@ -338,11 +338,16 @@ export const STUDIO_AI_LABELS = {
   result: {
     systemCreated: 'Système « {name} » créé',
     tableCreated: 'Table « {name} » créée',
+    workflowCreated: 'Workflow « {name} » créé',
+    workflowsCreated: '{count} workflows créés',
     stepsDone: 'étapes terminées',
+    steps: 'étapes',
     open: 'Ouvrir',
     newRequest: 'Nouvelle demande',
     openSystem: 'Ouvrir le système',
     openTable: 'Ouvrir la table',
+    openWorkflow: 'Ouvrir le workflow',
+    workflowsInactiveHint: 'Créé inactif : relisez-le puis activez-le depuis le hub Workflows.',
     newRecord: 'Saisir une fiche',
     viewReports: 'Voir les rapports',
     vigilance: 'Points de vigilance',

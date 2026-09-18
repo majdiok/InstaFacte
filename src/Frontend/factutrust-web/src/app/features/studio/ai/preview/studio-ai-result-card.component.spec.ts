@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { StudioAiNavAction } from '../studio-ai-session.store';
-import { StudioAppBuildResult, StudioSpecCounters, StudioSystemBuildResult } from '../studio-ai.models';
+import { StudioAppBuildResult, StudioSpecCounters, StudioSystemBuildResult, StudioWorkflowBuildResult } from '../studio-ai.models';
 import { StudioAiResultCardComponent } from './studio-ai-result-card.component';
 
 const SYSTEM_RESULT: StudioSystemBuildResult = {
@@ -40,7 +40,7 @@ describe('StudioAiResultCardComponent', () => {
     await TestBed.configureTestingModule({ imports: [StudioAiResultCardComponent] }).compileComponents();
   });
 
-  function create(result: StudioSystemBuildResult | StudioAppBuildResult, actions: StudioAiNavAction[] = []) {
+  function create(result: StudioSystemBuildResult | StudioAppBuildResult | StudioWorkflowBuildResult, actions: StudioAiNavAction[] = []) {
     const fixture = TestBed.createComponent(StudioAiResultCardComponent);
     fixture.componentRef.setInput('result', result);
     fixture.componentRef.setInput('actions', actions);
@@ -143,6 +143,63 @@ describe('StudioAiResultCardComponent', () => {
     expect(actionButton(fixture, 'export')).toBeNull();
     expect(actionButton(fixture, 'duplicate')).toBeNull();
     expect(fixture.nativeElement.textContent).not.toContain('Exporter (ZIP)');
+  });
+
+  it('rend un résultat workflow : titre, étapes, puces et bouton Ouvrir le workflow', () => {
+    const fixture = create({
+      success: true,
+      workflows: [{ id: 'w1', key: 'validation_conges', entityKey: 'demandes_conge', name: 'Validation des congés', stepCount: 3 }],
+      openUrl: '/studio/workflows',
+      warnings: [],
+      message: 'Workflow créé.'
+    });
+    fixture.componentRef.setInput('counters', COUNTERS);
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Workflow « Validation des congés » créé');
+    expect(text).toContain('3 étapes · demandes_conge'); // repli sur la clé sans résumé (D-44-73)
+    expect(text).toContain('Créé inactif : relisez-le puis activez-le depuis le hub Workflows.');
+    expect(fixture.nativeElement.querySelector('.sair__counters')).toBeNull(); // compteurs masqués (D-44-72)
+    const chips = fixture.nativeElement.querySelectorAll('[data-testid="sair-workflows"] .sair__chip') as NodeListOf<HTMLElement>;
+    expect(chips.length).toBe(1);
+    expect(chips[0].textContent).toContain('Validation des congés');
+    expect(chips[0].textContent).toContain('validation_conges');
+
+    const urls: string[] = [];
+    fixture.componentInstance.open.subscribe(url => urls.push(url));
+    const open = fixture.nativeElement.querySelector('.sair__open') as HTMLButtonElement;
+    expect(open.textContent).toContain('Ouvrir le workflow');
+    open.click();
+    expect(urls).toEqual(['/studio/workflows/w1']); // pas `openUrl` (hub générique, D-44-73)
+
+    // Résumé k1 : le libellé de la table remplace la clé technique.
+    fixture.componentRef.setInput('summary', {
+      kind: 'workflow', title: 'Validation', steps: [], entities: [], warnings: [],
+      workflows: [{
+        key: 'validation_conges', name: 'Validation des congés', trigger: 'on_create', stepCount: 3, steps: [],
+        isActive: false, entityKey: 'demandes_conge', entityDisplayName: 'Demandes de congé'
+      }]
+    });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('3 étapes · Demandes de congé');
+  });
+
+  it('titre pluriel pour plusieurs workflows créés', () => {
+    const fixture = create({
+      success: true,
+      workflows: [
+        { id: 'w1', key: 'validation_conges', entityKey: 'demandes_conge', name: 'Validation des congés', stepCount: 3 },
+        { id: 'w2', key: 'relance_facture', entityKey: 'factures', name: 'Relance facture', stepCount: 2 }
+      ],
+      warnings: [],
+      message: 'Workflows créés.'
+    });
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('2 workflows créés');
+    expect(text).toContain('5 étapes');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="sair-workflows"] .sair__chip').length).toBe(2);
   });
 
   it('Rejouer visible si replayable ⇒ émet replay', () => {
