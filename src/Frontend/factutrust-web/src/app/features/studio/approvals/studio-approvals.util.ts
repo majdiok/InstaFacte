@@ -15,6 +15,8 @@ export interface ApprovalRow {
   message: string | null; createdAt: string; dueAt: string | null; startedAt: string;
   startedByName: string | null;
   status: WorkflowApprovalStatus; rowVersion: string;
+  /** 4.7 « v1.1 » (ap-f) : renseignés par la route historique (inbox ⇒ `null`). */
+  decidedAt: string | null; comment: string | null;
 }
 
 export function toApprovalRow(item: WorkflowApprovalInboxItemDto): ApprovalRow {
@@ -23,7 +25,7 @@ export function toApprovalRow(item: WorkflowApprovalInboxItemDto): ApprovalRow {
            stepTitle: a.title?.trim() || a.stepKey, entityKey: item.entityKey, entityName: item.entityName,
            recordId: item.recordId, recordLabel: item.recordLabel, message: a.message, createdAt: a.createdAt,
            dueAt: a.dueAt, startedAt: item.startedAt, startedByName: item.startedByName ?? null,
-           status: a.status, rowVersion: a.rowVersion };
+           status: a.status, rowVersion: a.rowVersion, decidedAt: a.decidedAt ?? null, comment: a.comment ?? null };
 }
 
 export type ApprovalDueState = 'late' | 'soon' | 'later' | 'none';

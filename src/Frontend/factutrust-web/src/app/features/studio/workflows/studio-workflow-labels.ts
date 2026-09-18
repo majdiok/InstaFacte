@@ -230,6 +230,19 @@ export const STUDIO_WORKFLOW_LABELS = {
     kpiLate: 'En retard',
     kpiSoon: 'Sous 24 h',
     tabPending: 'À traiter',
+    // 4.7 « v1.1 » (D-47-60/61) — onglets de la page ; « Déléguées » désactivé (pas de concept de
+    // délégation dans le domaine — convention « Bientôt », aucune donnée inventée).
+    tabDelegated: 'Déléguées',
+    tabHistory: 'Historique',
+    delegatedSoon: 'Bientôt',
+    colDecidedAt: 'Décidée le',
+    colDecision: 'Décision',
+    colComment: 'Commentaire',
+    decisionApproved: 'Approuvée',
+    decisionRejected: 'Refusée',
+    historyEmpty: 'Aucune décision passée',
+    historyEmptyHint: 'Vos décisions d\'approbation apparaîtront ici (conservées 180 jours).',
+    historyLoadError: 'Impossible de charger l\'historique.',
     columns: {
       workflow: 'Workflow',
       record: 'Enregistrement',
