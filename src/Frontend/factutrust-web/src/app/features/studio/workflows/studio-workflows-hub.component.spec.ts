@@ -105,3 +105,43 @@ describe('StudioWorkflowsHubComponent', () => {
     expect(component.workflows().length).toBe(0);
   });
 });
+
+// D-44-87 / D-44-92 : 4.4d importait `ConfirmationService` depuis `primeng/api` (jamais fourni) ⇒
+// NullInjectorError au runtime sur /studio/workflows, alors que Karma restait vert grâce au stub
+// `{ provide: ConfirmationService, useValue: … }` du describe ci-dessus. Ce describe n'en fournit
+// volontairement AUCUN : le composant doit se créer avec le wrapper ng-bootstrap fourni à la racine.
+describe('StudioWorkflowsHubComponent — injection réelle du ConfirmationService', () => {
+  it('se crée avec le ConfirmationService du wrapper fourni à la racine et lui délègue la confirmation de suppression (régression D-44-87)', () => {
+    TestBed.configureTestingModule({
+      imports: [StudioWorkflowsHubComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        provideNoopAnimations(),
+        MessageService,
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } }
+      ]
+    });
+    const confirmSvc = TestBed.inject(ConfirmationService);
+    expect(confirmSvc).toBeInstanceOf(ConfirmationService);
+    const confirmSpy = spyOn(confirmSvc, 'confirm'); // pas de modale ng-bootstrap réelle dans le test
+
+    const fixture = TestBed.createComponent(StudioWorkflowsHubComponent);
+    const httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+    httpMock.expectOne(r => r.url === `${API}/entities`).flush({ success: true, data: entities, message: null, error: null });
+    httpMock.expectOne(`${API}/entities/e1/workflows`).flush({ success: true, data: [wf()], message: null, error: null });
+    httpMock.expectOne(`${API}/entities/e2/workflows`).flush({ success: true, data: [], message: null, error: null });
+    fixture.detectChanges();
+
+    fixture.componentInstance.remove(fixture.componentInstance.workflows()[0]);
+
+    expect(confirmSpy).toHaveBeenCalledWith(jasmine.objectContaining({
+      header: STUDIO_WORKFLOW_LABELS.hub.deleteTitle,
+      acceptLabel: STUDIO_WORKFLOW_LABELS.hub.delete
+    }));
+    httpMock.expectNone(`${API}/workflows/w1`); // rien n'est supprimé tant que la confirmation n'est pas acceptée
+    httpMock.verify();
+  });
+});
