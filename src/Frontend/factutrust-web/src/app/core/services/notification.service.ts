@@ -17,6 +17,19 @@ export interface AppNotification {
   readAt?: string;
 }
 
+/** `NotificationType` backend 15–18 (Studio workflows, U1). */
+export const STUDIO_WORKFLOW_NOTIFICATION_TYPES = {
+  approvalRequested: 15,
+  approvalDecided: 16,
+  stepFailed: 17,
+  message: 18
+} as const;
+
+export function isStudioWorkflowNotification(type: number): boolean {
+  return type >= STUDIO_WORKFLOW_NOTIFICATION_TYPES.approvalRequested &&
+    type <= STUDIO_WORKFLOW_NOTIFICATION_TYPES.message;
+}
+
 export interface NotificationList {
   items: AppNotification[];
   totalCount: number;
