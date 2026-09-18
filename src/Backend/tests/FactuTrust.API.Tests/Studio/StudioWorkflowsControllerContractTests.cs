@@ -1,8 +1,10 @@
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FactuTrust.API.Authorization;
 using FactuTrust.API.Controllers.Studio;
 using FactuTrust.Application.Configuration;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Studio.Workflows;
 using FactuTrust.Domain.Common;
 using MediatR;
@@ -16,7 +18,7 @@ using Xunit;
 namespace FactuTrust.API.Tests.Studio;
 
 /// <summary>
-/// Contrat des onze routes de conception de <see cref="StudioWorkflowsController"/> (PR 4.1, tranche
+/// Contrat des douze routes de conception de <see cref="StudioWorkflowsController"/> (PR 4.1, tranche
 /// 4.1k) : politique de classe <c>studio:design_entities</c> sans affaiblissement par action, table
 /// de routes figée, garde de drapeau (404 à message fixe AVANT tout appel au médiateur), 201 +
 /// Location vers <c>Get</c>, mappage 409 / 404 / 400 et transmission brute de <c>max</c>.
@@ -37,6 +39,7 @@ public sealed class StudioWorkflowsControllerContractTests
         new Dictionary<string, (string, string)>
         {
             [nameof(StudioWorkflowsController.StepCatalog)] = ("GET", "workflows/step-catalog"),
+            [nameof(StudioWorkflowsController.ListAll)] = ("GET", "workflows"),
             [nameof(StudioWorkflowsController.List)] = ("GET", "entities/{entityId:guid}/workflows"),
             [nameof(StudioWorkflowsController.Get)] = ("GET", "workflows/{id:guid}"),
             [nameof(StudioWorkflowsController.Create)] = ("POST", "entities/{entityId:guid}/workflows"),
@@ -108,6 +111,7 @@ public sealed class StudioWorkflowsControllerContractTests
         var results = new[]
         {
             await controller.StepCatalog(ct),
+            await controller.ListAll(cancellationToken: ct),
             await controller.List(EntityId, ct),
             await controller.Get(WorkflowId, ct),
             await controller.Create(EntityId, Save(), ct),
@@ -272,6 +276,48 @@ public sealed class StudioWorkflowsControllerContractTests
         Assert.All(seen, q => Assert.Equal(WorkflowId, q.WorkflowId));
         Assert.Equal(50, seen[0].Max);
         Assert.Equal(500, seen[1].Max);
+    }
+
+    [Fact]
+    public async Task ListAll_defaults_page_1_size_50_clamps_size_to_1_200_and_returns_paged_envelope()
+    {
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        var seen = new List<ListTenantWorkflowsQuery>();
+        mediator.Setup(m => m.Send(It.IsAny<ListTenantWorkflowsQuery>(), It.IsAny<CancellationToken>()))
+            .Callback<IRequest<Result<PagedResult<WorkflowDefinitionListItemDto>>>, CancellationToken>((q, _) => seen.Add((ListTenantWorkflowsQuery)q))
+            .ReturnsAsync(Result.Success(PagedResult<WorkflowDefinitionListItemDto>.Create(
+                new[] { new WorkflowDefinitionListItemDto(Definition(), "devis", "Devis") }, 1, 50, 1)));
+        var controller = CreateController(mediator);
+        var ct = CancellationToken.None;
+
+        var byDefault = await controller.ListAll(cancellationToken: ct);
+        Assert.IsType<OkObjectResult>(await controller.ListAll("rel", 2, 999, ct));
+        Assert.IsType<OkObjectResult>(await controller.ListAll(null, 1, 0, ct));
+
+        var ok = Assert.IsType<OkObjectResult>(byDefault);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<PagedResult<WorkflowDefinitionListItemDto>>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal(1, body.Data!.TotalCount);
+        Assert.Equal("devis", Assert.Single(body.Data.Items).EntityKey);
+
+        Assert.Equal(3, seen.Count);
+        Assert.Equal((null, 1, 50), (seen[0].Search, seen[0].Page, seen[0].PageSize));
+        Assert.Equal(("rel", 2, 200), (seen[1].Search, seen[1].Page, seen[1].PageSize));
+        Assert.Equal((null, 1, 1), (seen[2].Search, seen[2].Page, seen[2].PageSize));
+    }
+
+    [Fact]
+    public void ListAll_item_serializes_workflow_entityKey_and_entityDisplayName_in_camelCase()
+    {
+        var item = new WorkflowDefinitionListItemDto(Definition(), "devis", "Devis");
+
+        var json = JsonSerializer.Serialize(item, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Contains("\"workflow\":{", json);
+        Assert.Contains("\"entityKey\":\"devis\"", json);
+        Assert.Contains("\"entityDisplayName\":\"Devis\"", json);
+        Assert.Contains("\"openInstances\":", json);
+        Assert.Contains("\"stepCount\":", json);
     }
 
     [Fact]
