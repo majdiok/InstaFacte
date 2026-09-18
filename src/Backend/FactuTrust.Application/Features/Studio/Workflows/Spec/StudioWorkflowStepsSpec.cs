@@ -199,9 +199,8 @@ public static class StudioWorkflowStepsSpec
 
     private static void ValidateTrigger(StudioWorkflowTriggerKind trigger, List<WorkflowValidationIssue> errors)
     {
-        if (trigger == StudioWorkflowTriggerKind.Scheduled)
-            errors.Add(new WorkflowValidationIssue("trigger", "Déclencheur planifié : bientôt disponible."));
-        else if (!Enum.IsDefined(trigger))
+        // 4.7b1 / D-47-B02 : Scheduled est accepté (D5 levé) — sa configuration est validée dans ValidateTriggerConfig.
+        if (!Enum.IsDefined(trigger))
             errors.Add(new WorkflowValidationIssue("trigger", $"Déclencheur inconnu : « {(int)trigger} »."));
     }
 
@@ -212,8 +211,9 @@ public static class StudioWorkflowStepsSpec
         List<WorkflowValidationIssue> errors)
     {
         if (trigger is not (StudioWorkflowTriggerKind.OnCreate or StudioWorkflowTriggerKind.OnUpdate
-            or StudioWorkflowTriggerKind.Manual or StudioWorkflowTriggerKind.FieldChanged))
-            return; // Scheduled / inconnu : déjà consigné sur « trigger ».
+            or StudioWorkflowTriggerKind.Manual or StudioWorkflowTriggerKind.FieldChanged
+            or StudioWorkflowTriggerKind.Scheduled))
+            return; // Déclencheur inconnu : déjà consigné sur « trigger ».
 
         if (string.IsNullOrWhiteSpace(triggerConfigJson))
             triggerConfigJson = "{}";
@@ -249,6 +249,13 @@ public static class StudioWorkflowStepsSpec
             return;
         }
 
+        // 4.7b1 / D-47-B02 — Scheduled : { "cron": string (requis, 5 champs UTC), "filters"?: 0..10 }
+        if (trigger is StudioWorkflowTriggerKind.Scheduled)
+        {
+            ValidateScheduledTriggerConfig(config, fields, errors);
+            return;
+        }
+
         // FieldChanged : { "field", "from"?, "to"? }
         foreach (var prop in config)
             if (prop.Key is not ("field" or "from" or "to"))
@@ -264,6 +271,81 @@ public static class StudioWorkflowStepsSpec
             errors.Add(new WorkflowValidationIssue("triggerConfig.field", $"Champ inconnu ou inactif : « {fieldKey} »."));
         else if (CustomRecordValidator.IsComputed(field.FieldType))
             errors.Add(new WorkflowValidationIssue("triggerConfig.field", $"Champ calculé non suivi : « {fieldKey} »."));
+    }
+
+    /// <summary>
+    /// Configuration du déclencheur planifié (4.7b1 / D-47-B02) :
+    /// <c>{ "cron": string (requis, 5 champs UTC), "filters"?: [ { field, op, value, value2? } ≤ 10 ] }</c>.
+    /// Les filtres visent des champs <b>actifs non calculés</b> (le balayage n'a ni <c>_previous</c> ni
+    /// résultats d'étapes) avec opérateur compatible (motif <c>ValidateConditionFilter</c>, chemin
+    /// <c>triggerConfig.filters</c>). Stockage : <c>TriggerConfigJson</c> existant (aucune migration).
+    /// </summary>
+    private static void ValidateScheduledTriggerConfig(
+        JsonObject config,
+        IReadOnlyList<CustomFieldDefinition> fields,
+        List<WorkflowValidationIssue> errors)
+    {
+        foreach (var prop in config)
+            if (prop.Key is not ("cron" or "filters"))
+                errors.Add(new WorkflowValidationIssue("triggerConfig", $"Propriété « {prop.Key} » non reconnue."));
+
+        if (!TryReadString(config, "cron", out var cron, out _) || string.IsNullOrWhiteSpace(cron))
+        {
+            errors.Add(new WorkflowValidationIssue(
+                "triggerConfig.cron", "Une expression cron (5 champs, UTC) est requise pour le déclencheur « scheduled »."));
+        }
+        else if (!StudioWorkflowCronSpec.TryParse(cron, out _))
+        {
+            errors.Add(new WorkflowValidationIssue(
+                "triggerConfig.cron", $"Expression cron invalide : « {cron} » (5 champs : minute heure jour-du-mois mois jour-de-semaine)."));
+        }
+
+        if (!config.TryGetPropertyValue("filters", out var filtersNode) || filtersNode is null)
+            return;
+        if (filtersNode is not JsonArray filters)
+        {
+            errors.Add(new WorkflowValidationIssue(
+                "triggerConfig.filters", "« filters » doit être un tableau de 0 à 10 filtres { field, op, value, value2? }."));
+            return;
+        }
+        if (filters.Count > MaxFilters)
+            errors.Add(new WorkflowValidationIssue(
+                "triggerConfig.filters", $"Le déclencheur planifié accepte au plus {MaxFilters} filtres."));
+        foreach (var filterNode in filters.Take(MaxFilters))
+        {
+            if (filterNode is not JsonObject filter)
+            {
+                errors.Add(new WorkflowValidationIssue(
+                    "triggerConfig.filters", "Chaque filtre doit être un objet JSON { field, op, value, value2? }."));
+                continue;
+            }
+            ValidateScheduledFilter(filter, fields, errors);
+        }
+    }
+
+    /// <summary>Filtre du balayage planifié : champ actif non calculé de l'entité, opérateur compatible avec son type.</summary>
+    private static void ValidateScheduledFilter(
+        JsonObject filter,
+        IReadOnlyList<CustomFieldDefinition> fields,
+        List<WorkflowValidationIssue> errors)
+    {
+        const string path = "triggerConfig.filters";
+        if (!TryValidateFilterShape(path, filter, errors, out var field, out var op))
+            return;
+
+        var target = fields.FirstOrDefault(f => f.IsActive && f.Key == field);
+        if (target is null)
+        {
+            errors.Add(new WorkflowValidationIssue(path, $"Champ de filtre inconnu ou inactif : « {field} »."));
+            return;
+        }
+        if (CustomRecordValidator.IsComputed(target.FieldType))
+        {
+            errors.Add(new WorkflowValidationIssue(path, $"Champ calculé non filtrable : « {field} »."));
+            return;
+        }
+        if (!RecordViewDefinitionValidator.IsOperatorCompatible(op!, target.FieldType))
+            errors.Add(new WorkflowValidationIssue(path, $"Opérateur « {op} » incompatible avec le champ « {field} »."));
     }
 
     private static void ValidateStep(
@@ -392,32 +474,52 @@ public static class StudioWorkflowStepsSpec
         IReadOnlyDictionary<string, CustomFieldDefinition> activeFields,
         List<WorkflowValidationIssue> errors)
     {
-        foreach (var prop in filter)
-            if (prop.Key is not ("field" or "op" or "value" or "value2"))
-                errors.Add(new WorkflowValidationIssue(Path(i, "filters"), $"Propriété « {prop.Key} » non reconnue."));
-
-        if (!TryReadString(filter, "field", out var field, out _) || string.IsNullOrWhiteSpace(field))
-        {
-            errors.Add(new WorkflowValidationIssue(Path(i, "filters"), "Chaque filtre exige « field » (chaîne non vide)."));
+        var path = Path(i, "filters");
+        if (!TryValidateFilterShape(path, filter, errors, out var field, out var op))
             return;
-        }
-        if (!TryReadString(filter, "op", out var op, out _) || string.IsNullOrWhiteSpace(op)
-            || !StudioFilterEvaluator.Operators.Contains(op))
-        {
-            errors.Add(new WorkflowValidationIssue(Path(i, "filters"), $"Opérateur inconnu : « {op} »."));
-            return;
-        }
 
         if (!TryResolveFilterFieldType(field!, activeFields, out var type, out var textVariable))
         {
-            errors.Add(new WorkflowValidationIssue(Path(i, "filters"), $"Champ de filtre inconnu ou inactif : « {field} »."));
+            errors.Add(new WorkflowValidationIssue(path, $"Champ de filtre inconnu ou inactif : « {field} »."));
             return;
         }
         var compatible = textVariable
             ? TextVariableOperators.Contains(op!)
             : RecordViewDefinitionValidator.IsOperatorCompatible(op!, type!.Value);
         if (!compatible)
-            errors.Add(new WorkflowValidationIssue(Path(i, "filters"), $"Opérateur « {op} » incompatible avec le champ « {field} »."));
+            errors.Add(new WorkflowValidationIssue(path, $"Opérateur « {op} » incompatible avec le champ « {field} »."));
+    }
+
+    /// <summary>
+    /// Forme commune d'un filtre (4.7b1 : extraite de <c>ValidateConditionFilter</c> pour le planifié) :
+    /// clés <c>{ field, op, value, value2? }</c>, <c>field</c> non vide, <c>op</c> ∈
+    /// <c>StudioFilterEvaluator.Operators</c>. Retourne <c>false</c> si le filtre est rejeté.
+    /// </summary>
+    private static bool TryValidateFilterShape(
+        string path,
+        JsonObject filter,
+        List<WorkflowValidationIssue> errors,
+        out string? field,
+        out string? op)
+    {
+        field = null;
+        op = null;
+        foreach (var prop in filter)
+            if (prop.Key is not ("field" or "op" or "value" or "value2"))
+                errors.Add(new WorkflowValidationIssue(path, $"Propriété « {prop.Key} » non reconnue."));
+
+        if (!TryReadString(filter, "field", out field, out _) || string.IsNullOrWhiteSpace(field))
+        {
+            errors.Add(new WorkflowValidationIssue(path, "Chaque filtre exige « field » (chaîne non vide)."));
+            return false;
+        }
+        if (!TryReadString(filter, "op", out op, out _) || string.IsNullOrWhiteSpace(op)
+            || !StudioFilterEvaluator.Operators.Contains(op))
+        {
+            errors.Add(new WorkflowValidationIssue(path, $"Opérateur inconnu : « {op} »."));
+            return false;
+        }
+        return true;
     }
 
     /// <summary>
