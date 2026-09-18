@@ -454,6 +454,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("CreatedAt", "Id");
 
+                    b.HasIndex("EntityType", "EntityId", "CreatedAt")
+                        .HasDatabaseName("IX_AuditLogs_EntityHistory");
+
                     b.ToTable("AuditLogs", (string)null);
                 });
 
