@@ -8,8 +8,8 @@ namespace FactuTrust.Infrastructure.Tests.Studio;
 /// <summary>
 /// PR 4.3 — <see cref="StudioAiWorkflowSpec"/> : parsing tolérant (alias FR/EN insensibles à la casse
 /// et aux accents, racine tableau ou objet), normalisation vers la forme <c>StudioWorkflowStepsSpec</c>,
-/// retraits « scheduled » avertis, rejets en clair (jamais de troncature), <c>isActive</c> forcé à
-/// <c>false</c> (D-08).
+/// rejets en clair (jamais de troncature), <c>isActive</c> forcé à <c>false</c> (D-08). Depuis 4.7b5,
+/// « scheduled » est conservé (alias FR « planifié » compris) — la validation du cron fait foi en aval.
 /// </summary>
 public sealed class StudioAiWorkflowSpecTests
 {
@@ -96,35 +96,48 @@ public sealed class StudioAiWorkflowSpecTests
     }
 
     [Fact]
-    public void Removes_scheduled_workflows_with_warning()
+    public void Keeps_scheduled_workflows_with_cron_and_filters()
     {
         const string spec = """
         { "workflows": [
             { "entityKey": "factures", "name": "Rappel hebdo", "trigger": "scheduled",
+              "triggerConfig": { "cron": "0 6 * * 1", "filtres": [ { "field": "statut", "op": "eq", "value": "validee" } ] },
               "steps": [ { "type": "notify", "to": {"kind":"startedBy"}, "title": "Hebdo" } ] },
             { "entityKey": "factures", "name": "Relance", "trigger": "manual",
               "steps": [ { "type": "notify", "to": {"kind":"startedBy"}, "title": "Relance" } ] } ] }
         """;
 
         Assert.True(StudioAiWorkflowSpec.TryParse(spec, out var parsed, out var error), error);
-        var wf = Assert.Single(parsed!.Workflows);
-        Assert.Equal("Relance", wf.Name);
+        Assert.Equal(2, parsed!.Workflows.Count);
+        Assert.Empty(parsed.Warnings);
 
-        var warning = Assert.Single(parsed.Warnings);
-        Assert.Contains("planifié", warning);
-        Assert.Contains("Rappel hebdo", warning);
+        var wf = parsed.Workflows[0];
+        Assert.Equal(StudioWorkflowTriggerKind.Scheduled, wf.Trigger);
+        Assert.Equal("0 6 * * 1", wf.TriggerConfig["cron"]!.GetValue<string>());
+        // Alias FR traduit ; les bornes des filtres sont validées en aval (b1).
+        var filters = wf.TriggerConfig["filters"]!.AsArray();
+        Assert.Single(filters);
+        Assert.Equal("statut", filters[0]!["field"]!.GetValue<string>());
+
+        // Demande d'enregistrement : déclencheur canonique snake_case, cron transporté.
+        var request = StudioAiWorkflowSpec.ToSaveRequest(wf);
+        Assert.Equal("scheduled", request.Trigger);
+        Assert.Equal("0 6 * * 1", request.TriggerConfig!["cron"]!.GetValue<string>());
     }
 
     [Fact]
-    public void Fails_when_only_scheduled_workflows_remain()
+    public void Parses_a_scheduled_only_plan_with_the_french_alias()
     {
         const string spec = """
         { "workflows": [ { "entityKey": "factures", "name": "Rappel", "trigger": "planifié",
+          "triggerConfig": { "cron": "0 6 * * *" },
           "steps": [ { "type": "notify", "to": {"kind":"startedBy"}, "title": "x" } ] } ] }
         """;
 
-        Assert.False(StudioAiWorkflowSpec.TryParse(spec, out _, out var error));
-        Assert.Contains("aucun workflow réalisable", error);
+        Assert.True(StudioAiWorkflowSpec.TryParse(spec, out var parsed, out var error), error);
+        var wf = Assert.Single(parsed!.Workflows);
+        Assert.Equal(StudioWorkflowTriggerKind.Scheduled, wf.Trigger);
+        Assert.Equal("0 6 * * *", wf.TriggerConfig["cron"]!.GetValue<string>());
     }
 
     [Fact]

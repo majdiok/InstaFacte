@@ -54,6 +54,12 @@ public static class StudioAiWorkflowPlanner
                     errors.Add($"Workflow « {wf.Name} » : le champ déclencheur « {field ?? "?"} » n'existe pas dans « {schema.Entity.DisplayName} ».");
             }
 
+            // 4.7b5 : un plan planifié sans cron valide est bloqué ici (manifestement faux) ; les
+            // bornes fines des filtres restent à la validation complète (b1) à l'exécution.
+            if (wf.Trigger == StudioWorkflowTriggerKind.Scheduled
+                && !StudioWorkflowCronSpec.TryParse(Str(wf.TriggerConfig["cron"]), out _))
+                errors.Add($"Workflow « {wf.Name} » : déclencheur planifié sans expression cron valide (triggerConfig.cron — 5 champs, UTC).");
+
             if (wf.Steps["steps"] is not JsonArray steps) continue;
             foreach (var step in steps.OfType<JsonObject>())
                 ReviewStep(wf, step, fields, schema.Entity.DisplayName, resolveAction, errors);
