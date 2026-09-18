@@ -663,6 +663,29 @@ public sealed class StudioWorkflowFeaturesTests
     }
 
     [Fact]
+    public async Task List_tenant_workflows_bounds_page_so_that_skip_never_overflows()
+    {
+        // Revue 4.5i★ (D-45-28) : `?page=2147483647` ne doit pas produire un Skip négatif (500) — page bornée à int.MaxValue / MaxPageSize.
+        SetupDesignPermission();
+        var skips = new List<int>();
+        _workflows.Setup(w => w.CountByTenantAsync(Tid, null, It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        _workflows.Setup(w => w.ListByTenantAsync(Tid, null, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, string?, int, int, CancellationToken>((_, _, skip, _, _) => skips.Add(skip))
+            .ReturnsAsync(Array.Empty<StudioWorkflowCatalogRow>());
+        _workflows.Setup(w => w.CountOpenInstancesForDefinitionsAsync(Tid, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, int>());
+
+        var result = await ListTenantHandler().Handle(
+            new ListTenantWorkflowsQuery(null, Page: int.MaxValue, PageSize: ListTenantWorkflowsQueryHandler.MaxPageSize), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(int.MaxValue / ListTenantWorkflowsQueryHandler.MaxPageSize, result.Value.Page);
+        var skip = Assert.Single(skips);
+        Assert.True(skip >= 0);
+        Assert.Equal((result.Value.Page - 1) * ListTenantWorkflowsQueryHandler.MaxPageSize, skip);
+    }
+
+    [Fact]
     public async Task List_tenant_workflows_truncates_overlong_search_before_querying()
     {
         SetupDesignPermission();

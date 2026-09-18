@@ -21,12 +21,23 @@ describe('STUDIO_ROUTES', () => {
     expect(STUDIO_CHILD_ROUTES.length).toBeGreaterThan(10);
   });
 
-  it('protège chaque page par permissionGuard (premier de la liste) avec une liste de permissions (V4)', () => {
+  it('protège chaque page par permissionGuard (premier de la liste) avec une liste de permissions non vide (V4)', () => {
     for (const r of STUDIO_CHILD_ROUTES) {
       expect(r.canActivate?.length).withContext(r.path ?? '').toBeGreaterThanOrEqual(1);
       expect(r.canActivate?.[0]).withContext(r.path ?? '').toBe(permissionGuard);
       expect(Array.isArray(r.data?.['permissions'])).withContext(r.path ?? '').toBeTrue();
+      expect((r.data?.['permissions'] as string[]).length).withContext(r.path ?? '').toBeGreaterThanOrEqual(1);
     }
+  });
+
+  it("n'ouvre au lecteur (custom_records:read seul) que les quatre pages d'exécution prévues (4.5d1, D-45-12)", () => {
+    // La policy de module `studio` accepte custom_records:read depuis 4.5d1 : toute nouvelle route Studio
+    // doit donc porter une permission de conception, sinon elle s'ouvrirait aux lecteurs.
+    const readerOnly = STUDIO_CHILD_ROUTES
+      .filter(r => (r.data?.['permissions'] as string[]).every(p => p === PERMISSIONS.customData.recordsRead))
+      .map(r => r.path)
+      .sort();
+    expect(readerOnly).toEqual(['approvals', 'd/:key', 'records/:key/:id', 'systems/:key']);
   });
 
   it('déclare ai, ai/projects et ai/templates avant systems/:key (sinon :key capturerait le segment)', () => {

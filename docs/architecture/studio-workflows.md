@@ -264,7 +264,7 @@ Les passes ★ du frontend 4.4 (revue post-fusion, PR #124) sont consignées en 
 (jamais celui de `primeng/api`, D-44-87/92), les `computed` du service de navigation n'écrivent aucun signal
 hors `untracked` (D-44-88/92) et `NotificationDto.Type` arrive en chaîne PascalCase — le frontend compare les
 noms `StudioWorkflow*` et non les valeurs 15–18 (D-44-94).
-La phase 4.5 « Consolidation » (pile de PR brouillon 4.5a1 → 4.5i★, à partir de la PR #125) est consignée en `D-45-01 → D-45-26` : backend —
+La phase 4.5 « Consolidation » (pile de PR brouillon 4.5a1 → 4.5i★, à partir de la PR #125) est consignée en `D-45-01 → D-45-29` : backend —
 résolveur de noms dédié `IStudioUserNameResolver` / `StudioUserNameResolver` sur la base master, `null`
 pour un lanceur inconnu ou d'un autre tenant, jamais de repli email (D-45-01/02), `startedByName` limité à
 l'inbox (D-45-03), route lecteur du détail d'instance avec codes 400/404 non révélateurs et builder partagé
@@ -276,7 +276,9 @@ approbations » par la sonde du badge (D-45-12 → D-45-14), tiroir bi-mode et b
 levé), hub global paginé sans borne 25 (D-45-18 — D-44-20 clos), `reset()` du badge à la déconnexion et
 toast unique de l'onglet (D-45-19/20 — D-44-64/89 clos), `studio-text.util.ts` partagé (D-45-21 → D-45-23
 — D-44-08/10/12 clos), pile linéaire et fiches QA transverses 107–110 (D-45-24/25), parcours Playwright
-« Mes approbations » réaligné (colonne « Demandé par », repli 404 vers `/dashboard` — D-45-26).
+« Mes approbations » réaligné (colonne « Demandé par », repli 404 vers `/dashboard` — D-45-26), retours de la revue ★ :
+contexte expurgé sur la route lecteur (`startedBy.email`, `results`, `vars` — D-45-27), `page` borné contre le
+débordement (D-45-28), portée du tiroir figée à l'ouverture (D-45-29).
 
 ## Exécution différée (4.2)
 
@@ -342,7 +344,7 @@ instance annule ses approbations `pending` (moteur, D-20).
 | 3 | POST | `workflows/approvals/{approvalId}/approve` | `custom_records:write` | 200 `WorkflowInstanceDto` |
 | 4 | POST | `workflows/approvals/{approvalId}/reject` | `custom_records:write` | 200 `WorkflowInstanceDto` (400 sans commentaire) |
 | 5 | GET | `records/{entityKey}/{recordId}/workflow-instances?max=50` | `custom_records:read` | 200 `WorkflowInstanceDto[]` |
-| 6 | GET | `records/{entityKey}/{recordId}/workflow-instances/{instanceId}` (4.5b) | `custom_records:read` (+ handler) | 200 `WorkflowInstanceDetailDto` — **même forme** que `GET workflows/instances/{id}` ; 400 `Validation.entityKey` (table inconnue/inactive), 404 `CustomRecord.NotFound`, 404 `StudioWorkflowInstance.NotFound` non révélateur si l'instance n'appartient pas au couple table/fiche |
+| 6 | GET | `records/{entityKey}/{recordId}/workflow-instances/{instanceId}` (4.5b) | `custom_records:read` (+ handler) | 200 `WorkflowInstanceDetailDto` — **même forme** que `GET workflows/instances/{id}`, `context` expurgé en portée lecteur (`startedBy.email` null, `results`/`vars` vides — D-45-27) ; 400 `Validation.entityKey` (table inconnue/inactive), 404 `CustomRecord.NotFound`, 404 `StudioWorkflowInstance.NotFound` non révélateur si l'instance n'appartient pas au couple table/fiche |
 | 7 | GET | `records/{entityKey}/workflows` | `custom_records:read` | 200 `RunnableWorkflowDto[]` |
 | 8 | POST | `records/{entityKey}/{recordId}/workflows/{workflowKey}/run` | `custom_records:write` | 201 + `Location` vers `workflows/instances/{id}` (conception, contrat 4.2 figé) |
 | 9 | POST | `workflows/instances/{instanceId}/cancel` | `custom_records:write` | 200 `WorkflowInstanceDto` |

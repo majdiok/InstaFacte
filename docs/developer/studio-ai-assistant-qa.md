@@ -888,7 +888,8 @@ accessible ; « Voir l'instance » (inbox) et « Détail » (onglet Workflows d'
 la **route runtime** `GET records/{entityKey}/{recordId}/workflow-instances/{instanceId}` — aucun appel à
 `workflows/instances/{id}` (conception) ; bouton « Ouvrir l'origine » absent en portée fiche ; `/studio`
 et `/studio/workflows` ⇒ `/access-denied`. Drapeau coupé ⇒ `/studio/approvals` redirige vers `/dashboard`
-(et non `/access-denied`). API : 200 pour l'instance de la fiche ; 404 `StudioWorkflowInstance.NotFound`
+(et non `/access-denied`). API : 200 pour l'instance de la fiche avec `context.startedBy.email` = `null` et
+`context.results` / `context.vars` = `{}` (route de conception : inchangée — D-45-27) ; 404 `StudioWorkflowInstance.NotFound`
 pour une instance d'une autre fiche ou d'une autre table ; 400 `Validation.entityKey` pour une table
 inconnue ou inactive ; 404 `CustomRecord.NotFound` pour un enregistrement inconnu ; 403 sans
 `custom_records:read` ; 404 drapeau coupé avant tout appel au médiateur.
@@ -909,7 +910,8 @@ tri table puis nom ; au-delà de 200 workflows, message « Seuls les 200 premier
 choisissez une table pour voir les autres. » et liste toujours affichée ; `?entity=` ⇒
 `GET entities/{id}/workflows` inchangé ; 500 ou 404 ⇒ liste vide (toast d'erreur soumis à D-44-95 : pas
 d'hôte `<p-toast>` dans le hub). API : `search` (contient, nom ou clé, ≤ 128), `page` ≥ 1, `pageSize`
-borné 1..200 (0 ⇒ 1, 500 ⇒ 200), tri `entityDisplayName, name, key`, tables actives non-jonction
+borné 1..200 (0 ⇒ 1, 500 ⇒ 200), `page=2147483647` ⇒ 200 avec page vide (jamais 500 — D-45-28), tri
+`entityDisplayName, name, key`, tables actives non-jonction
 seulement, définitions actives et inactives, `PagedResult` (`totalCount`, `totalPages`, `hasNextPage`) ;
 403 sans `studio:design_entities` (policy **et** handler) ; 404 drapeau coupé.
 
@@ -921,8 +923,9 @@ tard 60 s après. Fiche enregistrement, onglet Workflows : lancer, annuler ou re
 seul** toast (celui de la fiche hôte), plus de doublon ; le toast n'a plus la classe `studio-theme`
 (accepté, D-45-20).
 
-- Portée automatisée : +20 `it` Karma (`features/studio` +17, `core` +3 — 5 réécrits 1:1, 0 supprimé) ;
-  backend : API Studio 131 → **136**, Infra Studio **1435**, dépôt SQL **18** (0 ignoré) ; Playwright mocké :
+- Portée automatisée : +22 `it` Karma (`features/studio` +19 dont 2 issus de la revue ★ — portée figée du tiroir
+  D-45-29, routes ouvertes au lecteur — , `core` +3 ; 5 réécrits 1:1, 0 supprimé) ; backend : API Studio 131 → **136**,
+  Infra Studio **1440** (+1 borne `page`, assertions D-45-27), dépôt SQL **18** (0 ignoré) ; Playwright mocké :
   2 mocks ajoutés (`records/{entityKey}/r1/workflow-instances/inst-1`, `GET workflows` paginé), deux assertions
   de `studio-approvals.spec.ts` réalignées (« Demandé par » visible ; sonde 404 ⇒ `/dashboard` — D-45-26) et
   +1 assertion « Détail » (route runtime) dans le parcours fiche de `studio-workflows.spec.ts` — aucun

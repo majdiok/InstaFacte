@@ -314,6 +314,29 @@ describe('StudioWorkflowInstanceDetailComponent', () => {
     expect(qs('[data-testid="wf-detail-origin"]')).toBeNull();
   });
 
+  it("garde la portée fiche au « Réessayer » même si l'hôte a perdu recordId entre-temps (D-45-29)", () => {
+    setup();
+    host.recordId.set('r1');
+    host.instanceId.set('inst-1');
+    fixture.detectChanges();
+    httpMock.expectOne(`${API}/records/devis/r1/workflow-instances/inst-1`)
+      .flush({ success: false, error: 'boom', message: null }, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+    expect(qs('[data-testid="wf-detail-error"]')).not.toBeNull();
+
+    // L'hôte (« Mes approbations ») remet sa sélection à null pendant que le tiroir reste ouvert.
+    host.recordId.set(null);
+    fixture.detectChanges();
+    click('wf-detail-retry');
+
+    // La route runtime figée à l'ouverture est réutilisée : jamais la route de conception (403 lecteur).
+    httpMock.expectNone(`${API}/workflows/instances/inst-1`);
+    httpMock.expectOne(`${API}/records/devis/r1/workflow-instances/inst-1`)
+      .flush({ success: true, data: { ...DETAIL, instance: inst({ id: 'inst-1' }) }, message: null, error: null });
+    fixture.detectChanges();
+    expect(qs('[data-testid="wf-detail-summary"]')).not.toBeNull();
+  });
+
   it('404 au chargement ⇒ message « introuvable » sans planter', () => {
     setup();
     host.instanceId.set('i9');

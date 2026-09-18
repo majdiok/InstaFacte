@@ -334,7 +334,8 @@ public sealed class ListTenantWorkflowsQueryHandler
         if (!_currentUser.HasPermission(Permissions.Studio.DesignEntities))
             return Result.Failure<PagedResult<WorkflowDefinitionListItemDto>>(Error.Unauthorized("Permission de conception Studio requise."));
 
-        var page = Math.Max(1, query.Page);
+        // `page` borné pour que `(page - 1) * pageSize` ne déborde jamais (revue 4.5i★, D-45-28).
+        var page = Math.Clamp(query.Page, 1, int.MaxValue / MaxPageSize);
         var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);
         var search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim();
         if (search is { Length: > MaxSearchLength })
@@ -880,11 +881,15 @@ public sealed class ListWorkflowInstancesQueryHandler : IRequestHandler<ListWork
 /// <summary>
 /// Détail d'une instance (résumé, étapes triées par index puis début, approbations, contexte sans « previous » — D-41-09),
 /// partagé par la route de conception (<see cref="GetWorkflowInstanceQueryHandler"/>) et la route runtime lecteur (4.5b1, D-45-05).
+/// En portée lecteur (<paramref name="readerScope"/>), le contexte est en outre expurgé de l'e-mail du lanceur et des sorties
+/// brutes des étapes (<c>results</c>, <c>vars</c>) : un profil <c>custom_records:read</c> n'a pas à recevoir ces données
+/// que le tiroir ne rend pas (D-45-27 ; les résultats tronqués restent dans <c>Steps[].Result</c>).
 /// </summary>
 internal static class StudioWorkflowInstanceDetailBuilder
 {
     public static async Task<WorkflowInstanceDetailDto> BuildAsync(
-        IStudioWorkflowRepository workflows, Guid tenantId, StudioWorkflowInstance instance, CancellationToken cancellationToken)
+        IStudioWorkflowRepository workflows, Guid tenantId, StudioWorkflowInstance instance, CancellationToken cancellationToken,
+        bool readerScope = false)
     {
         // Définition possiblement supprimée (filtre IsDeleted) ⇒ WorkflowKey / WorkflowName null.
         var definition = await workflows.GetDefinitionAsync(tenantId, instance.WorkflowDefinitionId, cancellationToken);
@@ -894,6 +899,13 @@ internal static class StudioWorkflowInstanceDetailBuilder
         // Les données « avant » de l'enregistrement ne sortent pas de l'API : clé conservée, valeur masquée (D-41-09).
         var context = StudioWorkflowMapping.ParseObject(instance.ContextJson);
         context["previous"] = null;
+        if (readerScope)
+        {
+            if (context["startedBy"] is JsonObject startedBy)
+                startedBy["email"] = null;
+            context["results"] = new JsonObject();
+            context["vars"] = new JsonObject();
+        }
 
         return new WorkflowInstanceDetailDto(
             StudioWorkflowMapping.ToDto(instance, definition),

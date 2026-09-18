@@ -111,7 +111,11 @@ public class StudioWorkflowRuntimeFeaturesTests
         var record = CustomRecord.Create(TenantId, _entity.Id, "{}", Uid);
         var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
         var instance = StudioWorkflowInstance.Start(TenantId, definition, record.Id, StudioWorkflowTriggerKind.Manual, StartedBy,
-            """{ "record": { "a": 1 }, "previous": { "a": 0 } }""", 0, null);
+            """
+            { "record": { "a": 1 }, "previous": { "a": 0 },
+              "startedBy": { "id": "u1", "email": "alice@exemple.fr" },
+              "results": { "erp": { "raw": "confidentiel" } }, "vars": { "montant": 42 } }
+            """, 0, null);
         var now = DateTime.UtcNow;
         var runIndex1 = StudioWorkflowStepRun.Record(TenantId, instance.Id, 1, "maj", "update_field", StudioWorkflowStepRunStatus.Succeeded,
             StudioWorkflowStepOutcome.Continue, null, null, null, now.AddSeconds(1), now.AddSeconds(2), Uid);
@@ -140,6 +144,15 @@ public class StudioWorkflowRuntimeFeaturesTests
         Assert.True(detail.Context.ContainsKey("previous"));
         Assert.Null(detail.Context["previous"]);
         Assert.Equal(1, detail.Context["record"]!["a"]!.GetValue<int>());
+
+        // Portée lecteur (D-45-27) : e-mail du lanceur, results et vars expurgés ; clés conservées, id du lanceur intact.
+        Assert.Equal("u1", detail.Context["startedBy"]!["id"]!.GetValue<string>());
+        Assert.Null(detail.Context["startedBy"]!["email"]);
+        Assert.Empty(detail.Context["results"]!.AsObject());
+        Assert.Empty(detail.Context["vars"]!.AsObject());
+        var json = detail.Context.ToJsonString();
+        Assert.DoesNotContain("alice@exemple.fr", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("confidentiel", json, StringComparison.Ordinal);
     }
 
     [Fact]
