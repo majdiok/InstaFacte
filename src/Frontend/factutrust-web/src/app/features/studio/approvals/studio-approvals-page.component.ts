@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MessageService } from 'primeng/api';
@@ -13,6 +13,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { ToastModule } from 'primeng/toast';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { AuthService } from '@core/services/auth.service';
+import { ViewportService } from '@core/services/viewport.service';
 import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-table.component';
 import { StudioPageShellComponent } from '../shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from '../shared/studio-breadcrumb.util';
@@ -243,14 +244,8 @@ export class StudioApprovalsPageComponent implements OnInit {
   readonly selected = signal<ApprovalRow | null>(null);
   /** Drawer d'instance en portée fiche (4.5d3) : posé depuis le panneau de la ligne sélectionnée ⇒ `selected()` est toujours défini. */
   readonly openInstanceId = signal<string | null>(null);
-  private readonly mq = typeof window !== 'undefined' && 'matchMedia' in window ? window.matchMedia('(min-width: 1280px)') : null;
-  readonly wide = signal(this.mq?.matches ?? true);
-
-  constructor() {
-    const onChange = (e: MediaQueryListEvent) => this.wide.set(e.matches);
-    this.mq?.addEventListener('change', onChange);
-    inject(DestroyRef).onDestroy(() => this.mq?.removeEventListener('change', onChange));
-  }
+  /** 4.6T2 (D-44-56) : largeur via ViewportService (seuil 1 280 px inchangé, nettoyage automatique). */
+  readonly wide = inject(ViewportService).isWide;
 
   ngOnInit(): void { this.load(); }
 

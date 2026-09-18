@@ -1,9 +1,11 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { WritableSignal, signal } from '@angular/core';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { StudioCalendarComponent } from './studio-calendar.component';
 import { RecordViewCalendar, RecordViewCalendarEventDto } from './studio-record-views.models';
+import { ViewportService } from '@core/services/viewport.service';
 import { CustomField } from '../studio.models';
 
 const calendar: RecordViewCalendar = {
@@ -30,11 +32,15 @@ describe('StudioCalendarComponent', () => {
   let fixture: ComponentFixture<StudioCalendarComponent>;
   let component: StudioCalendarComponent;
   let router: Router;
+  /** 4.6T2 : `narrow` vient de ViewportService — stubbé par un signal piloté par les tests (D-44-56). */
+  let narrowStub: WritableSignal<boolean>;
 
   function setup(autoDetect = true): void {
+    narrowStub = signal(false);
     TestBed.configureTestingModule({
       imports: [StudioCalendarComponent],
-      providers: [provideRouter([]), provideNoopAnimations()]
+      providers: [provideRouter([]), provideNoopAnimations(),
+        { provide: ViewportService, useValue: { matches: () => narrowStub } }]
     });
     router = TestBed.inject(Router);
     spyOn(router, 'navigate').and.resolveTo(true);
@@ -66,9 +72,9 @@ describe('StudioCalendarComponent', () => {
 
   it('bascule entre mois et semaine', () => {
     setup();
-    // Le headless CI peut avoir une fenêtre < 768px (matchMedia ⇒ narrow) : on fige le contexte,
-    // la bascule forcée « narrow » étant couverte par le test dédié ci-dessous.
-    component['narrow'].set(false);
+    // Le contexte est figé par le stub ViewportService (4.6T2) ; la bascule « narrow » est couverte
+    // par le test dédié ci-dessous.
+    narrowStub.set(false);
     expect(component['effectiveMode']()).toBe('month');
     component.setMode('week');
     fixture.detectChanges();
@@ -77,7 +83,7 @@ describe('StudioCalendarComponent', () => {
 
   it('force la semaine sous 768px même si le mode choisi est « mois »', () => {
     setup();
-    component['narrow'].set(true);
+    narrowStub.set(true);
     fixture.detectChanges();
     expect(component['effectiveMode']()).toBe('week');
   });

@@ -1,5 +1,5 @@
 import {
-  ChangeDetectionStrategy, Component, OnDestroy, OnInit, ViewChild,
+  ChangeDetectionStrategy, Component, ViewChild,
   computed, effect, inject, input, output, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -8,6 +8,7 @@ import { Router } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { SelectButtonModule } from 'primeng/selectbutton';
 import { Popover, PopoverModule } from 'primeng/popover';
+import { ViewportService } from '@core/services/viewport.service';
 import { CustomField } from '../studio.models';
 import { RecordViewCalendar, RecordViewCalendarEventDto } from './studio-record-views.models';
 import { STUDIO_RUNTIME_LABELS } from '../shared/studio-runtime-labels';
@@ -181,7 +182,7 @@ interface LegendItem {
   `,
   styleUrl: './studio-calendar.component.scss'
 })
-export class StudioCalendarComponent implements OnInit, OnDestroy {
+export class StudioCalendarComponent {
   private readonly router = inject(Router);
 
   readonly entityKey = input('');
@@ -204,15 +205,14 @@ export class StudioCalendarComponent implements OnInit, OnDestroy {
 
   protected readonly mode = signal<CalendarMode>('month');
   protected readonly anchor = signal<Date>(new Date());
-  protected readonly narrow = signal(false);
+  /** 4.6T2 (D-44-56) : bascule semaine sous 768 px via ViewportService (seuil inchangé). */
+  protected readonly narrow = inject(ViewportService).matches(NARROW_QUERY);
   protected readonly expanded = signal<Record<string, boolean>>({});
   protected readonly selectedEvent = signal<RecordViewCalendarEventDto | null>(null);
 
   protected readonly effectiveMode = computed<CalendarMode>(() => this.narrow() ? 'week' : this.mode());
   protected readonly range = computed(() => rangeForMode(this.effectiveMode(), this.anchor()));
 
-  private mediaQuery?: MediaQueryList;
-  private mediaListener = (e: MediaQueryListEvent) => this.narrow.set(e.matches);
   private lastEmittedRange: string | null = null;
 
   protected readonly title = computed(() => {
@@ -268,18 +268,6 @@ export class StudioCalendarComponent implements OnInit, OnDestroy {
         this.rangeChange.emit({ rangeStart: toIsoDate(r.start), rangeEnd: toIsoDate(r.end) });
       }
     });
-  }
-
-  ngOnInit(): void {
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      this.mediaQuery = window.matchMedia(NARROW_QUERY);
-      this.narrow.set(this.mediaQuery.matches);
-      this.mediaQuery.addEventListener('change', this.mediaListener);
-    }
-  }
-
-  ngOnDestroy(): void {
-    this.mediaQuery?.removeEventListener('change', this.mediaListener);
   }
 
   setMode(mode: CalendarMode): void {

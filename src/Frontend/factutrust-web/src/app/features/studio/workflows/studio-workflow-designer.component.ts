@@ -1,4 +1,3 @@
-import { BreakpointObserver } from '@angular/cdk/layout';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, HostListener, OnInit, computed, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
@@ -19,6 +18,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { ToastModule } from 'primeng/toast';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { ApiResponse } from '@core/services/client.service';
+import { ViewportService } from '@core/services/viewport.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { CustomField, CustomFieldType } from '@shared/studio-runtime/studio-runtime.models';
 import { StudioPageShellComponent } from '../shared/studio-page-shell.component';
@@ -364,10 +364,7 @@ export class StudioWorkflowDesignerComponent implements OnInit {
 
   // ---- Réactif écran étroit (D-44-21 : colonnes 2–3 en tiroir sous 1280 px) ----
   readonly editorDrawer = signal(false);
-  readonly narrow = toSignal(
-    inject(BreakpointObserver).observe('(max-width: 1279px)').pipe(map(s => s.matches)),
-    { initialValue: false }
-  );
+  readonly narrow = inject(ViewportService).isNarrow;   // 4.6T2 (D-44-56) : seuil 1 279 px inchangé
 
   readonly title = computed(() => this.name().trim() || (this.id ? this.L.designer.title : this.L.designer.newTitle));
   readonly breadcrumbs = computed(() => STUDIO_BREADCRUMBS.workflowDesigner(this.name()));

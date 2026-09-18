@@ -1,5 +1,6 @@
 import { Component, input, model, output } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { WritableSignal, signal } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
@@ -9,6 +10,7 @@ import { MessageService } from 'primeng/api';
 import { environment } from '@environments/environment';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { AuthService } from '@core/services/auth.service';
+import { ViewportService } from '@core/services/viewport.service';
 import { StudioApprovalsPageComponent } from './studio-approvals-page.component';
 import { StudioApprovalsBadgeService } from './studio-approvals-badge.service';
 import { STUDIO_WORKFLOW_LABELS } from '../workflows/studio-workflow-labels';
@@ -58,8 +60,11 @@ describe('StudioApprovalsPageComponent', () => {
   let toastSpy: jasmine.Spy;
   let badgeRefresh: jasmine.Spy;
   let perms: Set<string>;
+  /** 4.6T2 : `wide` vient de ViewportService — stubbé par un signal piloté par les tests (D-44-56). */
+  let wideStub: WritableSignal<boolean>;
 
   function setup(): void {
+    wideStub = signal(false);
     TestBed.configureTestingModule({
       imports: [StudioApprovalsPageComponent],
       providers: [
@@ -68,6 +73,7 @@ describe('StudioApprovalsPageComponent', () => {
         provideRouter([]),
         provideNoopAnimations(),
         MessageService,
+        { provide: ViewportService, useValue: { isWide: wideStub } },
         { provide: AuthService, useValue: { hasPermission: (p: string) => perms.has(p) } },
         { provide: StudioApprovalsBadgeService, useValue: { refresh: (badgeRefresh = jasmine.createSpy('refresh')) } }
       ]
@@ -235,7 +241,7 @@ describe('StudioApprovalsPageComponent', () => {
     setup();
     flushInbox([inboxItem('a1')]);
 
-    component.wide.set(true);                                        // D-44-56 : bascule pilotée par le signal en test
+    wideStub.set(true);                                             // D-44-56 : bascule pilotée par le stub ViewportService (4.6T2)
     clickRowButton('sap-detail-a1');
 
     expect(component.selected()?.id).toBe('a1');
@@ -250,7 +256,7 @@ describe('StudioApprovalsPageComponent', () => {
     setup();
     flushInbox([inboxItem('a1')]);
 
-    component.wide.set(false);
+    wideStub.set(false);
     clickRowButton('sap-detail-a1');
 
     expect(fixture.nativeElement.querySelector('[data-testid="sap-panel-column"]')).toBeNull();
@@ -269,7 +275,7 @@ describe('StudioApprovalsPageComponent', () => {
     setup();
     flushInbox([inboxItem('a1')]);
 
-    component.wide.set(true);
+    wideStub.set(true);
     clickRowButton('sap-detail-a1');
     expect(component.selected()?.recordId).toBe('r1');
 
