@@ -1024,3 +1024,44 @@ n'est plus vide. Studio → Relations, « Relation plusieurs-à-plusieurs » : l
 
 - Portée automatisée : Karma onglet (assertions `aria-label`) ; Karma dialogue M-à-N (+1 `it` : la clé par
   défaut ne commence jamais par `v_`).
+
+## Studio IA 4.7 « v1.1 » — vues : aperçu en direct du brouillon (PR #160, #161)
+
+### 130. Création d'une vue : l'aperçu suit le brouillon sans enregistrer
+
+`/studio/d/<table>/views/new` : la grille d'aperçu se remplit dès la définition valide ; ajouter une
+colonne ou un filtre ⇒ mise à jour après ~300 ms ; `POST /views/preview` est émis, **jamais** `/run`
+ni `/views` tant qu'« Enregistrer » n'est pas cliqué ; le compteur de vues de la table n'augmente pas.
+
+- Portée automatisée : Karma concepteur de vues (création : runner monté d'emblée, POST
+  `/views/preview` au montage, jamais `/run`) ; Karma service (`previewRecordView`).
+
+### 131. Édition : l'aperçu reflète le brouillon, y compris le mode
+
+Modifier un tri/un filtre ⇒ aperçu mis à jour après ~300 ms (aucune requête avant le délai) ;
+basculer Liste → Kanban ⇒ le kanban **du brouillon** s'affiche (plus de message « version
+enregistrée ») ; « Actualiser l'aperçu » force une exécution immédiate.
+
+- Portée automatisée : Karma concepteur (anti-rebond vérifié en temps réel — `tick()` annule les
+  XHR en attente sous Karma/zone.js, motif retenu : `sleep` 250/400 ms ; changement de mode :
+  `/preview` repart avec le nouveau `mode` ; Actualiser : exécution hors anti-rebond).
+
+### 132. Définition invalide et erreur serveur
+
+Kanban sans champ de regroupement / pageSize hors bornes ⇒ hint « Complétez la définition pour voir
+l'aperçu. », **aucune** requête émise ; champ supprimé entre-temps ⇒ 400 rendu en ligne dans le
+panneau avec « Réessayer », aucun toast global pendant la frappe.
+
+- Portée automatisée : Karma concepteur (hint invalide + 0 requête) ; Karma runner (erreur réseau ⇒
+  état inline sans toast en mode preview).
+
+### 133. Garde-fous
+
+Profil lecteur (sans `studio:design_forms`) : hint « L'aperçu en direct est réservé aux
+concepteurs. », pas de runner ; `POST /views/preview` ⇒ 403 ; drapeau `EnableStudioRecordViews`
+coupé ⇒ 404 ; aucune ligne d'audit `Studio.RecordView.*` pour un aperçu ; quota « 20 vues/table »
+non consommé.
+
+- Portée automatisée : Karma concepteur (lecture seule : hint, pas de runner) ; API contract
+  (policy + gabarit figés, drapeau coupé ⇒ 404) ; Infrastructure (handler sans dépendances
+  vues/quota/audit — `VerifyNoOtherCalls`).

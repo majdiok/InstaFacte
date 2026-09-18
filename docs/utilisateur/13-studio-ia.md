@@ -159,6 +159,12 @@ Dans le **concepteur de table** (hors assistant), modifiez un champ existant et 
 
 ---
 
+## Les vues enregistrées
+
+Une proposition peut inclure des **vues** (liste, kanban, calendrier). Dans une table, le sélecteur de vue en haut de la liste applique la vue choisie ; le kanban permet de déplacer une carte d'une colonne à l'autre (avec le droit d'écriture), le calendrier place les enregistrements sur leurs dates.
+
+**Concevoir une vue** (profil concepteur) : **Nouvelle vue** / **Modifier la vue** ouvrent le concepteur de vues. L'**aperçu suit votre brouillon** : dès que la définition est complète (par exemple un champ de regroupement choisi pour un kanban), il se remplit avec les 20 premiers enregistrements et se met à jour environ 300 ms après chaque modification — colonnes, filtres, tris ou mode. Rien n'est enregistré pendant la frappe : tant que vous ne cliquez pas **Enregistrer**, la vue reste inchangée. **Actualiser l'aperçu** force une exécution immédiate. Si la définition est incomplète, le message « Complétez la définition pour voir l'aperçu. » s'affiche à la place ; les profils sans droit de conception voient « L'aperçu en direct est réservé aux concepteurs. ».
+
 ## Workflows et approbations
 
 Les **workflows Studio** automatisent vos validations : à la création ou modification d’une fiche (ou à la
