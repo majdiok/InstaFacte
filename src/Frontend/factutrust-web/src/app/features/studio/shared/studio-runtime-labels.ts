@@ -69,7 +69,11 @@ export const STUDIO_RUNTIME_LABELS = {
     remove: 'Retirer',
     duplicate: 'Lien déjà existant.',
     truncated: 'Certaines fiches liées ne sont pas affichées.',
-    error: 'Chargement des fiches liées impossible.'
+    error: 'Chargement des fiches liées impossible.',
+    edit: 'Modifier',
+    save: 'Enregistrer',
+    cancel: 'Annuler',
+    conflict: 'Modifié entre-temps — liste rechargée.'
   },
   entities: {
     junctionBadge: 'Jonction',

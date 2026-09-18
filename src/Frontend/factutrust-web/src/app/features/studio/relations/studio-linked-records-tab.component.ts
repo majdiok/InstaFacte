@@ -5,11 +5,12 @@ import { DatePipe } from '@angular/common';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
+import { InputNumberModule } from 'primeng/inputnumber';
 import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-table.component';
 import { STUDIO_RUNTIME_LABELS } from '../shared/studio-runtime-labels';
 import { EntityRelationDto } from './studio-relations.models';
 import { CustomRecord } from '../studio.models';
-import { StudioLinkedRecordsService, LinkedRecordRow, primaryLabel } from './studio-linked-records.service';
+import { StudioLinkedRecordsService, JunctionAttribute, LinkedRecordRow, primaryLabel } from './studio-linked-records.service';
 
 interface TargetOption { id: string; label: string; }
 
@@ -19,22 +20,28 @@ interface TargetOption { id: string; label: string; }
  * une paire existante ⇒ 409 `record.duplicate_link` rendu en ligne). Le libellé cible est résolu
  * en une passe par `searchTargets` (les records de jonction ne portent que les ids).
  */
-/** Projection jonction → ligne affichée (libellé résolu ou repli sur l'id tronqué). */
-function toRow(p: { junction: CustomRecord; targetId: string }, targetLabel: string): LinkedRecordRow {
-  return {
+/** Projection jonction → ligne affichée (libellé résolu ou repli sur l'id tronqué). Sans attribut
+ *  de liaison (`attributeKey` null), la ligne reste STRICTEMENT la v1 (pas de clé `attributeValue`). */
+function toRow(p: { junction: CustomRecord; targetId: string }, targetLabel: string, attributeKey?: string | null): LinkedRecordRow {
+  const row: LinkedRecordRow = {
     junctionRecordId: p.junction.id,
     targetId: p.targetId,
     targetLabel,
     rowVersion: p.junction.rowVersion,
     createdAt: p.junction.createdAt
   };
+  if (attributeKey) {
+    const value = p.junction.data?.[attributeKey];
+    row.attributeValue = typeof value === 'number' || typeof value === 'string' ? value : null;
+  }
+  return row;
 }
 
 @Component({
   selector: 'app-studio-linked-records-tab',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, DatePipe, ButtonModule, SelectModule, SkeletonTableComponent],
+  imports: [FormsModule, DatePipe, ButtonModule, SelectModule, InputNumberModule, SkeletonTableComponent],
   template: `
     <section class="slinked" [attr.aria-label]="labels.linked.tabLabel">
       @if (error(); as message) {
@@ -50,6 +57,12 @@ function toRow(p: { junction: CustomRecord; targetId: string }, targetLabel: str
             (ngModelChange)="selectedTarget.set($event)" optionLabel="label" optionValue="id" [filter]="true"
             filterBy="label" (onFilter)="onFilter($event)" [placeholder]="relation().targetLabel" appendTo="body"
             panelStyleClass="studio-theme" data-testid="linked-search" />
+          @if (attribute(); as attr) {
+            @if (attr.numeric) {
+              <p-inputNumber [ngModel]="newAttributeValue()" (ngModelChange)="newAttributeValue.set($event)"
+                [placeholder]="attr.label" [disabled]="saving()" data-testid="linked-attr-input" />
+            }
+          }
           <p-button [label]="labels.linked.add" icon="pi pi-link" size="small" [disabled]="!selectedTarget() || saving()"
             (onClick)="add()" data-testid="linked-add" />
         </div>
@@ -61,6 +74,25 @@ function toRow(p: { junction: CustomRecord; targetId: string }, targetLabel: str
         @for (row of rows(); track row.junctionRecordId) {
           <div class="studio-row" [attr.data-testid]="'linked-row-' + row.targetId">
             <span class="studio-grow">{{ row.targetLabel }}</span>
+            @if (attribute(); as attr) {
+              @if (editingAttr() === row.junctionRecordId) {
+                <p-inputNumber [ngModel]="editAttrValue()" (ngModelChange)="editAttrValue.set($event)"
+                  data-testid="linked-attr-edit-input" />
+                <p-button icon="pi pi-check" [text]="true" size="small" severity="success" [disabled]="saving()"
+                  [attr.aria-label]="labels.linked.save" (onClick)="saveAttribute(row)"
+                  [attr.data-testid]="'linked-attr-save-' + row.targetId" />
+                <p-button icon="pi pi-undo" [text]="true" size="small" [disabled]="saving()"
+                  [attr.aria-label]="labels.linked.cancel" (onClick)="editingAttr.set(null)"
+                  data-testid="linked-attr-cancel" />
+              } @else {
+                <span class="studio-muted" [attr.data-testid]="'linked-attr-' + row.targetId">{{ row.attributeValue ?? '—' }}</span>
+                @if (attr.numeric && canWrite()) {
+                  <p-button icon="pi pi-pencil" [text]="true" size="small" [disabled]="saving()"
+                    [attr.aria-label]="labels.linked.edit" (onClick)="beginAttributeEdit(row)"
+                    [attr.data-testid]="'linked-attr-edit-' + row.targetId" />
+                }
+              }
+            }
             <span class="studio-muted">{{ row.createdAt | date:'dd/MM/yyyy' }}</span>
             @if (canWrite()) {
               <p-button icon="pi pi-times" [text]="true" size="small" severity="danger" [disabled]="saving()"
@@ -98,8 +130,20 @@ export class StudioLinkedRecordsTabComponent implements OnInit {
   readonly options = signal<TargetOption[]>([]);
   readonly selectedTarget = signal<string | null>(null);
   readonly truncated = signal(false);
+  /** v1.1 / D-47-40 : attribut de liaison (null ⇒ rendu strictement v1). */
+  readonly attribute = signal<JunctionAttribute | null>(null);
+  readonly newAttributeValue = signal<number | null>(null);
+  readonly editingAttr = signal<string | null>(null);   // junctionRecordId en cours d'édition
+  readonly editAttrValue = signal<number | null>(null);
+
+  private lastJunctions: CustomRecord[] = [];
+  private lastLabels = new Map<string, string>();
 
   ngOnInit(): void {
+    this.linked.getJunctionAttribute(this.relation()).subscribe(a => {
+      this.attribute.set(a);
+      if (this.lastJunctions.length) this.projectRows();   // l'attribut peut arriver après la liste
+    });
     this.refresh();
     this.searchTargets(null);
   }
@@ -110,29 +154,37 @@ export class StudioLinkedRecordsTabComponent implements OnInit {
       next: res => {
         this.loading.set(false);
         if (!res.success) { this.error.set(res.message || this.labels.linked.error); return; }
-        const junctions = res.data.items ?? [];
+        this.lastJunctions = res.data.items ?? [];
         this.truncated.set((res.data.totalCount ?? 0) > this.pageSize);
-        this.resolveLabels(junctions);
+        this.resolveLabels();
       },
       error: () => { this.loading.set(false); this.error.set(this.labels.linked.error); }
     });
   }
 
   /** Résout les libellés cibles en une passe (`searchTargets` filtre côté serveur si besoin). */
-  private resolveLabels(junctions: CustomRecord[]): void {
+  private resolveLabels(): void {
     const targetField = this.relation().junctionTargetFieldKey;
     if (!targetField) { this.rows.set([]); return; }
-    const targetIds = junctions
-      .map(j => ({ junction: j, targetId: String(j.data?.[targetField] ?? '') }))
-      .filter(p => p.targetId.length > 0);
     this.linked.searchTargets(this.relation(), null, 200).subscribe({
       next: res => {
-        const labelsById = new Map<string, string>();
-        if (res.success) for (const r of res.data.items ?? []) labelsById.set(r.id, primaryLabel(r, []));
-        this.rows.set(targetIds.map(p => toRow(p, labelsById.get(p.targetId) ?? p.targetId.slice(0, 8))));
+        this.lastLabels = new Map<string, string>();
+        if (res.success) for (const r of res.data.items ?? []) this.lastLabels.set(r.id, primaryLabel(r, []));
+        this.projectRows();
       },
-      error: () => this.rows.set(targetIds.map(p => toRow(p, p.targetId.slice(0, 8))))
+      error: () => { this.lastLabels = new Map(); this.projectRows(); }
     });
+  }
+
+  /** (Re)projette les lignes depuis la dernière liste — rejoué si l'attribut arrive après la liste. */
+  private projectRows(): void {
+    const targetField = this.relation().junctionTargetFieldKey;
+    if (!targetField) { this.rows.set([]); return; }
+    const attrKey = this.attribute()?.key ?? null;
+    this.rows.set(this.lastJunctions
+      .map(j => ({ junction: j, targetId: String(j.data?.[targetField] ?? '') }))
+      .filter(p => p.targetId.length > 0)
+      .map(p => toRow(p, this.lastLabels.get(p.targetId) ?? p.targetId.slice(0, 8), attrKey)));
   }
 
   searchTargets(search: string | null): void {
@@ -154,11 +206,12 @@ export class StudioLinkedRecordsTabComponent implements OnInit {
     if (!targetId || !this.canWrite()) return;
     this.saving.set(true);
     this.error.set(null);
-    this.linked.link(this.relation(), this.recordId(), targetId).subscribe({
+    this.linked.link(this.relation(), this.recordId(), targetId, this.attribute(), this.newAttributeValue()).subscribe({
       next: res => {
         this.saving.set(false);
         if (!res.success) { this.error.set(res.message || this.labels.linked.error); return; }
         this.selectedTarget.set(null);
+        this.newAttributeValue.set(null);
         this.refresh();
       },
       error: (err: HttpErrorResponse) => {
@@ -166,6 +219,38 @@ export class StudioLinkedRecordsTabComponent implements OnInit {
         this.error.set(err.status === 409 && err.error?.code === 'record.duplicate_link'
           ? this.labels.linked.duplicate
           : (typeof err.error?.message === 'string' ? err.error.message : this.labels.linked.error));
+      }
+    });
+  }
+
+  beginAttributeEdit(row: LinkedRecordRow): void {
+    this.editAttrValue.set(typeof row.attributeValue === 'number' ? row.attributeValue : null);
+    this.editingAttr.set(row.junctionRecordId);
+  }
+
+  /** v1.1 : PATCH de l'attribut avec le rowVersion de la ligne ; 409 périmé ⇒ message + rechargement. */
+  saveAttribute(row: LinkedRecordRow): void {
+    const attr = this.attribute();
+    if (!attr || !row.rowVersion) return;
+    this.saving.set(true);
+    this.error.set(null);
+    const value = this.editAttrValue();
+    this.linked.patchLink(this.relation(), row.junctionRecordId, { [attr.key]: value }, row.rowVersion).subscribe({
+      next: res => {
+        this.saving.set(false);
+        if (!res.success) { this.error.set(res.message || this.labels.linked.error); return; }
+        this.editingAttr.set(null);
+        this.rows.update(rows => rows.map(r => r.junctionRecordId === row.junctionRecordId
+          ? { ...r, attributeValue: value, rowVersion: res.data?.rowVersion ?? r.rowVersion }
+          : r));
+      },
+      error: (err: HttpErrorResponse) => {
+        this.saving.set(false);
+        this.editingAttr.set(null);
+        // 409 Conflict = jeton périmé ⇒ message + rechargement (record.duplicate_link impossible ici :
+        // les clés de paire ne sont pas patchées — le chemin générique la rendrait quand même).
+        if (err.status === 409) { this.error.set(this.labels.linked.conflict); this.refresh(); return; }
+        this.error.set(typeof err.error?.message === 'string' ? err.error.message : this.labels.linked.error);
       }
     });
   }

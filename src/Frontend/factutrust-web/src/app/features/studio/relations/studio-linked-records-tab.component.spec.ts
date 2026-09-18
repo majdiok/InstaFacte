@@ -25,6 +25,28 @@ const junctionPage = (items: unknown[], totalCount: number) => ({
 const junction = (id: string, targetId: string) => ({
   id, data: { intervention_id: 'rec-1', technicien_id: targetId }, createdAt: '2026-01-02T00:00:00Z', updatedAt: '', rowVersion: 'AA'
 });
+const junctionAttr = (id: string, targetId: string, quantite: number) => ({
+  id, data: { intervention_id: 'rec-1', technicien_id: targetId, quantite },
+  createdAt: '2026-01-02T00:00:00Z', updatedAt: '', rowVersion: 'AA'
+});
+
+/** Schéma de la jonction : les deux liaisons `RelationCustom`, + l'attribut `Number` si demandé. */
+const schemaBody = (withAttribute: boolean) => ({
+  success: true,
+  data: {
+    entity: { id: 'j1', key: 'intervention_technicien' },
+    fields: [
+      { id: 'f1', key: 'intervention_id', label: 'Intervention', fieldType: 'RelationCustom', isRequired: true, isUnique: false, sortOrder: 0, isActive: true },
+      { id: 'f2', key: 'technicien_id', label: 'Technicien', fieldType: 'RelationCustom', isRequired: true, isUnique: false, sortOrder: 1, isActive: true },
+      ...(withAttribute
+        ? [{ id: 'f3', key: 'quantite', label: 'Quantité', fieldType: 'Number', isRequired: false, isUnique: false, sortOrder: 2, isActive: true }]
+        : [])
+    ],
+    form: null
+  },
+  message: null, errors: []
+});
+
 const targets = { success: true, data: { items: [
   { id: 't1', data: { nom: 'Ben Ali' }, createdAt: '', updatedAt: '' },
   { id: 't2', data: { nom: 'Sassi' }, createdAt: '', updatedAt: '' }
@@ -35,7 +57,7 @@ describe('StudioLinkedRecordsTabComponent', () => {
   let component: StudioLinkedRecordsTabComponent;
   let httpMock: HttpTestingController;
 
-  function setup(canWrite: boolean, items: unknown[] = [junction('j1', 't1')], totalCount = 1): void {
+  function setup(canWrite: boolean, items: unknown[] = [junction('j1', 't1')], totalCount = 1, withAttribute = false): void {
     TestBed.configureTestingModule({
       imports: [StudioLinkedRecordsTabComponent],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideNoopAnimations(), MessageService]
@@ -49,6 +71,8 @@ describe('StudioLinkedRecordsTabComponent', () => {
     fixture.detectChanges();
     httpMock.expectOne(`${base}/intervention_technicien?page=1&pageSize=50&filterField=intervention_id&filterValue=rec-1`)
       .flush(junctionPage(items, totalCount));
+    // v1.1 : lecture de l'attribut de liaison via le schéma de la jonction (sans attribut ⇒ rendu v1).
+    httpMock.expectOne(`${base}/intervention_technicien/schema`).flush(schemaBody(withAttribute));
     drainTargets(); // options initiales + résolution des libellés (même URL)
     fixture.detectChanges();
   }
@@ -108,6 +132,69 @@ describe('StudioLinkedRecordsTabComponent', () => {
     expect(component.rows().length).toBe(2);
     fixture.detectChanges();
     expect(fixture.debugElement.query(By.css('[data-testid="linked-error"]')).nativeElement.textContent).toContain('Lien déjà existant.');
+  });
+
+  // ---- v1.1 / D-47-40 : attribut de liaison (affichage, ajout, édition PATCH) ----
+
+  it('affiche la quantité quand la jonction porte un attribut', () => {
+    setup(true, [junctionAttr('j1', 't1', 3)], 1, true);
+    fixture.detectChanges();
+    expect(component.attribute()?.key).toBe('quantite');
+    expect(component.rows()[0].attributeValue).toBe(3);
+    const value = fixture.debugElement.query(By.css('[data-testid="linked-attr-t1"]'));
+    expect(value.nativeElement.textContent).toContain('3');
+    expect(fixture.debugElement.query(By.css('[data-testid="linked-attr-input"]'))).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('[data-testid="linked-attr-edit-t1"]'))).not.toBeNull();
+  });
+
+  it('ajout avec quantité : le POST porte la clé attribut', () => {
+    setup(true, [], 0, true);
+    component.selectedTarget.set('t2');
+    component.newAttributeValue.set(5);
+    component.add();
+    const post = httpMock.expectOne(`${base}/intervention_technicien`);
+    expect(post.request.body).toEqual({ data: { intervention_id: 'rec-1', technicien_id: 't2', quantite: 5 } });
+    post.flush({ success: true, data: junctionAttr('j2', 't2', 5), message: null, errors: [] });
+    httpMock.expectOne(`${base}/intervention_technicien?page=1&pageSize=50&filterField=intervention_id&filterValue=rec-1`)
+      .flush(junctionPage([junctionAttr('j2', 't2', 5)], 1));
+    drainTargets();
+    expect(component.newAttributeValue()).toBeNull();
+    expect(component.rows()[0].attributeValue).toBe(5);
+  });
+
+  it('édition inline : PATCH { quantite } avec le rowVersion de la ligne, ligne mise à jour', () => {
+    setup(true, [junctionAttr('j1', 't1', 3)], 1, true);
+    fixture.detectChanges();
+    component.beginAttributeEdit(component.rows()[0]);
+    expect(component.editingAttr()).toBe('j1');
+    expect(component.editAttrValue()).toBe(3);
+
+    component.editAttrValue.set(7);
+    component.saveAttribute(component.rows()[0]);
+    const patch = httpMock.expectOne(`${base}/intervention_technicien/j1`);
+    expect(patch.request.method).toBe('PATCH');
+    expect(patch.request.body).toEqual({ data: { quantite: 7 }, rowVersion: 'AA' });
+    patch.flush({ success: true, data: { ...junctionAttr('j1', 't1', 7), rowVersion: 'BB' }, message: null, errors: [] });
+
+    expect(component.editingAttr()).toBeNull();
+    expect(component.rows()[0].attributeValue).toBe(7);
+    expect(component.rows()[0].rowVersion).toBe('BB');
+  });
+
+  it('édition inline : 409 jeton périmé ⇒ « Modifié entre-temps » en ligne + rechargement', () => {
+    setup(true, [junctionAttr('j1', 't1', 3)], 1, true);
+    component.beginAttributeEdit(component.rows()[0]);
+    component.saveAttribute(component.rows()[0]);
+    httpMock.expectOne(`${base}/intervention_technicien/j1`).flush(
+      { success: false, data: null, message: 'Conflit', errors: [], code: 'Conflict' },
+      { status: 409, statusText: 'Conflict' });
+
+    expect(component.error()).toBe('Modifié entre-temps — liste rechargée.');
+    expect(component.editingAttr()).toBeNull();
+    httpMock.expectOne(`${base}/intervention_technicien?page=1&pageSize=50&filterField=intervention_id&filterValue=rec-1`)
+      .flush(junctionPage([junctionAttr('j1', 't1', 3)], 1));
+    drainTargets();
+    expect(component.rows()[0].attributeValue).toBe(3);
   });
 
   it('retrait : DELETE jonction/{id} retire la ligne ; bandeau tronqué si totalCount > pageSize', () => {
