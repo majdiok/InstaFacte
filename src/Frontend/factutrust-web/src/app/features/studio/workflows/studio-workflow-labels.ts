@@ -36,8 +36,6 @@ export const STUDIO_WORKFLOW_LABELS = {
     duplicateKey: 'Un workflow porte déjà cette clé pour cette table.',
     duplicated: 'Copie créée (inactive).',
     toggled: 'Workflow {state}.',
-    /** 4.5f (D-45-F07) — page unique de 200 workflows (borne API) : au-delà, invite à filtrer par table. */
-    truncated: 'Seuls les {count} premiers workflows sont affichés : choisissez une table pour voir les autres.',
     loadError: 'Chargement des workflows impossible.',
     /** 4.4d — compléments du hub (libellés manquants ajoutés selon l'annexe, cités en PR). */
     edit: 'Modifier',
