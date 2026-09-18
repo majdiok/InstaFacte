@@ -20,8 +20,9 @@ public sealed record ApprovalCountDto(int Count);
 
 /// <summary>
 /// Élément de la boîte de réception des approbations (format master-B2 §3.4, consommé par 4.4g) :
-/// la demande, son instance, le workflow (« — » si la définition a été supprimée), l'entité et un
-/// libellé d'enregistrement (premier champ texte, <see langword="null"/> si indisponible).
+/// la demande, son instance, le workflow (« — » si la définition a été supprimée), l'entité, un
+/// libellé d'enregistrement (premier champ texte, <see langword="null"/> si indisponible) et le nom du
+/// lanceur (<c>StartedByName</c>, 4.5a2 / D-44-79, <see langword="null"/> si inconnu).
 /// </summary>
 public sealed record WorkflowApprovalInboxItemDto(
     WorkflowApprovalDto Approval,
@@ -33,7 +34,8 @@ public sealed record WorkflowApprovalInboxItemDto(
     Guid RecordId,
     string? RecordLabel,
     Guid? StartedBy,
-    DateTime StartedAt);
+    DateTime StartedAt,
+    string? StartedByName = null);
 
 /// <summary>Approbations en attente de l'utilisateur courant (directes ou via son rôle).</summary>
 public sealed record ListMyApprovalsQuery(int Max = 100) : IRequest<Result<IReadOnlyList<WorkflowApprovalInboxItemDto>>>;
@@ -52,19 +54,22 @@ public sealed class ListMyApprovalsQueryHandler
     private readonly ICustomFieldRepository _fields;
     private readonly ICustomRecordRepository _records;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioUserNameResolver _userNames;
 
     public ListMyApprovalsQueryHandler(
         IStudioWorkflowRepository workflows,
         ICustomEntityRepository entities,
         ICustomFieldRepository fields,
         ICustomRecordRepository records,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IStudioUserNameResolver userNames)
     {
         _workflows = workflows;
         _entities = entities;
         _fields = fields;
         _records = records;
         _currentUser = currentUser;
+        _userNames = userNames;
     }
 
     public async Task<Result<IReadOnlyList<WorkflowApprovalInboxItemDto>>> Handle(
@@ -131,6 +136,18 @@ public sealed class ListMyApprovalsQueryHandler
                 recordLabel,
                 instance.StartedBy,
                 instance.StartedAt));
+        }
+
+        // 4.5a2 — « Demandé par » (D-44-79) : une seule requête master pour les lanceurs distincts ; absent ⇒ null (D-45-02).
+        var starterIds = items.Where(i => i.StartedBy is not null).Select(i => i.StartedBy!.Value).Distinct().ToList();
+        if (starterIds.Count > 0)
+        {
+            var names = await _userNames.GetDisplayNamesAsync(tenantId, starterIds, cancellationToken);
+            for (var k = 0; k < items.Count; k++)
+            {
+                if (items[k].StartedBy is { } starter && names.TryGetValue(starter, out var starterName))
+                    items[k] = items[k] with { StartedByName = starterName };
+            }
         }
 
         return Result.Success<IReadOnlyList<WorkflowApprovalInboxItemDto>>(items);
