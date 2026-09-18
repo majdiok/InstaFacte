@@ -221,11 +221,12 @@ export class StudioWorkflowsHubComponent implements OnInit {
       return;
     }
     const src$ = entity
-      ? this.workflowsSvc.listWorkflows(entity.id).pipe(map(r => ({
-          items: (r.data ?? []).map(w => ({ ...w, entityName: entity.displayName }))
-            .sort((a, b) => a.entityName.localeCompare(b.entityName) || a.name.localeCompare(b.name)),
-          total: (r.data ?? []).length
-        })))
+      ? this.workflowsSvc.listWorkflows(entity.id).pipe(map(r => {
+          // Tri local par nom (une seule table : la clé `entityName` serait constante).
+          const items = (r.data ?? []).map(w => ({ ...w, entityName: entity.displayName }));
+          items.sort((a, b) => a.name.localeCompare(b.name));
+          return { items, total: items.length };
+        }))
       : this.workflowsSvc.listAllWorkflows(this.searchServer(), this.page(), this.pageSize).pipe(map(r => ({
           items: (r.data?.items ?? []).map(i => ({ ...i.workflow, entityName: i.entityDisplayName })),
           total: r.data?.totalCount ?? 0
