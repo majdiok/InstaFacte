@@ -822,6 +822,32 @@ public sealed class ListWorkflowInstancesQueryHandler : IRequestHandler<ListWork
     }
 }
 
+/// <summary>
+/// Détail d'une instance (résumé, étapes triées par index puis début, approbations, contexte sans « previous » — D-41-09),
+/// partagé par la route de conception (<see cref="GetWorkflowInstanceQueryHandler"/>) et la route runtime lecteur (4.5b1, D-45-05).
+/// </summary>
+internal static class StudioWorkflowInstanceDetailBuilder
+{
+    public static async Task<WorkflowInstanceDetailDto> BuildAsync(
+        IStudioWorkflowRepository workflows, Guid tenantId, StudioWorkflowInstance instance, CancellationToken cancellationToken)
+    {
+        // Définition possiblement supprimée (filtre IsDeleted) ⇒ WorkflowKey / WorkflowName null.
+        var definition = await workflows.GetDefinitionAsync(tenantId, instance.WorkflowDefinitionId, cancellationToken);
+        var stepRuns = await workflows.ListStepRunsAsync(tenantId, instance.Id, cancellationToken);
+        var approvals = await workflows.ListApprovalsForInstanceAsync(tenantId, instance.Id, cancellationToken);
+
+        // Les données « avant » de l'enregistrement ne sortent pas de l'API : clé conservée, valeur masquée (D-41-09).
+        var context = StudioWorkflowMapping.ParseObject(instance.ContextJson);
+        context["previous"] = null;
+
+        return new WorkflowInstanceDetailDto(
+            StudioWorkflowMapping.ToDto(instance, definition),
+            stepRuns.OrderBy(r => r.StepIndex).ThenBy(r => r.StartedAt).Select(StudioWorkflowMapping.ToDto).ToList(),
+            approvals.Select(StudioWorkflowMapping.ToDto).ToList(),
+            context);
+    }
+}
+
 public sealed record GetWorkflowInstanceQuery(Guid InstanceId) : IRequest<Result<WorkflowInstanceDetailDto>>;
 
 public sealed class GetWorkflowInstanceQueryHandler : IRequestHandler<GetWorkflowInstanceQuery, Result<WorkflowInstanceDetailDto>>
@@ -844,19 +870,6 @@ public sealed class GetWorkflowInstanceQueryHandler : IRequestHandler<GetWorkflo
         if (instance is null)
             return Result.Failure<WorkflowInstanceDetailDto>(Error.NotFound("StudioWorkflowInstance", query.InstanceId));
 
-        // Définition possiblement supprimée (filtre IsDeleted) ⇒ WorkflowKey / WorkflowName null.
-        var definition = await _workflows.GetDefinitionAsync(tenantId, instance.WorkflowDefinitionId, cancellationToken);
-        var stepRuns = await _workflows.ListStepRunsAsync(tenantId, instance.Id, cancellationToken);
-        var approvals = await _workflows.ListApprovalsForInstanceAsync(tenantId, instance.Id, cancellationToken);
-
-        // Les données « avant » de l'enregistrement ne sortent pas de l'API : clé conservée, valeur masquée (D-41-09).
-        var context = StudioWorkflowMapping.ParseObject(instance.ContextJson);
-        context["previous"] = null;
-
-        return Result.Success(new WorkflowInstanceDetailDto(
-            StudioWorkflowMapping.ToDto(instance, definition),
-            stepRuns.OrderBy(r => r.StepIndex).ThenBy(r => r.StartedAt).Select(StudioWorkflowMapping.ToDto).ToList(),
-            approvals.Select(StudioWorkflowMapping.ToDto).ToList(),
-            context));
+        return Result.Success(await StudioWorkflowInstanceDetailBuilder.BuildAsync(_workflows, tenantId, instance, cancellationToken));
     }
 }

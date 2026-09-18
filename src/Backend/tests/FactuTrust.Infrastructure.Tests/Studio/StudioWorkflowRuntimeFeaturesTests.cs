@@ -101,6 +101,98 @@ public class StudioWorkflowRuntimeFeaturesTests
         Assert.Equal("CustomRecord.NotFound", result.Error.Code);
     }
 
+    // 4.5b1 / D11 — détail d'instance pour les lecteurs, borné à la fiche (D-45-04), même corps que la route de conception (D-45-05).
+    private GetRecordWorkflowInstanceQueryHandler NewGetInstanceHandler() =>
+        new(_workflows.Object, _entities.Object, _records.Object, _currentUser.Object);
+
+    [Fact]
+    public async Task GetRecordWorkflowInstance_returns_detail_with_sorted_steps_approvals_and_masked_previous()
+    {
+        var record = CustomRecord.Create(TenantId, _entity.Id, "{}", Uid);
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        var instance = StudioWorkflowInstance.Start(TenantId, definition, record.Id, StudioWorkflowTriggerKind.Manual, StartedBy,
+            """{ "record": { "a": 1 }, "previous": { "a": 0 } }""", 0, null);
+        var now = DateTime.UtcNow;
+        var runIndex1 = StudioWorkflowStepRun.Record(TenantId, instance.Id, 1, "maj", "update_field", StudioWorkflowStepRunStatus.Succeeded,
+            StudioWorkflowStepOutcome.Continue, null, null, null, now.AddSeconds(1), now.AddSeconds(2), Uid);
+        var runIndex0 = StudioWorkflowStepRun.Record(TenantId, instance.Id, 0, "verif", "condition", StudioWorkflowStepRunStatus.Succeeded,
+            StudioWorkflowStepOutcome.Continue, null, null, null, now, now.AddSeconds(1), Uid);
+        var pending = StudioWorkflowApproval.Create(TenantId, instance.Id, "validation", Uid, null, "Accord ?", null, null);
+
+        SetupReadPermission();
+        SetupEntityAndRecord(record);
+        _workflows.Setup(r => r.GetInstanceAsync(TenantId, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(instance);
+        _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>())).ReturnsAsync(definition);
+        _workflows.Setup(r => r.ListStepRunsAsync(TenantId, instance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { runIndex1, runIndex0 });
+        _workflows.Setup(r => r.ListApprovalsForInstanceAsync(TenantId, instance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { pending });
+
+        var result = await NewGetInstanceHandler().Handle(
+            new GetRecordWorkflowInstanceQuery("customer", record.Id, instance.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var detail = result.Value;
+        Assert.Equal(instance.Id, detail.Instance.Id);
+        Assert.Equal(definition.Key, detail.Instance.WorkflowKey);
+        Assert.Equal(new[] { 0, 1 }, detail.Steps.Select(st => st.StepIndex).ToArray());
+        Assert.Single(detail.Approvals);
+        Assert.True(detail.Context.ContainsKey("previous"));
+        Assert.Null(detail.Context["previous"]);
+        Assert.Equal(1, detail.Context["record"]!["a"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task GetRecordWorkflowInstance_returns_NotFound_when_instance_is_missing_or_belongs_to_another_record()
+    {
+        var record = CustomRecord.Create(TenantId, _entity.Id, "{}", Uid);
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        var missingId = Guid.NewGuid();
+        var foreignInstance = NewInstance(definition, Guid.NewGuid()); // instance d'une AUTRE fiche de la même table
+
+        SetupReadPermission();
+        SetupEntityAndRecord(record);
+        _workflows.Setup(r => r.GetInstanceAsync(TenantId, missingId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StudioWorkflowInstance?)null);
+        _workflows.Setup(r => r.GetInstanceAsync(TenantId, foreignInstance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(foreignInstance);
+
+        var missing = await NewGetInstanceHandler().Handle(
+            new GetRecordWorkflowInstanceQuery("customer", record.Id, missingId), CancellationToken.None);
+        var foreign = await NewGetInstanceHandler().Handle(
+            new GetRecordWorkflowInstanceQuery("customer", record.Id, foreignInstance.Id), CancellationToken.None);
+
+        Assert.False(missing.IsSuccess);
+        Assert.Equal("StudioWorkflowInstance.NotFound", missing.Error.Code);
+        Assert.False(foreign.IsSuccess);
+        Assert.Equal("StudioWorkflowInstance.NotFound", foreign.Error.Code);
+        _workflows.Verify(r => r.ListStepRunsAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetRecordWorkflowInstance_requires_records_read_and_returns_NotFound_for_unknown_record()
+    {
+        var recordId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+
+        SetupReadPermission(false);
+        var denied = await NewGetInstanceHandler().Handle(
+            new GetRecordWorkflowInstanceQuery("customer", recordId, instanceId), CancellationToken.None);
+        Assert.False(denied.IsSuccess);
+        Assert.Equal("Unauthorized", denied.Error.Code);
+
+        SetupReadPermission();
+        SetupEntityAndRecord(null);
+        _records.Setup(r => r.GetAsync(TenantId, _entity.Id, recordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CustomRecord?)null);
+        var result = await NewGetInstanceHandler().Handle(
+            new GetRecordWorkflowInstanceQuery("customer", recordId, instanceId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("CustomRecord.NotFound", result.Error.Code);
+        _workflows.Verify(r => r.GetInstanceAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task GetRecordWorkflows_returns_only_active_manual_definitions_with_step_count()
     {
