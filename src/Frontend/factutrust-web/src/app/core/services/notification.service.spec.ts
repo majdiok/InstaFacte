@@ -107,4 +107,15 @@ describe('NotificationService', () => {
       expect(isStudioWorkflowNotification(type)).withContext(`type ${type}`).toBeFalse();
     }
   });
+
+  // D-44-94 : l'API sérialise `NotificationType` en chaîne PascalCase (JsonStringEnumConverter global,
+  // Program.cs) — la seule forme numérique laissait le badge d'approbations sans rafraîchissement immédiat.
+  it("reconnaît la forme chaîne PascalCase émise par l'API pour les types 15 à 18", () => {
+    for (const type of ['StudioWorkflowApprovalRequested', 'StudioWorkflowApprovalDecided', 'StudioWorkflowStepFailed', 'StudioWorkflowMessage']) {
+      expect(isStudioWorkflowNotification(type)).withContext(type).toBeTrue();
+    }
+    for (const type of ['FirmAssignmentRequested', 'ExchangeMessageReceived', 'FirmTimeSheetSubmitted', '', 'studioWorkflowMessage']) {
+      expect(isStudioWorkflowNotification(type)).withContext(`type ${type}`).toBeFalse();
+    }
+  });
 });

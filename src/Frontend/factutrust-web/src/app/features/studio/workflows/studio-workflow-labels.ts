@@ -275,8 +275,7 @@ export const STUDIO_WORKFLOW_LABELS = {
     startedAt: 'Lancé le',
     requestedAt: 'Demandé le',
     requestComment: 'Message du demandeur',
-    openInstance: 'Voir l\'instance',
-    status: 'Statut'
+    openInstance: 'Voir l\'instance'
   },
 
   recordTab: {

@@ -580,6 +580,27 @@ describe('AppNavService — secondary nav parity', () => {
     expect(badgeStub.start).not.toHaveBeenCalled();
     expect(capsStub.ensureLoaded).not.toHaveBeenCalled();
   });
+
+  // D-44-88 / D-44-92 : les vrais services écrivent un signal de façon synchrone
+  // (`_state.set(…)` dans ensureLoaded(), `polling.set(true)` dans start()). Appelés
+  // directement dans le computed navItems, ils levaient NG0600 (page blanche pour un
+  // concepteur, 4.4j). Des stubs qui écrivent un signal reproduisent ce comportement :
+  // le test échoue si les appels sortent du bloc `untracked(...)`.
+  it("n'écrit aucun signal dans le computed navItems (NG0600) quand ensureLoaded() et start() écrivent des signaux", () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, studioDesignerUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+    const capsState = signal(0);
+    const polling = signal(false);
+    capsStub.ensureLoaded.and.callFake(() => capsState.set(1));
+    badgeStub.start.and.callFake(() => polling.set(true));
+
+    const nav = TestBed.inject(AppNavService);
+
+    expect(() => nav.navItems()).not.toThrow();
+    expect(capsState()).toBe(1);
+    expect(polling()).toBeTrue();
+  });
 });
 
 function makeRegisterTestJwt(): string {

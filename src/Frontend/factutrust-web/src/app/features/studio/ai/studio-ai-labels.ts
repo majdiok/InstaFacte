@@ -590,7 +590,6 @@ export const STUDIO_AI_LABELS = {
     active: 'Actif',
     inactive: 'Inactif',
     inactiveNote: 'Les workflows créés par l’assistant sont inactifs : activez-les depuis le hub Workflows après relecture.',
-    noSpecTitle: 'Proposition de workflow',
     soonForWorkflows: 'Indisponible pour une proposition de workflow.'
   },
 

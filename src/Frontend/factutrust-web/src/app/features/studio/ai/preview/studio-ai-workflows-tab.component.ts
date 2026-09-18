@@ -88,7 +88,6 @@ export class StudioAiWorkflowsTabComponent {
   readonly summary = input<StudioPlanSummary | null>(null);
 
   readonly labels = STUDIO_AI_LABELS.workflows;
-  readonly triggerLabels = STUDIO_AI_LABELS.workflows.triggers;
   /** A-44a 4.4a1 (pas de doublon `stepIcons` dans STUDIO_AI_LABELS, D-44-09/D-44-86). */
   readonly stepTypeIcons: Readonly<Record<string, string>> = STEP_TYPE_ICONS;
 
@@ -99,12 +98,12 @@ export class StudioAiWorkflowsTabComponent {
   }
 
   triggerLabel(t: string | null): string {
-    return t ? (this.triggerLabels as Record<string, string>)[t] ?? t : '';
+    return t ? (this.labels.triggers as Record<string, string>)[t] ?? t : '';
   }
 
   /** D-44-86 : type hors enum ⇒ icône neutre `fa-solid fa-circle-dot`. */
   stepIcon(t: string | null): string {
-    return t ? (this.stepTypeIcons as Record<string, string>)[t] ?? 'fa-solid fa-circle-dot' : 'fa-solid fa-circle-dot';
+    return (t && this.stepTypeIcons[t]) || 'fa-solid fa-circle-dot';
   }
 
   readonly workflows = computed<StudioAiWorkflowRow[]>(() => {
