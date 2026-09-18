@@ -51,11 +51,15 @@ public sealed class StudioWorkflowFeaturesTests
     private readonly Mock<IAuditService> _audit = new();
     private readonly Mock<ICurrentUser> _currentUser = new();
     private readonly Mock<IStudioWorkflowEngine> _engine = new(MockBehavior.Strict);
+    private readonly Mock<IStudioUserNameResolver> _userNames = new(MockBehavior.Strict);
 
     public StudioWorkflowFeaturesTests()
     {
         _currentUser.Setup(u => u.TenantId).Returns(Tid);
         _currentUser.Setup(u => u.UserId).Returns(Uid);
+        // 4.6b1 : par défaut aucun lanceur n'est résolu (null) ; les tests « Demandé par » posent un nom.
+        _userNames.Setup(r => r.GetDisplayNamesAsync(Tid, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string>());
 
         _entities.Setup(e => e.GetByIdAsync(Tid, Entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Entity);
         _fields.Setup(f => f.ListByEntityAsync(Tid, Entity.Id, false, It.IsAny<CancellationToken>())).ReturnsAsync(Fields);
@@ -136,10 +140,10 @@ public sealed class StudioWorkflowFeaturesTests
         new(_entities.Object, _fields.Object, _currentUser.Object);
 
     private ListWorkflowInstancesQueryHandler ListInstancesHandler() =>
-        new(_workflows.Object, _currentUser.Object);
+        new(_workflows.Object, _currentUser.Object, _userNames.Object);
 
     private GetWorkflowInstanceQueryHandler GetInstanceHandler() =>
-        new(_workflows.Object, _currentUser.Object);
+        new(_workflows.Object, _currentUser.Object, _userNames.Object);
 
     private ListTenantWorkflowsQueryHandler ListTenantHandler() =>
         new(_workflows.Object, _currentUser.Object);
@@ -747,6 +751,53 @@ public sealed class StudioWorkflowFeaturesTests
         _workflows.Setup(w => w.GetDefinitionAsync(Tid, unknown, It.IsAny<CancellationToken>())).ReturnsAsync((StudioWorkflowDefinition?)null);
         var missing = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(unknown), CancellationToken.None);
         Assert.Equal("StudioWorkflowDefinition.NotFound", missing.Error.Code);
+    }
+
+    // 4.6b1 / D-46-B01 — « Demandé par » sur les instances (même motif que l'inbox 4.5a2).
+    [Fact]
+    public async Task List_instances_resolves_started_by_name_in_one_batch()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        var other = Guid.NewGuid();
+        var named = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.Manual, Uid, "{}", 0, null);
+        var unknownStarter = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.Manual, other, "{}", 0, null);
+        var systemStarted = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.OnCreate, null, "{}", 0, null);
+        _workflows.Setup(w => w.ListInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { named, unknownStarter, systemStarted });
+        _userNames.Setup(r => r.GetDisplayNamesAsync(Tid, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [Uid] = "Bob Martin" });   // « other » inconnu ⇒ null (D-45-02)
+
+        var result = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Bob Martin", result.Value[0].StartedByName);
+        Assert.Null(result.Value[1].StartedByName);
+        Assert.Null(result.Value[2].StartedByName);
+        // Une seule requête master pour les deux lanceurs distincts (le null n'est jamais résolu).
+        _userNames.Verify(r => r.GetDisplayNamesAsync(Tid,
+            It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(Uid) && ids.Contains(other)),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Get_instance_includes_the_started_by_name()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        var instance = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.OnUpdate, Uid, "{}", 1, null);
+        _workflows.Setup(w => w.GetInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(instance);
+        _workflows.Setup(w => w.ListStepRunsAsync(Tid, instance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<StudioWorkflowStepRun>());
+        _workflows.Setup(w => w.ListApprovalsForInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<StudioWorkflowApproval>());
+        _userNames.Setup(r => r.GetDisplayNamesAsync(Tid, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [Uid] = "Bob Martin" });
+
+        var result = await GetInstanceHandler().Handle(new GetWorkflowInstanceQuery(instance.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error?.Description);
+        Assert.Equal("Bob Martin", result.Value.Instance.StartedByName);
     }
 
     [Fact]

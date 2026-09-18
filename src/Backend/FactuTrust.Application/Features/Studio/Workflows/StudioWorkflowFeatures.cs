@@ -854,11 +854,13 @@ public sealed class ListWorkflowInstancesQueryHandler : IRequestHandler<ListWork
 
     private readonly IStudioWorkflowRepository _workflows;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioUserNameResolver _userNames;
 
-    public ListWorkflowInstancesQueryHandler(IStudioWorkflowRepository workflows, ICurrentUser currentUser)
+    public ListWorkflowInstancesQueryHandler(IStudioWorkflowRepository workflows, ICurrentUser currentUser, IStudioUserNameResolver userNames)
     {
         _workflows = workflows;
         _currentUser = currentUser;
+        _userNames = userNames;
     }
 
     public async Task<Result<IReadOnlyList<WorkflowInstanceDto>>> Handle(ListWorkflowInstancesQuery query, CancellationToken cancellationToken)
@@ -873,8 +875,9 @@ public sealed class ListWorkflowInstancesQueryHandler : IRequestHandler<ListWork
         var instances = await _workflows.ListInstancesForDefinitionAsync(
             tenantId, definition.Id, Math.Clamp(query.Max, 1, MaxInstances), cancellationToken);
 
+        var items = instances.Select(i => StudioWorkflowMapping.ToDto(i, definition)).ToList();
         return Result.Success<IReadOnlyList<WorkflowInstanceDto>>(
-            instances.Select(i => StudioWorkflowMapping.ToDto(i, definition)).ToList());
+            await StudioWorkflowStartedByNameSupport.ResolveAsync(_userNames, tenantId, items, cancellationToken));
     }
 }
 
@@ -889,7 +892,7 @@ internal static class StudioWorkflowInstanceDetailBuilder
 {
     public static async Task<WorkflowInstanceDetailDto> BuildAsync(
         IStudioWorkflowRepository workflows, Guid tenantId, StudioWorkflowInstance instance, CancellationToken cancellationToken,
-        bool readerScope = false)
+        bool readerScope = false, IStudioUserNameResolver? userNames = null)
     {
         // Définition possiblement supprimée (filtre IsDeleted) ⇒ WorkflowKey / WorkflowName null.
         var definition = await workflows.GetDefinitionAsync(tenantId, instance.WorkflowDefinitionId, cancellationToken);
@@ -907,11 +910,49 @@ internal static class StudioWorkflowInstanceDetailBuilder
             context["vars"] = new JsonObject();
         }
 
+        var summary = StudioWorkflowMapping.ToDto(instance, definition);
+        if (userNames is not null)
+            summary = await StudioWorkflowStartedByNameSupport.ResolveOneAsync(userNames, tenantId, summary, cancellationToken);
+
         return new WorkflowInstanceDetailDto(
-            StudioWorkflowMapping.ToDto(instance, definition),
+            summary,
             stepRuns.OrderBy(r => r.StepIndex).ThenBy(r => r.StartedAt).Select(StudioWorkflowMapping.ToDto).ToList(),
             approvals.Select(StudioWorkflowMapping.ToDto).ToList(),
             context);
+    }
+}
+
+/// <summary>
+/// 4.6b1 / D-46-B01 — « Demandé par » sur les instances : résolution du nom du lanceur en une requête
+/// par page (même motif que l'inbox 4.5a2, <c>StudioWorkflowApprovalFeatures</c>) ; lanceur inconnu ⇒
+/// <see langword="null"/> (D-45-02, jamais de repli sur l'e-mail). Appelée seulement par les handlers qui
+/// servent des listes ou des détails d'instances ; les réponses ponctuelles (cancel / remind / start)
+/// laissent <c>StartedByName</c> à null.
+/// </summary>
+internal static class StudioWorkflowStartedByNameSupport
+{
+    public static async Task<List<WorkflowInstanceDto>> ResolveAsync(
+        IStudioUserNameResolver userNames, Guid tenantId, List<WorkflowInstanceDto> items, CancellationToken cancellationToken)
+    {
+        var starterIds = items.Where(i => i.StartedBy is not null).Select(i => i.StartedBy!.Value).Distinct().ToList();
+        if (starterIds.Count == 0)
+            return items;
+        var names = await userNames.GetDisplayNamesAsync(tenantId, starterIds, cancellationToken);
+        for (var k = 0; k < items.Count; k++)
+        {
+            if (items[k].StartedBy is { } starter && names.TryGetValue(starter, out var name))
+                items[k] = items[k] with { StartedByName = name };
+        }
+        return items;
+    }
+
+    public static async Task<WorkflowInstanceDto> ResolveOneAsync(
+        IStudioUserNameResolver userNames, Guid tenantId, WorkflowInstanceDto item, CancellationToken cancellationToken)
+    {
+        if (item.StartedBy is not { } starter)
+            return item;
+        var names = await userNames.GetDisplayNamesAsync(tenantId, new[] { starter }, cancellationToken);
+        return names.TryGetValue(starter, out var name) ? item with { StartedByName = name } : item;
     }
 }
 
@@ -921,11 +962,13 @@ public sealed class GetWorkflowInstanceQueryHandler : IRequestHandler<GetWorkflo
 {
     private readonly IStudioWorkflowRepository _workflows;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioUserNameResolver _userNames;
 
-    public GetWorkflowInstanceQueryHandler(IStudioWorkflowRepository workflows, ICurrentUser currentUser)
+    public GetWorkflowInstanceQueryHandler(IStudioWorkflowRepository workflows, ICurrentUser currentUser, IStudioUserNameResolver userNames)
     {
         _workflows = workflows;
         _currentUser = currentUser;
+        _userNames = userNames;
     }
 
     public async Task<Result<WorkflowInstanceDetailDto>> Handle(GetWorkflowInstanceQuery query, CancellationToken cancellationToken)
@@ -937,6 +980,7 @@ public sealed class GetWorkflowInstanceQueryHandler : IRequestHandler<GetWorkflo
         if (instance is null)
             return Result.Failure<WorkflowInstanceDetailDto>(Error.NotFound("StudioWorkflowInstance", query.InstanceId));
 
-        return Result.Success(await StudioWorkflowInstanceDetailBuilder.BuildAsync(_workflows, tenantId, instance, cancellationToken));
+        return Result.Success(await StudioWorkflowInstanceDetailBuilder.BuildAsync(
+            _workflows, tenantId, instance, cancellationToken, userNames: _userNames));
     }
 }

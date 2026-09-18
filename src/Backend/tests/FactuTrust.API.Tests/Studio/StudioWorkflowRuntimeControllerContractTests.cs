@@ -142,6 +142,32 @@ public sealed class StudioWorkflowRuntimeControllerContractTests
         Assert.Equal(InstanceId, body.Data!.Instance.Id);
     }
 
+    // 4.6b1 / D-46-B01 — « startedByName » en fin de contrat de WorkflowInstanceDto, camelCase, null par défaut
+    // (forme à 18 positionnels intacte — même motif que l'inbox 4.5a2 ci-dessus).
+    [Fact]
+    public async Task GetRecordInstance_serializes_startedByName_in_camelCase_with_null_default()
+    {
+        var named = InstanceDto with { StartedByName = "Alice Martin" };
+        var legacy = InstanceDto;
+        Assert.Null(legacy.StartedByName);
+        var web = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        Assert.Contains("\"startedByName\":\"Alice Martin\"", JsonSerializer.Serialize(named, web));
+        Assert.Contains("\"startedByName\":null", JsonSerializer.Serialize(legacy, web));
+
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        mediator.Setup(m => m.Send(It.IsAny<GetRecordWorkflowInstanceQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new WorkflowInstanceDetailDto(
+                named, Array.Empty<WorkflowStepRunDto>(), Array.Empty<WorkflowApprovalDto>(), new JsonObject())));
+
+        var result = await CreateController(mediator, workflowsEnabled: true)
+            .GetRecordInstance(EntityKey, RecordId, InstanceId, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<WorkflowInstanceDetailDto>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal("Alice Martin", body.Data!.Instance.StartedByName);
+    }
+
     // 4.5b2 / D-45-04 — mêmes mappages d'erreurs que les autres routes runtime.
     [Fact]
     public async Task GetRecordInstance_maps_NotFound_to_404_and_unknown_entity_Validation_to_400()

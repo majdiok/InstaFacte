@@ -49,17 +49,20 @@ public sealed class ListRecordWorkflowInstancesQueryHandler
     private readonly ICustomEntityRepository _entities;
     private readonly ICustomRecordRepository _records;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioUserNameResolver _userNames;
 
     public ListRecordWorkflowInstancesQueryHandler(
         IStudioWorkflowRepository workflows,
         ICustomEntityRepository entities,
         ICustomRecordRepository records,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IStudioUserNameResolver userNames)
     {
         _workflows = workflows;
         _entities = entities;
         _records = records;
         _currentUser = currentUser;
+        _userNames = userNames;
     }
 
     public async Task<Result<IReadOnlyList<WorkflowInstanceDto>>> Handle(
@@ -98,7 +101,9 @@ public sealed class ListRecordWorkflowInstancesQueryHandler
             result.Add(StudioWorkflowMapping.ToDto(instance, definition));
         }
 
-        return Result.Success<IReadOnlyList<WorkflowInstanceDto>>(result);
+        // 4.6b1 / D-46-B01 — « Demandé par » : une résolution en lot pour la page (motif inbox 4.5a2).
+        return Result.Success<IReadOnlyList<WorkflowInstanceDto>>(
+            await StudioWorkflowStartedByNameSupport.ResolveAsync(_userNames, tenantId, result, cancellationToken));
     }
 }
 
@@ -109,14 +114,17 @@ public sealed class GetRecordWorkflowInstanceQueryHandler
     private readonly ICustomEntityRepository _entities;
     private readonly ICustomRecordRepository _records;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioUserNameResolver _userNames;
 
     public GetRecordWorkflowInstanceQueryHandler(
-        IStudioWorkflowRepository workflows, ICustomEntityRepository entities, ICustomRecordRepository records, ICurrentUser currentUser)
+        IStudioWorkflowRepository workflows, ICustomEntityRepository entities, ICustomRecordRepository records, ICurrentUser currentUser,
+        IStudioUserNameResolver userNames)
     {
         _workflows = workflows;
         _entities = entities;
         _records = records;
         _currentUser = currentUser;
+        _userNames = userNames;
     }
 
     public async Task<Result<WorkflowInstanceDetailDto>> Handle(GetRecordWorkflowInstanceQuery query, CancellationToken cancellationToken)
@@ -140,9 +148,10 @@ public sealed class GetRecordWorkflowInstanceQueryHandler
         if (instance is null || instance.RecordId != query.RecordId || instance.EntityDefinitionId != entity.Id)
             return Result.Failure<WorkflowInstanceDetailDto>(Error.NotFound("StudioWorkflowInstance", query.InstanceId));
 
-        // Portée lecteur : contexte expurgé (e-mail du lanceur, results, vars — D-45-27).
+        // Portée lecteur : contexte expurgé (e-mail du lanceur, results, vars — D-45-27). Le NOM du lanceur
+        // reste servi (colonne « Demandé par » déjà visible aux lecteurs dans l'inbox, 4.5e — D-46-B01).
         return Result.Success(await StudioWorkflowInstanceDetailBuilder.BuildAsync(
-            _workflows, tenantId, instance, cancellationToken, readerScope: true));
+            _workflows, tenantId, instance, cancellationToken, readerScope: true, userNames: _userNames));
     }
 }
 

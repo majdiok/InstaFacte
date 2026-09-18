@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using FactuTrust.Application.Common.Interfaces;
 
 namespace FactuTrust.Application.Features.Studio.Workflows;
 
@@ -68,7 +69,12 @@ public sealed record WorkflowDefinitionDto(
     DateTime UpdatedAt,
     string RowVersion);
 
-/// <summary>Instance de workflow (résumé) ; <c>WorkflowKey</c> / <c>WorkflowName</c> sont null si la définition a été supprimée.</summary>
+/// <summary>
+/// Instance de workflow (résumé) ; <c>WorkflowKey</c> / <c>WorkflowName</c> sont null si la définition a été supprimée.
+/// <c>StartedByName</c> (4.6b1 / D-46-B01, en fin de contrat, optionnel) : nom lisible du lanceur résolu par page
+/// (<see cref="IStudioUserNameResolver"/>, même motif que l'inbox 4.5a2) ; null si le lanceur est inconnu (D-45-02)
+/// ou si le handler ne le résout pas (réponses ponctuelles cancel / remind / start).
+/// </summary>
 public sealed record WorkflowInstanceDto(
     Guid Id,
     Guid WorkflowDefinitionId,
@@ -87,7 +93,8 @@ public sealed record WorkflowInstanceDto(
     DateTime? CompletedAt,
     int Depth,
     Guid? OriginInstanceId,
-    string? Error);
+    string? Error,
+    string? StartedByName = null);
 
 /// <summary>Exécution d'une étape (journal append-only) ; <c>Result</c> est null si le JSON est absent ou n'est pas un objet.</summary>
 public sealed record WorkflowStepRunDto(
