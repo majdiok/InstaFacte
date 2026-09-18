@@ -1,3 +1,4 @@
+using FactuTrust.Domain.Entities.Studio;
 using FactuTrust.Domain.Entities.Studio.Workflows;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
@@ -611,6 +612,119 @@ public sealed class StudioWorkflowRepositoryTests : IClassFixture<StudioWorkflow
         var reloaded = await repo.GetInstanceAsync(tenantId, instance.Id);
         Assert.NotNull(reloaded!.LeasedAt);
         Assert.False(await repo.TryLeaseInstanceAsync(reloaded, now.AddMinutes(5), lease));
+    }
+
+    // ---- Catalogue tenant (4.5c1) ----
+
+    [SkippableFact]
+    public async Task ListByTenantAsync_joins_active_non_junction_tables_filters_by_search_and_orders_by_table_then_name()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+        var repo = _sql.NewRepository();
+
+        var clients = NewEntity(tenantA, "clients", "Clients");
+        var fournisseurs = NewEntity(tenantA, "fournisseurs", "Fournisseurs");
+        var archives = NewEntity(tenantA, "archives", "Archives");
+        archives.Update("Archives", "Archives", null, null, isActive: false, null);
+        var corbeille = NewEntity(tenantA, "corbeille", "Corbeille");
+        corbeille.SoftDelete(null);
+        var jonction = NewEntity(tenantA, "clients_tags", "Clients ↔ Tags", CustomEntityKind.Junction);
+        var clientsB = NewEntity(tenantB, "clients", "Clients");
+        await SeedEntitiesAsync(clients, fournisseurs, archives, corbeille, jonction, clientsB);
+
+        // Tenant A : 2 définitions actives + 1 inactive (listée) + 1 supprimée (masquée) sur « Clients », 1 sur « Fournisseurs ».
+        var relance = StudioWorkflowDefinition.Create(tenantA, clients.Id, "relance", "Relance", null, StudioWorkflowTriggerKind.OnCreate, "{}", "[]", true, null);
+        var accueil = StudioWorkflowDefinition.Create(tenantA, clients.Id, "accueil", "Accueil", null, StudioWorkflowTriggerKind.OnCreate, "{}", "[]", true, null);
+        var zeta = StudioWorkflowDefinition.Create(tenantA, clients.Id, "zeta", "Zeta", null, StudioWorkflowTriggerKind.OnUpdate, "{}", "[]", false, null);
+        var supprimee = NewDefinition(tenantA, clients.Id, "supprimee");
+        supprimee.SoftDelete(null);
+        var validation = StudioWorkflowDefinition.Create(tenantA, fournisseurs.Id, "validation", "Validation", null, StudioWorkflowTriggerKind.OnCreate, "{}", "[]", true, null);
+        // Exclues par la jointure : table inactive, table supprimée, table de jonction, table inconnue, autre tenant.
+        var surArchives = NewDefinition(tenantA, archives.Id, "sur_archives");
+        var surCorbeille = NewDefinition(tenantA, corbeille.Id, "sur_corbeille");
+        var surJonction = NewDefinition(tenantA, jonction.Id, "sur_jonction");
+        var orpheline = NewDefinition(tenantA, Guid.NewGuid(), "orpheline");
+        var relanceB = StudioWorkflowDefinition.Create(tenantB, clientsB.Id, "relance", "Relance", null, StudioWorkflowTriggerKind.OnCreate, "{}", "[]", true, null);
+        foreach (var d in new[] { relance, accueil, zeta, supprimee, validation, surArchives, surCorbeille, surJonction, orpheline, relanceB })
+            await repo.AddDefinitionAsync(d);
+
+        var page = await repo.ListByTenantAsync(tenantA, null, 0, 50);
+        Assert.Equal(
+            new[] { ("Clients", "Accueil"), ("Clients", "Relance"), ("Clients", "Zeta"), ("Fournisseurs", "Validation") },
+            page.Select(r => (r.EntityDisplayName, r.Definition.Name)).ToArray());
+        Assert.All(page.Where(r => r.EntityDisplayName == "Clients"), r => Assert.Equal("clients", r.EntityKey));
+        Assert.Equal(4, await repo.CountByTenantAsync(tenantA, null));
+
+        // Pagination stable sur le même tri.
+        var second = await repo.ListByTenantAsync(tenantA, null, 1, 2);
+        Assert.Equal(new[] { relance.Id, zeta.Id }, second.Select(r => r.Definition.Id).ToArray());
+
+        // Recherche sur le nom ou la clé (espaces ignorés), même filtre pour le total.
+        Assert.Equal(new[] { validation.Id }, (await repo.ListByTenantAsync(tenantA, "  Valid ", 0, 50)).Select(r => r.Definition.Id).ToArray());
+        Assert.Equal(1, await repo.CountByTenantAsync(tenantA, "Valid"));
+        Assert.Equal(new[] { accueil.Id }, (await repo.ListByTenantAsync(tenantA, "accu", 0, 50)).Select(r => r.Definition.Id).ToArray());
+        Assert.Empty(await repo.ListByTenantAsync(tenantA, "introuvable", 0, 50));
+        Assert.Equal(0, await repo.CountByTenantAsync(tenantA, "introuvable"));
+
+        // Tenant B ne voit que sa propre définition.
+        Assert.Equal(new[] { relanceB.Id }, (await repo.ListByTenantAsync(tenantB, null, 0, 50)).Select(r => r.Definition.Id).ToArray());
+    }
+
+    [SkippableFact]
+    public async Task CountOpenInstancesForDefinitionsAsync_groups_open_instances_per_definition_and_omits_zero_and_other_tenants()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+
+        var tenantId = Guid.NewGuid();
+        var otherTenantId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
+        var repo = _sql.NewRepository();
+
+        var first = NewDefinition(tenantId, entityId, "first");
+        var second = NewDefinition(tenantId, entityId, "second");
+        var third = NewDefinition(tenantId, entityId, "third");
+        var foreign = NewDefinition(otherTenantId, entityId, "first");
+        foreach (var d in new[] { first, second, third, foreign })
+            await repo.AddDefinitionAsync(d);
+
+        var running = NewInstance(tenantId, first, Guid.NewGuid());
+        var waiting = NewInstance(tenantId, first, Guid.NewGuid());
+        waiting.Suspend(StudioWorkflowInstanceStatus.Waiting, DateTime.UtcNow.AddHours(1), "{}");
+        var waitingApproval = NewInstance(tenantId, first, Guid.NewGuid());
+        waitingApproval.Suspend(StudioWorkflowInstanceStatus.WaitingApproval, DateTime.UtcNow.AddHours(1), "{}");
+        var completed = NewInstance(tenantId, first, Guid.NewGuid());
+        completed.Complete("{}");
+        var failed = NewInstance(tenantId, first, Guid.NewGuid());
+        failed.Fail("boom");
+        var secondRunning = NewInstance(tenantId, second, Guid.NewGuid());
+        var secondCancelled = NewInstance(tenantId, second, Guid.NewGuid());
+        secondCancelled.Cancel(null);
+        var foreignRunning = NewInstance(otherTenantId, foreign, Guid.NewGuid());
+        foreach (var i in new[] { running, waiting, waitingApproval, completed, failed, secondRunning, secondCancelled, foreignRunning })
+            await repo.AddInstanceAsync(i);
+
+        var counts = await repo.CountOpenInstancesForDefinitionsAsync(
+            tenantId, new[] { first.Id, first.Id, second.Id, third.Id, foreign.Id });
+
+        Assert.Equal(new Dictionary<Guid, int> { [first.Id] = 3, [second.Id] = 1 }, counts);
+        Assert.False(counts.ContainsKey(third.Id));
+        Assert.False(counts.ContainsKey(foreign.Id));
+
+        Assert.Empty(await repo.CountOpenInstancesForDefinitionsAsync(tenantId, Array.Empty<Guid>()));
+    }
+
+    private static CustomEntityDefinition NewEntity(Guid tenantId, string key, string displayName, CustomEntityKind kind = CustomEntityKind.Standard)
+        => CustomEntityDefinition.Create(tenantId, key, displayName, displayName, null, null, null, null, kind);
+
+    /// <summary>Semis direct (le dépôt des tables n'est pas sous test) : contexte court sur la même base.</summary>
+    private async Task SeedEntitiesAsync(params CustomEntityDefinition[] entities)
+    {
+        await using var context = new TenantDbContext(_sql.Options);
+        context.CustomEntityDefinitions.AddRange(entities);
+        await context.SaveChangesAsync();
     }
 
     private static void SetCreatedAt(StudioWorkflowApproval approval, DateTime createdAt)
