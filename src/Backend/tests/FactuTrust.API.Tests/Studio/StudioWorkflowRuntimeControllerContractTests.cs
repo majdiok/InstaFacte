@@ -1,6 +1,7 @@
 using FactuTrust.API.Authorization;
 using FactuTrust.API.Controllers.Studio;
 using FactuTrust.Application.Configuration;
+using System.Text.Json;
 using FactuTrust.Application.Features.Studio.Workflows;
 using FactuTrust.Domain.Common;
 using MediatR;
@@ -115,6 +116,33 @@ public sealed class StudioWorkflowRuntimeControllerContractTests
         var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<WorkflowInstanceDto>>(created.Value);
         Assert.True(body.Success);
         Assert.Equal(InstanceId, body.Data!.Id);
+    }
+
+    // 4.5a2 / D-44-79 — « startedByName » en fin de contrat, camelCase, null par défaut (forme à 10 positionnels intacte).
+    [Fact]
+    public async Task ListMyApprovals_returns_200_and_serializes_startedByName_in_camelCase_with_null_default()
+    {
+        var approval = new WorkflowApprovalDto(ApprovalId, InstanceId, "approve", null, "SalesRep", "Accord ?", null,
+            "pending", null, null, null, null, DateTime.UtcNow, "AAAAAAAAB9E=");
+        var named = new WorkflowApprovalInboxItemDto(approval, InstanceId, "wf", "Relance", EntityKey, "Clients", RecordId,
+            "Dossier A", Guid.NewGuid(), DateTime.UtcNow, "Amine Zorgati");
+        var legacy = new WorkflowApprovalInboxItemDto(approval, InstanceId, "wf", "Relance", EntityKey, "Clients", RecordId,
+            null, null, DateTime.UtcNow);
+        var mediator = new Mock<IMediator>();
+        mediator.Setup(m => m.Send(It.IsAny<ListMyApprovalsQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<WorkflowApprovalInboxItemDto>>(new[] { named, legacy }));
+
+        var result = await CreateController(mediator, workflowsEnabled: true)
+            .ListMyApprovals(cancellationToken: CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<IReadOnlyList<WorkflowApprovalInboxItemDto>>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal(2, body.Data!.Count);
+        Assert.Null(legacy.StartedByName);
+        var web = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        Assert.Contains("\"startedByName\":\"Amine Zorgati\"", JsonSerializer.Serialize(named, web));
+        Assert.Contains("\"startedByName\":null", JsonSerializer.Serialize(legacy, web));
     }
 
     [Fact]
