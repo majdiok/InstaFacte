@@ -1,5 +1,6 @@
 using FactuTrust.API.Authorization;
 using FactuTrust.Application.Configuration;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Studio.Workflows;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -10,8 +11,8 @@ namespace FactuTrust.API.Controllers.Studio;
 
 /// <summary>
 /// API de conception des workflows Studio (PR 4.1, tranche 4.1k) : catalogue des types d'étapes,
-/// CRUD des définitions par table, activation, duplication, validation à blanc et lecture des
-/// instances. Toutes les routes exigent <c>studio:design_entities</c> (politique de classe, aucune
+/// CRUD des définitions par table, activation, duplication, validation à blanc, lecture des
+/// instances et catalogue tenant paginé <c>GET workflows</c> (4.5c3). Toutes les routes exigent <c>studio:design_entities</c> (politique de classe, aucune
 /// politique plus faible par action) et sont gardées par le drapeau
 /// <c>Ollama:EnableStudioWorkflows</c> : coupé ⇒ 404 à message fixe sur chaque route, AVANT tout
 /// appel au médiateur. Les erreurs métier passent par <see cref="StudioErrorMapping"/> (409
@@ -44,6 +45,24 @@ public sealed class StudioWorkflowsController : ControllerBase
         var result = await _mediator.Send(new GetWorkflowStepCatalogQuery(), cancellationToken);
         return StudioErrorMapping.ToActionResult(this, result,
             catalog => Ok(ApiResponse<WorkflowStepCatalogDto>.Ok(catalog)));
+    }
+
+    /// <summary>
+    /// Catalogue tenant paginé des workflows de toutes les tables actives non-jonction (4.5c3 / D-44-20) ; remplace l'agrégation
+    /// client bornée à 25 tables du hub. <paramref name="search"/> filtre nom ou clé ; <paramref name="pageSize"/> borné à 1..200.
+    /// </summary>
+    [HttpGet("workflows")]
+    public async Task<IActionResult> ListAll(
+        [FromQuery] string? search = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken cancellationToken = default)
+    {
+        if (Unavailable() is { } unavailable) return unavailable;
+        pageSize = Math.Clamp(pageSize, 1, ListTenantWorkflowsQueryHandler.MaxPageSize);
+        var result = await _mediator.Send(new ListTenantWorkflowsQuery(search, page, pageSize), cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            workflows => Ok(ApiResponse<PagedResult<WorkflowDefinitionListItemDto>>.Ok(workflows)));
     }
 
     /// <summary>Liste des workflows (actifs et inactifs) d'une table Studio, avec le nombre d'instances ouvertes.</summary>
