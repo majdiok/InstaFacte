@@ -63,11 +63,14 @@ test.describe('Studio — mes approbations (4.4)', () => {
     await expect(row1).toContainText('Validation de l\'intervention'); // étape = approval.title
     await expect(page.getByTestId('sap-row-a2')).toBeVisible();
 
-    // Colonnes figées (D-44-79) : « Lancé le » et « Demandé le » présentes, pas de « Demandé par ».
+    // Colonnes : « Lancé le », « Demandé le » et, depuis 4.5e (D-44-79 levé), « Demandé par »
+    // = `startedByName ?? '—'` (a1 : « Alice Martin » ; a2 : lanceur inconnu ⇒ « — »).
     const table = page.locator('.ft-table-card');
     await expect(table.getByRole('columnheader', { name: 'Lancé le' })).toBeVisible();
     await expect(table.getByRole('columnheader', { name: 'Demandé le' })).toBeVisible();
-    await expect(table.getByRole('columnheader', { name: /Demandé par/ })).toHaveCount(0);
+    await expect(table.getByRole('columnheader', { name: 'Demandé par' })).toBeVisible();
+    await expect(page.getByTestId('sap-requested-by-a1')).toHaveText('Alice Martin');
+    await expect(page.getByTestId('sap-requested-by-a2')).toHaveText('—');
   });
 
   test('refuser exige un motif puis retire la ligne', async ({ page }) => {
@@ -124,11 +127,12 @@ test.describe('Studio — mes approbations (4.4)', () => {
     await expect(page.getByTestId('sap-panel-column')).toHaveCount(0);
   });
 
-  test('404 sur la sonde : redirection vers /studio ; 403 : accès refusé', async ({ page }) => {
-    // Module coupé côté serveur (fail-closed) ⇒ repli /studio.
+  test('404 sur la sonde : redirection vers /dashboard ; 403 : accès refusé', async ({ page }) => {
+    // Module coupé côté serveur (fail-closed) ⇒ repli /dashboard (4.5d1, D-45-14 : /studio exige
+    // studio:design_entities, un lecteur y serait renvoyé vers /access-denied).
     await setup(page, { workflows: { approvalsStatus: 404 } });
     await page.goto('/studio/approvals');
-    await expect(page).toHaveURL(/\/studio\/?$/);
+    await expect(page).toHaveURL(/\/dashboard\/?$/);
 
     // Droit absent ⇒ /access-denied avec returnUrl (D11) — seconde page, mocks dédiés.
     const page2 = await page.context().newPage();

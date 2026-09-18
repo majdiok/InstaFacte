@@ -241,7 +241,8 @@ export const WF_APPROVALS = [
     recordId: 'r1',
     recordLabel: 'Chaudière A12',
     startedBy: null,
-    startedAt: iso(-26 * HOUR_MS)
+    startedAt: iso(-26 * HOUR_MS),
+    startedByName: 'Alice Martin' // 4.5a2 : « Demandé par » (11e champ, `null` par défaut)
   },
   {
     approval: {
@@ -268,7 +269,8 @@ export const WF_APPROVALS = [
     recordId: 'r2',
     recordLabel: 'Pompe B3',
     startedBy: null,
-    startedAt: iso(-3 * HOUR_MS)
+    startedAt: iso(-3 * HOUR_MS),
+    startedByName: null // lanceur inconnu ⇒ « — » (D-45-02)
   }
 ];
 
@@ -392,6 +394,9 @@ export async function installStudioWorkflowMocks(
     if (recordProbeStatus === 404) return fulfil(route, notFound, 404);
     return fulfil(route, ok(instances));
   });
+  // Route runtime lecteur (4.5b/d2) : même détail que `workflows/instances/inst-1`, portée fiche.
+  await page.route(`**/api/studio/records/${entityKey}/r1/workflow-instances/inst-1`, route =>
+    fulfil(route, ok(WF_INSTANCE_DETAIL)));
   await page.route(`**/api/studio/records/${entityKey}/workflows`, route => fulfil(route, ok(WF_RUNNABLE)));
   await page.route(`**/api/studio/records/${entityKey}/r1/workflows/validation_intervention/run`, route =>
     fulfil(route, ok({ ...instances[0], id: 'inst-new', status: 'running', completedAt: null }), 201));

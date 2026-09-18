@@ -146,6 +146,7 @@ médiateur**. Erreurs via `StudioErrorMapping` : 409 `Conflict`, 404 `*.NotFound
 | Route | Corps | Réponse | Erreurs |
 |---|---|---|---|
 | `GET workflows/step-catalog` | — | 200 `WorkflowStepCatalogDto { entries }` | — |
+| `GET workflows?search=&page=1&pageSize=50` (4.5c) | — | 200 `PagedResult<WorkflowDefinitionListItemDto>` = `{ items: [{ workflow: WorkflowDefinitionDto, entityKey, entityDisplayName }], page, pageSize, totalCount, totalPages, hasPreviousPage, hasNextPage }` — catalogue du tenant : tables **actives non-jonction**, définitions actives et inactives, tri `entityDisplayName, name, key`, `search` (contient, nom ou clé, ≤ 128), `pageSize` borné 1..200 ; permission `studio:design_entities` vérifiée **aussi au handler** | — |
 | `GET entities/{entityId}/workflows` | — | 200 `WorkflowDefinitionDto[]` (actifs et inactifs, `openInstances`) | 404 `CustomEntity.NotFound` |
 | `GET workflows/{id}` | — | 200 `WorkflowDefinitionDto` | 404 `StudioWorkflowDefinition.NotFound` |
 | `POST entities/{entityId}/workflows` | `SaveWorkflowRequest` | **201** + `Location` → `GET workflows/{id}`, `version = 1` | 400 `Validation.trigger` / `Validation.steps[i].<prop>` (1ʳᵉ issue + « (+n autre(s) erreur(s) …) ») / `Validation.Plan` (quota 20) ; 409 `Conflict` (clé prise) ; 404 |
@@ -182,30 +183,41 @@ Livré en PR 4.4 (tranches a1 → l2). Arborescence :
 - `features/studio/workflows/` — **modèles** (`studio-workflows.models.ts` : DTO, unions snake_case,
   `WORKFLOW_LIMITS`, `WORKFLOW_TRIGGERS`, `TEMPLATE_VARIABLES`, `STEP_KEY_REGEX`, sévérités,
   `isOpenInstance`, `slugifyWorkflowKey`) ; **libellés** (`studio-workflow-labels.ts` :
-  `STUDIO_WORKFLOW_LABELS`, `formatWorkflowLabel`, `STEP_TYPE_ICONS`) ; **service**
-  (`studio-workflows.service.ts` : 20 méthodes — 11 conception + 9 exécution — `skipErrorUi` sur les
-  sondes et écritures gérées localement, `workflowErrorMessage` pour l'enveloppe
+  `STUDIO_WORKFLOW_LABELS`, `formatWorkflowLabel` — alias de `formatLabel` de
+  `features/studio/shared/studio-text.util.ts`, qui porte aussi `slugifyKey` (4.5h) —, `STEP_TYPE_ICONS`) ;
+  **service** (`studio-workflows.service.ts` : 22 méthodes — 12 conception + 10 exécution — `skipErrorUi`
+  sur les sondes et écritures gérées localement, `workflowErrorMessage` pour l'enveloppe
   `{ success, data, message, error }`).
-- **Hub** `studio-workflows-hub.component.ts` (`/studio/workflows`, `?entity=`, borné à 25 tables) :
-  création, activation, duplication, suppression confirmée.
+- **Hub** `studio-workflows-hub.component.ts` (`/studio/workflows`) : sans `?entity=`, vue « Toutes les
+  tables » en **une** requête `GET workflows?page=1&pageSize=200` (page unique ; au-delà de 200, message de
+  troncature invitant à choisir une table — 4.5f, la borne « 25 tables » a disparu) ; avec `?entity=`,
+  `GET entities/{id}/workflows`. Création, activation, duplication, suppression confirmée.
 - **Concepteur** `studio-workflow-designer.component.ts` (`/studio/workflows/new`, `/studio/workflows/:id`,
   grille `1fr · 320 px · 250 px`, `p-drawer` < 1 280 px) : éditeur d'étapes
   (`step-editor/`), liste réordonnable, arbre de condition en lecture, validation côté serveur avant
   enregistrement (`rowVersion`, issues mappées par étape), panneau « instances récentes ».
 - **Exécution** : `studio-workflow-status-tag.component.ts` (étiquette de statut partagée),
-  `studio-workflow-instance-detail.component.ts` (tiroir `p-drawer` piloté par `?instance=` : résumé,
-  `p-timeline` des étapes, approbations, annulation avec motif ≤ 500, relance des approbateurs —
-  409 ⇒ « déjà relancés il y a moins de 24 h »),
-  `studio-record-workflows-tab.component.ts` (onglet « Workflows » de la fiche enregistrement :
-  badge d'instances ouvertes, lancement manuel par clé).
+  `studio-workflow-instance-detail.component.ts` (tiroir `p-drawer` **bi-mode** : en portée conception
+  — `?instance=` du concepteur — il lit `GET workflows/instances/{id}` ; en portée fiche — entrée
+  `recordId` renseignée — il lit la route runtime `GET records/{entityKey}/{recordId}/workflow-instances/{id}`
+  (`custom_records:read`) et masque « Ouvrir l'origine » (4.5d2) : résumé, `p-timeline` des étapes,
+  approbations, annulation avec motif ≤ 500, relance des approbateurs — 409 ⇒ « déjà relancés il y a
+  moins de 24 h »), `studio-record-workflows-tab.component.ts` (onglet « Workflows » de la fiche
+  enregistrement : badge d'instances ouvertes, lancement manuel par clé, « Détail » pour tout lecteur ;
+  sans `<p-toast>` propre — la fiche hôte porte l'unique toast, D-44-89).
 - `features/studio/approvals/` — **page « Mes approbations »** (`/studio/approvals` : KPI,
-  table, dialog de décision, commentaire obligatoire au refus), **panneau de détail**
+  table à 7 colonnes dont « Demandé par » = `startedByName ?? '—'` (4.5e), dialog de décision,
+  commentaire obligatoire au refus, « Voir l'instance » pour tout lecteur), **panneau de détail**
   (colonne fixe ≥ 1 280 px, tiroir sinon), **badge** (`studio-approvals-badge.service.ts` : sonde
-  `approvals/mine/count` toutes les 60 s, arrêt définitif sur 403/404) et **garde**
-  (`approvals-access.guard.ts` : 404 ⇒ `/studio`, 403 ⇒ `/access-denied`, panne réseau ⇒ passage).
-- **Navigation** (`core/`) : entrées « Workflows » (concepteurs) et « Mes approbations » (badge rouge)
-  sous capacité `workflowsEnabled` ; notifications types 15–18 rafraîchissent le badge et suivent le
-  `linkUrl` du serveur (repli `/studio/approvals`).
+  `approvals/mine/count` toutes les 60 s, arrêt définitif sur 403/404, signal `available` vrai après une
+  première réponse 200, `reset()` automatique à la déconnexion par `effect` sur
+  `AuthService.isAuthenticated` — 4.5g) et **garde** (`approvals-access.guard.ts` : 404 ⇒ `/dashboard`
+  (4.5d1), 403 ⇒ `/access-denied`, panne réseau ⇒ passage).
+- **Navigation** (`core/`) : entrée « Workflows » (concepteurs) sous capacité `workflowsEnabled` ;
+  « Mes approbations » (badge rouge) visible pour un concepteur sous la même capacité et, pour un simple
+  lecteur `custom_records:read`, dès que la sonde du badge a répondu 200 (`available`, 4.5d1) ;
+  notifications `StudioWorkflow*` rafraîchissent le badge et suivent le `linkUrl` du serveur (repli
+  `/studio/approvals`).
 - **Aperçu IA** (`features/studio/ai/`) : les plans « Workflow » (4.3) sont compris — cartes-chronologies
   depuis `summary.workflows[]` (onglet Workflow, spec facultative), carte d'intention désactivée avec
   info-bulle quand `workflowToolsEnabled` est faux, carte de résultat « Workflow créé » →
@@ -213,17 +225,27 @@ Livré en PR 4.4 (tranches a1 → l2). Arborescence :
 
 Routes et gardes : `permissionGuard` + `capabilityGuard('workflowsEnabled')` sur `workflows*` (hub et
 concepteur, `studio:design_entities`) ; `approvals` = `permissionGuard` (`custom_records:read`) +
-`approvalsAccessGuard` ; `records/:key/:id` = redirection legacy vers la fiche. Le détail d'instance
-(`GET workflows/instances/{id}`) reste une route de **conception** : les boutons « Voir l'instance » /
-« Détail » ne sont rendus qu'avec `studio:design_entities` (fail-closed, aucun appel 403).
+`approvalsAccessGuard` ; `records/:key/:id` = redirection legacy vers la fiche (`studio.routes.ts`
+inchangé en 4.5).
+
+**Accès lecteur (4.5).** La policy de module `studio` (`core/config/layout-module-policy.ts`) vaut
+`custom_records:read` : un profil lecteur (ex. `Accountant`) sans `studio:design_entities` atteint
+`/studio/approvals` (le verrou concepteur est reporté sur le `permissionGuard` de chaque route de
+conception — D11 levée), voit « Mes approbations » via la sonde du badge, et ouvre le détail d'une instance
+depuis la fiche ou l'inbox par la **route runtime** `GET records/{entityKey}/{recordId}/workflow-instances/{instanceId}`
+(404 non révélateur si l'instance n'appartient pas au couple table/fiche — la portée est garantie par le
+serveur, pas par l'UI). Le hub « Toutes les tables » consomme `GET workflows` paginé (conception).
 
 Les déclencheurs et les variables de gabarit ne sont **pas** exposés par le catalogue (`entries` seul) :
 le client les code à partir de ce document (`WORKFLOW_TRIGGERS`, `TEMPLATE_VARIABLES`).
 
 ## Réversibilité
 
-- Drapeau coupé : 404 sur les 11 routes, aucun démarrage d'instance, capability `workflowsEnabled = false` ;
-  les tables restent inertes.
+- Drapeau coupé : 404 sur les 22 routes gardées (12 de conception, 10 d'exécution — 4.5 en a ajouté une
+  de chaque), aucun démarrage d'instance, capability `workflowsEnabled = false` ; les tables restent
+  inertes. Pour rétablir D11 (Studio réservé aux concepteurs), ramener la policy `studio` de
+  `core/config/layout-module-policy.ts` à `['studio:design_entities']` : le lecteur perd alors l'accès à
+  `/studio/approvals` (les routes serveur `custom_records:read` restent inchangées).
 - Migration additive avec `Down` complet ; jumeau SQL idempotent rejouable ; aucune modification des tables
   existantes, aucune clé étrangère.
 - Suppression d'un workflow = suppression logique + annulation des instances ouvertes (`cancelledInstances`).
@@ -242,6 +264,19 @@ Les passes ★ du frontend 4.4 (revue post-fusion, PR #124) sont consignées en 
 (jamais celui de `primeng/api`, D-44-87/92), les `computed` du service de navigation n'écrivent aucun signal
 hors `untracked` (D-44-88/92) et `NotificationDto.Type` arrive en chaîne PascalCase — le frontend compare les
 noms `StudioWorkflow*` et non les valeurs 15–18 (D-44-94).
+La phase 4.5 « Consolidation » (pile de PR brouillon 4.5a1 → 4.5i★, à partir de la PR #125) est consignée en `D-45-01 → D-45-26` : backend —
+résolveur de noms dédié `IStudioUserNameResolver` / `StudioUserNameResolver` sur la base master, `null`
+pour un lanceur inconnu ou d'un autre tenant, jamais de repli email (D-45-01/02), `startedByName` limité à
+l'inbox (D-45-03), route lecteur du détail d'instance avec codes 400/404 non révélateurs et builder partagé
+`StudioWorkflowInstanceDetailBuilder` (D-45-04/05), catalogue du tenant en `PagedResult` avec DTO imbriqué,
+tables actives non-jonction, tri `EntityDisplayName, Name, Key` et permission vérifiée au handler
+(D-45-06 → D-45-11) ; frontend — policy `studio` ouverte à `custom_records:read` et visibilité de « Mes
+approbations » par la sonde du badge (D-45-12 → D-45-14), tiroir bi-mode et boutons « Voir l'instance » /
+« Détail » pour tout lecteur (D-45-15/16 — D-44-25/82 levés), colonne « Demandé par » (D-45-17 — D-44-79
+levé), hub global paginé sans borne 25 (D-45-18 — D-44-20 clos), `reset()` du badge à la déconnexion et
+toast unique de l'onglet (D-45-19/20 — D-44-64/89 clos), `studio-text.util.ts` partagé (D-45-21 → D-45-23
+— D-44-08/10/12 clos), pile linéaire et fiches QA transverses 107–110 (D-45-24/25), parcours Playwright
+« Mes approbations » réaligné (colonne « Demandé par », repli 404 vers `/dashboard` — D-45-26).
 
 ## Exécution différée (4.2)
 
@@ -302,15 +337,16 @@ instance annule ses approbations `pending` (moteur, D-20).
 
 | # | Verbe | Route | Policy | Succès |
 |---|---|---|---|---|
-| 1 | GET | `workflows/approvals/mine?max=100` | `custom_records:read` | 200 `WorkflowApprovalInboxItemDto[]` |
+| 1 | GET | `workflows/approvals/mine?max=100` | `custom_records:read` | 200 `WorkflowApprovalInboxItemDto[]` (+ `startedByName: string \| null` en fin de record — 4.5a : « Prénom Nom » du lanceur, `null` si inconnu, sans nom ou d'un autre tenant) |
 | 2 | GET | `workflows/approvals/mine/count` | `custom_records:read` | 200 `{ count }` |
 | 3 | POST | `workflows/approvals/{approvalId}/approve` | `custom_records:write` | 200 `WorkflowInstanceDto` |
 | 4 | POST | `workflows/approvals/{approvalId}/reject` | `custom_records:write` | 200 `WorkflowInstanceDto` (400 sans commentaire) |
 | 5 | GET | `records/{entityKey}/{recordId}/workflow-instances?max=50` | `custom_records:read` | 200 `WorkflowInstanceDto[]` |
-| 6 | GET | `records/{entityKey}/workflows` | `custom_records:read` | 200 `RunnableWorkflowDto[]` |
-| 7 | POST | `records/{entityKey}/{recordId}/workflows/{workflowKey}/run` | `custom_records:write` | 201 + `Location` vers `workflows/instances/{id}` |
-| 8 | POST | `workflows/instances/{instanceId}/cancel` | `custom_records:write` | 200 `WorkflowInstanceDto` |
-| 9 | POST | `workflows/instances/{instanceId}/remind` | `custom_records:write` | 200 (409 si < 24 h) |
+| 6 | GET | `records/{entityKey}/{recordId}/workflow-instances/{instanceId}` (4.5b) | `custom_records:read` (+ handler) | 200 `WorkflowInstanceDetailDto` — **même forme** que `GET workflows/instances/{id}` ; 400 `Validation.entityKey` (table inconnue/inactive), 404 `CustomRecord.NotFound`, 404 `StudioWorkflowInstance.NotFound` non révélateur si l'instance n'appartient pas au couple table/fiche |
+| 7 | GET | `records/{entityKey}/workflows` | `custom_records:read` | 200 `RunnableWorkflowDto[]` |
+| 8 | POST | `records/{entityKey}/{recordId}/workflows/{workflowKey}/run` | `custom_records:write` | 201 + `Location` vers `workflows/instances/{id}` (conception, contrat 4.2 figé) |
+| 9 | POST | `workflows/instances/{instanceId}/cancel` | `custom_records:write` | 200 `WorkflowInstanceDto` |
+| 10 | POST | `workflows/instances/{instanceId}/remind` | `custom_records:write` | 200 (409 si < 24 h) |
 
 ## IA (4.3)
 

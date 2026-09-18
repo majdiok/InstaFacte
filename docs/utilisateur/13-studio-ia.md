@@ -165,22 +165,27 @@ Les **workflows Studio** automatisent vos validations : à la création ou modif
 demande, depuis la fiche), une suite d’étapes s’exécute — approbations, mises à jour de champs, création
 d’enregistrements, actions ERP.
 
-- **Hub et concepteur** (concepteurs, menu Studio → **Workflows**) : liste par table, création en trois
-  colonnes (étapes réordonnables, éditeur par type, instances récentes), **Valider** avant
-  **Enregistrer**, activation par interrupteur. Un workflow est créé **inactif**.
+- **Hub et concepteur** (concepteurs, menu Studio → **Workflows**) : liste par table ou vue **Toutes les
+  tables** (l’ensemble des workflows de l’entreprise, jusqu’à 200 ; au-delà, choisissez une table pour voir
+  les autres), création en trois colonnes (étapes réordonnables, éditeur par type, instances récentes),
+  **Valider** avant **Enregistrer**, activation par interrupteur. Un workflow est créé **inactif**.
 
   ![Hub des workflows](../screenshots/studio-ia-workflows-hub.png)
   ![Concepteur de workflow](../screenshots/studio-ia-workflows-concepteur.png)
 
 - **Fiche enregistrement** : l’onglet **Workflows (n)** liste les instances de la fiche (statut, étape,
-  dates) et permet d’**en lancer un** (permission d’écriture) ; les concepteurs ouvrent le **détail** :
-  déroulé des étapes, annulation avec motif, relance des approbateurs (une fois par 24 h).
+  dates) et permet d’**en lancer un** (permission d’écriture) ; **Détail** ouvre le déroulé des étapes pour
+  toute personne qui peut lire la fiche — annulation avec motif et relance des approbateurs (une fois par
+  24 h) restent réservées à la permission d’écriture.
 
   ![Onglet Workflows de la fiche](../screenshots/studio-ia-workflows-fiche.png)
 
 - **Mes approbations** (menu Studio, badge rouge du nombre en attente) : tout ce qui attend **votre**
-  décision — indicateurs (à traiter, en retard, sous 24 h), message du demandeur, **Approuver** ou
-  **Refuser** (un commentaire est alors obligatoire). Les notifications de la cloche vous y ramènent.
+  décision — indicateurs (à traiter, en retard, sous 24 h), colonne **Demandé par** (qui a lancé la
+  demande ; « — » si l’utilisateur n’existe plus), message du demandeur, **Voir l’instance**, **Approuver**
+  ou **Refuser** (un commentaire est alors obligatoire). Les notifications de la cloche vous y ramènent.
+  Les utilisateurs disposant du droit de lecture des enregistrements accèdent à « Mes approbations » et au
+  détail d’une instance depuis la fiche, sans être concepteurs. À la déconnexion, le badge repasse à zéro.
 
   ![Page Mes approbations](../screenshots/studio-ia-workflows-approbations.png)
 
