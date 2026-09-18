@@ -565,6 +565,10 @@ export async function installStudioRuntimeMocks(
     }
     await fulfil(route, ok(RUNTIME_RECORDS[0]));
   });
+  // — Sonde d'instances workflow de la fiche (4.4h2) : la route attend un TABLEAU ; sans cette ligne,
+  //   le filet `**/api/**` répond un objet paginé et `workflowInstances().filter` jette en boucle
+  //   (page à moitié figée). Enregistrée APRÈS `records/${key}/*` ⇒ prioritaire (ordre inverse).
+  await page.route(`**/api/studio/records/${key}/*/workflow-instances?**`, route => fulfil(route, ok([])));
   await page.route(`**/api/studio/records/${key}?**`, route => fulfil(route, paged(RUNTIME_RECORDS)));
   await page.route(`**/api/studio/records/${key}`, route => fulfil(route, paged(RUNTIME_RECORDS)));
   await page.route(`**/api/studio/records/${key}/schema`, route => fulfil(route, ok(schema)));
@@ -616,8 +620,14 @@ export async function installStudioRuntimeMocks(
   await page.route(`**/api/studio/records/techniciens`, route => fulfil(route, paged(RUNTIME_TARGETS)));
 
   // — Entités + relations (concepteur de table, page Relations, liste des tables).
-  await page.route(`**/api/studio/entities/*/relations/many-to-many`, route =>
-    fulfil(route, ok({ junction: RUNTIME_ENTITIES[2], sourceField: RUNTIME_FIELDS[0], targetField: RUNTIME_FIELDS[1] }), 201));
+  await page.route(`**/api/studio/entities/*/relations/many-to-many`, route => {
+    // v1.1 (D-47-40) : écho du champ attribut quand `junctionAttributeLabel` est fourni.
+    const body = route.request().postDataJSON() as { junctionAttributeLabel?: string | null } | null;
+    const attributeField = body?.junctionAttributeLabel
+      ? { id: 'f-attr', key: 'quantit', label: body.junctionAttributeLabel, fieldType: 2, isRequired: false, isUnique: false, sortOrder: 2, rules: null, options: null, relation: null, isActive: true }
+      : null;
+    return fulfil(route, ok({ junction: RUNTIME_ENTITIES[2], sourceField: RUNTIME_FIELDS[0], targetField: RUNTIME_FIELDS[1], attributeField }), 201);
+  });
   await page.route(`**/api/studio/entities/*/relations`, route => fulfil(route, ok([RUNTIME_M2M])));
   await page.route(`**/api/studio/entities/*/fields?**`, route => fulfil(route, ok(RUNTIME_FIELDS)));
   await page.route(`**/api/studio/entities/*`, route => fulfil(route, ok(RUNTIME_ENTITIES[0])));

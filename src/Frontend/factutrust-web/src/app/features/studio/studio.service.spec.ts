@@ -53,6 +53,15 @@ describe('StudioService — vues/relations (PR 2.5a)', () => {
     req.flush({ success: true, data: null, message: null, errors: [] });
   });
 
+  it('createManyToMany — junctionAttributeLabel suit le corps tel quel (v1.1, D-47-40)', () => {
+    const request: CreateManyToManyRelationRequest = { targetEntityId: 'e2', junctionAttributeLabel: 'Quantité' };
+    service.createManyToMany('e1', request).subscribe();
+    const req = http.expectOne(`${base}/entities/e1/relations/many-to-many`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(request);
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
   it('checkFieldTypeChange envoie le nom d’enum dans to', () => {
     service.checkFieldTypeChange('e1', 'f1', CustomFieldType[CustomFieldType.Number]).subscribe();
     const req = http.expectOne(r => r.url === `${base}/entities/e1/fields/f1/type-check`);

@@ -58,7 +58,7 @@ export const STUDIO_RUNTIME_LABELS = {
   relations: {
     title: 'Relations',
     addManyToMany: 'Ajouter une relation plusieurs-à-plusieurs',
-    junctionAttributeSoon: 'Attribut de liaison — Bientôt',
+    junctionAttributeHint: 'Un champ numérique est ajouté à la table de liaison (ex. quantité par fiche liée).',
     empty: 'Relations non activées.',
     duplicateKey: 'Une table de liaison porte déjà cette clé.',
     created: 'Relation plusieurs-à-plusieurs créée.'
