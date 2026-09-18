@@ -11,7 +11,6 @@ import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { TextareaModule } from 'primeng/textarea';
 import { ToastModule } from 'primeng/toast';
-import { TooltipModule } from 'primeng/tooltip';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { AuthService } from '@core/services/auth.service';
 import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-table.component';
@@ -50,7 +49,7 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     DatePipe, FormsModule, RouterLink,
-    ButtonModule, DialogModule, DrawerModule, TableModule, TagModule, TextareaModule, ToastModule, TooltipModule,
+    ButtonModule, DialogModule, DrawerModule, TableModule, TagModule, TextareaModule, ToastModule,
     StudioPageShellComponent, SkeletonTableComponent, StudioApprovalDetailPanelComponent, StudioWorkflowInstanceDetailComponent
   ],
   template: `
