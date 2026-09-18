@@ -8,7 +8,6 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
-import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { ApiResponse } from '@core/services/client.service';
 import { STUDIO_WORKFLOW_LABELS } from './studio-workflow-labels';
@@ -39,12 +38,11 @@ import { StudioWorkflowsService } from './studio-workflows.service';
   standalone: true,
   imports: [
     DatePipe, FormsModule,
-    ButtonModule, DialogModule, SelectModule, TableModule, ToastModule, TooltipModule,
+    ButtonModule, DialogModule, SelectModule, TableModule, TooltipModule,
     StudioWorkflowStatusTagComponent, StudioWorkflowInstanceDetailComponent
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <p-toast styleClass="studio-theme" />
     <div class="srw-head">
       <p class="studio-muted">{{ labels.hint }}</p>
       @if (canWrite()) {
@@ -122,6 +120,7 @@ export class StudioRecordWorkflowsTabComponent {
   readonly changed = output<void>();
 
   private readonly workflows = inject(StudioWorkflowsService);
+  /** D-44-89 : le `<p-toast>` est porté par la fiche hôte (`studio-record-form.component.ts:33`) ; `MessageService` est root. */
   private readonly toast = inject(MessageService);
 
   readonly labels = STUDIO_WORKFLOW_LABELS.recordTab;
