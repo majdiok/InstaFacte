@@ -237,6 +237,11 @@ le 2026-09-17) et `D-41-01 → D-41-16` (tranches 4.1j1, 4.1j2, 4.1k, 4.1l). Poi
 issue (D-41-03), catalogue `{ entries }` seul (D-41-04), toggle sans jeton (D-41-05), duplication inactive
 `_copie` (D-41-06), `DELETE` ⇒ 200 (D-41-11), drapeaux `false` dans le dépôt (D-41-13), enveloppe d'erreur
 sans `code` (D-41-15), `toggle`/`DELETE` ⇒ 409 Studio sur `DbUpdateConcurrencyException` (D-41-16).
+Les passes ★ du frontend 4.4 (revue post-fusion, PR #124) sont consignées en `D-44-90 → D-44-97` : le
+`ConfirmationService` des composants Studio est le wrapper ng-bootstrap `@core/services/confirmation.service`
+(jamais celui de `primeng/api`, D-44-87/92), les `computed` du service de navigation n'écrivent aucun signal
+hors `untracked` (D-44-88/92) et `NotificationDto.Type` arrive en chaîne PascalCase — le frontend compare les
+noms `StudioWorkflow*` et non les valeurs 15–18 (D-44-94).
 
 ## Exécution différée (4.2)
 
