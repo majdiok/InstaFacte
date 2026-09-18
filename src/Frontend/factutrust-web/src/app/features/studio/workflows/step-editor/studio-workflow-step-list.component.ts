@@ -169,7 +169,7 @@ export class StudioWorkflowStepListComponent {
       header: LIST_LABELS.removeTitle,
       message: formatWorkflowLabel(LIST_LABELS.removeReferenced, { key: step.key, refs: refs.map(r => r.key).join(', ') }),
       acceptLabel: this.labels.steps.remove,
-      acceptButtonStyleClass: 'p-button-danger',
+      acceptButtonStyleClass: 'btn-danger',
       accept: doRemove
     });
   }

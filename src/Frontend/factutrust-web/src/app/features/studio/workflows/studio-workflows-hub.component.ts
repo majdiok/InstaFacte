@@ -306,7 +306,7 @@ export class StudioWorkflowsHubComponent implements OnInit {
         ? formatWorkflowLabel(this.L.hub.deleteWithInstances, { name: w.name, count: w.openInstances })
         : formatWorkflowLabel(this.L.hub.deleteMessage, { name: w.name }),
       acceptLabel: this.L.hub.delete,
-      acceptButtonStyleClass: 'p-button-danger',
+      acceptButtonStyleClass: 'btn-danger',
       icon: 'fa-solid fa-triangle-exclamation',
       accept: () => this.workflowsSvc.deleteWorkflow(w.id).subscribe({
         next: r => {
