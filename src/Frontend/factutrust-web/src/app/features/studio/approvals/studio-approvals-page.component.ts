@@ -38,10 +38,11 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
  * 4.4h1 : bouton « Détail » par ligne (rendu aussi en lecture seule, D-44-57) ouvrant le
  * panneau `app-studio-approval-detail-panel` — colonne fixe 372 px à partir de 1 280 px
  * (signal `wide` sur `matchMedia`, D-44-56), `p-drawer` en dessous ; le bouton
- * « Voir l'instance » du panneau n'existe qu'avec `studio:design_entities` (D-44-25/D-44-82,
- * `getInstance` est une route de conception) et ouvre EN PLACE le drawer 4.4f
- * `[(instanceId)]` (D-44-83 : l'item ne porte pas `workflowDefinitionId`) — son état
- * inline « Détail indisponible. » couvre la course où la permission serait retirée.
+ * « Voir l'instance » du panneau est rendu pour tout lecteur (4.5d3, D-45-F05 — D-44-82 levé)
+ * et ouvre EN PLACE le drawer 4.4f `[(instanceId)]` (D-44-83 : l'item ne porte pas
+ * `workflowDefinitionId`) en portée fiche : `[entityKey]` + `[recordId]` de la ligne
+ * sélectionnée ⇒ route runtime `custom_records:read` (4.5b/4.5d2, 404 hors couple) — son
+ * état inline « Instance introuvable. » / « Détail indisponible. » couvre les courses.
  */
 @Component({
   selector: 'app-studio-approvals-page',
@@ -145,7 +146,7 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
           @if (selected(); as sel) {
             @if (wide()) {
               <aside class="sap-panel" data-testid="sap-panel-column">
-                <app-studio-approval-detail-panel [item]="sel" [canDecide]="canDecide()" [canOpenInstance]="canOpenInstance()" [busy]="busy()" [nowMs]="now()"
+                <app-studio-approval-detail-panel [item]="sel" [canDecide]="canDecide()" [busy]="busy()" [nowMs]="now()"
                   (approve)="openDecision($event, 'approve')" (reject)="openDecision($event, 'reject')" (openInstance)="openInstanceId.set($event)" (close)="clearSelection()" />
               </aside>
             }
@@ -158,15 +159,15 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
       @if (!wide()) {
         <p-drawer [visible]="true" (visibleChange)="$event || clearSelection()" position="right" appendTo="body" styleClass="studio-theme sap-drawer"
           [style]="{ width: '420px', maxWidth: '100vw' }">
-          <app-studio-approval-detail-panel [item]="sel" [canDecide]="canDecide()" [canOpenInstance]="canOpenInstance()" [busy]="busy()" [nowMs]="now()"
+          <app-studio-approval-detail-panel [item]="sel" [canDecide]="canDecide()" [busy]="busy()" [nowMs]="now()"
             (approve)="openDecision($event, 'approve')" (reject)="openDecision($event, 'reject')" (openInstance)="openInstanceId.set($event)" (close)="clearSelection()" />
         </p-drawer>
       }
     }
-    @if (canOpenInstance()) {
-      <!-- 4.4f (drawer 480 px, appendTo body) : changed ⇒ l'approbation a pu être annulée avec l'instance ⇒ rechargement + badge -->
-      <app-studio-workflow-instance-detail [(instanceId)]="openInstanceId" [entityKey]="selected()?.entityKey ?? null" (changed)="onInstanceChanged()" />
-    }
+    <!-- 4.4f (drawer 480 px, appendTo body) : changed ⇒ l'approbation a pu être annulée avec l'instance ⇒ rechargement + badge.
+         4.5d3 : portée fiche (entityKey + recordId de la ligne sélectionnée ⇒ route runtime custom_records:read, 4.5d2) -->
+    <app-studio-workflow-instance-detail [(instanceId)]="openInstanceId" [entityKey]="selected()?.entityKey ?? null" [recordId]="selected()?.recordId ?? null"
+      (changed)="onInstanceChanged()" />
 
     <p-dialog [visible]="dialogVisible()" (visibleChange)="$event || closeDecision()" [modal]="true" [draggable]="false"
       appendTo="body" styleClass="studio-theme" [style]="{ width: '480px', maxWidth: '95vw' }"
@@ -238,7 +239,7 @@ export class StudioApprovalsPageComponent implements OnInit {
 
   // 4.4h1 — sélection + panneau de détail (D-44-56/57) + hôte du drawer d'instance 4.4f (H-8)
   readonly selected = signal<ApprovalRow | null>(null);
-  readonly canOpenInstance = computed(() => this.auth.hasPermission(PERMISSIONS.studio.designEntities));   // D-44-25/D-44-82 : fail-closed, évite le GET 403
+  /** Drawer d'instance en portée fiche (4.5d3) : posé depuis le panneau de la ligne sélectionnée ⇒ `selected()` est toujours défini. */
   readonly openInstanceId = signal<string | null>(null);
   private readonly mq = typeof window !== 'undefined' && 'matchMedia' in window ? window.matchMedia('(min-width: 1280px)') : null;
   readonly wide = signal(this.mq?.matches ?? true);

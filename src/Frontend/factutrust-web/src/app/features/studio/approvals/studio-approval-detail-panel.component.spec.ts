@@ -31,7 +31,7 @@ describe('StudioApprovalDetailPanelComponent', () => {
   let fixture: ComponentFixture<StudioApprovalDetailPanelComponent>;
   let row: ApprovalRow;
 
-  function setup(inputs: { canDecide?: boolean; canOpenInstance?: boolean; busy?: boolean } = {}): void {
+  function setup(inputs: { canDecide?: boolean; busy?: boolean } = {}): void {
     TestBed.configureTestingModule({
       imports: [StudioApprovalDetailPanelComponent],
       providers: [provideNoopAnimations()]
@@ -40,7 +40,6 @@ describe('StudioApprovalDetailPanelComponent', () => {
     row = toApprovalRow(inboxItem());
     fixture.componentRef.setInput('item', row);
     fixture.componentRef.setInput('canDecide', inputs.canDecide ?? false);
-    fixture.componentRef.setInput('canOpenInstance', inputs.canOpenInstance ?? false);
     fixture.componentRef.setInput('busy', inputs.busy ?? false);
     fixture.componentRef.setInput('nowMs', Date.parse('2026-09-17T10:00:00Z'));
     fixture.detectChanges();
@@ -97,13 +96,10 @@ describe('StudioApprovalDetailPanelComponent', () => {
     expect(rejected).toBe(row);
   });
 
-  it("n'affiche Voir l'instance qu'avec canOpenInstance et émet l'identifiant d'instance", () => {
-    setup({ canOpenInstance: false });
+  it("affiche Voir l'instance pour tout lecteur et émet l'identifiant d'instance", () => {
+    setup();
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('[data-testid="sapd-instance"]')).toBeNull();
-
-    fixture.componentRef.setInput('canOpenInstance', true);
-    fixture.detectChanges();
+    expect(el.querySelector('[data-testid="sapd-instance"]')).withContext('bouton rendu sans studio:design_entities (4.5d3)').not.toBeNull();
 
     let emitted: string | undefined;
     fixture.componentInstance.openInstance.subscribe(id => (emitted = id));

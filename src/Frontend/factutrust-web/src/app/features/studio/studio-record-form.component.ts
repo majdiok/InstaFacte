@@ -63,7 +63,7 @@ function linkedTabKey(r: { junctionEntityKey?: string | null; targetEntityKey: s
           }
           @case ('workflows') {
             <app-studio-record-workflows-tab [entityKey]="entityKey" [recordId]="recordId!" [instances]="workflowInstances() ?? []"
-              [canWrite]="canWrite()" [canDesign]="canDesign()" (changed)="loadWorkflowInstances()" />
+              [canWrite]="canWrite()" (changed)="loadWorkflowInstances()" />
           }
           @default {
             @if (activeRelation(); as rel) {
@@ -100,7 +100,6 @@ export class StudioRecordFormComponent implements OnInit {
   private readonly workflows = inject(StudioWorkflowsService);
   /** Sonde `listRecordInstances` : null = module coupé / droit absent (403-404) ⇒ onglet masqué (fail-closed, 4.4h2). */
   readonly workflowInstances = signal<WorkflowInstanceDto[] | null>(null);
-  readonly canDesign = computed(() => this.auth.hasPermission(PERMISSIONS.studio.designEntities));
   /** Badge de l'onglet : instances OUVERTES seulement, `null` si 0 pour ne pas afficher « 0 » (D-44-58). */
   readonly openWorkflowCount = computed(() => (this.workflowInstances() ?? []).filter(i => isOpenInstance(i.status)).length);
   readonly showWorkflowsTab = computed(() => !!this.recordId && this.workflowInstances() !== null);

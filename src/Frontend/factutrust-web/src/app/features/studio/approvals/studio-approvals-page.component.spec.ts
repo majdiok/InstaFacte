@@ -4,6 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import { MessageService } from 'primeng/api';
 import { environment } from '@environments/environment';
 import { PERMISSIONS } from '@core/config/permission-keys';
@@ -18,10 +19,9 @@ const API = `${environment.apiUrl}/studio`;
 const labels = STUDIO_WORKFLOW_LABELS.approvals;
 
 /**
- * Bouchon du drawer d'instance 4.4f (API figée H-8) : la page l'importe pour
- * « Voir l'instance » (4.4h1) mais l'utilisateur de test n'a pas
- * `studio:design_entities` par défaut — le vrai drawer (et son `getInstance`,
- * route de conception D-44-25) n'est donc jamais rendu ; on le neutralise quand même.
+ * Bouchon du drawer d'instance 4.4f (API figée H-8 + `recordId` 4.5d2) : la page le rend
+ * pour tout lecteur (4.5d3) et le vrai drawer appellerait la route runtime à l'ouverture —
+ * neutralisé ici, on vérifie seulement les inputs transmis.
  */
 @Component({
   selector: 'app-studio-workflow-instance-detail',
@@ -31,6 +31,7 @@ const labels = STUDIO_WORKFLOW_LABELS.approvals;
 class InstanceDetailStubComponent {
   readonly instanceId = model<string | null>(null);
   readonly entityKey = input<string | null>(null);
+  readonly recordId = input<string | null>(null);
   readonly changed = output<WorkflowInstanceDto>();
   readonly closed = output<void>();
 }
@@ -247,6 +248,25 @@ describe('StudioApprovalsPageComponent', () => {
     fixture.detectChanges();
     expect(component.selected()).toBeNull();
     expect(document.querySelector('.p-drawer')).toBeNull();
+  });
+
+  it("ouvre le drawer d'instance pour un lecteur custom_records:read en lui passant entityKey et recordId", () => {
+    perms = new Set([PERMISSIONS.customData.recordsRead]);
+    setup();
+    flushInbox([inboxItem('a1')]);
+
+    component.wide.set(true);
+    clickRowButton('sap-detail-a1');
+    expect(component.selected()?.recordId).toBe('r1');
+
+    // « Voir l'instance » rendu sans studio:design_entities (D-44-82 levé) et ouvre le drawer en place.
+    clickRowButton('sapd-instance');
+
+    const stub = fixture.debugElement.query(By.css('app-studio-workflow-instance-detail'))?.componentInstance as InstanceDetailStubComponent | undefined;
+    expect(stub).withContext('drawer rendu').toBeDefined();
+    expect(stub!.instanceId()).toBe('i1');
+    expect(stub!.entityKey()).toBe('devis');
+    expect(stub!.recordId()).toBe('r1');
   });
 
   it("affiche l'erreur et Réessayer quand le chargement échoue", () => {
