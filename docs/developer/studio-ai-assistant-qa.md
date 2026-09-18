@@ -1065,3 +1065,63 @@ non consommé.
 - Portée automatisée : Karma concepteur (lecture seule : hint, pas de runner) ; API contract
   (policy + gabarit figés, drapeau coupé ⇒ 404) ; Infrastructure (handler sans dépendances
   vues/quota/audit — `VerifyNoOtherCalls`).
+
+---
+
+## Studio IA 4.7 « v1.1 » — relations : attribut de liaison et puces inline (PR #163 à #166)
+
+### 140. Dialogue N-N : attribut de liaison
+
+Dans le concepteur de table, dialogue « Nouvelle relation plusieurs-à-plusieurs » : « Attribut de
+liaison » renseigné (« Quantité ») ⇒ la jonction créée porte un **3ᵉ champ numérique** (clé
+`quantit`), visible dans le concepteur via l'URL de la jonction ; laissé vide ⇒ comportement v1
+inchangé (deux champs seulement). Libellé réservé (`id`) ou en collision avec une clé de liaison ⇒
+`400 Validation.junctionAttributeLabel`, **aucune** écriture.
+
+- Portée automatisée : Infrastructure `CreateManyToManyRelationCommandTests` (nominal 3 champs +
+  séquence + audit ; [Theory] ×4 rejets sans écriture ni audit ; compensation) ; Karma dialogue
+  (champ actif, label envoyé, vidé au reset) ; contrat API (`attributeField` en réponse).
+
+### 141. Onglet « Liés » : quantité affichée et saisie à l'ajout
+
+La quantité s'affiche par lien ; ajout avec quantité ⇒ valeur visible après rafraîchissement ;
+jonction **sans** attribut ⇒ aucune colonne/affichage (non-régression v1) ; schéma de jonction en
+404 ⇒ dégradé silencieux (pas de bannière d'erreur pour la lecture).
+
+- Portée automatisée : Karma service `getJunctionAttribute` (résolution via `/schema`, cache
+  `shareReplay` — un seul appel HTTP, 404 ⇒ `null`) ; Karma onglet (affichage, ajout avec quantité).
+
+### 142. Onglet « Liés » : édition inline de la quantité
+
+Crayon ⇒ `p-inputNumber` ⇒ Enregistrer ⇒ `PATCH records/{jonction}/{id}` avec `rowVersion` ; 409
+jeton périmé (deux onglets ouverts) ⇒ « Modifié entre-temps — liste rechargée. » + rechargement ;
+la paire reste protégée (doublon à l'ajout ⇒ 409 « Lien déjà existant. » en ligne).
+
+- Portée automatisée : Karma service `patchLink` (motif `patchRecord`, `skipErrorUi`) ; Karma onglet
+  (édition + 409) ; Infrastructure `CustomRecordJunctionUniquenessTests` (la paire reste contrôlée
+  avec un 3ᵉ champ attribut).
+
+### 143. Fiche en édition : puces inline par relation N-N
+
+Sous le formulaire (onglet Fiche), **une carte de puces par relation N-N** ; ajout avec quantité,
+retrait, édition de la quantité au clic ; fiche en **création** ⇒ aucune carte (les puces exigent un
+enregistrement existant, comme l'onglet « Liés »).
+
+- Portée automatisée : Karma composant puces (montage + libellés + quantité) ; Karma fiche (une
+  carte par relation N-N en édition, aucune en création) ; Playwright mocké (scénario complet).
+
+### 144. Puces : doublon et retrait
+
+Ajout d'un doublon ⇒ 409 « Lien déjà existant. » **en ligne** dans la carte, puces inchangées ;
+retrait ⇒ DELETE + toast de succès (hôte `<p-toast>` de la fiche, pas de toast en double).
+
+- Portée automatisée : Karma composant (doublon 409 en ligne ; retrait + `toast.add` appelé une
+  fois) ; Playwright mocké (surcharge de route 409 ; DELETE vérifié).
+
+### 145. Lecture seule
+
+Profil `custom_records:read` sans `:write` : quantités et puces visibles, **aucune** action
+d'écriture (barre d'ajout, crayons et croix masqués) — miroir de la garde `canWrite` de l'onglet.
+
+- Portée automatisée : Karma composant puces (lecture seule) ; Karma onglet (miroir existant) ;
+  Playwright mocké (parcours lecteur couvert par les permissions mockées).
