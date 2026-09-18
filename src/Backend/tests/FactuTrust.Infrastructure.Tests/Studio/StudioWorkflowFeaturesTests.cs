@@ -721,24 +721,30 @@ public sealed class StudioWorkflowFeaturesTests
 
     // ---- Instances (4.1j2) ----
 
+    // 4.7a1 / D-47-B01 — pagination réelle (page/pageSize → PagedResult), lève D-46-01.
     [Fact]
-    public async Task List_instances_clamps_max_and_carries_the_workflow_key()
+    public async Task List_instances_clamps_page_and_page_size_and_carries_the_workflow_key()
     {
         var def = Definition();
         SetupDefinition(def);
         var instance = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.FieldChanged, Uid, "{}", 0, null);
-        var requestedMax = new List<int>();
-        _workflows.Setup(w => w.ListInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Callback<Guid, Guid, int, CancellationToken>((_, _, max, _) => requestedMax.Add(max))
+        var requested = new List<(int Skip, int Take)>();
+        _workflows.Setup(w => w.CountInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        _workflows.Setup(w => w.ListInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, Guid, int, int, CancellationToken>((_, _, skip, take, _) => requested.Add((skip, take)))
             .ReturnsAsync(new[] { instance });
 
-        var big = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id, Max: 500), CancellationToken.None);
-        var zero = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id, Max: 0), CancellationToken.None);
+        var big = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id, Page: 3, PageSize: 500), CancellationToken.None);
+        var zero = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id, Page: 0, PageSize: 0), CancellationToken.None);
         var dflt = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id), CancellationToken.None);
 
-        Assert.Equal(new[] { 200, 1, 50 }, requestedMax);
+        Assert.Equal(new[] { (400, 200), (0, 1), (0, 50) }, requested);
         Assert.True(big.IsSuccess && zero.IsSuccess && dflt.IsSuccess);
-        var dto = Assert.Single(big.Value);
+        var dto = Assert.Single(big.Value.Items);
+        Assert.Equal(3, big.Value.Page);
+        Assert.Equal(200, big.Value.PageSize);
+        Assert.Equal(1, big.Value.TotalCount);
         Assert.Equal(instance.Id, dto.Id);
         Assert.Equal(def.Key, dto.WorkflowKey);
         Assert.Equal(def.Name, dto.WorkflowName);
@@ -753,6 +759,51 @@ public sealed class StudioWorkflowFeaturesTests
         Assert.Equal("StudioWorkflowDefinition.NotFound", missing.Error.Code);
     }
 
+    [Fact]
+    public async Task List_instances_returns_the_requested_page_with_the_server_total()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        var pageRows = Enumerable.Range(0, 5)
+            .Select(_ => StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.Manual, Uid, "{}", 0, null))
+            .ToArray();
+        var seenSkip = -1;
+        var seenTake = -1;
+        _workflows.Setup(w => w.CountInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(55);
+        _workflows.Setup(w => w.ListInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, Guid, int, int, CancellationToken>((_, _, skip, take, _) => { seenSkip = skip; seenTake = take; })
+            .ReturnsAsync(pageRows);
+
+        // Page 2 sur 55 instances à 50 par page ⇒ 5 lignes et le total serveur fait foi.
+        var result = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id, Page: 2, PageSize: 50), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal((50, 50), (seenSkip, seenTake));
+        Assert.Equal(5, result.Value.Items.Count);
+        Assert.Equal(55, result.Value.TotalCount);
+        Assert.Equal(2, result.Value.TotalPages);
+        Assert.True(result.Value.HasPreviousPage);
+        Assert.False(result.Value.HasNextPage);
+    }
+
+    [Fact]
+    public async Task List_instances_skips_the_page_query_when_the_total_is_zero()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        _workflows.Setup(w => w.CountInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+
+        var result = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value.Items);
+        Assert.Equal(0, result.Value.TotalCount);
+        _workflows.Verify(w => w.ListInstancesForDefinitionAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     // 4.6b1 / D-46-B01 — « Demandé par » sur les instances (même motif que l'inbox 4.5a2).
     [Fact]
     public async Task List_instances_resolves_started_by_name_in_one_batch()
@@ -763,7 +814,9 @@ public sealed class StudioWorkflowFeaturesTests
         var named = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.Manual, Uid, "{}", 0, null);
         var unknownStarter = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.Manual, other, "{}", 0, null);
         var systemStarted = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.OnCreate, null, "{}", 0, null);
-        _workflows.Setup(w => w.ListInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _workflows.Setup(w => w.CountInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(3);
+        _workflows.Setup(w => w.ListInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { named, unknownStarter, systemStarted });
         _userNames.Setup(r => r.GetDisplayNamesAsync(Tid, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<Guid, string> { [Uid] = "Bob Martin" });   // « other » inconnu ⇒ null (D-45-02)
@@ -771,9 +824,9 @@ public sealed class StudioWorkflowFeaturesTests
         var result = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal("Bob Martin", result.Value[0].StartedByName);
-        Assert.Null(result.Value[1].StartedByName);
-        Assert.Null(result.Value[2].StartedByName);
+        Assert.Equal("Bob Martin", result.Value.Items[0].StartedByName);
+        Assert.Null(result.Value.Items[1].StartedByName);
+        Assert.Null(result.Value.Items[2].StartedByName);
         // Une seule requête master pour les deux lanceurs distincts (le null n'est jamais résolu).
         _userNames.Verify(r => r.GetDisplayNamesAsync(Tid,
             It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(Uid) && ids.Contains(other)),

@@ -846,11 +846,13 @@ public sealed class GetWorkflowStepCatalogQueryHandler : IRequestHandler<GetWork
 
 // ---- Instances ----
 
-public sealed record ListWorkflowInstancesQuery(Guid WorkflowId, int Max = 50) : IRequest<Result<IReadOnlyList<WorkflowInstanceDto>>>;
+/// <summary>Instances d'un workflow paginées ; <c>Page</c> ≥ 1, <c>PageSize</c> borné 1..200 (4.7a1 / D-47-B01 : lève D-46-01).</summary>
+public sealed record ListWorkflowInstancesQuery(Guid WorkflowId, int Page = 1, int PageSize = 50)
+    : IRequest<Result<PagedResult<WorkflowInstanceDto>>>;
 
-public sealed class ListWorkflowInstancesQueryHandler : IRequestHandler<ListWorkflowInstancesQuery, Result<IReadOnlyList<WorkflowInstanceDto>>>
+public sealed class ListWorkflowInstancesQueryHandler : IRequestHandler<ListWorkflowInstancesQuery, Result<PagedResult<WorkflowInstanceDto>>>
 {
-    public const int MaxInstances = 200;
+    public const int MaxPageSize = 200;
 
     private readonly IStudioWorkflowRepository _workflows;
     private readonly ICurrentUser _currentUser;
@@ -863,21 +865,29 @@ public sealed class ListWorkflowInstancesQueryHandler : IRequestHandler<ListWork
         _userNames = userNames;
     }
 
-    public async Task<Result<IReadOnlyList<WorkflowInstanceDto>>> Handle(ListWorkflowInstancesQuery query, CancellationToken cancellationToken)
+    public async Task<Result<PagedResult<WorkflowInstanceDto>>> Handle(ListWorkflowInstancesQuery query, CancellationToken cancellationToken)
     {
         if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
-            return Result.Failure<IReadOnlyList<WorkflowInstanceDto>>(err);
+            return Result.Failure<PagedResult<WorkflowInstanceDto>>(err);
 
         var definition = await _workflows.GetDefinitionAsync(tenantId, query.WorkflowId, cancellationToken);
         if (definition is null)
-            return Result.Failure<IReadOnlyList<WorkflowInstanceDto>>(Error.NotFound("StudioWorkflowDefinition", query.WorkflowId));
+            return Result.Failure<PagedResult<WorkflowInstanceDto>>(Error.NotFound("StudioWorkflowDefinition", query.WorkflowId));
 
-        var instances = await _workflows.ListInstancesForDefinitionAsync(
-            tenantId, definition.Id, Math.Clamp(query.Max, 1, MaxInstances), cancellationToken);
+        // `page` borné pour que `(page - 1) * pageSize` ne déborde jamais (motif D-45-28).
+        var page = Math.Clamp(query.Page, 1, int.MaxValue / MaxPageSize);
+        var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);
+
+        // 2 requêtes par appel : total, puis page (page vide si total nul).
+        var total = await _workflows.CountInstancesForDefinitionAsync(tenantId, definition.Id, cancellationToken);
+        var instances = total == 0
+            ? (IReadOnlyList<StudioWorkflowInstance>)Array.Empty<StudioWorkflowInstance>()
+            : await _workflows.ListInstancesForDefinitionAsync(
+                tenantId, definition.Id, (page - 1) * pageSize, pageSize, cancellationToken);
 
         var items = instances.Select(i => StudioWorkflowMapping.ToDto(i, definition)).ToList();
-        return Result.Success<IReadOnlyList<WorkflowInstanceDto>>(
-            await StudioWorkflowStartedByNameSupport.ResolveAsync(_userNames, tenantId, items, cancellationToken));
+        var resolved = await StudioWorkflowStartedByNameSupport.ResolveAsync(_userNames, tenantId, items, cancellationToken);
+        return Result.Success(PagedResult<WorkflowInstanceDto>.Create(resolved, page, pageSize, total));
     }
 }
 

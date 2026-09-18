@@ -148,14 +148,16 @@ public sealed class StudioWorkflowsController : ControllerBase
             validation => Ok(ApiResponse<WorkflowValidationResultDto>.Ok(validation)));
     }
 
-    /// <summary>Instances récentes d'un workflow (<c>max</c> borné côté Application, 50 par défaut).</summary>
+    /// <summary>Instances d'un workflow, paginées (<c>page</c> ≥ 1, <c>pageSize</c> 50 par défaut, borné 1..200 — 4.7a1, D-47-B01).</summary>
     [HttpGet("workflows/{id:guid}/instances")]
-    public async Task<IActionResult> ListInstances(Guid id, [FromQuery] int max = 50, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> ListInstances(
+        Guid id, [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken cancellationToken = default)
     {
         if (Unavailable() is { } unavailable) return unavailable;
-        var result = await _mediator.Send(new ListWorkflowInstancesQuery(id, max), cancellationToken);
+        pageSize = Math.Clamp(pageSize, 1, ListWorkflowInstancesQueryHandler.MaxPageSize);
+        var result = await _mediator.Send(new ListWorkflowInstancesQuery(id, page, pageSize), cancellationToken);
         return StudioErrorMapping.ToActionResult(this, result,
-            instances => Ok(ApiResponse<IReadOnlyList<WorkflowInstanceDto>>.Ok(instances)));
+            instances => Ok(ApiResponse<PagedResult<WorkflowInstanceDto>>.Ok(instances)));
     }
 
     /// <summary>Détail d'une instance : résumé, journal des étapes, approbations et contexte (« previous » masqué).</summary>

@@ -254,28 +254,33 @@ public sealed class StudioWorkflowsControllerContractTests
         Assert.Equal(2, body.Data!.CancelledInstances);
     }
 
+    // 4.7a1 / D-47-B01 — la route est paginée : ?page=&pageSize= ⇒ enveloppe PagedResult (remplace ?max=).
     [Fact]
-    public async Task List_instances_defaults_max_to_50_and_forwards_the_raw_value()
+    public async Task List_instances_defaults_page_1_size_50_clamps_size_to_1_200_and_returns_paged_envelope()
     {
         var mediator = new Mock<IMediator>(MockBehavior.Strict);
         var seen = new List<ListWorkflowInstancesQuery>();
         mediator.Setup(m => m.Send(It.IsAny<ListWorkflowInstancesQuery>(), It.IsAny<CancellationToken>()))
-            .Callback<IRequest<Result<IReadOnlyList<WorkflowInstanceDto>>>, CancellationToken>((q, _) => seen.Add((ListWorkflowInstancesQuery)q))
-            .ReturnsAsync(Result.Success<IReadOnlyList<WorkflowInstanceDto>>(new[] { Instance() }));
+            .Callback<IRequest<Result<PagedResult<WorkflowInstanceDto>>>, CancellationToken>((q, _) => seen.Add((ListWorkflowInstancesQuery)q))
+            .ReturnsAsync(Result.Success(PagedResult<WorkflowInstanceDto>.Create(new[] { Instance() }, 1, 50, 1)));
         var controller = CreateController(mediator);
+        var ct = CancellationToken.None;
 
-        var byDefault = await controller.ListInstances(WorkflowId, cancellationToken: CancellationToken.None);
-        var explicitMax = await controller.ListInstances(WorkflowId, max: 500, cancellationToken: CancellationToken.None);
+        var byDefault = await controller.ListInstances(WorkflowId, cancellationToken: ct);
+        Assert.IsType<OkObjectResult>(await controller.ListInstances(WorkflowId, page: 3, pageSize: 500, cancellationToken: ct));
+        Assert.IsType<OkObjectResult>(await controller.ListInstances(WorkflowId, page: 1, pageSize: 0, cancellationToken: ct));
 
         var ok = Assert.IsType<OkObjectResult>(byDefault);
-        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<IReadOnlyList<WorkflowInstanceDto>>>(ok.Value);
-        Assert.Equal(InstanceId, Assert.Single(body.Data!).Id);
-        Assert.IsType<OkObjectResult>(explicitMax);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<PagedResult<WorkflowInstanceDto>>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal(1, body.Data!.TotalCount);
+        Assert.Equal(InstanceId, Assert.Single(body.Data.Items).Id);
 
-        Assert.Equal(2, seen.Count);
+        Assert.Equal(3, seen.Count);
         Assert.All(seen, q => Assert.Equal(WorkflowId, q.WorkflowId));
-        Assert.Equal(50, seen[0].Max);
-        Assert.Equal(500, seen[1].Max);
+        Assert.Equal((1, 50), (seen[0].Page, seen[0].PageSize));
+        Assert.Equal((3, 200), (seen[1].Page, seen[1].PageSize));
+        Assert.Equal((1, 1), (seen[2].Page, seen[2].PageSize));
     }
 
     [Fact]
