@@ -24,7 +24,8 @@ public static class EntityRelationKinds
 /// <summary>
 /// Crée une relation plusieurs‑à‑plusieurs entre <see cref="SourceEntityId"/> et
 /// <c>Request.TargetEntityId</c> : une table de jonction <see cref="CustomEntityKind.Junction"/> portant
-/// deux champs <see cref="CustomFieldType.RelationCustom"/> requis (source, cible).
+/// deux champs <see cref="CustomFieldType.RelationCustom"/> requis (source, cible), plus un champ
+/// attribut <see cref="CustomFieldType.Number"/> optionnel quand <c>JunctionAttributeLabel</c> est fourni.
 /// Réutilise <see cref="CreateCustomEntityCommand"/> et <see cref="CreateCustomFieldCommand"/> via
 /// MediatR (chemin unique IA / manuel : quotas, audit, index JSON).
 /// </summary>

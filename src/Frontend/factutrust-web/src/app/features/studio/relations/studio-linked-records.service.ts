@@ -127,7 +127,7 @@ export class StudioLinkedRecordsService {
       cached = this.http.get<ApiResponse<CustomEntitySchema>>(`${this.base}/${rel.junctionEntityKey}/schema`).pipe(
         map(res => {
           if (!res.success || !res.data) return null;
-          const field = res.data.fields
+          const field = [...res.data.fields]
             .filter(f => f.isActive && parseFieldType(f.fieldType) !== CustomFieldType.RelationCustom)
             .sort((a, b) => a.sortOrder - b.sortOrder)[0];
           if (!field) return null;

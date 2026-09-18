@@ -190,7 +190,8 @@ acceptable pour un lien métier, documenté comme tel.
   l'ajout et éditable en ligne (`PATCH records/{jonction}/{id}` avec `rowVersion` ; 409 ⇒
   « Modifié entre-temps — liste rechargée. »). Arbitrage n° 5 : le `PATCH` reste gardé par le
   drapeau **`EnableStudioRecordViews`** (historique 4.6) et non par `manyToManyEnabled` — le frontend
-  masque l'édition si l'appel échoue en 404.
+  signale l'échec **en ligne** si l'appel répond 404 (l'édition n'est pas masquée à l'avance, comme
+  partout ailleurs pour ce drapeau).
 - **Puces inline dans la fiche** (v1.1 r4) : `relations/studio-link-chips-editor.component.ts`, monté
   par `studio-record-form` sous la carte du formulaire (`@for (rel of manyToMany())`, **édition
   seulement** — `recordId` requis ; `DynamicFormComponent` n'est pas modifié, une relation N-N n'est

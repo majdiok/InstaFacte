@@ -160,7 +160,7 @@ public sealed record CreateManyToManyRelationRequest(
     // ajouté à la jonction (clé slugifiée) APRÈS les deux champs de liaison ; non fourni ⇒ comportement v1.
     string? JunctionAttributeLabel = null);
 
-/// <summary>Result of a many-to-many creation: the junction entity and its two relation fields.</summary>
+/// <summary>Result of a many-to-many creation: the junction entity, its two relation fields, and the optional link attribute field.</summary>
 public sealed record ManyToManyRelationDto(
     CustomEntityDto Junction,
     CustomFieldDto SourceField,
