@@ -100,6 +100,17 @@ describe('StudioWorkflowsHubComponent', () => {
     expect(fixture.debugElement.query(By.css('[data-testid="wf-hub-toggle-w1"]'))).not.toBeNull();
   });
 
+  it('héberge le p-toast des messages de la page (D-44-95 : succès/erreurs des écritures visibles)', () => {
+    setup();
+    flushAll([item()]);
+
+    expect(fixture.debugElement.query(By.css('p-toast'))).not.toBeNull();
+    // Un toast de succès (bascule) trouve bien son hôte : l'appel MessageService part déjà (spy du describe).
+    component.toggle(component.workflows()[0], false);
+    httpMock.expectOne(`${API}/workflows/w1/toggle`).flush({ success: true, data: wf({ isActive: false }), message: null, error: null });
+    expect(toastSpy).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'success' }));
+  });
+
   it('filtre par table via ?entity= avec GET entities/{id}/workflows (chemin conservé, sans paginator)', () => {
     setup({ entity: 'e1' });
     httpMock.expectNone(r => r.url === `${API}/workflows`);

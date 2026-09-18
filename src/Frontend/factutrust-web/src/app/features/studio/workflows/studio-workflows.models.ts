@@ -68,7 +68,7 @@ export interface WorkflowDefinitionDto { id: string; entityDefinitionId: string;
  * D-44-27 : `workflowKey` / `workflowName` sont `string?` côté C# — null quand la définition a
  * été supprimée (StudioWorkflowFeatures.cs l.847, `d?.Key` / `d?.Name`).
  */
-export interface WorkflowInstanceDto { id: string; workflowDefinitionId: string; entityDefinitionId: string; workflowKey: string | null; workflowName: string | null; definitionVersion: number; recordId: string; trigger: WorkflowTrigger; status: WorkflowInstanceStatus; currentStepIndex: number; currentStepKey: string | null; dueAt: string | null; startedBy: string | null; startedAt: string; completedAt: string | null; depth: number; originInstanceId: string | null; error: string | null }
+export interface WorkflowInstanceDto { id: string; workflowDefinitionId: string; entityDefinitionId: string; workflowKey: string | null; workflowName: string | null; definitionVersion: number; recordId: string; trigger: WorkflowTrigger; status: WorkflowInstanceStatus; currentStepIndex: number; currentStepKey: string | null; dueAt: string | null; startedBy: string | null; startedAt: string; completedAt: string | null; depth: number; originInstanceId: string | null; error: string | null; startedByName?: string | null }
 
 /**
  * StudioWorkflowDtos.cs l.93–102. D-44-28 : `finishedAt` est `DateTime` NON nullable côté C#

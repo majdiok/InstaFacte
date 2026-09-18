@@ -125,6 +125,17 @@ describe('StudioWorkflowInstanceDetailComponent', () => {
       .forEach(el => el.remove());
   });
 
+  it('affiche le nom du lanceur quand startedByName est servi, le guid sinon (4.6c1)', () => {
+    setup();
+    open('i1', { ...DETAIL, instance: inst({ startedBy: 'u-42', startedByName: 'Alice Martin' }) });
+    expect(qs('[data-testid="wf-detail-started-by-i1"]')?.textContent?.trim()).toBe('Alice Martin');
+
+    host.instanceId.set(null);
+    fixture.detectChanges();
+    open('i1', { ...DETAIL, instance: inst({ startedBy: 'u-42' }) });
+    expect(qs('[data-testid="wf-detail-started-by-i1"]')?.textContent?.trim()).toBe('u-42');
+  });
+
   it('charge le détail quand instanceId est posé et se vide à la fermeture', () => {
     setup();
     httpMock.expectNone(r => r.url.includes('/workflows/instances/'));   // fermé : aucune requête
@@ -133,6 +144,9 @@ describe('StudioWorkflowInstanceDetailComponent', () => {
     expect(qs('[data-testid="wf-detail-summary"]')).not.toBeNull();
     expect(qs('[data-testid="wf-detail-record"]')?.getAttribute('href'))
       .toBe('/studio/records/devis/9f1c2d3e-4b5a-6c7d-8e9f-0a1b2c3d4e5f');
+
+    // 4.6c1 : « Démarré par » = nom du lanceur (4.6b1) ; « Système » quand ni nom ni guid.
+    expect(qs('[data-testid="wf-detail-started-by-i1"]')?.textContent?.trim()).toBe('Système');
 
     // Croix de fermeture du drawer (p-drawer la rend dans l'en-tête, après le template custom).
     const closeBtn = qs<HTMLButtonElement>('.p-drawer-header button');

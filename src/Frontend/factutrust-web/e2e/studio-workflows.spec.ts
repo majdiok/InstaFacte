@@ -147,6 +147,9 @@ test.describe('Studio — workflows (4.4)', () => {
     await expect.poll(() => ctx.find('/records/interventions/r1/workflow-instances/inst-1', 'GET').length).toBe(1);
     expect(ctx.find('/workflows/instances/inst-1', 'GET').length).toBe(0);
     await expect(page.getByTestId('wf-detail-origin')).toHaveCount(0);
+    // 4.6c1 : « Démarré par » affiche le nom du lanceur (startedByName, 4.6b1) dans le tiroir et l'onglet.
+    await expect(page.getByTestId('wf-detail-started-by-inst-1')).toHaveText('Alice Martin');
+    await expect(page.getByTestId('srw-requested-by-inst-2')).toHaveText('—');
     await page.keyboard.press('Escape'); // p-drawer modal : fermeture clavier avant le lancement manuel
     await expect(page.getByRole('complementary')).toBeHidden();
 

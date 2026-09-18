@@ -16,6 +16,7 @@ import { SelectModule } from 'primeng/select';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TagModule } from 'primeng/tag';
 import { TextareaModule } from 'primeng/textarea';
+import { ToastModule } from 'primeng/toast';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { ApiResponse } from '@core/services/client.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
@@ -101,7 +102,7 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule, FormsModule, ButtonModule, DrawerModule, InputTextModule, MessageModule, SelectModule,
-    SkeletonModule, TagModule, TextareaModule, ToggleSwitchModule, StudioPageShellComponent,
+    SkeletonModule, TagModule, TextareaModule, ToastModule, ToggleSwitchModule, StudioPageShellComponent,
     StudioWorkflowStepListComponent, StudioWorkflowStepEditorComponent, StudioWorkflowInstancesPanelComponent,
     StudioWorkflowInstanceDetailComponent,
     // Référencé UNIQUEMENT dans le bloc `@defer` ci-dessous : Angular l'isole dans un chunk
@@ -110,6 +111,8 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
   ],
   template: `
     <app-studio-page-shell [title]="title()" [breadcrumbs]="breadcrumbs()">
+      <!-- 4.6d1 (D-44-95) : hôte des toasts — les succès/erreurs des écritures étaient muets sur cette page. -->
+      <p-toast styleClass="studio-theme" />
       <ng-container studioActions>
         <button pButton type="button" [outlined]="true" icon="fa-solid fa-list-check" [label]="L.designer.validate"
           data-testid="wf-validate" [disabled]="busy() || saving() || loading() || loadError()" (click)="validate()"></button>

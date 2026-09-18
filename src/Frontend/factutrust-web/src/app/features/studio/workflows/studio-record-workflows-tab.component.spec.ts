@@ -116,6 +116,22 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     expect(row2.querySelector('p-tag[data-status="running"]')).not.toBeNull();
   });
 
+  // 4.6c1 (D-46-F03) — colonne « Demandé par » : nom du lanceur servi par 4.6b1, « — » sinon.
+  it('affiche la colonne « Demandé par » (nom du lanceur, « — » si inconnu)', () => {
+    setup({
+      instances: [
+        instance('i1', 'waiting_approval', { startedByName: 'Alice Martin' }),
+        instance('i2', 'running')
+      ]
+    });
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('th') as NodeListOf<HTMLElement>)
+      .map(th => th.textContent?.trim());
+    expect(headers).toContain('Demandé par');
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-requested-by-i1"]').textContent.trim()).toBe('Alice Martin');
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-requested-by-i2"]').textContent.trim()).toBe('—');
+  });
+
   it('masque Lancer / Annuler / Relancer sans custom_records:write', () => {
     setup({ canWrite: false, instances: [instance('i1', 'running')] });
 
@@ -164,24 +180,57 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     expect(toastSpy).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'success', detail: labels.started }));
   });
 
-  it('annule une instance ouverte et émet changed', () => {
+  it("annule après confirmation inline (motif optionnel borné à 500), réinitialise le formulaire et émet changed (D-44-96)", () => {
     setup({ instances: [instance('i1', 'waiting_approval')] });
 
     clickButton('srw-cancel-i1');
+    fixture.detectChanges();
+    httpMock.expectNone(`${API}/workflows/instances/i1/cancel`);        // pas d'annulation immédiate (D-44-96)
+    expect(component.cancelTarget()?.id).toBe('i1');
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-cancel-panel"]')).not.toBeNull();
+
+    component.cancelReason.set('  Facture annulée côté ERP  ');
+    fixture.detectChanges();
+    clickButton('srw-cancel-confirm');
     const cancelReq = httpMock.expectOne(`${API}/workflows/instances/i1/cancel`);
     expect(cancelReq.request.method).toBe('POST');
-    expect(cancelReq.request.body).toEqual({ reason: null });
+    expect(cancelReq.request.body).toEqual({ reason: 'Facture annulée côté ERP' }); // trimmé (motif du tiroir)
     cancelReq.flush({ success: true, data: instance('i1', 'cancelled'), message: null, error: null });
     fixture.detectChanges();
     expect(changedSpy).toHaveBeenCalledTimes(1);
+    expect(component.cancelTarget()).toBeNull();                       // formulaire refermé après succès
     expect(toastSpy).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'success', detail: labels.cancelled }));
 
-    // Variante erreur : instance déjà terminée côté serveur (409 ⇒ message serveur, D-44-02).
+    // Réouverture : le motif repart vide (pas de fuite vers la cible suivante).
     clickButton('srw-cancel-i1');
+    fixture.detectChanges();
+    expect(component.cancelReason()).toBe('');
+
+    // Variante erreur : instance déjà terminée côté serveur (409 ⇒ message serveur, D-44-02) — le panneau reste ouvert.
+    clickButton('srw-cancel-confirm');
     httpMock.expectOne(`${API}/workflows/instances/i1/cancel`)
       .flush({ success: false, error: 'Instance déjà terminée.' }, { status: 409, statusText: 'Conflict' });
     fixture.detectChanges();
     expect(changedSpy).toHaveBeenCalledTimes(1);                        // pas de second changed
+    expect(component.cancelTarget()).not.toBeNull();
     expect(toastSpy).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'warn', detail: 'Instance déjà terminée.' }));
+  });
+
+  it("« Retour » ferme la confirmation sans POST (D-44-96) et l'accessibilité est posée (aria-labels + th libellé)", () => {
+    setup({ instances: [instance('i1', 'waiting_approval')] });
+
+    // a11y : les boutons d'action et le sélecteur ont un nom accessible ; l'en-tête d'actions n'est plus vide.
+    const detailBtn = fixture.nativeElement.querySelector('[data-testid="srw-detail-i1"]') as HTMLElement;
+    expect(detailBtn.getAttribute('aria-label')).toBe(labels.detail);
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-cancel-i1"]').getAttribute('aria-label')).toBe(labels.cancel);
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-remind-i1"]').getAttribute('aria-label')).toBe(labels.remind);
+
+    clickButton('srw-cancel-i1');
+    fixture.detectChanges();
+    clickButton('srw-cancel-back');
+    fixture.detectChanges();
+    expect(component.cancelTarget()).toBeNull();
+    httpMock.expectNone(`${API}/workflows/instances/i1/cancel`);        // rien n'a été envoyé
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-cancel-panel"]')).toBeNull();
   });
 });

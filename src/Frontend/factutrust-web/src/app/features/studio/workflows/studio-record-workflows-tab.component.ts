@@ -8,13 +8,14 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
+import { TextareaModule } from 'primeng/textarea';
 import { TooltipModule } from 'primeng/tooltip';
 import { ApiResponse } from '@core/services/client.service';
 import { STUDIO_WORKFLOW_LABELS } from './studio-workflow-labels';
 import { workflowErrorMessage } from './studio-workflow-http.util';
 import { StudioWorkflowInstanceDetailComponent } from './studio-workflow-instance-detail.component';
 import { StudioWorkflowStatusTagComponent } from './studio-workflow-status-tag.component';
-import { RunnableWorkflowDto, WorkflowInstanceDto, isOpenInstance } from './studio-workflows.models';
+import { RunnableWorkflowDto, WORKFLOW_LIMITS, WorkflowInstanceDto, isOpenInstance } from './studio-workflows.models';
 import { StudioWorkflowsService } from './studio-workflows.service';
 
 /**
@@ -38,7 +39,7 @@ import { StudioWorkflowsService } from './studio-workflows.service';
   standalone: true,
   imports: [
     DatePipe, FormsModule,
-    ButtonModule, DialogModule, SelectModule, TableModule, TooltipModule,
+    ButtonModule, DialogModule, SelectModule, TableModule, TextareaModule, TooltipModule,
     StudioWorkflowStatusTagComponent, StudioWorkflowInstanceDetailComponent
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -54,7 +55,8 @@ import { StudioWorkflowsService } from './studio-workflows.service';
         <ng-template pTemplate="header">
           <tr>
             <th>{{ labels.colWorkflow }}</th><th>{{ labels.colStatus }}</th><th>{{ labels.colStep }}</th>
-            <th>{{ labels.colStarted }}</th><th>{{ labels.colDue }}</th><th></th>
+            <th>{{ labels.colStarted }}</th><th>{{ labels.colRequestedBy }}</th><th>{{ labels.colDue }}</th>
+            <th><span class="sr-only">{{ labels.colActions }}</span></th>
           </tr>
         </ng-template>
         <ng-template pTemplate="body" let-row>
@@ -63,28 +65,47 @@ import { StudioWorkflowsService } from './studio-workflows.service';
             <td><app-studio-workflow-status-tag [status]="row.status" /></td>
             <td>{{ row.currentStepKey ?? '—' }}</td>
             <td>{{ row.startedAt | date:'dd/MM/yyyy HH:mm' }}</td>
+            <!-- 4.6c1 (D-46-F03) : nom du lanceur (4.6b1) ; « — » si inconnu ou backend non déployé. -->
+            <td [attr.data-testid]="'srw-requested-by-' + row.id">{{ row.startedByName ?? '—' }}</td>
             <td>{{ row.dueAt ? (row.dueAt | date:'dd/MM/yyyy HH:mm') : '—' }}</td>
             <td class="srw-actions">
               <p-button icon="fa-solid fa-eye" [text]="true" size="small" [pTooltip]="labels.detail"
-                (onClick)="openInstanceId.set(row.id)" [attr.data-testid]="'srw-detail-' + row.id" />
+                [attr.aria-label]="labels.detail" (onClick)="openInstanceId.set(row.id)" [attr.data-testid]="'srw-detail-' + row.id" />
               @if (canWrite() && isOpen(row)) {
                 <p-button icon="fa-solid fa-bell" [text]="true" size="small" [pTooltip]="labels.remind"
-                  (onClick)="remind(row)" [attr.data-testid]="'srw-remind-' + row.id" />
+                  [attr.aria-label]="labels.remind" (onClick)="remind(row)" [attr.data-testid]="'srw-remind-' + row.id" />
                 <p-button icon="fa-solid fa-ban" [text]="true" size="small" severity="danger" [pTooltip]="labels.cancel"
-                  (onClick)="cancel(row)" [attr.data-testid]="'srw-cancel-' + row.id" />
+                  [attr.aria-label]="labels.cancel" (onClick)="cancel(row)" [attr.data-testid]="'srw-cancel-' + row.id" />
               }
             </td>
           </tr>
         </ng-template>
         <ng-template pTemplate="emptymessage">
-          <tr><td colspan="6" class="ft-empty">{{ labels.empty }}</td></tr>
+          <tr><td colspan="7" class="ft-empty">{{ labels.empty }}</td></tr>
         </ng-template>
       </p-table>
     </div>
+    <!-- 4.6d2 (D-44-96) : confirmation d'annulation INLINE avec motif optionnel — même motif et libellés
+         que le tiroir (D-44-26, pas de ConfirmationService.prompt). -->
+    @if (cancelTarget(); as target) {
+      <div class="srw-cancel" data-testid="srw-cancel-panel" role="group" [attr.aria-label]="labels.cancelConfirmTitle">
+        <p class="srw-cancel__title">{{ labels.cancelConfirmTitle }} <strong>{{ target.workflowName }}</strong></p>
+        <textarea pTextarea rows="2" [attr.maxlength]="limits.maxCancelReason" [ngModel]="cancelReason()"
+          (ngModelChange)="cancelReason.set($event)" [placeholder]="labels.cancelReason"
+          [attr.aria-label]="labels.cancelReason" data-testid="srw-cancel-reason"></textarea>
+        <small class="studio-muted">{{ cancelReason().length }}/{{ limits.maxCancelReason }}</small>
+        <div class="srw-cancel__row">
+          <p-button severity="danger" size="small" [label]="labels.cancelConfirm" [loading]="busy()"
+            (onClick)="confirmCancel()" data-testid="srw-cancel-confirm" />
+          <p-button [outlined]="true" size="small" [label]="labels.cancelBack" [disabled]="busy()"
+            (onClick)="cancelTarget.set(null)" data-testid="srw-cancel-back" />
+        </div>
+      </div>
+    }
     <p-dialog [visible]="runOpen()" (visibleChange)="$event || closeRun()" [modal]="true" appendTo="body"
       styleClass="studio-theme" [header]="labels.runTitle" [style]="{ width: '440px', maxWidth: '95vw' }">
       <p-select [options]="runnable()" optionLabel="name" optionValue="key" [ngModel]="runKey()"
-        (ngModelChange)="runKey.set($event)" [placeholder]="labels.runPlaceholder" appendTo="body"
+        (ngModelChange)="runKey.set($event)" [placeholder]="labels.runPlaceholder" [attr.aria-label]="labels.runPlaceholder" appendTo="body"
         panelStyleClass="studio-theme" [loading]="runnableLoading()" data-testid="srw-run-select" />
       @if (!runnableLoading() && runnable().length === 0) {
         <p class="studio-muted">{{ labels.runEmpty }}</p>
@@ -104,6 +125,10 @@ import { StudioWorkflowsService } from './studio-workflows.service';
   // l'onglet « Liés » 2.5e2) ; .ft-table-card vient de la couche design globale.
   styleUrl: '../shared/studio-layout.scss',
   styles: [`
+    .srw-cancel { display: flex; flex-direction: column; gap: var(--spacing-2, .5rem); margin-top: var(--spacing-3, .75rem); padding: var(--spacing-3, .75rem); border: 1px solid var(--color-border-subtle, #e5e7eb); border-radius: var(--radius-md, 8px); }
+    .srw-cancel__title { margin: 0; font-weight: 600; }
+    .srw-cancel__row { display: flex; gap: var(--spacing-2, .5rem); }
+  `, `
     .srw-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .75rem; }
     .srw-head p { margin: 0; }
     .srw-actions { display: flex; gap: .25rem; justify-content: flex-end; }
@@ -130,6 +155,10 @@ export class StudioRecordWorkflowsTabComponent {
   readonly runKey = signal<string | null>(null);
   readonly busy = signal(false);
   readonly openInstanceId = signal<string | null>(null);
+  protected readonly limits = WORKFLOW_LIMITS;
+  /** 4.6d2 (D-44-96) : instance en cours d'annulation (confirmation inline) + motif saisi. */
+  readonly cancelTarget = signal<WorkflowInstanceDto | null>(null);
+  readonly cancelReason = signal('');
 
   isOpen(row: WorkflowInstanceDto): boolean { return isOpenInstance(row.status); }
 
@@ -165,16 +194,30 @@ export class StudioRecordWorkflowsTabComponent {
     });
   }
 
-  cancel(row: WorkflowInstanceDto): void { this.act(this.workflows.cancelInstance(row.id, null), this.labels.cancelled); } // corps { reason: null } posé par le service
+  /** 4.6d2 (D-44-96) : ouvre la confirmation inline (le motif repart vide pour chaque cible). */
+  cancel(row: WorkflowInstanceDto): void {
+    this.cancelReason.set('');
+    this.cancelTarget.set(row);
+  }
+
+  /** Annulation confirmée : motif optionnel borné à 500 côté saisie ET à l'envoi (même défense que le tiroir). */
+  confirmCancel(): void {
+    const target = this.cancelTarget();
+    if (!target) return;
+    const reason = this.cancelReason().trim().slice(0, WORKFLOW_LIMITS.maxCancelReason) || null;
+    this.act(this.workflows.cancelInstance(target.id, reason), this.labels.cancelled, () => this.cancelTarget.set(null));
+  }
+
   remind(row: WorkflowInstanceDto): void { this.act(this.workflows.remindApprovers(row.id), this.labels.reminded); }        // 409 « < 24 h » ⇒ message serveur
 
-  private act(call: Observable<ApiResponse<WorkflowInstanceDto>>, okDetail: string): void {
+  private act(call: Observable<ApiResponse<WorkflowInstanceDto>>, okDetail: string, onSuccess?: () => void): void {
     if (this.busy()) return;
     this.busy.set(true);
     call.subscribe({
       next: () => {
         this.busy.set(false);
         this.toast.add({ severity: 'success', summary: this.labels.title, detail: okDetail });
+        onSuccess?.();
         this.changed.emit();
       },
       error: (err: HttpErrorResponse) => {
