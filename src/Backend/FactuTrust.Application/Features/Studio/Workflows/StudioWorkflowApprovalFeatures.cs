@@ -40,6 +40,14 @@ public sealed record WorkflowApprovalInboxItemDto(
 /// <summary>Approbations en attente de l'utilisateur courant (directes ou via son rôle).</summary>
 public sealed record ListMyApprovalsQuery(int Max = 100) : IRequest<Result<IReadOnlyList<WorkflowApprovalInboxItemDto>>>;
 
+/// <summary>
+/// Mes décisions d'approbation passées (4.7 « v1.1 », D‑47‑60) : approuvées/refusées par
+/// l'utilisateur courant, triées de la plus récente. Même forme de DTO que la boîte de réception.
+/// Borné par la rétention des instances (<c>StudioWorkflowRetentionDays</c>, la purge supprime
+/// instances et approbations).
+/// </summary>
+public sealed record ListMyApprovalHistoryQuery(int Max = 50) : IRequest<Result<IReadOnlyList<WorkflowApprovalInboxItemDto>>>;
+
 /// <summary>Compteur pour le badge (appel fréquent : une seule requête SQL).</summary>
 public sealed record CountMyApprovalsQuery : IRequest<Result<ApprovalCountDto>>;
 
@@ -84,90 +92,58 @@ public sealed class ListMyApprovalsQueryHandler
         var approvals = await _workflows.ListPendingApprovalsForUserAsync(
             tenantId, userId ?? Guid.Empty, _currentUser.Role?.ToString(), Math.Clamp(query.Max, 1, 200), cancellationToken);
 
-        // Caches par identifiant (revue 4.2e : N+1) — définitions/entités/champs sont partagés entre éléments.
-        var definitions = new Dictionary<Guid, StudioWorkflowDefinition?>();
-        var entities = new Dictionary<Guid, CustomEntityDefinition?>();
-        var labelKeys = new Dictionary<Guid, string?>();
-        var items = new List<WorkflowApprovalInboxItemDto>(approvals.Count);
-        foreach (var approval in approvals)
-        {
-            var instance = await _workflows.GetInstanceAsync(tenantId, approval.InstanceId, cancellationToken);
-            if (instance is null || instance.IsTerminal)
-                continue; // décision en cours ou instance refermée : l'élément n'est plus actionnable
-
-            // Définition possiblement supprimée : clé et nom « — » plutôt qu'un 500.
-            if (!definitions.TryGetValue(instance.WorkflowDefinitionId, out var definition))
-            {
-                definition = await _workflows.GetDefinitionAsync(tenantId, instance.WorkflowDefinitionId, cancellationToken);
-                definitions[instance.WorkflowDefinitionId] = definition;
-            }
-            if (!entities.TryGetValue(instance.EntityDefinitionId, out var entity))
-            {
-                entity = await _entities.GetByIdAsync(tenantId, instance.EntityDefinitionId, cancellationToken);
-                entities[instance.EntityDefinitionId] = entity;
-            }
-
-            string? recordLabel = null;
-            if (entity is not null)
-            {
-                var record = await _records.GetAsync(tenantId, entity.Id, instance.RecordId, cancellationToken);
-                if (record is not null)
-                {
-                    // Libellé = premier champ texte (motif des options de relation, CustomFieldFeatures).
-                    if (!labelKeys.TryGetValue(entity.Id, out var labelKey))
-                    {
-                        var fields = await _fields.ListByEntityAsync(tenantId, entity.Id, includeInactive: false, cancellationToken);
-                        labelKey = fields
-                            .FirstOrDefault(f => f.FieldType is CustomFieldType.Text or CustomFieldType.MultilineText)?.Key;
-                        labelKeys[entity.Id] = labelKey;
-                    }
-                    recordLabel = ExtractDisplay(record.DataJson, labelKey);
-                }
-            }
-
-            items.Add(new WorkflowApprovalInboxItemDto(
-                StudioWorkflowMapping.ToDto(approval),
-                instance.Id,
-                definition?.Key ?? "—",
-                definition?.Name ?? "—",
-                entity?.Key ?? "—",
-                entity?.DisplayName ?? "—",
-                instance.RecordId,
-                recordLabel,
-                instance.StartedBy,
-                instance.StartedAt));
-        }
-
-        // 4.5a2 — « Demandé par » (D-44-79) : une seule requête master pour les lanceurs distincts ; absent ⇒ null (D-45-02).
-        var starterIds = items.Where(i => i.StartedBy is not null).Select(i => i.StartedBy!.Value).Distinct().ToList();
-        if (starterIds.Count > 0)
-        {
-            var names = await _userNames.GetDisplayNamesAsync(tenantId, starterIds, cancellationToken);
-            for (var k = 0; k < items.Count; k++)
-            {
-                if (items[k].StartedBy is { } starter && names.TryGetValue(starter, out var starterName))
-                    items[k] = items[k] with { StartedByName = starterName };
-            }
-        }
-
+        var items = await StudioApprovalInboxEnrichment.EnrichAsync(
+            _workflows, _entities, _fields, _records, _userNames, tenantId, approvals,
+            skipTerminalInstances: true, cancellationToken);
         return Result.Success<IReadOnlyList<WorkflowApprovalInboxItemDto>>(items);
     }
+}
 
-    private static string? ExtractDisplay(string dataJson, string? key)
+/// <summary>Historique de mes décisions d'approbation (onglet « Historique » de la page, 4.7 ap-b).</summary>
+public sealed class ListMyApprovalHistoryQueryHandler
+    : IRequestHandler<ListMyApprovalHistoryQuery, Result<IReadOnlyList<WorkflowApprovalInboxItemDto>>>
+{
+    private readonly IStudioWorkflowRepository _workflows;
+    private readonly ICustomEntityRepository _entities;
+    private readonly ICustomFieldRepository _fields;
+    private readonly ICustomRecordRepository _records;
+    private readonly ICurrentUser _currentUser;
+    private readonly IStudioUserNameResolver _userNames;
+
+    public ListMyApprovalHistoryQueryHandler(
+        IStudioWorkflowRepository workflows,
+        ICustomEntityRepository entities,
+        ICustomFieldRepository fields,
+        ICustomRecordRepository records,
+        ICurrentUser currentUser,
+        IStudioUserNameResolver userNames)
     {
-        if (string.IsNullOrEmpty(key))
-            return null;
-        try
-        {
-            var node = System.Text.Json.Nodes.JsonNode.Parse(dataJson);
-            var value = node?[key];
-            return value is null ? null : value.ToString();
-        }
-        catch (Exception)
-        {
-            // JsonException (JSON illisible) ou InvalidOperationException (nœud non-objet) : pas de libellé.
-            return null;
-        }
+        _workflows = workflows;
+        _entities = entities;
+        _fields = fields;
+        _records = records;
+        _currentUser = currentUser;
+        _userNames = userNames;
+    }
+
+    public async Task<Result<IReadOnlyList<WorkflowApprovalInboxItemDto>>> Handle(
+        ListMyApprovalHistoryQuery query, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out var userId, out var err))
+            return Result.Failure<IReadOnlyList<WorkflowApprovalInboxItemDto>>(err);
+        if (!_currentUser.HasPermission(Permissions.CustomData.RecordsRead))
+            return Result.Failure<IReadOnlyList<WorkflowApprovalInboxItemDto>>(
+                Error.Unauthorized("Lecture des enregistrements requise."));
+
+        var approvals = await _workflows.ListDecidedApprovalsByUserAsync(
+            tenantId, userId ?? Guid.Empty, Math.Clamp(query.Max, 1, 200), cancellationToken);
+
+        // Mode tolérant : une instance terminée reste listée (la décision est passée) ; seule une
+        // instance purgée entre la liste et l'enrichissement fait sauter la ligne.
+        var items = await StudioApprovalInboxEnrichment.EnrichAsync(
+            _workflows, _entities, _fields, _records, _userNames, tenantId, approvals,
+            skipTerminalInstances: false, cancellationToken);
+        return Result.Success<IReadOnlyList<WorkflowApprovalInboxItemDto>>(items);
     }
 }
 

@@ -367,6 +367,19 @@ public sealed class StudioWorkflowRepository : IStudioWorkflowRepository
         return await context.StudioWorkflowApprovals.CountAsync(PendingForUser(tenantId, userId, role), cancellationToken);
     }
 
+    public async Task<IReadOnlyList<StudioWorkflowApproval>> ListDecidedApprovalsByUserAsync(
+        Guid tenantId, Guid userId, int max, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.StudioWorkflowApprovals
+            .Where(a => a.TenantId == tenantId && a.DecidedBy == userId
+                && (a.Status == StudioWorkflowApprovalStatus.Approved || a.Status == StudioWorkflowApprovalStatus.Rejected))
+            .OrderByDescending(a => a.DecidedAt)
+            .ThenByDescending(a => a.Id)
+            .Take(Math.Clamp(max, 1, 200))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<int> PurgeTerminalOlderThanAsync(
         Guid tenantId, DateTime completedBeforeUtc, int max, CancellationToken cancellationToken = default)
     {

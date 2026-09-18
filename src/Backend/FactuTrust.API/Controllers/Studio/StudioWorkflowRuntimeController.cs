@@ -45,6 +45,17 @@ public sealed class StudioWorkflowRuntimeController : ControllerBase
             items => Ok(ApiResponse<IReadOnlyList<WorkflowApprovalInboxItemDto>>.Ok(items)));
     }
 
+    /// <summary>Mes décisions d'approbation passées (approuvées/refusées), triées de la plus récente (4.7 « v1.1 »).</summary>
+    [HttpGet("workflows/approvals/mine/history")]
+    [Authorize(Policy = PermissionPolicies.CustomRecordsRead)]
+    public async Task<IActionResult> ListMyApprovalHistory([FromQuery] int max = 50, CancellationToken cancellationToken = default)
+    {
+        if (Unavailable() is { } unavailable) return unavailable;
+        var result = await _mediator.Send(new ListMyApprovalHistoryQuery(max), cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            items => Ok(ApiResponse<IReadOnlyList<WorkflowApprovalInboxItemDto>>.Ok(items)));
+    }
+
     /// <summary>Nombre d'approbations en attente (badge ; appel fréquent, une seule requête SQL).</summary>
     [HttpGet("workflows/approvals/mine/count")]
     [Authorize(Policy = PermissionPolicies.CustomRecordsRead)]

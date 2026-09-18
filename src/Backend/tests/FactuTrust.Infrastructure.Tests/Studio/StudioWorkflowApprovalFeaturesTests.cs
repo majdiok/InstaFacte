@@ -415,6 +415,119 @@ public class StudioWorkflowApprovalFeaturesTests
             .Returns(Task.CompletedTask);
     }
 
+    // ---- 4.7 « v1.1 » (D-47-60) : historique de mes décisions ----
+
+    private ListMyApprovalHistoryQueryHandler CreateHistoryHandler() =>
+        new(_workflows.Object, _entities.Object, _fields.Object, _records.Object, _currentUser.Object, _userNames.Object);
+
+    [Fact]
+    public async Task ListMyApprovalHistory_returns_my_decisions_with_status_comment_and_starter_name()
+    {
+        var entity = CustomEntityDefinition.Create(TenantId, "customer", "Client", "Clients", null, null, null);
+        var definition = NewDefinition(entity.Id);
+        var approvedInstance = NewInstance(definition);
+        var rejectedInstance = NewInstance(definition);
+        var approved = NewApproval(approvedInstance.Id, assigneeUserId: ApproverId);
+        approved.Decide(StudioWorkflowApprovalStatus.Approved, ApproverId, "Vu.",
+            new DateTime(2026, 9, 17, 10, 0, 0, DateTimeKind.Utc));
+        var rejected = NewApproval(rejectedInstance.Id, assigneeRole: nameof(UserRole.SalesRep));
+        rejected.Decide(StudioWorkflowApprovalStatus.Rejected, ApproverId, "Non justifié.",
+            new DateTime(2026, 9, 18, 9, 0, 0, DateTimeKind.Utc));
+        var field = CustomFieldDefinition.Create(TenantId, entity.Id, "name", "Nom", CustomFieldType.Text,
+            false, false, 0, null, null, null, null);
+        var record = CustomRecord.Create(TenantId, entity.Id, "{\"name\":\"Dossier A\"}", StartedBy);
+
+        SetupReadPermission();
+        SetupUserNames(new Dictionary<Guid, string> { [StartedBy] = "Amine Zorgati" });
+        // Le dépôt filtre (mes décisions Approved/Rejected) et trie DecidedAt desc — le handler mappe tel quel.
+        _workflows.Setup(r => r.ListDecidedApprovalsByUserAsync(TenantId, ApproverId, 50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StudioWorkflowApproval> { rejected, approved });
+        foreach (var (approval, instance) in new[] { (rejected, rejectedInstance), (approved, approvedInstance) })
+        {
+            _workflows.Setup(r => r.GetInstanceAsync(TenantId, approval.InstanceId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(instance);
+            _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(definition);
+            _entities.Setup(r => r.GetByIdAsync(TenantId, entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
+            _records.Setup(r => r.GetAsync(TenantId, entity.Id, instance.RecordId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(record);
+            _fields.Setup(r => r.ListByEntityAsync(TenantId, entity.Id, false, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<CustomFieldDefinition> { field });
+        }
+
+        var result = await CreateHistoryHandler().Handle(new ListMyApprovalHistoryQuery(), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value.Count);
+        Assert.Equal("rejected", result.Value[0].Approval.Status);
+        Assert.Equal("Non justifié.", result.Value[0].Approval.Comment);
+        Assert.NotNull(result.Value[0].Approval.DecidedAt);
+        Assert.Equal("approved", result.Value[1].Approval.Status);
+        Assert.All(result.Value, item =>
+        {
+            Assert.Equal("Dossier A", item.RecordLabel);
+            Assert.Equal("Amine Zorgati", item.StartedByName);
+        });
+    }
+
+    [Fact]
+    public async Task ListMyApprovalHistory_keeps_terminal_instances_and_skips_purged_ones()
+    {
+        var entity = CustomEntityDefinition.Create(TenantId, "customer", "Client", "Clients", null, null, null);
+        var definition = NewDefinition(entity.Id);
+        var terminalInstance = NewInstance(definition);
+        terminalInstance.Complete("{}");
+        var done = NewApproval(terminalInstance.Id, assigneeUserId: ApproverId);
+        done.Decide(StudioWorkflowApprovalStatus.Approved, ApproverId, null, DateTime.UtcNow);
+        var purged = NewApproval(Guid.NewGuid(), assigneeUserId: ApproverId);
+        purged.Decide(StudioWorkflowApprovalStatus.Rejected, ApproverId, "x", DateTime.UtcNow);
+
+        SetupReadPermission();
+        SetupUserNames(new Dictionary<Guid, string>());
+        _workflows.Setup(r => r.ListDecidedApprovalsByUserAsync(TenantId, ApproverId, 50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StudioWorkflowApproval> { done, purged });
+        _workflows.Setup(r => r.GetInstanceAsync(TenantId, done.InstanceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(terminalInstance);
+        _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(definition);
+        _entities.Setup(r => r.GetByIdAsync(TenantId, entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
+        _records.Setup(r => r.GetAsync(TenantId, entity.Id, terminalInstance.RecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CustomRecord?)null);
+        _workflows.Setup(r => r.GetInstanceAsync(TenantId, purged.InstanceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StudioWorkflowInstance?)null);
+
+        var result = await CreateHistoryHandler().Handle(new ListMyApprovalHistoryQuery(), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var item = Assert.Single(result.Value);
+        Assert.Equal(done.Id, item.Approval.Id);
+    }
+
+    [Fact]
+    public async Task ListMyApprovalHistory_clamps_max_to_200()
+    {
+        SetupReadPermission();
+        _workflows.Setup(r => r.ListDecidedApprovalsByUserAsync(TenantId, ApproverId, 200, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StudioWorkflowApproval>());
+
+        var result = await CreateHistoryHandler().Handle(new ListMyApprovalHistoryQuery(Max: 10_000), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value);
+    }
+
+    [Fact]
+    public async Task ListMyApprovalHistory_requires_records_read()
+    {
+        SetupReadPermission(false);
+
+        var result = await CreateHistoryHandler().Handle(new ListMyApprovalHistoryQuery(), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        _workflows.Verify(r => r.ListDecidedApprovalsByUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(),
+            It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private static StudioWorkflowDefinition NewDefinition(Guid entityId) =>
         StudioWorkflowDefinition.Create(TenantId, entityId, "wf-approve", "Approbation client", null,
             StudioWorkflowTriggerKind.OnCreate, "{}", "[]", true, StartedBy);
