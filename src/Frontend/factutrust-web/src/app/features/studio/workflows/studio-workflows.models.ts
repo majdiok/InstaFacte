@@ -14,7 +14,7 @@ import { slugifyKey } from '../shared/studio-text.util';
 // les DTO exposent des `string` déjà snake_case).
 // ---------------------------------------------------------------------------------------------
 
-export type WorkflowTrigger = 'on_create' | 'on_update' | 'field_changed' | 'manual' | 'scheduled'; // 'scheduled' refusé par le serveur (D5)
+export type WorkflowTrigger = 'on_create' | 'on_update' | 'field_changed' | 'manual' | 'scheduled'; // 'scheduled' accepté depuis 4.7b1 (cron UTC + filtres)
 export type WorkflowInstanceStatus = 'running' | 'waiting' | 'waiting_approval' | 'completed' | 'failed' | 'cancelled';
 export type WorkflowStepRunStatus = 'succeeded' | 'skipped' | 'failed' | 'suspended';
 export type WorkflowApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired';
@@ -27,8 +27,8 @@ export type StepPropertyKind = 'string' | 'int' | 'bool' | 'field' | 'fieldMap' 
 // `StudioWorkflowRuntimeFeatures.cs` l.18–21).
 // ---------------------------------------------------------------------------------------------
 
-/** StudioWorkflowStepsSpec.cs — config `field_changed` uniquement, ≤ 2 Ko. */
-export interface WorkflowTriggerConfig { field?: string; from?: unknown; to?: unknown }
+/** StudioWorkflowStepsSpec.cs — config `field_changed` (`field`/`from`/`to`) et `scheduled` (`cron` + `filters`, 4.7b1/b4), ≤ 2 Ko. */
+export interface WorkflowTriggerConfig { field?: string; from?: unknown; to?: unknown; cron?: string; filters?: WorkflowFilterSpec[] }
 
 /** Filtre de condition ; `value2` = borne haute de `between`. */
 export interface WorkflowFilterSpec { field: string; op: RecordViewFilterOp; value?: unknown; value2?: unknown }
@@ -122,7 +122,7 @@ export const WORKFLOW_LIMITS = { maxWorkflowsPerEntity: 20, maxSteps: 30, maxFil
 export const STEP_KEY_REGEX = /^[a-z][a-z0-9_]{1,63}$/;   // StudioKey.IsValidShape
 export const SAVE_AS_REGEX = /^[a-z][a-z0-9_]{0,31}$/;    // SaveAsRegex
 export const COMPUTED_FIELD_TYPES: readonly CustomFieldType[] = [CustomFieldType.AutoNumber, CustomFieldType.Formula, CustomFieldType.Lookup, CustomFieldType.Rollup]; // D16 (enum l.6–29 : 16, 17, 18, 19)
-export const WORKFLOW_TRIGGERS: readonly { value: WorkflowTrigger; soon?: true }[] = [{ value: 'on_create' }, { value: 'on_update' }, { value: 'field_changed' }, { value: 'manual' }, { value: 'scheduled', soon: true }];
+export const WORKFLOW_TRIGGERS: readonly { value: WorkflowTrigger; soon?: true }[] = [{ value: 'on_create' }, { value: 'on_update' }, { value: 'field_changed' }, { value: 'manual' }, { value: 'scheduled' }]; // 4.7b4 : 'scheduled' sélectionnable (`soon` reste pour de futurs déclencheurs)
 
 /**
  * Variables de gabarit « {{…}} » réellement résolues par `StudioTemplateRenderer.cs` l.69–91 :

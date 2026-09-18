@@ -23,8 +23,11 @@ import { ConfirmationService } from '@core/services/confirmation.service';
 import { CustomField, CustomFieldType } from '@shared/studio-runtime/studio-runtime.models';
 import { StudioPageShellComponent } from '../shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from '../shared/studio-breadcrumb.util';
+import { StudioFilterBuilderComponent } from '../shared/studio-filter-builder.component';
 import { StudioService } from '../studio.service';
 import { AutomationAction, CustomEntity } from '../studio.models';
+import type { RecordViewFilter } from '../views/studio-record-views.models';
+import { toRecordViewFilters, toWorkflowFilters } from './step-editor/studio-workflow-filter.adapter';
 import { StudioWorkflowConditionTreeComponent } from './step-editor/studio-workflow-condition-tree.component';
 import { StudioWorkflowStepEditorComponent } from './step-editor/studio-workflow-step-editor.component';
 import { StudioWorkflowStepListComponent } from './step-editor/studio-workflow-step-list.component';
@@ -84,8 +87,9 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
 /**
  * Concepteur de workflow `/studio/workflows/new?entity=<id>` et `/studio/workflows/:id` (4.4e1) :
  * en-tête (nom, clé auto-slugifiée D-44-12, description, actif — `false` par défaut à la création,
- * D-44-23), déclencheur en cartes radio (`scheduled` désactivé « Bientôt », D5) avec
- * sous-formulaire `field_changed`, puis grille 3 colonnes `1fr · 320 px · 250 px` (D-44-21) :
+ * D-44-23), déclencheur en cartes radio avec sous-formulaires `field_changed` et `scheduled`
+ * (4.7b4 : expression cron UTC — presets ou saisie libre — et filtres optionnels ; la mécanique
+ * `soon` reste pour de futurs déclencheurs), puis grille 3 colonnes `1fr · 320 px · 250 px` (D-44-21) :
  * liste d'étapes + arbre de branchements en `@defer` (col. 1), éditeur d'étape 4.4c1 (col. 2),
  * aperçu/instances récentes (col. 3, panneau 4.4e2 rafraîchi via `refreshToken` ; le clic pose
  * `?instance=<id>`, D20 — le drawer de détail 4.4f `app-studio-workflow-instance-detail` est
@@ -103,6 +107,7 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
   imports: [
     CommonModule, FormsModule, ButtonModule, DrawerModule, InputTextModule, MessageModule, SelectModule,
     SkeletonModule, TagModule, TextareaModule, ToastModule, ToggleSwitchModule, StudioPageShellComponent,
+    StudioFilterBuilderComponent,
     StudioWorkflowStepListComponent, StudioWorkflowStepEditorComponent, StudioWorkflowInstancesPanelComponent,
     StudioWorkflowInstanceDetailComponent,
     // Référencé UNIQUEMENT dans le bloc `@defer` ci-dessous : Angular l'isole dans un chunk
@@ -242,9 +247,32 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
                   (ngModelChange)="patchTriggerConfig({ to: $event || undefined })" autocomplete="off" data-testid="wf-to" />
               </div>
             </div>
-            @if (triggerConfigTooLarge()) {
-              <p-message severity="warn" [text]="localLabels.triggerConfigTooLarge" styleClass="wf-banner" data-testid="wf-trigger-too-large" />
-            }
+          }
+          @if (trigger() === 'scheduled') {
+            <!-- 4.7b4 : cron UTC (presets ou saisie libre) + filtres optionnels (même adaptateur que l'étape condition). -->
+            <div class="wf-sub wf-sub--scheduled" data-testid="wf-scheduled-config">
+              <div class="wf-field">
+                <label for="wf-cron-preset">{{ L.designer.cronPreset }}</label>
+                <p-select inputId="wf-cron-preset" [options]="cronPresets" [ngModel]="cronPresetSelection()"
+                  (ngModelChange)="onCronPreset($event)" optionLabel="label" optionValue="value"
+                  appendTo="body" panelStyleClass="studio-theme" styleClass="wf-w"
+                  data-testid="wf-cron-preset" [attr.aria-label]="L.designer.cronPreset" />
+              </div>
+              <div class="wf-field">
+                <label for="wf-cron">{{ L.designer.cron }} <span class="wf-req">*</span></label>
+                <input id="wf-cron" pInputText [ngModel]="triggerConfig()?.cron ?? ''"
+                  (ngModelChange)="onCronInput($event)" autocomplete="off" placeholder="0 6 * * *" data-testid="wf-cron" />
+                <small class="wf-hint">{{ L.designer.cronHint }}</small>
+              </div>
+              <div class="wf-field wf-field--filters">
+                <span class="wf-lbl">{{ L.designer.scheduledFilters }}</span>
+                <app-studio-filter-builder [fields]="scheduledFilterFields()" [filters]="scheduledFilterModel()"
+                  (filtersChange)="onScheduledFilters($event)" />
+              </div>
+            </div>
+          }
+          @if (triggerConfigTooLarge()) {
+            <p-message severity="warn" [text]="localLabels.triggerConfigTooLarge" styleClass="wf-banner" data-testid="wf-trigger-too-large" />
           }
           @if (tooLarge()) {
             <p-message severity="error" [text]="L.designer.tooLarge" styleClass="wf-banner" data-testid="wf-too-large" />
@@ -379,12 +407,16 @@ export class StudioWorkflowDesignerComponent implements OnInit {
   readonly tooLarge = computed(() => stepsJsonBytes({ version: 1, steps: this.steps() }) > WORKFLOW_LIMITS.maxStepsJsonBytes);
   readonly triggerConfigTooLarge = computed(() => {
     const c = this.triggerConfig();
-    return this.trigger() === 'field_changed' && !!c
+    const t = this.trigger();
+    // 4.7b4 : la jauge 2 Ko (borne serveur) vaut aussi pour `scheduled` (cron + filtres).
+    return (t === 'field_changed' || t === 'scheduled') && !!c
       && new TextEncoder().encode(JSON.stringify(c)).length > WORKFLOW_LIMITS.maxTriggerConfigBytes;
   });
-  readonly canSave = computed(() =>
-    this.name().trim().length > 0 && STEP_KEY_REGEX.test(this.key()) && this.steps().length > 0
-    && !this.tooLarge() && this.trigger() !== 'scheduled');
+  readonly canSave = computed(() => {
+    if (this.name().trim().length === 0 || !STEP_KEY_REGEX.test(this.key()) || this.steps().length === 0 || this.tooLarge()) return false;
+    // 4.7b4 : un déclencheur planifié exige une expression cron non vide (revalidée par le serveur, b1).
+    return this.trigger() !== 'scheduled' || !!this.triggerConfig()?.cron?.trim();
+  });
   /** Instantané JSON du brouillon de requête — toute modification (y compris d'étape) salit. */
   readonly dirty = computed(() => !this.loading() && JSON.stringify(this.toRequest()) !== this.snapshot());
   /** Champ surveillé `field_changed` : champs actifs non calculés (même règle que `update_field.set`). */
@@ -442,16 +474,53 @@ export class StudioWorkflowDesignerComponent implements OnInit {
     this.key.set((value ?? '').trim());
   }
 
-  /** Carte radio de déclencheur ; `scheduled` est « bientôt » et non sélectionnable (D5). */
+  /** Carte radio de déclencheur ; la mécanique `soon` reste pour de futurs déclencheurs (4.7b4 : `scheduled` sélectionnable). */
   selectTrigger(t: { value: WorkflowTrigger; soon?: true }): void {
     if (t.soon) return;
+    if (t.value === this.trigger()) return;   // re-clic : conserve la configuration saisie
     this.trigger.set(t.value);
-    if (t.value !== 'field_changed') this.triggerConfig.set(null);
-    else this.triggerConfig.update(c => c ?? {});
+    // Config par déclencheur : jamais de clés d'un type sur un autre (le serveur les rejette, b1).
+    this.triggerConfig.set(t.value === 'field_changed' || t.value === 'scheduled' ? {} : null);
   }
 
   patchTriggerConfig(patch: Partial<WorkflowTriggerConfig>): void {
     this.triggerConfig.update(c => ({ ...(c ?? {}), ...patch }));
+  }
+
+  // ---- Déclencheur « Planifié » (4.7b4) ----
+
+  /** Sentinelle du preset « Personnalisé » (jamais une expression cron valide). */
+  private static readonly CUSTOM_CRON = '__custom__';
+
+  /** Presets UTC affichés dans le `p-select` (le champ libre reste éditable en « Personnalisé »). */
+  readonly cronPresets: readonly { label: string; value: string }[] = [
+    { label: this.L.designer.cronPresets.hourly, value: '0 * * * *' },
+    { label: this.L.designer.cronPresets.daily, value: '0 6 * * *' },
+    { label: this.L.designer.cronPresets.weekly, value: '0 6 * * 1' },
+    { label: this.L.designer.cronPresets.custom, value: StudioWorkflowDesignerComponent.CUSTOM_CRON }
+  ];
+
+  /** Preset sélectionné : l'expression courante si elle correspond à un preset, sinon « Personnalisé ». */
+  readonly cronPresetSelection = computed(() => {
+    const cron = this.triggerConfig()?.cron ?? '';
+    return this.cronPresets.some(p => p.value === cron) ? cron : StudioWorkflowDesignerComponent.CUSTOM_CRON;
+  });
+
+  onCronPreset(value: string): void {
+    if (value !== StudioWorkflowDesignerComponent.CUSTOM_CRON) this.patchTriggerConfig({ cron: value });
+  }
+
+  onCronInput(value: string): void {
+    this.patchTriggerConfig({ cron: value.trim() || undefined });
+  }
+
+  /** Filtres `scheduled` : champs actifs non calculés SEULS (b1 refuse `_previous` et les variables de contexte). */
+  readonly scheduledFilterFields = computed(() => this.fields().filter(f => f.isActive && !COMPUTED.has(f.fieldType)));
+
+  readonly scheduledFilterModel = computed(() => toRecordViewFilters(this.triggerConfig()?.filters ?? []));
+
+  onScheduledFilters(filters: RecordViewFilter[]): void {
+    this.patchTriggerConfig({ filters: toWorkflowFilters(filters) });
   }
 
   protected asText(v: unknown): string { return typeof v === 'string' ? v : v == null ? '' : String(v); }
@@ -619,7 +688,7 @@ export class StudioWorkflowDesignerComponent implements OnInit {
       name: this.name().trim(),
       description: this.description().trim() || null,
       trigger,
-      triggerConfig: trigger === 'field_changed' ? this.triggerConfig() : null,
+      triggerConfig: trigger === 'field_changed' || trigger === 'scheduled' ? this.triggerConfig() : null,
       steps: { version: 1, steps: this.steps() },
       isActive: this.isActive()
     };

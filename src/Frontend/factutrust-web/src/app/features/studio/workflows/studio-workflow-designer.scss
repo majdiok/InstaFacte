@@ -156,6 +156,17 @@
 
 .wf-w { width: 100%; }
 
+// 4.7b4 — sous-formulaire `scheduled` : 2 colonnes, le constructeur de filtres sur toute la largeur.
+
+.wf-sub--scheduled { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.wf-sub--scheduled .wf-field--filters { grid-column: 1 / -1; }
+
+.wf-hint {
+  color: var(--color-neutral-500, #64748b);
+  font-size: 0.8125rem;
+}
+
 // ---- Grille 3 colonnes ----
 
 .wf-designer {
