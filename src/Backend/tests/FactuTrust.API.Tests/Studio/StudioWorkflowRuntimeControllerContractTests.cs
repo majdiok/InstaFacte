@@ -2,6 +2,7 @@ using FactuTrust.API.Authorization;
 using FactuTrust.API.Controllers.Studio;
 using FactuTrust.Application.Configuration;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FactuTrust.Application.Features.Studio.Workflows;
 using FactuTrust.Domain.Common;
 using MediatR;
@@ -57,6 +58,7 @@ public sealed class StudioWorkflowRuntimeControllerContractTests
         Assert.Equal(PermissionPolicies.CustomRecordsRead, PolicyOf(nameof(StudioWorkflowRuntimeController.ListMyApprovals)));
         Assert.Equal(PermissionPolicies.CustomRecordsRead, PolicyOf(nameof(StudioWorkflowRuntimeController.CountMyApprovals)));
         Assert.Equal(PermissionPolicies.CustomRecordsRead, PolicyOf(nameof(StudioWorkflowRuntimeController.ListRecordInstances)));
+        Assert.Equal(PermissionPolicies.CustomRecordsRead, PolicyOf(nameof(StudioWorkflowRuntimeController.GetRecordInstance)));
         Assert.Equal(PermissionPolicies.CustomRecordsRead, PolicyOf(nameof(StudioWorkflowRuntimeController.ListRunnable)));
         Assert.Equal(PermissionPolicies.CustomRecordsWrite, PolicyOf(nameof(StudioWorkflowRuntimeController.Approve)));
         Assert.Equal(PermissionPolicies.CustomRecordsWrite, PolicyOf(nameof(StudioWorkflowRuntimeController.Reject)));
@@ -69,6 +71,7 @@ public sealed class StudioWorkflowRuntimeControllerContractTests
         Assert.Equal("workflows/approvals/{approvalId:guid}/approve", TemplateOf<HttpPostAttribute>(nameof(StudioWorkflowRuntimeController.Approve)));
         Assert.Equal("workflows/approvals/{approvalId:guid}/reject", TemplateOf<HttpPostAttribute>(nameof(StudioWorkflowRuntimeController.Reject)));
         Assert.Equal("records/{entityKey}/{recordId:guid}/workflow-instances", TemplateOf<HttpGetAttribute>(nameof(StudioWorkflowRuntimeController.ListRecordInstances)));
+        Assert.Equal("records/{entityKey}/{recordId:guid}/workflow-instances/{instanceId:guid}", TemplateOf<HttpGetAttribute>(nameof(StudioWorkflowRuntimeController.GetRecordInstance)));
         Assert.Equal("records/{entityKey}/workflows", TemplateOf<HttpGetAttribute>(nameof(StudioWorkflowRuntimeController.ListRunnable)));
         Assert.Equal("records/{entityKey}/{recordId:guid}/workflows/{workflowKey}/run", TemplateOf<HttpPostAttribute>(nameof(StudioWorkflowRuntimeController.Run)));
         Assert.Equal("workflows/instances/{instanceId:guid}/cancel", TemplateOf<HttpPostAttribute>(nameof(StudioWorkflowRuntimeController.Cancel)));
@@ -88,6 +91,7 @@ public sealed class StudioWorkflowRuntimeControllerContractTests
             await controller.Reject(ApprovalId, new ApprovalDecisionRequest("Non"), CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(
             await controller.ListRecordInstances(EntityKey, RecordId, cancellationToken: CancellationToken.None));
+        Assert.IsType<NotFoundObjectResult>(await controller.GetRecordInstance(EntityKey, RecordId, InstanceId, CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(await controller.ListRunnable(EntityKey, CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(await controller.Run(EntityKey, RecordId, "wf-manuel", CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(await controller.Cancel(InstanceId, null, CancellationToken.None));
@@ -116,6 +120,43 @@ public sealed class StudioWorkflowRuntimeControllerContractTests
         var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<WorkflowInstanceDto>>(created.Value);
         Assert.True(body.Success);
         Assert.Equal(InstanceId, body.Data!.Id);
+    }
+
+    // 4.5b2 / D11 — 10e route : détail d'instance borné à la fiche, enveloppe ApiResponse<WorkflowInstanceDetailDto>.
+    [Fact]
+    public async Task GetRecordInstance_returns_200_detail_envelope_and_forwards_entity_record_and_instance()
+    {
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        mediator.Setup(m => m.Send(It.Is<GetRecordWorkflowInstanceQuery>(q =>
+                    q.EntityKey == EntityKey && q.RecordId == RecordId && q.InstanceId == InstanceId),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new WorkflowInstanceDetailDto(
+                InstanceDto, Array.Empty<WorkflowStepRunDto>(), Array.Empty<WorkflowApprovalDto>(), new JsonObject())));
+
+        var result = await CreateController(mediator, workflowsEnabled: true)
+            .GetRecordInstance(EntityKey, RecordId, InstanceId, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<WorkflowInstanceDetailDto>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal(InstanceId, body.Data!.Instance.Id);
+    }
+
+    // 4.5b2 / D-45-04 — mêmes mappages d'erreurs que les autres routes runtime.
+    [Fact]
+    public async Task GetRecordInstance_maps_NotFound_to_404_and_unknown_entity_Validation_to_400()
+    {
+        var notFound = new Mock<IMediator>();
+        notFound.Setup(m => m.Send(It.IsAny<GetRecordWorkflowInstanceQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<WorkflowInstanceDetailDto>(Error.NotFound("StudioWorkflowInstance", InstanceId)));
+        var invalid = new Mock<IMediator>();
+        invalid.Setup(m => m.Send(It.IsAny<GetRecordWorkflowInstanceQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<WorkflowInstanceDetailDto>(Error.Validation("entityKey", "Table « clients » introuvable ou inactive.")));
+
+        Assert.IsType<NotFoundObjectResult>(await CreateController(notFound, workflowsEnabled: true)
+            .GetRecordInstance(EntityKey, RecordId, InstanceId, CancellationToken.None));
+        Assert.IsType<BadRequestObjectResult>(await CreateController(invalid, workflowsEnabled: true)
+            .GetRecordInstance(EntityKey, RecordId, InstanceId, CancellationToken.None));
     }
 
     // 4.5a2 / D-44-79 — « startedByName » en fin de contrat, camelCase, null par défaut (forme à 10 positionnels intacte).
