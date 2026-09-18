@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Studio.Automations;
 using FactuTrust.Application.Features.Studio.Common;
@@ -40,11 +41,12 @@ public sealed class PatchCustomRecordCommandHandler : IRequestHandler<PatchCusto
     private readonly IPublisher _publisher;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<PatchCustomRecordCommandHandler>? _logger;
+    private readonly IAuditService? _audit;
 
     public PatchCustomRecordCommandHandler(
         ICustomEntityRepository entities, ICustomFieldRepository fields, ICustomRecordRepository records,
         IStudioComputedFieldWriter computedWriter, IPublisher publisher, ICurrentUser currentUser,
-        ILogger<PatchCustomRecordCommandHandler>? logger = null)
+        IAuditService? audit = null, ILogger<PatchCustomRecordCommandHandler>? logger = null)
     {
         _entities = entities;
         _fields = fields;
@@ -53,6 +55,7 @@ public sealed class PatchCustomRecordCommandHandler : IRequestHandler<PatchCusto
         _publisher = publisher;
         _currentUser = currentUser;
         _logger = logger;
+        _audit = audit;
     }
 
     public async Task<Result<CustomRecordDto>> Handle(PatchCustomRecordCommand command, CancellationToken cancellationToken)
@@ -123,6 +126,9 @@ public sealed class PatchCustomRecordCommandHandler : IRequestHandler<PatchCusto
             // Course entre le pré-contrôle et l'écriture : la ligne a changé entre-temps.
             return Result.Failure<CustomRecordDto>(Error.Conflict("L'enregistrement a été modifié entre-temps. Rechargez-le avant de réessayer."));
         }
+
+        // 4.7 « v1.1 » (D-47-63) : audit des seules clés modifiées — aucune ligne si le PATCH est sans effet.
+        await StudioRecordAudit.LogUpdatedAsync(_audit, record.Id, previousDataJson, canonicalJson, cancellationToken);
 
         // Pont ERP : déclenche OnUpdate (best-effort, l'enregistrement est déjà persisté).
         await StudioRecordLifecycle.PublishAsync(
