@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Workflows.Engine;
 using FactuTrust.Application.Features.Studio.Workflows.Spec;
@@ -301,6 +302,60 @@ public sealed class ListWorkflowsQueryHandler : IRequestHandler<ListWorkflowsQue
         }
 
         return Result.Success<IReadOnlyList<WorkflowDefinitionDto>>(result);
+    }
+}
+
+// ---- List (catalogue tenant, 4.5c2 / D-44-20) ----
+
+/// <summary>Catalogue tenant paginé ; <c>Page</c> ≥ 1, <c>PageSize</c> borné 1..200 au handler (défense) comme au contrôleur.</summary>
+public sealed record ListTenantWorkflowsQuery(string? Search, int Page = 1, int PageSize = 50)
+    : IRequest<Result<PagedResult<WorkflowDefinitionListItemDto>>>;
+
+public sealed class ListTenantWorkflowsQueryHandler
+    : IRequestHandler<ListTenantWorkflowsQuery, Result<PagedResult<WorkflowDefinitionListItemDto>>>
+{
+    public const int MaxPageSize = 200;
+    public const int MaxSearchLength = 128;
+
+    private readonly IStudioWorkflowRepository _workflows;
+    private readonly ICurrentUser _currentUser;
+
+    public ListTenantWorkflowsQueryHandler(IStudioWorkflowRepository workflows, ICurrentUser currentUser)
+    {
+        _workflows = workflows;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<PagedResult<WorkflowDefinitionListItemDto>>> Handle(ListTenantWorkflowsQuery query, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
+            return Result.Failure<PagedResult<WorkflowDefinitionListItemDto>>(err);
+        // Le contrôleur porte déjà la policy ; le handler la reprend (motif StudioAiPlanWorkbenchFeatures, S-base).
+        if (!_currentUser.HasPermission(Permissions.Studio.DesignEntities))
+            return Result.Failure<PagedResult<WorkflowDefinitionListItemDto>>(Error.Unauthorized("Permission de conception Studio requise."));
+
+        var page = Math.Max(1, query.Page);
+        var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);
+        var search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim();
+        if (search is { Length: > MaxSearchLength })
+            search = search[..MaxSearchLength];
+
+        // 3 requêtes au plus, quelle que soit la taille du tenant : total, page, instances ouvertes groupées.
+        var total = await _workflows.CountByTenantAsync(tenantId, search, cancellationToken);
+        var rows = total == 0
+            ? Array.Empty<StudioWorkflowCatalogRow>()
+            : await _workflows.ListByTenantAsync(tenantId, search, (page - 1) * pageSize, pageSize, cancellationToken);
+        var open = await _workflows.CountOpenInstancesForDefinitionsAsync(
+            tenantId, rows.Select(r => r.Definition.Id).ToList(), cancellationToken);
+
+        var items = rows
+            .Select(r => new WorkflowDefinitionListItemDto(
+                StudioWorkflowMapping.ToDto(r.Definition, open.GetValueOrDefault(r.Definition.Id)),
+                r.EntityKey,
+                r.EntityDisplayName))
+            .ToList();
+
+        return Result.Success(PagedResult<WorkflowDefinitionListItemDto>.Create(items, page, pageSize, total));
     }
 }
 
