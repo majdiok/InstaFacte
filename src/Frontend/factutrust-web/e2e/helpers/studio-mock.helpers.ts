@@ -579,6 +579,10 @@ export async function installStudioRuntimeMocks(
     if (method === 'PUT') { await fulfil(route, ok({ ...LIST_VIEW, ...(safeJson(route.request().postData()) as object) })); return; }
     await fulfil(route, ok(LIST_VIEW));
   });
+  // 4.7v2 (R3) : aperçu du brouillon du concepteur — enregistrée APRÈS `views/*` (Playwright
+  // évalue les routes en ordre inverse : ce motif spécifique prime sur la capture générique).
+  await page.route(`**/api/studio/records/${key}/views/preview`, route =>
+    fulfil(route, ok(options.runResult ?? runResultFor('apercu'))));
   await page.route(`**/api/studio/records/${key}/views`, async route => {
     if (route.request().method() === 'POST') {
       const body = (safeJson(route.request().postData()) ?? {}) as Record<string, unknown>;

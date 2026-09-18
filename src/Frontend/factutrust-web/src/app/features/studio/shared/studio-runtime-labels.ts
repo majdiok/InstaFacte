@@ -31,9 +31,9 @@ export const STUDIO_RUNTIME_LABELS = {
   },
   designer: {
     title: 'Concepteur de vue',
-    previewHint: 'Enregistrez pour voir l’aperçu.',
-    previewSaved: 'Aperçu calculé sur la version enregistrée (20 premiers enregistrements).',
-    previewStale: 'L’aperçu reflète la version enregistrée : enregistrez la vue pour prévisualiser ce mode.',
+    previewDraft: 'Aperçu du brouillon en cours (20 premiers enregistrements).',
+    previewInvalid: 'Complétez la définition pour voir l’aperçu.',
+    previewDesignOnly: 'L’aperçu en direct est réservé aux concepteurs.',
     setDefault: 'Vue par défaut',
     delete: 'Supprimer',
     save: 'Enregistrer',

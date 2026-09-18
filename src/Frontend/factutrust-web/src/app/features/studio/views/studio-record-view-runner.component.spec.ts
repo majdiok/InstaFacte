@@ -121,6 +121,43 @@ describe('StudioRecordViewRunnerComponent', () => {
     expect(fixture.debugElement.query(By.css('app-empty-state'))).not.toBeNull();
   });
 
+  // ---- 4.7v2 : mode aperçu du concepteur (POST /views/preview, R3) ----
+
+  it('mode preview : POST /views/preview avec { mode, definition, page, pageSize } et sans id de vue', () => {
+    fixture.componentRef.setInput('entityKey', 'interventions');
+    fixture.componentRef.setInput('allFields', fields);
+    fixture.componentRef.setInput('view', view);
+    fixture.componentRef.setInput('preview', true);
+    fixture.detectChanges();
+
+    const req = httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/preview`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.url).not.toContain('/views/v1/');
+    expect(req.request.body.mode).toBe('List');
+    expect(req.request.body.definition).toEqual(definition);
+    expect(req.request.body.page).toBe(1);
+    expect(req.request.body.pageSize).toBe(25);
+    req.flush({ success: true, data: { mode: 'List', items: [], total: 0, page: 1, pageSize: 25, truncated: false }, message: null, errors: [] });
+    fixture.detectChanges();
+    expect(component['result']()?.total).toBe(0);
+  });
+
+  it('mode preview : erreur réseau ⇒ état d’erreur inline SANS toast global', () => {
+    const toastSpy = spyOn(TestBed.inject(MessageService), 'add');
+    fixture.componentRef.setInput('entityKey', 'interventions');
+    fixture.componentRef.setInput('allFields', fields);
+    fixture.componentRef.setInput('view', view);
+    fixture.componentRef.setInput('preview', true);
+    fixture.detectChanges();
+
+    const req = httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/preview`);
+    req.flush({ message: 'erreur' }, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+
+    expect(fixture.debugElement.query(By.css('app-empty-state'))).not.toBeNull();
+    expect(toastSpy).not.toHaveBeenCalled();
+  });
+
   it('mode Kanban : exécute /run avec pageSize=500 et rend le tableau kanban', () => {
     setInputs(kanbanView);
     const req = httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/views/vk/run`);

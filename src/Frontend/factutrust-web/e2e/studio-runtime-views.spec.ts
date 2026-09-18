@@ -50,7 +50,8 @@ test.describe('Studio — runtime des vues (2.5)', () => {
     await expect(page.getByText('Chaudière A12')).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Actives' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Nouvelle vue' })).toHaveCount(0);
-    expect(ctx.find('/views/', 'POST').length).toBe(0);
+    // 4.7v2 : le concepteur poste l'aperçu sur /views/preview — exclu du comptage par sous-chaîne.
+    expect(ctx.find('/views/', 'POST').filter(c => !c.url.includes('/views/preview')).length).toBe(0);
   });
 
   test('« Nouvelle vue » : formulaire, Enregistrer ⇒ POST /views', async ({ page }) => {
@@ -66,7 +67,8 @@ test.describe('Studio — runtime des vues (2.5)', () => {
     await page.getByTestId('designer-name').fill('Vue E2E');
     await expect(page.getByTestId('designer-key')).toHaveValue('vue_e2e');
     await page.getByTestId('designer-save').click();
-    const posts = ctx.find('/views', 'POST');
+    // 4.7v2 : l'aperçu en direct émet POST /views/preview pendant la saisie — exclu du comptage.
+    const posts = ctx.find('/views', 'POST').filter(c => !c.url.includes('/views/preview'));
     expect(posts.length).toBe(1);
     const body = posts[0].body as Record<string, unknown>;
     expect(body['key']).toBe('vue_e2e');
