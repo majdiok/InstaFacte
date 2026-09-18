@@ -754,7 +754,7 @@ public sealed class StudioWorkflowFeaturesTests
     {
         var def = Definition();
         SetupDefinition(def);
-        const string contextJson = """{ "record": { "statut": "valide" }, "previous": { "statut": "brouillon", "secret": "x" }, "vars": { "a": 1 } }""";
+        const string contextJson = """{ "record": { "statut": "valide" }, "previous": { "statut": "brouillon", "secret": "x" }, "vars": { "a": 1 }, "startedBy": { "id": "u1", "email": "bob@exemple.fr" }, "results": { "erp": { "raw": "ok" } } }""";
         var instance = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.OnUpdate, Uid, contextJson, 1, Guid.NewGuid());
         _workflows.Setup(w => w.GetInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(instance);
 
@@ -785,6 +785,9 @@ public sealed class StudioWorkflowFeaturesTests
         Assert.Equal("valide", detail.Context["record"]!["statut"]!.GetValue<string>());
         Assert.Equal(1, detail.Context["vars"]!["a"]!.GetValue<int>());
         Assert.DoesNotContain("brouillon", detail.Context.ToJsonString(), StringComparison.Ordinal);
+        // Route de conception : contexte complet (l'expurgation D-45-27 ne concerne que la portée lecteur).
+        Assert.Equal("bob@exemple.fr", detail.Context["startedBy"]!["email"]!.GetValue<string>());
+        Assert.Equal("ok", detail.Context["results"]!["erp"]!["raw"]!.GetValue<string>());
 
         // Étapes triées par index ; Result reparsé (objet) ou null (JSON non objet).
         Assert.Equal(new[] { 0, 1 }, detail.Steps.Select(s => s.StepIndex).ToArray());

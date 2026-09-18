@@ -27,6 +27,8 @@ describe('STUDIO_ROUTES', () => {
       expect(r.canActivate?.[0]).withContext(r.path ?? '').toBe(permissionGuard);
       expect(Array.isArray(r.data?.['permissions'])).withContext(r.path ?? '').toBeTrue();
       expect((r.data?.['permissions'] as string[]).length).withContext(r.path ?? '').toBeGreaterThanOrEqual(1);
+      // Mode « toutes les permissions » uniquement : en mode 'any', une liste mixte s'ouvrirait au lecteur (revue 4.5i★).
+      expect(r.data?.['permissionMode']).withContext(r.path ?? '').not.toBe('any');
     }
   });
 
