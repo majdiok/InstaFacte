@@ -203,7 +203,7 @@ export class StudioWorkflowsHubComponent implements OnInit {
       this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.L.hub.loadError });
       return of({ items: [] as HubWorkflow[], total: null as number | null });
     })).subscribe(({ items, total }) => {
-      this.workflows.set([...items].sort((a, b) => a.entityName.localeCompare(b.entityName) || a.name.localeCompare(b.name)));
+      this.workflows.set(items.sort((a, b) => a.entityName.localeCompare(b.entityName) || a.name.localeCompare(b.name)));
       if (total !== null && total > items.length) this.truncatedCount.set(items.length);
       this.loading.set(false);
     });
