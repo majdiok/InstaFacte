@@ -144,11 +144,45 @@ Après **Créer maintenant**, la progression liste chaque étape (système, tabl
 
 ![Carte de résultat](../screenshots/studio-ia-apercu-resultat.png)
 
+### Demander un workflow
+
+La carte d’intention **Workflow** (active seulement si la génération de workflows est activée par votre
+administrateur) accepte des demandes comme « crée un workflow de validation des congés : approbation du
+manager puis mise à jour de la fiche ». L’aperçu présente alors l’**onglet Workflow** seul : une carte par
+workflow avec son déclencheur et la chronologie de ses étapes. Après **Créer maintenant**, la carte de
+résultat **« Workflow « … » créé »** propose **Ouvrir dans le concepteur** — le workflow est créé
+**inactif** : activez-le depuis le hub `/studio/workflows` quand vous êtes prêt.
+
 ### Changer le type d’un champ
 
 Dans le **concepteur de table** (hors assistant), modifiez un champ existant et changez son **Type** : l’application vérifie aussitôt la conversion et affiche le verdict sous la liste — **Conversion sans perte** (information, vous pouvez enregistrer), **Videz la table avant de changer le type** (avertissement : la table contient des enregistrements, **Enregistrer** est désactivé) ou **Changement de type impossible** (erreur : ce type ne peut pas remplacer un champ existant, **Enregistrer** est désactivé). Revenir au type d’origine lève le blocage. La conversion est appliquée à l’enregistrement, avant les autres modifications du champ.
 
 ---
+
+## Workflows et approbations
+
+Les **workflows Studio** automatisent vos validations : à la création ou modification d’une fiche (ou à la
+demande, depuis la fiche), une suite d’étapes s’exécute — approbations, mises à jour de champs, création
+d’enregistrements, actions ERP.
+
+- **Hub et concepteur** (concepteurs, menu Studio → **Workflows**) : liste par table, création en trois
+  colonnes (étapes réordonnables, éditeur par type, instances récentes), **Valider** avant
+  **Enregistrer**, activation par interrupteur. Un workflow est créé **inactif**.
+
+  ![Hub des workflows](../screenshots/studio-ia-workflows-hub.png)
+  ![Concepteur de workflow](../screenshots/studio-ia-workflows-concepteur.png)
+
+- **Fiche enregistrement** : l’onglet **Workflows (n)** liste les instances de la fiche (statut, étape,
+  dates) et permet d’**en lancer un** (permission d’écriture) ; les concepteurs ouvrent le **détail** :
+  déroulé des étapes, annulation avec motif, relance des approbateurs (une fois par 24 h).
+
+  ![Onglet Workflows de la fiche](../screenshots/studio-ia-workflows-fiche.png)
+
+- **Mes approbations** (menu Studio, badge rouge du nombre en attente) : tout ce qui attend **votre**
+  décision — indicateurs (à traiter, en retard, sous 24 h), message du demandeur, **Approuver** ou
+  **Refuser** (un commentaire est alors obligatoire). Les notifications de la cloche vous y ramènent.
+
+  ![Page Mes approbations](../screenshots/studio-ia-workflows-approbations.png)
 
 ## Questions fréquentes
 

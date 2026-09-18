@@ -56,6 +56,7 @@ async function setup(page: Page, options: SetupOptions = {}): Promise<StudioMock
 }
 
 test.describe('Studio — workflows (4.4)', () => {
+
   test('le hub liste les workflows et ouvre le concepteur', async ({ page }) => {
     await setup(page);
     await page.goto(`/studio/workflows?entity=${WF_ENTITY_ID}`);
@@ -82,6 +83,13 @@ test.describe('Studio — workflows (4.4)', () => {
     await expect(page.getByTestId('wf-key')).toHaveValue('validation_intervention_e2e');
 
     // Ajout d'une étape « Approbation » via le menu du catalogue (clé générée approval_1).
+    // Le clic de Playwright fait défiler le bouton dans le viewport ; or `html` a
+    // `scroll-behavior: smooth` et le défilement résiduel survient APRÈS l'ouverture du
+    // p-menu popup — son gestionnaire de défilement le referme aussitôt (échec constaté
+    // en l2, artefact de test : un utilisateur ne clique qu'une fois le bouton visible).
+    // On amène donc le bouton nous-mêmes et on laisse le défilement se terminer avant le clic.
+    await page.getByTestId('wf-step-add').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(600);
     await page.getByTestId('wf-step-add').click();
     await page.getByTestId('wf-step-type-approval').click();
     await expect(page.getByTestId('wf-step-approval_1')).toBeVisible();

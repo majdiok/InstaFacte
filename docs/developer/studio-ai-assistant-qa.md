@@ -840,3 +840,38 @@ rollback échoue, « Annulation incomplète — workflow(s) inactif(s) à suppri
 pont legacy : `GET api/studio/automations/actions` ne liste **plus** les outils `studio_*`
 (`create_product` toujours présent) ; `POST api/studio/entities/{id}/automations` avec
 `actionKey = "studio_plan_app"` ⇒ `400` `Validation.action` « Action ERP inconnue ou non autorisée. ».
+
+## Workflows Studio — frontend (PR 4.4)
+
+### 103. Hub et concepteur de workflows
+
+`/studio/workflows` (drapeau on, `studio:design_entities`) : liste des workflows de la table choisie
+(25 tables max sans sélection) ; création (nom, table, déclencheur, étapes dont une approbation et une
+action ERP — le sélecteur ne liste que les actions `IsBridgeable`) ; « Valider » puis « Enregistrer » ⇒
+workflow créé **inactif** ; activer depuis le hub ⇒ badge actif. Drapeau `EnableStudioWorkflows` coupé ⇒
+redirection `/studio`, entrée de navigation « Workflows » absente.
+
+### 104. Fiche : onglet Workflows
+
+Fiche en édition d'une table dotée d'un workflow manuel actif : onglet « Workflows (n) » (n = instances
+ouvertes) ; « Lancer un workflow » (permission write) ⇒ instance `waiting_approval` ; sans write : lecture
+seule ; « Détail » (concepteur) ⇒ tiroir d'instance (déroulé des étapes, annulation avec motif, relance) ;
+sonde 403/404 ⇒ onglet absent (aucun toast).
+
+### 105. Mes approbations
+
+Badge rouge dans la sidebar au plus tard 60 s après connexion (sonde `approvals/mine/count`) ; page
+`/studio/approvals` : KPI (À traiter / En retard / Sous 24 h), tableau, « Détail » (colonne fixe ≥ 1 280 px,
+tiroir sinon), **Approuver**, **Refuser sans motif bloqué** (commentaire obligatoire), 409 « déjà traitée »
+⇒ toast + rechargement de la liste ; notification cloche type 15 ⇒ navigation + badge rafraîchi ; profil
+`custom_records:read` seul ⇒ `/access-denied` (D11, U2).
+
+### 106. Aperçu IA — plan Workflow
+
+Carte d'intention « Workflow » active seulement si `workflowToolsEnabled` (sinon info-bulle
+« Génération de workflows désactivée par l'administrateur. ») ; prompt « crée un workflow de validation
+des congés… » ⇒ aperçu **onglet Workflow seul** (cartes-chronologies depuis `summary.workflows[]`,
+Tester/Personnaliser désactivés, « Créer maintenant » actif) ; confirmation ⇒ carte
+« Workflow « … » créé » avec bouton « Ouvrir dans le concepteur » (workflow créé **inactif**).
+
+- Portée automatisée : +48 `it` Karma sous `features/studio` (g1 7, g2 12, h1 6, h2 8, i 4, j 1, k1 7, k2 4 — plus ceux d'A-44a) + 8 `it` sous `core/` (navigation j) ; 11 parcours Playwright + 4 captures (e2e, mocks HTTP). Baseline Studio 551 → 672 `it`.

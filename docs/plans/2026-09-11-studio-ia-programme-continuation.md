@@ -2590,3 +2590,71 @@ Toute déviation découverte en implémentation (contrat, borne, nom, identifian
 | 2026-09-17 | 4.3 | D-43-28 (revue 4.3f1, appliquée en 4.3f1) — « X with ID … » techniques et message > 2048 possibles. | `Describe(Error, frenchNotFound)` traduit les codes `*.NotFound` ; erreur bornée à 2000 (`ErrorMessage` = 2048) ; `FreeKey` retire les `_` finaux de la base tronquée. | aucun |
 | 2026-09-17 | 4.3 | D-43-29 (revue 4.3f2, appliquée en 4.3f2) — la garde ne testait que `EnableStudioWorkflows` ; le rejeu d'un plan terminal aurait contourné `EnableStudioAiWorkflowTools`. | Garde = règle unique `StudioAiPlanCreation.WorkflowToolsEnabled` (trois drapeaux), message inchangé ; test en `Theory` (4 cas). | aucun |
 | 2026-09-17 | 4.3 | D-43-30 (passe simplify 4.3g, appliquée en 4.3g) — filtre `IsBridgeable` + tri et lookup `GetToolDefinition` réimplémentés en inline dans les deux handlers du pont legacy. | `StudioBridgeActionCatalog.List()` / `Resolve` consommés directement (même filtre, même tri ; comportement identique, tests intacts). | aucun |
+| 2026-09-17 | 4.4 | D-44-01 — `WorkflowInstanceDto` porte 2 champs de plus que l'annexe (`entityDefinitionId`, `originInstanceId`). | 18 champs typés dans `studio-workflows.models.ts` (StudioWorkflowDtos.cs fait foi). | Modèle exact dès a1 |
+| 2026-09-17 | 4.4 | D-44-02 — Enveloppe réelle `{ success, data, message, error }` (pas de `errors[]`/`code`/`path`). | Helper `workflowErrorMessage` (a2) ; le concepteur enchaîne toujours `validate` → `save` (N-21). | Gestion d'erreurs unifiée |
+| 2026-09-17 | 4.4 | D-44-03 — Jeton réel `SKIP_ERROR_TOAST` via `createHttpContextSkipGlobalErrorUi()`. | `skipErrorUi` sur les sondes et les écritures gérées localement (a2). | Pas de double toast |
+| 2026-09-17 | 4.4 | D-44-04 — `gotoKey` cible une étape **postérieure** (le plan collé disait « précédentes »). | Éditeur c1 filtre les cibles postérieures (`ValidateGotoKey` l.720–740). | c1 |
+| 2026-09-17 | 4.4 | D-44-05 — `wait.until` est un `template` (catalogue l.135), pas un `field`. | Éditeur c1 : gabarit de template avec variables connues. | c1 |
+| 2026-09-17 | 4.4 | D-44-06 — Kinds `bool`/`field` absents du catalogue livré mais gérés par l'éditeur. | Kind inconnu ⇒ JSON brut. | c1 |
+| 2026-09-17 | 4.4 | D-44-07 — `selectedAction` d'Automations non réactif. | Passage en `model()` (4.4b) ; format `label (key)` et filtre `isActive` conservés. | Correctif de rafraîchissement |
+| 2026-09-17 | 4.4 | D-44-08 — `formatWorkflowLabel` = copie locale de `formatLabel`. | Pas d'export partagé (périmètre figé). | Candidat mutualisation 4.5 |
+| 2026-09-17 | 4.4 | D-44-09 — 7 types d'étapes serveur ; « Webhook » des maquettes inexistant. | « Webhook » ⇒ `create_record` ; **Q7 : pas de carte « Bientôt ».** | c1/c2 |
+| 2026-09-17 | 4.4 | D-44-10 — Specs `studio-ai-capabilities` existantes en anglais. | Nouveaux `it` en français à côté (non régression). | Hors-scope : harmonisation signalée |
+| 2026-09-17 | 4.4 | D-44-11 — Adaptateur `between` : vues `value: [min,max]` ↔ workflows `value`+`value2`. | `studio-workflow-filter.adapter.ts` (c1) ; `is_empty`/`is_not_empty` sans valeur. | Réutilise le contrat des vues |
+| 2026-09-17 | 4.4 | D-44-12 — `slugifyWorkflowKey` = copie de `slugifyViewKey` avec préfixe `wf_`. | Appliqué (a1). | Hors-scope : centralisation signalée |
+| 2026-09-17 | 4.4 | D-44-13 — Rôles = 11 rôles tenant, rôles cabinet exclus. | Libellés FR repris de `tenant-users-list` (c1). | Assignations par rôle |
+| 2026-09-17 | 4.4 | D-44-14 — `listFields` renvoie `fieldType` en PascalCase. | Table courante via `getSchema(key)` normalisé ; cibles via `parseFieldType` (c1/e1). | Concepteur |
+| 2026-09-17 | 4.4 | D-44-15 — `create_record.entity` = **clé** de table active non jonction. | `p-select optionValue="key"` (c1). | Éditeur |
+| 2026-09-17 | 4.4 | D-44-16 — Liste des utilisateurs seulement si `auth.isAdmin()` (contrôleur réservé Administrateur). | Sinon saisie du Guid (c1). | Pas de 403 en masse |
+| 2026-09-17 | 4.4 | D-44-17 — `_results.<clé>.<prop>` : liste fermée `recordId`/`entityKey`/`id`. | **Q9 : confirmé** ; `contextFieldOptions` synthétise `_previous.*`, `_approval.*`, `_results.*` (c1). | Templates typés |
+| 2026-09-17 | 4.4 | D-44-18 — Clé d'étape générée `<type>_<n>` ; défauts explicites. | `dueInHours: 72`, `notify.to = startedBy`, `assignee = role Administrator` (c2). | Nouvelles étapes valides |
+| 2026-09-17 | 4.4 | D-44-19 — Routes déclarées avec leur composant (spec V4). | `workflows` + `records/:key/:id` en d ; `workflows/new` + `workflows/:id` en e1 ; `approvals` en g2. | Ordre avant `relations`/`:id` |
+| 2026-09-17 | 4.4 | D-44-20 — Hub multi-tables borné à 25 tables. | **Q12 : confirmé** ; au-delà, choix d'une table obligatoire. Candidat 4.5 : endpoint global. | Hub |
+| 2026-09-17 | 4.4 | D-44-21 — Grille dédiée `1fr · 320 px · 250 px` ; `.studio-designer` non réutilisée. | < 1280 px ⇒ `p-drawer` (e1). | Concepteur |
+| 2026-09-17 | 4.4 | D-44-22 — Première introduction de `primeng/drawer` + `@angular/cdk/layout` ; `primeng/tree` en `@defer`. | **Q8 : accepté** ; contrôle visuel du thème en l2★. | Bundle : drawer/tree hors initial |
+| 2026-09-17 | 4.4 | D-44-23 — `isActive` **faux** par défaut à la création. | **Q11 : confirmé** (e1). | Sécurité : rien d'actif par défaut |
+| 2026-09-17 | 4.4 | D-44-24 — `WorkflowInstanceDto` sans `recordLabel`/`entityKey`. | Identifiant tronqué + `title` ; lien fiche via `entityKey` du parent (e2/f). | Panneaux d'instances |
+| 2026-09-17 | 4.4 | D-44-25 — `getInstance` = route de conception (`studio:design_entities`). | **Q10 : accepté** ; « Détail indisponible » inline sur 403 ; partie B ne rend le bouton qu'aux concepteurs (D-44-82). | Aucun 403 en pratique |
+| 2026-09-17 | 4.4 | D-44-26 — Motif d'annulation saisi inline dans le tiroir. | Pas de `ConfirmationService.prompt` (f). | UX continue |
+| 2026-09-17 | 4.4 | D-44-27 — `workflowKey`/`workflowName` nullables (définition supprimée). | `string | null` dans le DTO TS (a1) ; l'annexe les disait non nullables. | Affichage défensif |
+| 2026-09-17 | 4.4 | D-44-28 — `WorkflowStepRunDto.finishedAt` non nullable (le moteur renseigne toujours). | `string` dans le DTO TS (a1). | Modèle exact |
+| 2026-09-17 | 4.4 | D-44-29 — `TEMPLATE_VARIABLES` de l'annexe erronées (`{{record.*}}` ⇒ « variable inconnue »). | Corrigées selon `StudioTemplateRenderer.cs` : `{{<champ>}}` nu, `{{_now}}`, `{{_previous.*}}`, `{{_approval.*}}`, `{{_results.*}}`, `{{_startedBy.email}}` (a1). | Templates fonctionnels |
+| 2026-09-17 | 4.4 | D-44-51 — Badge d'approbations : besoin d'un rafraîchissement immédiat après décision/notification. | `StudioApprovalsBadgeService` expose `refresh()` et `reset()` (g1). | Badge toujours à jour |
+| 2026-09-17 | 4.4 | D-44-52 — Garde d'accès `approvals` : comportement sur panne réseau. | Passe sur panne/timeout ; redirige seulement sur 404 (`/studio`) et 403 (`/access-denied`) (g1). | Pas de faux blocage |
+| 2026-09-17 | 4.4 | D-44-53 — Lien fiche depuis la page approbations. | Rendu seulement avec `custom_records:write` (la route `edit` l'exige) (g2). | Pas de lien mort |
+| 2026-09-17 | 4.4 | D-44-54 — Périmètre g2 vs h1. | g2 = KPI + table + dialog de décision + lecture seule ; panneau de détail en h1. | Découpage conservé |
+| 2026-09-17 | 4.4 | D-44-55 — 409/404 sur une décision. | Rechargement de la liste (source de vérité serveur) + toast (g2). | Cohérence d'affichage |
+| 2026-09-17 | 4.4 | D-44-56 — Bascule colonne 372 px / tiroir. | `matchMedia('(min-width: 1280px)')` + `DestroyRef`, sans `BreakpointObserver` (h1). | Responsive |
+| 2026-09-17 | 4.4 | D-44-57 — Bouton « Détail » en lecture seule. | Rendu pour tous (maquette `readonly`) (h1). | Consultation possible |
+| 2026-09-17 | 4.4 | D-44-58 — Badge de l'onglet Workflows de la fiche. | = instances **ouvertes**, `null` à 0 (h2). | Signal utile seulement |
+| 2026-09-17 | 4.4 | D-44-59 — Sonde `listRecordInstances` de la fiche. | Lancée en parallèle de `getRecord` ; fail-closed (403/404 ⇒ onglet absent, aucun toast) (h2). | Performance + discrétion |
+| 2026-09-17 | 4.4 | D-44-60 — `isOpenInstance` réutilisé de `workflows/studio-workflows.models.ts` (H-11). | Aucune alternative locale (h2). | Pas de doublon |
+| 2026-09-17 | 4.4 | D-44-61 — Computed capacité `state() === 'ready' && capabilities().workflowsEnabled === true`. | Motif `manyToManyEnabled` ; stubs des tests existants intacts (i). | Boutons fail-closed |
+| 2026-09-17 | 4.4 | D-44-62 — Bouton « Workflows » de la liste. | Concepteurs seulement (`studio:design_entities`) (i). | Cohérent avec la cible |
+| 2026-09-17 | 4.4 | D-44-63 — Test de `isStudioWorkflowNotification`. | Fonction pure testée dans `notification.service.spec.ts` (pas de `header.component.spec.ts`, D14) (j). | Simplicité de test |
+| 2026-09-17 | 4.4 | D-44-64 — `reset()` du badge non branché sur la déconnexion. | Candidat 4.5 (j). | Mineur |
+| 2026-09-17 | 4.4 | D-44-65 — Badge de la navigation secondaire. | **Q-4 tranché : omis** — `'Studio'` hors `SECONDARY_NAV_SECTION_ORDER` (j). | Périmètre verrouillé |
+| 2026-09-17 | 4.4 | D-44-66 — `ensureLoaded()` des capacités appelé depuis `navItems` (concepteurs, une requête cachée). | Appliqué (j) ; **revu en l2★ : enveloppé dans `untracked`** (NG0600 détecté par l'e2e l1). | Correctif de régression |
+| 2026-09-17 | 4.4 | D-44-67 — Repli `summary.steps[]` pour un plan Workflow. | Une seule carte (pas de regroupement par préfixe) — `workflows[]` garanti par le contrat (k1). | Aperçu robuste |
+| 2026-09-17 | 4.4 | D-44-68 — Erreur HTTP de `loadSpec` pour un plan Workflow sans spec. | Silencieuse (le résumé porte l'affichage) ; autres kinds inchangés (k1). | Pas de toast intempestif |
+| 2026-09-17 | 4.4 | D-44-69 — Ligne « table » des cartes workflow. | **Q-1 tranché** : `entityDisplayName ?? entities[0]?.displayName`, masquée si vide ; champs additifs sur `StudioSummaryWorkflow` (k1). | Affichage exact |
+| 2026-09-17 | 4.4 | D-44-70 — `workflows.emptyHint` annonçait « le programme 4.x ». | Reformulé (k1). | Texte à jour |
+| 2026-09-17 | 4.4 | D-44-71 — Info-bulle de la carte d'intention. | « Génération de workflows désactivée par l'administrateur. » (texte maquette) (k2). | Fail-closed explicite |
+| 2026-09-17 | 4.4 | D-44-72 — Ligne des 8 compteurs pour un résultat workflow. | Masquée (tous à 0 sans spec) (k2). | Carte de résultat pertinente |
+| 2026-09-17 | 4.4 | D-44-73 — Sous-titre de la carte de résultat workflow. | **Q-1 tranché** : `entityDisplayName ?? entityKey` via l'`input` `summary` ; forme 4.3f1 typée (k2). | Contrat exact |
+| 2026-09-17 | 4.4 | D-44-74 — `STUDIO_CAPABILITIES_ALL_ENABLED` garde `workflowsEnabled: false`. | Les specs e2e/workflows activent la capacité explicitement (l1). | Défaut sûr |
+| 2026-09-17 | 4.4 | D-44-75 — Aide e2e dédiée. | `e2e/helpers/studio-workflow-mock.helpers.ts` séparé (l1). | Réutilisable |
+| 2026-09-17 | 4.4 | D-44-76 — Sélecteurs e2e. | **Q-3 tranché** : `data-testid` figés d'abord (`wf-*`, `sap-*`, `srw-*`, `sapd-*`), `getByRole`/libellés FR en repli (l1). | Parcours stables |
+| 2026-09-17 | 4.4 | D-44-77 — `## Frontend` de `studio-workflows.md` existait déjà (texte d'attente). | Remplacement du paragraphe, pas de création (l2★). | Docs cohérentes |
+| 2026-09-17 | 4.4 | D-44-78 — Numérotation QA 103–106 (N-4). | Insérés en fin de fichier (précédent D-41-14) (l2★). | Registre conservé |
+| 2026-09-17 | 4.4 | D-44-79 — Colonne « Demandé par » impossible : `startedBy` = Guid nullable sans nom. | Colonne « Lancé le » (`startedAt`) ; candidat 4.5 : `StartedByName` backend (g2). | Table honnête |
+| 2026-09-17 | 4.4 | D-44-80 — View-model pur `ApprovalRow` (`toApprovalRow`, `stepTitle = title || stepKey`). | Page, panneau et KPI manipulent `ApprovalRow` ; `p-table dataKey="id"` (g2). | Présentation découplée |
+| 2026-09-17 | 4.4 | D-44-81 — Statut d'approbation : `app-studio-workflow-status-tag` n'accepte que `WorkflowInstanceStatus` (H-7). | `p-tag` local avec `approvalStatusSeverity` (g2/h1). | Pas de réusinage risqué |
+| 2026-09-17 | 4.4 | D-44-82 — « Voir l'instance » (h1) / « Détail » (h2). | Rendus seulement avec `studio:design_entities` (route de conception, D-44-25) — fail-closed, aucun 403 (h1/h2). | Sécurité |
+| 2026-09-17 | 4.4 | D-44-83 — « Voir l'instance » ouvre le tiroir 4.4f **en place** (`[(instanceId)]`). | L'item d'inbox ne porte pas `workflowDefinitionId` ⇒ pas de lien profil `/studio/workflows/:id?instance=` (h1). | Navigation locale |
+| 2026-09-17 | 4.4 | D-44-84 — Lancement manuel par **clé** de workflow. | `optionValue="key"`, `runWorkflow(entityKey, recordId, key)` (h2). | Route runtime respectée |
+| 2026-09-17 | 4.4 | D-44-85 — Paramètre `?entity=` des boutons « Workflows » = **id** de table. | Contrat du hub (`optionValue="id"`), pas la clé (i). | Liens corrects |
+| 2026-09-17 | 4.4 | D-44-86 — Icônes d'étapes de l'aperçu IA. | `STEP_TYPE_ICONS` d'A-44a réutilisé ; type hors enum ⇒ `fa-circle-dot` ; aucun doublon dans `STUDIO_AI_LABELS` (k1). | Cohérence visuelle |
+| 2026-09-17 | 4.4 | D-44-87 — **Revue e2e l1** — `studio-workflows-hub.component.ts` injectait `ConfirmationService` de `primeng/api` (jamais fourni ⇒ `NullInjectorError`, hub mort en prod ; Karma passait grâce au stub TestBed). | Import depuis `@core/services/confirmation.service` (wrapper racine) + spec alignée (l2★). | Correctif de régression 4.4d |
+| 2026-09-17 | 4.4 | D-44-88 — **Revue e2e l1** — `ensureLoaded()` + `badge.start()` écrivaient des signaux dans le computed `navItems` (NG0600, page blanche concepteur en dev). | Appels enveloppés dans `untracked(...)` (l2★). | Correctif de régression 4.4j |
+| 2026-09-17 | 4.4 | D-44-89 — Toast dupliqué : `<p-toast>` de l'onglet fiche et celui de la fiche partagent le même `MessageService`. | Constaté en h2 ; correctif reporté (polish 4.5) — cosmétique, borné à l'onglet actif. | Candidat 4.5 |
