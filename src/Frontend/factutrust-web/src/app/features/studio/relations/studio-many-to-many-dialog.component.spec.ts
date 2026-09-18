@@ -46,6 +46,13 @@ describe('StudioManyToManyDialogComponent', () => {
     expect(component.canSubmit()).toBeTrue();
   });
 
+  it('ne préfixe jamais la clé par défaut de « v_ » (D-46-F04 : convention serveur {a}_{b} sans préfixe)', () => {
+    component.targetEntityId.set('e2');
+    const key = component.defaultJunctionKey();
+    expect(key.startsWith('v_')).toBeFalse();
+    expect(key).toBe('interventions_techniciens');
+  });
+
   it('POST relations/many-to-many avec targetEntityId et champs optionnels nettoyés ; succès ⇒ émet created et ferme', () => {
     component.visible.set(true);
     component.targetEntityId.set('e2');

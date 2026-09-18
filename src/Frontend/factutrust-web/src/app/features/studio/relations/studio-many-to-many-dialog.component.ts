@@ -83,10 +83,14 @@ export class StudioManyToManyDialogComponent {
     .map(e => ({ label: e.displayName, value: e.id })));
   readonly selectedTargetLabel = computed(() =>
     this.targetOptions().find(o => o.value === this.targetEntityId())?.label ?? null);
-  /** Clé de jonction par défaut (même règle que le serveur : `{source}_{cible}` slugifiée). */
+  /** Clé de jonction par défaut (même règle que le serveur : `{source}_{cible}` slugifiée, SANS préfixe).
+   *  4.6e (D-46-F04) : le préfixe de repli `'v_'` (réservé aux VUES) était trompeur — la convention serveur
+   *  est `{a}_{b}` sans préfixe (ResolveJunctionKeyAsync). Les clés d'entités commencent toujours par une
+   *  lettre, donc le repli ne s'appliquait pas en pratique ; les jonctions `v_*` déjà créées restent valides
+   *  (aucune migration). */
   readonly defaultJunctionKey = computed(() => {
     const target = this.entities().find(e => e.id === this.targetEntityId());
-    return target ? slugifyKey(`${this.sourceEntity()?.key ?? ''}_${target.key}`, 'v_') : '';   // 4.5h : plus d'import du concepteur de vues
+    return target ? slugifyKey(`${this.sourceEntity()?.key ?? ''}_${target.key}`, '') : '';   // 4.5h : plus d'import du concepteur de vues
   });
   readonly junctionKeyValid = computed(() => {
     const key = this.junctionKey().trim();
