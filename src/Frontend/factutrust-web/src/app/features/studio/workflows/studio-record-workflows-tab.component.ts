@@ -26,8 +26,9 @@ import { StudioWorkflowsService } from './studio-workflows.service';
  * PAR CLÉ — D-44-84, 201 ; 409 ⇒ « déjà en cours », 400 quota ⇒ message serveur D-44-02) et,
  * sur les instances ouvertes (`isOpenInstance`, 4.4a1 H-11), « Annuler » / « Relancer les
  * approbateurs ». Actions d'écriture rendues seulement avec `custom_records:write` (R17) ;
- * « Détail » seulement avec `studio:design_entities` (D22 / D-44-25 / D-44-82) — il ouvre le
- * drawer 4.4f en place (`[(instanceId)]`, le `getInstance` n'est appelé qu'à l'ouverture) ;
+ * « Détail » rendu pour tout lecteur (4.5d3, D-45-F05 — D-44-82 levé) — il ouvre le drawer
+ * 4.4f en place (`[(instanceId)]` + `[entityKey]` + `[recordId]` ⇒ route runtime
+ * `custom_records:read` 4.5b/4.5d2, appelée seulement à l'ouverture) ;
  * `(changed)` de l'onglet ou du drawer ⇒ la fiche relance la sonde.
  * Écart maquette (annexe fait foi) : le lancement passe par un `p-dialog` (select + confirmer)
  * au lieu de la carte inline de la maquette ; colonnes « Démarré le » + « Échéance » (la
@@ -66,10 +67,8 @@ import { StudioWorkflowsService } from './studio-workflows.service';
             <td>{{ row.startedAt | date:'dd/MM/yyyy HH:mm' }}</td>
             <td>{{ row.dueAt ? (row.dueAt | date:'dd/MM/yyyy HH:mm') : '—' }}</td>
             <td class="srw-actions">
-              @if (canDesign()) {
-                <p-button icon="fa-solid fa-eye" [text]="true" size="small" [pTooltip]="labels.detail"
-                  (onClick)="openInstanceId.set(row.id)" [attr.data-testid]="'srw-detail-' + row.id" />
-              }
+              <p-button icon="fa-solid fa-eye" [text]="true" size="small" [pTooltip]="labels.detail"
+                (onClick)="openInstanceId.set(row.id)" [attr.data-testid]="'srw-detail-' + row.id" />
               @if (canWrite() && isOpen(row)) {
                 <p-button icon="fa-solid fa-bell" [text]="true" size="small" [pTooltip]="labels.remind"
                   (onClick)="remind(row)" [attr.data-testid]="'srw-remind-' + row.id" />
@@ -98,11 +97,10 @@ import { StudioWorkflowsService } from './studio-workflows.service';
           (onClick)="confirmRun()" data-testid="srw-run-confirm" />
       </div>
     </p-dialog>
-    @if (canDesign()) {
-      <!-- 4.4f (H-8) : model() two-way ; le drawer n'appelle getInstance qu'à l'ouverture explicite -->
-      <app-studio-workflow-instance-detail [(instanceId)]="openInstanceId" [entityKey]="entityKey()"
-        (changed)="changed.emit()" (closed)="openInstanceId.set(null)" />
-    }
+    <!-- 4.4f (H-8) : model() two-way ; le drawer n'appelle la route qu'à l'ouverture explicite.
+         4.5d3 : portée fiche (entityKey + recordId ⇒ route runtime custom_records:read, 4.5d2) -->
+    <app-studio-workflow-instance-detail [(instanceId)]="openInstanceId" [entityKey]="entityKey()" [recordId]="recordId()"
+      (changed)="changed.emit()" (closed)="openInstanceId.set(null)" />
   `,
   // studio-layout.scss fournit .studio-muted (encapsulation émulée — même motif que
   // l'onglet « Liés » 2.5e2) ; .ft-table-card vient de la couche design globale.
@@ -120,7 +118,6 @@ export class StudioRecordWorkflowsTabComponent {
   readonly recordId = input.required<string>();
   readonly instances = input<WorkflowInstanceDto[]>([]);
   readonly canWrite = input(false);
-  readonly canDesign = input(false);
   /** La fiche recharge la sonde (une instance lancée, annulée ou relancée). */
   readonly changed = output<void>();
 

@@ -193,7 +193,7 @@ export const STUDIO_CHILD_ROUTES: Routes = [
     title: 'Enregistrement - InstaFact'
   },
   // Mes approbations (4.4g2, D-44-19 : déclarée ici seulement) : permissionGuard PUIS
-  // approvalsAccessGuard (sonde count — 404 ⇒ /studio, 403 ⇒ /access-denied). Pas de
+  // approvalsAccessGuard (sonde count — 404 ⇒ /dashboard (4.5d1), 403 ⇒ /access-denied). Pas de
   // studio:design_entities au niveau route (U2/D11) : la page décision exige recordsWrite.
   {
     path: 'approvals',

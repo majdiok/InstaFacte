@@ -16,13 +16,14 @@ const API = `${environment.apiUrl}/studio`;
 const labels = STUDIO_WORKFLOW_LABELS.recordTab;
 
 /**
- * Bouchon du drawer d'instance 4.4f (même contrat figé H-8 que le stub de 4.4h1) : le vrai
- * drawer appelle `getInstance` (route de conception D-44-25) à l'ouverture — neutralisé ici.
+ * Bouchon du drawer d'instance 4.4f (même contrat figé H-8 que le stub de 4.4h1, + `recordId`
+ * 4.5d2) : le vrai drawer appelle la route runtime à l'ouverture — neutralisé ici.
  */
 @Component({ selector: 'app-studio-workflow-instance-detail', standalone: true, template: '' })
 class InstanceDetailStubComponent {
   readonly instanceId = model<string | null>(null);
   readonly entityKey = input<string | null>(null);
+  readonly recordId = input<string | null>(null);
   readonly changed = output<WorkflowInstanceDto>();
   readonly closed = output<void>();
 }
@@ -45,7 +46,7 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
   let toastSpy: jasmine.Spy;
   let changedSpy: jasmine.Spy;
 
-  function setup(opts: { canWrite?: boolean; canDesign?: boolean; instances?: WorkflowInstanceDto[] } = {}): void {
+  function setup(opts: { canWrite?: boolean; instances?: WorkflowInstanceDto[] } = {}): void {
     TestBed.configureTestingModule({
       imports: [StudioRecordWorkflowsTabComponent],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), provideNoopAnimations(), MessageService]
@@ -62,7 +63,6 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     fixture.componentRef.setInput('recordId', 'r1');
     fixture.componentRef.setInput('instances', opts.instances ?? []);
     fixture.componentRef.setInput('canWrite', opts.canWrite ?? true);
-    fixture.componentRef.setInput('canDesign', opts.canDesign ?? false);
     changedSpy = jasmine.createSpy('changed');
     component.changed.subscribe(changedSpy);
     fixture.detectChanges();
@@ -119,18 +119,18 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     expect(fixture.nativeElement.querySelector('[data-testid="srw-cancel-i1"]')).toBeNull();
   });
 
-  it("n'affiche Détail qu'avec studio:design_entities et ouvre le drawer avec l'identifiant d'instance", () => {
-    setup({ canDesign: false, instances: [instance('i1', 'running')] });
-    expect(fixture.nativeElement.querySelector('[data-testid="srw-detail-i1"]')).toBeNull();
-    expect(fixture.debugElement.query(By.css('app-studio-workflow-instance-detail'))).toBeNull();
+  it('affiche Détail pour tout lecteur et ouvre le drawer avec entityKey + recordId (portée fiche, 4.5b)', () => {
+    setup({ canWrite: false, instances: [instance('i1', 'running')] });
+    const stubDebug = fixture.debugElement.query(By.css('app-studio-workflow-instance-detail'));
+    expect(stubDebug).withContext('drawer rendu sans studio:design_entities (4.5d3)').not.toBeNull();
+    const stub = stubDebug.componentInstance as InstanceDetailStubComponent;
+    expect(stub.instanceId()).toBeNull();   // fermé tant qu'aucun « Détail » n'est cliqué
 
-    fixture.componentRef.setInput('canDesign', true);
-    fixture.detectChanges();
     clickButton('srw-detail-i1');
 
-    const stubDebug = fixture.debugElement.query(By.css('app-studio-workflow-instance-detail'));
-    expect(stubDebug).not.toBeNull();
-    expect((stubDebug.componentInstance as InstanceDetailStubComponent).instanceId()).toBe('i1');
+    expect(stub.instanceId()).toBe('i1');
+    expect(stub.entityKey()).toBe('interventions');
+    expect(stub.recordId()).toBe('r1');
   });
 
   it('charge les workflows exécutables puis lance le choisi et émet changed', () => {

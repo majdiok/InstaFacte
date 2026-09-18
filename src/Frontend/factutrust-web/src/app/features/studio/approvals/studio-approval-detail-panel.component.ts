@@ -15,9 +15,9 @@ import { ApprovalRow, dueLabel, dueState } from './studio-approvals.util';
  * Boutons Approuver / Refuser seulement avec `canDecide` (mêmes règles que 4.4g2, R17) —
  * ils rouvrent le dialog de décision de la page (commentaire obligatoire au refus) ;
  * sinon note « lecture seule » (D-44-57 : le panneau reste accessible en lecture).
- * « Voir l'instance » seulement avec `canOpenInstance` (`studio:design_entities`,
- * D-44-25/D-44-82) et émet l'`instanceId` — la page ouvre le drawer 4.4f EN PLACE
- * (pas de lien `/studio/workflows/:id?instance=` : l'item ne porte pas
+ * « Voir l'instance » rendu pour tout lecteur (4.5d3, D-45-F05 : la page ouvre le drawer
+ * 4.4f EN PLACE en portée fiche — route runtime `custom_records:read`, 4.5d2) et émet
+ * l'`instanceId` (pas de lien `/studio/workflows/:id?instance=` : l'item ne porte pas
  * `workflowDefinitionId`, D-44-83).
  * D-44-81 : statut d'approbation rendu par un `p-tag` local (`approvalStatusSeverity`
  * + `STUDIO_WORKFLOW_LABELS.approvalStatus`) — `app-studio-workflow-status-tag`
@@ -53,10 +53,8 @@ import { ApprovalRow, dueLabel, dueState } from './studio-approvals.util';
         <dd class="sapd__comment">{{ item().message }}</dd>
       }
     </dl>
-    @if (canOpenInstance()) {
-      <p-button class="sapd__link" [label]="labels.openInstance" icon="fa-solid fa-diagram-project" [text]="true" size="small"
-        (onClick)="openInstance.emit(item().instanceId)" data-testid="sapd-instance" />
-    }
+    <p-button class="sapd__link" [label]="labels.openInstance" icon="fa-solid fa-diagram-project" [text]="true" size="small"
+      (onClick)="openInstance.emit(item().instanceId)" data-testid="sapd-instance" />
     @if (canDecide()) {
       <footer class="sapd__actions">
         <p-button [label]="labels.reject" icon="fa-solid fa-xmark" severity="danger" [outlined]="true" [disabled]="busy()" (onClick)="reject.emit(item())" />
@@ -83,7 +81,6 @@ import { ApprovalRow, dueLabel, dueState } from './studio-approvals.util';
 export class StudioApprovalDetailPanelComponent {
   readonly item = input.required<ApprovalRow>();
   readonly canDecide = input(false);
-  readonly canOpenInstance = input(false);
   readonly busy = input(false);
   readonly nowMs = input(Date.now());
   readonly approve = output<ApprovalRow>();
