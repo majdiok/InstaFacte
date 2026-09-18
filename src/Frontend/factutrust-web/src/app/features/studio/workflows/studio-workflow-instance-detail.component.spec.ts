@@ -35,15 +35,16 @@ const DETAIL: WorkflowInstanceDetailDto = {
   context: { secret: 'x' }
 };
 
-/** Hôte de test du contrat figé de la partie B : `[(instanceId)]`, `(changed)`, `(closed)`, `[entityKey]`. */
+/** Hôte de test du contrat figé de la partie B : `[(instanceId)]`, `(changed)`, `(closed)`, `[entityKey]` ; `[recordId]` (portée fiche, 4.5d2). */
 @Component({
   standalone: true,
   imports: [StudioWorkflowInstanceDetailComponent],
-  template: `<app-studio-workflow-instance-detail [(instanceId)]="instanceId" entityKey="devis"
+  template: `<app-studio-workflow-instance-detail [(instanceId)]="instanceId" entityKey="devis" [recordId]="recordId()"
     (changed)="changed.push($event)" (closed)="closedCount = closedCount + 1" />`
 })
 class TestHost {
   readonly instanceId = signal<string | null>(null);
+  readonly recordId = signal<string | null>(null);
   readonly changed: WorkflowInstanceDto[] = [];
   closedCount = 0;
 }
@@ -261,6 +262,56 @@ describe('StudioWorkflowInstanceDetailComponent', () => {
       detail: 'Les approbateurs de cette instance ont déjà été relancés il y a moins de 24 h.'
     }));
     flushReload();
+  });
+
+  it('charge par la route runtime records/{entityKey}/{recordId}/workflow-instances/{id} quand recordId est fourni', () => {
+    setup();
+    host.recordId.set('r1');
+    host.instanceId.set('inst-1');
+    fixture.detectChanges();
+
+    httpMock.expectNone(`${API}/workflows/instances/inst-1`);   // pas de route conception en portée fiche
+    const req = httpMock.expectOne(`${API}/records/devis/r1/workflow-instances/inst-1`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ success: true, data: { ...DETAIL, instance: inst({ id: 'inst-1' }) }, message: null, error: null });
+    fixture.detectChanges();
+
+    expect(qs('[data-testid="wf-detail-summary"]')).not.toBeNull();
+    expect(qs('[data-testid="wf-detail-record"]')?.getAttribute('href'))
+      .toBe('/studio/records/devis/9f1c2d3e-4b5a-6c7d-8e9f-0a1b2c3d4e5f');
+  });
+
+  it('404 sur la route runtime (instance hors couple) ⇒ message « introuvable » inline', () => {
+    setup();
+    host.recordId.set('r1');
+    host.instanceId.set('inst-9');
+    fixture.detectChanges();
+    httpMock.expectOne(`${API}/records/devis/r1/workflow-instances/inst-9`)
+      .flush({ success: false, error: 'gone', message: null }, { status: 404, statusText: 'Not Found' });
+    fixture.detectChanges();
+
+    expect(qs('[data-testid="wf-detail-error"]')?.textContent).toContain('Instance introuvable.');
+    expect(qs('[data-testid="wf-detail-summary"]')).toBeNull();
+    expect(addSpy).not.toHaveBeenCalled();
+  });
+
+  it("masque le bouton d'origine en portée fiche (la route conception exige design_entities)", () => {
+    setup();
+    const withOrigin: WorkflowInstanceDetailDto = { ...DETAIL, instance: inst({ depth: 1, originInstanceId: 'i0' }) };
+
+    // Portée conception : bouton présent.
+    open('i1', withOrigin);
+    expect(qs('[data-testid="wf-detail-origin"]')).not.toBeNull();
+
+    // Portée fiche : bouton masqué (le rechargement passe par la route runtime).
+    host.recordId.set('r1');
+    host.instanceId.set('i2');
+    fixture.detectChanges();
+    httpMock.expectOne(`${API}/records/devis/r1/workflow-instances/i2`)
+      .flush({ success: true, data: { ...withOrigin, instance: inst({ id: 'i2', depth: 1, originInstanceId: 'i0' }) }, message: null, error: null });
+    fixture.detectChanges();
+    expect(qs('[data-testid="wf-detail-summary"]')).not.toBeNull();
+    expect(qs('[data-testid="wf-detail-origin"]')).toBeNull();
   });
 
   it('404 au chargement ⇒ message « introuvable » sans planter', () => {

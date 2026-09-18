@@ -68,6 +68,10 @@ const DETAIL_LABELS = {
  * S-base : `context` JAMAIS rendu (mention discrète en pied) ; `result` d'étape non
  * affiché ; `getInstance` est une route de CONCEPTION (policy `studio:design_entities`,
  * D-44-25) sans `skipErrorUi` ⇒ 404/403/autre mappés en message inline.
+ * Bi-mode (4.5d2, D-45-F04) : quand `entityKey` ET `recordId` sont fournis (onglet Workflows
+ * de la fiche, page approbations), le drawer passe par la route RUNTIME
+ * `records/{entityKey}/{recordId}/workflow-instances/{id}` (policy `custom_records:read`,
+ * 404 hors couple) et masque « Ouvrir l'origine » (la route conception exige `design_entities`).
  */
 @Component({
   selector: 'app-studio-workflow-instance-detail',
@@ -131,7 +135,7 @@ const DETAIL_LABELS = {
               <span [title]="i.recordId">{{ shortId(i.recordId) }}</span>
             }
           </dd>
-          @if (i.originInstanceId) {
+          @if (i.originInstanceId && !recordId()) {
             <dt>{{ localLabels.origin }}</dt>
             <dd>
               <button pButton type="button" size="small" [text]="true" [label]="localLabels.open"
@@ -268,6 +272,11 @@ export class StudioWorkflowInstanceDetailComponent {
   readonly instanceId = model<string | null>(null);
   /** Clé de la table pour le lien « fiche » (le DTO ne porte que `entityDefinitionId` — D-44-24). */
   readonly entityKey = input<string | null>(null);
+  /**
+   * Identifiant de l'enregistrement (portée fiche, 4.5d2) : avec `entityKey`, bascule le
+   * chargement sur la route runtime `custom_records:read` (4.5b) ; `null` ⇒ route conception.
+   */
+  readonly recordId = input<string | null>(null);
   /** Émis après une annulation/relance réussie (le parent rafraîchit ses listes). */
   readonly changed = output<WorkflowInstanceDto>();
   /** Émis à la fermeture (partie B : `(closed)="openInstanceId.set(null)"`). */
@@ -327,13 +336,18 @@ export class StudioWorkflowInstanceDetailComponent {
    * GET de conception (policy `studio:design_entities`, D-44-25) SANS `skipErrorUi` (le
    * service n'en pose pas sur `getInstance`) : l'intercepteur global affiche son toast et
    * le drawer montre un message inline — 403 possible pour un non-concepteur (partie B).
+   * Portée fiche (`entityKey` + `recordId`, 4.5d2) : route runtime (4.5b, `custom_records:read`)
+   * avec `skipErrorUi` — même gestion 404 / 403 / autre en message inline.
    */
   private load(id: string): void {
     this.loading.set(true);
     this.error.set(null);
     this.cancelMode.set(false);
     this.reason.set('');
-    this.workflowsSvc.getInstance(id).subscribe({
+    const ek = this.entityKey();
+    const rid = this.recordId();
+    const src$ = ek && rid ? this.workflowsSvc.getRecordInstance(ek, rid, id) : this.workflowsSvc.getInstance(id);
+    src$.subscribe({
       next: r => { this.detail.set(r.data ?? null); this.loading.set(false); },
       error: (err: HttpErrorResponse) => {
         this.loading.set(false);
