@@ -13,6 +13,7 @@ import { PaginatorModule, PaginatorState } from 'primeng/paginator';
 import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
+import { ToastModule } from 'primeng/toast';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-table.component';
@@ -42,10 +43,12 @@ type HubWorkflow = WorkflowDefinitionDto & { entityName: string };
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule, RouterLink, ButtonModule, InputTextModule, PaginatorModule, SelectModule, TableModule, TagModule,
-    ToggleSwitchModule, TooltipModule, StudioPageShellComponent, SkeletonTableComponent
+    ToastModule, ToggleSwitchModule, TooltipModule, StudioPageShellComponent, SkeletonTableComponent
   ],
   template: `
     <app-studio-page-shell [title]="L.hub.title" [subtitle]="L.hub.subtitle" [breadcrumbs]="breadcrumbs">
+      <!-- 4.6d1 (D-44-95) : hôte des toasts — les succès/erreurs des écritures étaient muets sur cette page. -->
+      <p-toast styleClass="studio-theme" />
       <button pButton type="button" studioActions data-testid="wf-hub-new" [label]="L.hub.newWorkflow"
         icon="fa-solid fa-plus" routerLink="/studio/workflows/new" [queryParams]="{ entity: entityId() }"
         [disabled]="newDisabled()"></button>
