@@ -8,7 +8,7 @@ import { SelectModule } from 'primeng/select';
 import { CustomEntity, ManyToManyRelationDto } from '../studio.models';
 import { StudioService } from '../studio.service';
 import { STUDIO_RUNTIME_LABELS } from '../shared/studio-runtime-labels';
-import { slugifyViewKey } from '../views/studio-record-view-designer.component';
+import { slugifyKey } from '../shared/studio-text.util';
 
 /**
  * Dialog de création d'une relation plusieurs-à-plusieurs (2.5f, maquette M4) : cible parmi les
@@ -86,7 +86,7 @@ export class StudioManyToManyDialogComponent {
   /** Clé de jonction par défaut (même règle que le serveur : `{source}_{cible}` slugifiée). */
   readonly defaultJunctionKey = computed(() => {
     const target = this.entities().find(e => e.id === this.targetEntityId());
-    return target ? slugifyViewKey(`${this.sourceEntity()?.key ?? ''}_${target.key}`) : '';
+    return target ? slugifyKey(`${this.sourceEntity()?.key ?? ''}_${target.key}`, 'v_') : '';   // 4.5h : plus d'import du concepteur de vues
   });
   readonly junctionKeyValid = computed(() => {
     const key = this.junctionKey().trim();

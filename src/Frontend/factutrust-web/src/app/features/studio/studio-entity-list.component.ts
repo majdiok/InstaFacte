@@ -19,6 +19,7 @@ import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.
 import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
 import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-table.component';
 import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
+import { slugifyKey } from './shared/studio-text.util';
 
 @Component({
   selector: 'app-studio-entity-list',
@@ -163,7 +164,7 @@ export class StudioEntityListComponent implements OnInit {
   }
 
   onNameChange(value: string): void {
-    if (!this.keyTouched) this.draftKey = this.slugify(value);
+    if (!this.keyTouched) this.draftKey = slugifyKey(value, 'f_');   // 4.5h : corps partagé (shared/studio-text.util.ts)
   }
 
   create(): void {
@@ -194,13 +195,5 @@ export class StudioEntityListComponent implements OnInit {
         this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.error?.message ?? 'Création impossible.' });
       }
     });
-  }
-
-  private slugify(input: string): string {
-    const base = (input || '').trim().toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-    if (!base) return '';
-    return /^[a-z]/.test(base) ? base.slice(0, 64) : ('f_' + base).slice(0, 64);
   }
 }

@@ -7,6 +7,7 @@
  */
 import { CustomFieldType } from '@shared/studio-runtime/studio-runtime.models';
 import type { RecordViewFilterOp } from '../views/studio-record-views.models';
+import { slugifyKey } from '../shared/studio-text.util';
 
 // ---------------------------------------------------------------------------------------------
 // Unions (miroir `StudioWorkflowEnumNames`, Domain/Enums/StudioWorkflowEnums.cs l.76–155 :
@@ -154,12 +155,7 @@ export function stepRunStatusSeverity(status: WorkflowStepRunStatus): WorkflowSe
   switch (status) { case 'succeeded': return 'success'; case 'suspended': return 'warn'; case 'failed': return 'danger'; default: return 'secondary'; }
 }
 
-/** Même règle que `slugifyViewKey` (views/studio-record-view-designer.component.ts l.586) ; préfixe `wf_` si chiffre initial (D-44-12). */
-export function slugifyWorkflowKey(input: string): string {
-  const base = (input || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-
-  if (!base) return '';
-  return /^[a-z]/.test(base) ? base.slice(0, 64) : ('wf_' + base).slice(0, 64);
-}
+/** Enveloppe de `slugifyKey` (shared/studio-text.util.ts, 4.5h) ; préfixe `wf_` si chiffre initial (D-44-12). */
+export function slugifyWorkflowKey(input: string): string { return slugifyKey(input, 'wf_'); }
 
 export function stepsJsonBytes(doc: WorkflowStepsDocument): number { return new TextEncoder().encode(JSON.stringify(doc)).length; }
