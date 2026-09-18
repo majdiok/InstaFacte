@@ -44,6 +44,8 @@ import { ApprovalRow, dueLabel, dueState } from './studio-approvals.util';
       <dd>{{ item().recordLabel ?? item().recordId }} <span class="studio-muted">({{ item().entityName }})</span></dd>
       <dt>{{ labels.startedAt }}</dt>
       <dd>{{ item().startedAt | date:'dd/MM/yyyy HH:mm' }}</dd>
+      <dt>{{ labels.requestedBy }}</dt>
+      <dd data-testid="sapd-requested-by">{{ item().startedByName ?? '—' }}</dd>
       <dt>{{ labels.requestedAt }}</dt>
       <dd>{{ item().createdAt | date:'dd/MM/yyyy HH:mm' }}</dd>
       <dt>{{ labels.colDue }}</dt>

@@ -31,8 +31,8 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
  * et décision Approuver / Refuser en dialog avec commentaire (obligatoire au refus).
  * Les boutons de décision et le lien vers la fiche ne sont rendus qu'avec `custom_records:write`
  * (R17, D-44-53 : la route `edit` exige `recordsWrite`) ; sinon la page est en lecture seule.
- * Pas de colonne « Demandé par » (D-44-79 : `startedBy` est un Guid sans nom) — « Lancé le »
- * affiche `startedAt`. Après une décision : retrait local de la ligne + `badge.refresh()` ;
+ * Colonne « Demandé par » = `startedByName ?? '—'` (4.5e, D-45-F06 — D-44-79 levé par 4.5a2) ;
+ * « Lancé le » affiche `startedAt`. Après une décision : retrait local de la ligne + `badge.refresh()` ;
  * après un 409/404 (déjà traitée / plus assignée), rechargement complet de la liste
  * (D-44-55, vérité serveur).
  * 4.4h1 : bouton « Détail » par ligne (rendu aussi en lecture seule, D-44-57) ouvrant le
@@ -96,6 +96,7 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
                 <th>{{ labels.colWorkflow }}</th>
                 <th>{{ labels.colRecord }}</th>
                 <th>{{ labels.colStartedAt }}</th>
+                <th>{{ labels.colRequestedBy }}</th>
                 <th>{{ labels.colRequestedAt }}</th>
                 <th>{{ labels.colDue }}</th>
                 <th class="sap-actions-col">{{ labels.colActions }}</th>
@@ -116,6 +117,7 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
                   <div class="studio-muted">{{ item.entityName }}</div>
                 </td>
                 <td>{{ item.startedAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                <td [attr.data-testid]="'sap-requested-by-' + item.id">{{ item.startedByName ?? '—' }}</td>
                 <td>{{ item.createdAt | date:'dd/MM/yyyy HH:mm' }}</td>
                 <td>
                   <p-tag [severity]="dueState(item) === 'late' ? 'danger' : dueState(item) === 'soon' ? 'warn' : 'secondary'"
@@ -135,7 +137,7 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
             </ng-template>
             <ng-template pTemplate="emptymessage">
               <tr>
-                <td colspan="6" class="ft-empty">
+                <td colspan="7" class="ft-empty">
                   <i class="fa-solid fa-inbox" aria-hidden="true"></i> {{ labels.empty }}
                   <div class="studio-muted">{{ labels.emptyHint }}</div>
                 </td>
@@ -223,7 +225,7 @@ export class StudioApprovalsPageComponent implements OnInit {
 
   readonly labels = STUDIO_WORKFLOW_LABELS.approvals;
   readonly breadcrumbs = STUDIO_BREADCRUMBS.approvals();                       // déclaré par 4.4d (H-6)
-  readonly skeletonColumns = [{ width: '22%' }, { width: '22%' }, { width: '12%' }, { width: '12%' }, { width: '12%' }, { width: '20%' }];
+  readonly skeletonColumns = [{ width: '20%' }, { width: '20%' }, { width: '11%' }, { width: '13%' }, { width: '11%' }, { width: '10%' }, { width: '15%' }];
 
   readonly items = signal<ApprovalRow[]>([]);
   readonly loading = signal(true);

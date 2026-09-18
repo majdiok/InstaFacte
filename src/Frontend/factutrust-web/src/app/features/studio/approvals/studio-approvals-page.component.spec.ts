@@ -36,7 +36,7 @@ class InstanceDetailStubComponent {
   readonly closed = output<void>();
 }
 
-/** Item de boîte de réception au format H-1 (forme imbriquée, annexe 4.4g2). */
+/** Item de boîte de réception au format H-1 (forme imbriquée, annexe 4.4g2) ; `startedByName` (4.5a2) connu pour `a1` seulement. */
 function inboxItem(id = 'a1', dueAt: string | null = null): WorkflowApprovalInboxItemDto {
   return {
     approval: {
@@ -46,7 +46,8 @@ function inboxItem(id = 'a1', dueAt: string | null = null): WorkflowApprovalInbo
     },
     instanceId: 'i1', workflowKey: 'validation_devis', workflowName: 'Validation devis',
     entityKey: 'devis', entityName: 'Devis', recordId: 'r1', recordLabel: 'DEV-001',
-    startedBy: null, startedAt: '2026-09-16T09:00:00Z'
+    startedBy: null, startedAt: '2026-09-16T09:00:00Z',
+    startedByName: id === 'a1' ? 'Alice Martin' : null
   };
 }
 
@@ -141,6 +142,19 @@ describe('StudioApprovalsPageComponent', () => {
     expect(empty).not.toBeNull();
     expect(empty.textContent).toContain(labels.empty);
     expect(empty.textContent).toContain(labels.emptyHint);
+    expect(empty.getAttribute('colspan')).toBe('7');   // 7 colonnes depuis « Demandé par » (4.5e)
+  });
+
+  it('affiche la colonne « Demandé par » avec le nom du demandeur et — quand il est inconnu', () => {
+    perms = new Set([PERMISSIONS.customData.recordsRead]);
+    setup();
+    flushInbox([inboxItem('a1'), inboxItem('a2')]);
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('thead th') as NodeListOf<HTMLElement>).map(th => th.textContent?.trim());
+    expect(headers).toContain(labels.colRequestedBy);   // « Demandé par »
+    expect(headers.length).toBe(7);
+    expect((fixture.nativeElement.querySelector('[data-testid="sap-requested-by-a1"]') as HTMLElement).textContent?.trim()).toBe('Alice Martin');
+    expect((fixture.nativeElement.querySelector('[data-testid="sap-requested-by-a2"]') as HTMLElement).textContent?.trim()).toBe('—');
   });
 
   it('masque Approuver / Refuser et affiche la note lecture seule sans custom_records:write', () => {

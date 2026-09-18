@@ -86,10 +86,12 @@ export interface WorkflowInstanceDetailDto { instance: WorkflowInstanceDto; step
 export interface WorkflowDeletionResultDto { cancelledInstances: number }
 
 /**
- * StudioWorkflowApprovalFeatures.cs l.28–36 — forme IMBRIQUÉE : l'approbation + son contexte
+ * StudioWorkflowApprovalFeatures.cs l.28–38 — forme IMBRIQUÉE : l'approbation + son contexte
  * d'affichage (`workflowKey`/`workflowName` valent « — » si la définition a été supprimée).
+ * `startedByName` (4.5a2 — nom lisible du demandeur, `null` si utilisateur supprimé / inconnu) est
+ * ajouté EN FIN du contrat et optionnel côté TS : tolère un backend pas encore déployé.
  */
-export interface WorkflowApprovalInboxItemDto { approval: WorkflowApprovalDto; instanceId: string; workflowKey: string; workflowName: string; entityKey: string; entityName: string; recordId: string; recordLabel: string | null; startedBy: string | null; startedAt: string }
+export interface WorkflowApprovalInboxItemDto { approval: WorkflowApprovalDto; instanceId: string; workflowKey: string; workflowName: string; entityKey: string; entityName: string; recordId: string; recordLabel: string | null; startedBy: string | null; startedAt: string; startedByName?: string | null }
 
 /** StudioWorkflowRuntimeFeatures.cs l.19. */
 export interface RunnableWorkflowDto { id: string; key: string; name: string; description: string | null; stepCount: number }
