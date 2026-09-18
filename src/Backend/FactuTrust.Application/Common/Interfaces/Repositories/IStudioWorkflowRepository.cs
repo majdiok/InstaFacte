@@ -3,6 +3,9 @@ using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Application.Common.Interfaces.Repositories;
 
+/// <summary>Ligne du catalogue tenant (4.5c1) : définition + identité de sa table (jointure SQL, tables actives non-jonction).</summary>
+public sealed record StudioWorkflowCatalogRow(StudioWorkflowDefinition Definition, string EntityKey, string EntityDisplayName);
+
 /// <summary>
 /// Accès aux définitions, instances, exécutions d'étapes et approbations des workflows Studio
 /// (PR 4.1). Toutes les méthodes filtrent sur <c>TenantId</c> ; le filtre global
@@ -91,6 +94,23 @@ public interface IStudioWorkflowRepository
 
     /// <summary>Nombre d'instances ouvertes d'une définition (D9 : alimente <c>WorkflowDefinitionDto.OpenInstances</c>).</summary>
     Task<int> CountOpenInstancesForDefinitionAsync(Guid tenantId, Guid definitionId, CancellationToken cancellationToken = default);
+
+    // ---- Catalogue tenant (4.5c1, D-44-20) ----
+
+    /// <summary>
+    /// Page du catalogue tenant : définitions (actives et inactives, non supprimées) des tables <b>actives non-jonction</b>,
+    /// filtrées par <paramref name="search"/> (nom ou clé, insensible à la casse), triées <c>EntityDisplayName, Name, Key</c>.
+    /// <paramref name="skip"/> ≥ 0, <paramref name="take"/> ∈ 1..200 (bornés par l'appelant).
+    /// </summary>
+    Task<IReadOnlyList<StudioWorkflowCatalogRow>> ListByTenantAsync(
+        Guid tenantId, string? search, int skip, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>Total correspondant à <see cref="ListByTenantAsync"/> (mêmes filtres), pour <c>PagedResult.TotalCount</c>.</summary>
+    Task<int> CountByTenantAsync(Guid tenantId, string? search, CancellationToken cancellationToken = default);
+
+    /// <summary>Instances ouvertes (Running / Waiting / WaitingApproval) par définition, en une requête ; définitions sans instance absentes du résultat.</summary>
+    Task<IReadOnlyDictionary<Guid, int>> CountOpenInstancesForDefinitionsAsync(
+        Guid tenantId, IReadOnlyCollection<Guid> definitionIds, CancellationToken cancellationToken = default);
 
     // ---- Runtime (4.2) ----
 

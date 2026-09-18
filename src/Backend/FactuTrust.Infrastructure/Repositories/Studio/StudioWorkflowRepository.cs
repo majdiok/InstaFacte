@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Entities.Studio.Workflows;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
+using FactuTrust.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace FactuTrust.Infrastructure.Repositories.Studio;
@@ -239,6 +240,55 @@ public sealed class StudioWorkflowRepository : IStudioWorkflowRepository
         await using var context = _contextFactory.CreateContext();
         return await context.StudioWorkflowInstances
             .CountAsync(i => i.TenantId == tenantId && i.WorkflowDefinitionId == definitionId && OpenStatuses.Contains(i.Status), cancellationToken);
+    }
+
+    // ---- Catalogue tenant (4.5c1) ----
+
+    public async Task<IReadOnlyList<StudioWorkflowCatalogRow>> ListByTenantAsync(
+        Guid tenantId, string? search, int skip, int take, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await CatalogQuery(context, tenantId, search)
+            .Skip(skip).Take(take)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> CountByTenantAsync(Guid tenantId, string? search, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await CatalogQuery(context, tenantId, search).CountAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, int>> CountOpenInstancesForDefinitionsAsync(
+        Guid tenantId, IReadOnlyCollection<Guid> definitionIds, CancellationToken cancellationToken = default)
+    {
+        if (definitionIds.Count == 0)
+            return new Dictionary<Guid, int>();
+
+        await using var context = _contextFactory.CreateContext();
+        var ids = definitionIds.Distinct().ToList();
+        return await context.StudioWorkflowInstances
+            .Where(i => i.TenantId == tenantId && ids.Contains(i.WorkflowDefinitionId) && OpenStatuses.Contains(i.Status))
+            .GroupBy(i => i.WorkflowDefinitionId)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.Count, cancellationToken);
+    }
+
+    /// <summary>
+    /// Jointure explicite définitions ↔ tables (aucune navigation EF entre les deux) ; filtres globaux <c>!IsDeleted</c>
+    /// appliqués aux deux côtés ; filtre et tri exprimés sur les colonnes AVANT la projection (pas de relecture du record).
+    /// </summary>
+    private static IQueryable<StudioWorkflowCatalogRow> CatalogQuery(TenantDbContext context, Guid tenantId, string? search)
+    {
+        var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        return
+            from d in context.StudioWorkflowDefinitions
+            join e in context.CustomEntityDefinitions on d.EntityDefinitionId equals e.Id
+            where d.TenantId == tenantId && e.TenantId == tenantId && e.IsActive && e.Kind != CustomEntityKind.Junction
+                && (term == null || d.Name.Contains(term) || d.Key.Contains(term))
+            orderby e.DisplayName, d.Name, d.Key
+            select new StudioWorkflowCatalogRow(d, e.Key, e.DisplayName);
     }
 
     // ---- Runtime (4.2) ----
