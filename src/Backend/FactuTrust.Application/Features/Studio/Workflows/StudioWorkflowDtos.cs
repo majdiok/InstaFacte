@@ -130,3 +130,9 @@ public sealed record ToggleWorkflowRequest(bool IsActive);
 
 /// <summary>Résultat de <c>DELETE workflows/{id}</c> : nombre d'instances ouvertes annulées.</summary>
 public sealed record WorkflowDeletionResultDto(int CancelledInstances);
+
+/// <summary>
+/// Élément du catalogue tenant (<c>GET api/studio/workflows</c>, 4.5c2 / D-44-20) : la définition telle que servie par
+/// <c>GET entities/{entityId}/workflows</c>, enveloppée avec l'identité de sa table (motif <c>summary.workflows[]</c> : <c>entityKey</c> / <c>entityDisplayName</c>).
+/// </summary>
+public sealed record WorkflowDefinitionListItemDto(WorkflowDefinitionDto Workflow, string EntityKey, string EntityDisplayName);

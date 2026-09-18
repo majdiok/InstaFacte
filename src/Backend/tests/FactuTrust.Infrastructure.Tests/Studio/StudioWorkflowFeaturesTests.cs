@@ -141,6 +141,12 @@ public sealed class StudioWorkflowFeaturesTests
     private GetWorkflowInstanceQueryHandler GetInstanceHandler() =>
         new(_workflows.Object, _currentUser.Object);
 
+    private ListTenantWorkflowsQueryHandler ListTenantHandler() =>
+        new(_workflows.Object, _currentUser.Object);
+
+    private void SetupDesignPermission(bool granted = true) =>
+        _currentUser.Setup(u => u.HasPermission(Permissions.Studio.DesignEntities)).Returns(granted);
+
     private void VerifyAudit(string action, Times times) =>
         _audit.Verify(a => a.LogAsync(action, "StudioWorkflowDefinition", It.IsAny<Guid?>(), It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), times);
 
@@ -599,6 +605,91 @@ public sealed class StudioWorkflowFeaturesTests
             Assert.False(string.IsNullOrWhiteSpace(e.Label));
             Assert.False(string.IsNullOrWhiteSpace(e.Description));
         });
+    }
+
+    // ---- Catalogue tenant (4.5c2 / D-44-20) ----
+
+    [Fact]
+    public async Task List_tenant_workflows_returns_paged_items_with_entity_context_and_open_counts()
+    {
+        SetupDesignPermission();
+        var d1 = Definition("wf_a");
+        var d2 = Definition("wf_b");
+        _workflows.Setup(w => w.CountByTenantAsync(Tid, null, It.IsAny<CancellationToken>())).ReturnsAsync(7);
+        _workflows.Setup(w => w.ListByTenantAsync(Tid, null, 10, 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new StudioWorkflowCatalogRow(d1, "commandes", "Commande"), new StudioWorkflowCatalogRow(d2, "commandes", "Commande") });
+        _workflows.Setup(w => w.CountOpenInstancesForDefinitionsAsync(
+                Tid, It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(d1.Id) && ids.Contains(d2.Id)), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, int> { [d1.Id] = 3 });
+
+        var result = await ListTenantHandler().Handle(new ListTenantWorkflowsQuery(null, Page: 3, PageSize: 5), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var page = result.Value;
+        Assert.Equal(7, page.TotalCount);
+        Assert.Equal(3, page.Page);
+        Assert.Equal(5, page.PageSize);
+        Assert.Equal(2, page.Items.Count);
+        Assert.Equal(d1.Id, page.Items[0].Workflow.Id);
+        Assert.Equal("wf_a", page.Items[0].Workflow.Key);
+        Assert.Equal("commandes", page.Items[0].EntityKey);
+        Assert.Equal("Commande", page.Items[0].EntityDisplayName);
+        Assert.Equal(3, page.Items[0].Workflow.OpenInstances);
+        Assert.Equal(0, page.Items[1].Workflow.OpenInstances);
+        Assert.True(page.HasPreviousPage);
+        Assert.False(page.HasNextPage);
+        _workflows.Verify(w => w.CountOpenInstancesForDefinitionsAsync(Tid, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task List_tenant_workflows_clamps_page_and_page_size_trims_search_and_skips_listing_when_total_is_zero()
+    {
+        SetupDesignPermission();
+        _workflows.Setup(w => w.CountByTenantAsync(Tid, "relance", It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        _workflows.Setup(w => w.CountOpenInstancesForDefinitionsAsync(
+                Tid, It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 0), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, int>());
+
+        var result = await ListTenantHandler().Handle(new ListTenantWorkflowsQuery("  relance  ", Page: 0, PageSize: 999), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var page = result.Value;
+        Assert.Equal(1, page.Page);
+        Assert.Equal(ListTenantWorkflowsQueryHandler.MaxPageSize, page.PageSize);
+        Assert.Empty(page.Items);
+        Assert.Equal(0, page.TotalCount);
+        Assert.False(page.HasNextPage);
+        _workflows.Verify(w => w.ListByTenantAsync(It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task List_tenant_workflows_truncates_overlong_search_before_querying()
+    {
+        SetupDesignPermission();
+        var longSearch = new string('a', ListTenantWorkflowsQueryHandler.MaxSearchLength + 40);
+        var expected = longSearch[..ListTenantWorkflowsQueryHandler.MaxSearchLength];
+        _workflows.Setup(w => w.CountByTenantAsync(Tid, expected, It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        _workflows.Setup(w => w.CountOpenInstancesForDefinitionsAsync(Tid, It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 0), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, int>());
+
+        var result = await ListTenantHandler().Handle(new ListTenantWorkflowsQuery(longSearch), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value.Page);
+        Assert.Equal(50, result.Value.PageSize);
+        _workflows.Verify(w => w.CountByTenantAsync(Tid, expected, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task List_tenant_workflows_requires_design_permission_and_calls_no_repository()
+    {
+        SetupDesignPermission(false);
+
+        var result = await ListTenantHandler().Handle(new ListTenantWorkflowsQuery("x"), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Unauthorized", result.Error.Code);
+        _workflows.VerifyNoOtherCalls();
     }
 
     // ---- Instances (4.1j2) ----
