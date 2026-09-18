@@ -18,17 +18,24 @@ import { StudioWorkflowsService } from './studio-workflows.service';
  */
 const PANEL_LABELS = {
   loadError: 'Chargement des instances impossible.',
-  retry: 'Réessayer'
+  retry: 'Réessayer',
+  /** 4.6a2 (D-46-01) : plafond atteint — l'historique complet paginé arrive avec l'onglet « Historique » (v1.1, R17). */
+  capped: 'Les {max} instances les plus récentes sont affichées.'
 } as const;
+
+/** Borne de la route `GET workflows/{id}/instances` (clamp API `MaxInstances = 50`, A-contrat-2). */
+const INSTANCES_PANEL_MAX = 50;
 
 /**
  * Panneau « Instances récentes » — colonne 3 du concepteur de workflow (4.4e2, maquette
- * `d44-workflows-designer.html`) : les 20 dernières instances (`listInstances(id, 20)`),
- * rechargées quand `workflowId`/`refreshToken` changent (le concepteur incrémente le jeton
- * après chaque enregistrement — pas de minuteur d'auto-rafraîchissement). Le clic sur une
- * ligne émet `open` (le concepteur pose `?instance=<id>` dans l'URL, D20 ; le drawer de
- * détail arrive en 4.4f). Le DTO n'expose pas de libellé d'enregistrement (D-44-24) :
- * identifiant tronqué + lien « Ouvrir la fiche » vers la route gardée `records/:key/:id`.
+ * `d44-workflows-designer.html`) : les 50 dernières instances (`listInstances(id, 50)`, borne API
+ * — 4.6a2 ; pas de paginateur : la route n'est pas paginée, la pagination complète est reportée
+ * à l'onglet « Historique » de v1.1, D-46-01), rechargées quand `workflowId`/`refreshToken`
+ * changent (le concepteur incrémente le jeton après chaque enregistrement — pas de minuteur
+ * d'auto-rafraîchissement). Le clic sur une ligne émet `open` (le concepteur pose `?instance=<id>`
+ * dans l'URL, D20 ; le drawer de détail arrive en 4.4f). Le DTO n'expose pas de libellé
+ * d'enregistrement (D-44-24) : identifiant tronqué + lien « Ouvrir la fiche » vers la route
+ * gardée `records/:key/:id`.
  */
 @Component({
   selector: 'app-studio-workflow-instances-panel',
@@ -60,6 +67,9 @@ const PANEL_LABELS = {
     } @else if (!instances().length) {
       <p class="wf-inst__hint" data-testid="wf-instances-empty">{{ L.instances.empty }}</p>
     } @else {
+      @if (capped()) {
+        <p class="wf-inst__hint" data-testid="wf-instances-capped">{{ cappedText }}</p>
+      }
       <ul class="wf-inst" data-testid="wf-instances-list">
         @for (i of instances(); track i.id) {
           <li class="wf-inst__item">
@@ -141,11 +151,15 @@ export class StudioWorkflowInstancesPanelComponent {
     this.error.set(false);
     // GET de conception sans skipErrorUi (§0.5) : l'intercepteur global affiche le toast,
     // le panneau affiche un état d'erreur discret.
-    this.workflowsSvc.listInstances(id, 20).subscribe({
+    this.workflowsSvc.listInstances(id, INSTANCES_PANEL_MAX).subscribe({
       next: r => { this.instances.set(r.data ?? []); this.loading.set(false); },
       error: () => { this.error.set(true); this.loading.set(false); }
     });
   }
+
+  /** Vrai quand la route a renvoyé autant d'instances que sa borne : il en existe peut-être d'autres (D-46-01). */
+  protected readonly capped = computed(() => this.instances().length >= INSTANCES_PANEL_MAX);
+  protected readonly cappedText = PANEL_LABELS.capped.replace('{max}', INSTANCES_PANEL_MAX.toString());
 
   /** Bouton « Réessayer » de l'état d'erreur. */
   protected retry(): void {

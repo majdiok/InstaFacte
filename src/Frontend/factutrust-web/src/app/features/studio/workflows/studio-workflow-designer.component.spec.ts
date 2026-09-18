@@ -86,8 +86,8 @@ describe('StudioWorkflowDesignerComponent', () => {
       message: null, error: null
     });
     fixture.detectChanges();
-    // 4.4e2 : le panneau d'instances de la colonne 3 charge les 20 dernières instances du workflow.
-    httpMock.expectOne(r => r.url === `${API}/workflows/w1/instances` && r.params.get('max') === '20')
+    // 4.4e2 / 4.6a2 : le panneau d'instances de la colonne 3 charge les 50 dernières instances (borne API).
+    httpMock.expectOne(r => r.url === `${API}/workflows/w1/instances` && r.params.get('max') === '50')
       .flush({ success: true, data: [], message: null, error: null });
     fixture.detectChanges();
   }
