@@ -120,6 +120,15 @@ export class StudioWorkflowsService {
     return this.http.get<ApiResponse<WorkflowInstanceDto[]>>(`${this.base}/records/${encodeURIComponent(entityKey)}/${recordId}/workflow-instances`, { params: new HttpParams().set('max', clampMax(max)), ...this.skipErrorUi });
   }
 
+  /**
+   * Détail d'une instance en portée fiche (4.5b / 4.5d2) : policy `custom_records:read` ;
+   * le backend répond 404 si l'instance n'appartient pas au couple (table, enregistrement).
+   * Sonde gérée localement par le drawer (message inline) ⇒ `skipErrorUi`.
+   */
+  getRecordInstance(entityKey: string, recordId: string, instanceId: string): Observable<ApiResponse<WorkflowInstanceDetailDto>> {
+    return this.http.get<ApiResponse<WorkflowInstanceDetailDto>>(`${this.base}/records/${encodeURIComponent(entityKey)}/${recordId}/workflow-instances/${instanceId}`, this.skipErrorUi);
+  }
+
   listRunnableWorkflows(entityKey: string): Observable<ApiResponse<RunnableWorkflowDto[]>> {
     return this.http.get<ApiResponse<RunnableWorkflowDto[]>>(`${this.base}/records/${encodeURIComponent(entityKey)}/workflows`);
   }

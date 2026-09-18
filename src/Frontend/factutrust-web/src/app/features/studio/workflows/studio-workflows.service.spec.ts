@@ -167,6 +167,14 @@ describe('StudioWorkflowsService', () => {
     req.flush({ success: true, data: [], message: null, errors: [] });
   });
 
+  it('getRecordInstance interroge GET records/{key}/{id}/workflow-instances/{instanceId} avec SKIP_ERROR_TOAST', () => {
+    service.getRecordInstance('interventions', 'r1', 'i1').subscribe();
+    const req = http.expectOne(`${base}/records/interventions/r1/workflow-instances/i1`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.context.get(SKIP_ERROR_TOAST)).toBe(true);
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
   it('listRunnableWorkflows interroge GET records/{key}/workflows', () => {
     service.listRunnableWorkflows('interventions').subscribe();
     const req = http.expectOne(`${base}/records/interventions/workflows`);
