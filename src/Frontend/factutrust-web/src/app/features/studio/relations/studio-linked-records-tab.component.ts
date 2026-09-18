@@ -10,7 +10,7 @@ import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-tab
 import { STUDIO_RUNTIME_LABELS } from '../shared/studio-runtime-labels';
 import { EntityRelationDto } from './studio-relations.models';
 import { CustomRecord } from '../studio.models';
-import { StudioLinkedRecordsService, JunctionAttribute, LinkedRecordRow, primaryLabel } from './studio-linked-records.service';
+import { StudioLinkedRecordsService, JunctionAttribute, LinkedRecordRow, primaryLabel, projectLinkedRows } from './studio-linked-records.service';
 
 interface TargetOption { id: string; label: string; }
 
@@ -18,24 +18,9 @@ interface TargetOption { id: string; label: string; }
  * Onglet « Liés » de la fiche d'un enregistrement (2.5e2) : liste les liens N-N via la jonction,
  * ajout/retrait conditionnés à `canWrite` (le service compose les endpoints CRUD de la jonction ;
  * une paire existante ⇒ 409 `record.duplicate_link` rendu en ligne). Le libellé cible est résolu
- * en une passe par `searchTargets` (les records de jonction ne portent que les ids).
+ * en une passe par `resolveTargetLabels` (les records de jonction ne portent que les ids) et la
+ * projection jonction → lignes est `projectLinkedRows` (partagée avec l'éditeur de puces).
  */
-/** Projection jonction → ligne affichée (libellé résolu ou repli sur l'id tronqué). Sans attribut
- *  de liaison (`attributeKey` null), la ligne reste STRICTEMENT la v1 (pas de clé `attributeValue`). */
-function toRow(p: { junction: CustomRecord; targetId: string }, targetLabel: string, attributeKey?: string | null): LinkedRecordRow {
-  const row: LinkedRecordRow = {
-    junctionRecordId: p.junction.id,
-    targetId: p.targetId,
-    targetLabel,
-    rowVersion: p.junction.rowVersion,
-    createdAt: p.junction.createdAt
-  };
-  if (attributeKey) {
-    const value = p.junction.data?.[attributeKey];
-    row.attributeValue = typeof value === 'number' || typeof value === 'string' ? value : null;
-  }
-  return row;
-}
 
 @Component({
   selector: 'app-studio-linked-records-tab',
@@ -162,29 +147,19 @@ export class StudioLinkedRecordsTabComponent implements OnInit {
     });
   }
 
-  /** Résout les libellés cibles en une passe (`searchTargets` filtre côté serveur si besoin). */
+  /** Résout les libellés cibles en une passe (200 — borne haute, couvre les cibles déjà liées). */
   private resolveLabels(): void {
-    const targetField = this.relation().junctionTargetFieldKey;
-    if (!targetField) { this.rows.set([]); return; }
-    this.linked.searchTargets(this.relation(), null, 200).subscribe({
-      next: res => {
-        this.lastLabels = new Map<string, string>();
-        if (res.success) for (const r of res.data.items ?? []) this.lastLabels.set(r.id, primaryLabel(r, []));
-        this.projectRows();
-      },
-      error: () => { this.lastLabels = new Map(); this.projectRows(); }
+    if (!this.relation().junctionTargetFieldKey) { this.rows.set([]); return; }
+    this.linked.resolveTargetLabels(this.relation()).subscribe(labels => {
+      this.lastLabels = labels;
+      this.projectRows();
     });
   }
 
   /** (Re)projette les lignes depuis la dernière liste — rejoué si l'attribut arrive après la liste. */
   private projectRows(): void {
-    const targetField = this.relation().junctionTargetFieldKey;
-    if (!targetField) { this.rows.set([]); return; }
-    const attrKey = this.attribute()?.key ?? null;
-    this.rows.set(this.lastJunctions
-      .map(j => ({ junction: j, targetId: String(j.data?.[targetField] ?? '') }))
-      .filter(p => p.targetId.length > 0)
-      .map(p => toRow(p, this.lastLabels.get(p.targetId) ?? p.targetId.slice(0, 8), attrKey)));
+    this.rows.set(projectLinkedRows(
+      this.lastJunctions, this.relation().junctionTargetFieldKey, this.lastLabels, this.attribute()?.key));
   }
 
   searchTargets(search: string | null): void {
