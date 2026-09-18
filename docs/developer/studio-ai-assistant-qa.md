@@ -978,11 +978,13 @@ rechargement) (4.6b1 + 4.6c1, D-46-04/06).
 
 Lecteur (`custom_records:read` sans `studio:design_entities`), tiroir depuis la fiche : le détail de
 l'instance ne sert plus `steps[].result` ni `steps[].error` (null), y compris sur une étape en échec ;
+l'`error` au niveau instance est masquée aussi (détail ET liste de la fiche — revue ★ 4.6) ;
 `context.startedBy.email`, `results`, `vars` restent expurgés. La route de conception (concepteur) sert
 toujours tout (4.6b2, D-46-05 — résiduel D-45-27 levé).
 
-- Portée automatisée : Infra Studio — runtime : `Assert.All(Steps, Result/Error null)` ; conception :
-  étape en échec avec `Error` servi et `Result` null (1:1).
+- Portée automatisée : Infra Studio — runtime : `Assert.All(Steps, Result/Error null)` + 2 faits
+  (erreur instance masquée au détail et à la liste) ; conception : étape en échec avec `Error` servi et
+  `Result` null (1:1) + 1 fait (erreur instance servie sur la route de conception).
 
 ### 116. Toasts du hub
 

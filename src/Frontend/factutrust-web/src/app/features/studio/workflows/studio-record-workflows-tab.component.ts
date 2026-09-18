@@ -88,7 +88,8 @@ import { StudioWorkflowsService } from './studio-workflows.service';
     <!-- 4.6d2 (D-44-96) : confirmation d'annulation INLINE avec motif optionnel — même motif et libellés
          que le tiroir (D-44-26, pas de ConfirmationService.prompt). -->
     @if (cancelTarget(); as target) {
-      <div class="srw-cancel" data-testid="srw-cancel-panel" role="group" [attr.aria-label]="labels.cancelConfirmTitle">
+      <div class="srw-cancel" data-testid="srw-cancel-panel" role="group" [attr.aria-label]="labels.cancelConfirmTitle"
+        (keydown.escape)="closeCancel()">
         <p class="srw-cancel__title">{{ labels.cancelConfirmTitle }} <strong>{{ target.workflowName }}</strong></p>
         <textarea pTextarea rows="2" [attr.maxlength]="limits.maxCancelReason" [ngModel]="cancelReason()"
           (ngModelChange)="cancelReason.set($event)" [placeholder]="labels.cancelReason"
@@ -98,7 +99,7 @@ import { StudioWorkflowsService } from './studio-workflows.service';
           <p-button severity="danger" size="small" [label]="labels.cancelConfirm" [loading]="busy()"
             (onClick)="confirmCancel()" data-testid="srw-cancel-confirm" />
           <p-button [outlined]="true" size="small" [label]="labels.cancelBack" [disabled]="busy()"
-            (onClick)="cancelTarget.set(null)" data-testid="srw-cancel-back" />
+            (onClick)="closeCancel()" data-testid="srw-cancel-back" />
         </div>
       </div>
     }
@@ -176,7 +177,7 @@ export class StudioRecordWorkflowsTabComponent {
 
   confirmRun(): void {
     const key = this.runKey();
-    if (!key) return;
+    if (!key || this.busy()) return;   // revue ★ 4.6 : même garde anti double envoi que cancel/remind
     this.busy.set(true);
     // POST records/{entityKey}/{recordId}/workflows/{key}/run — 201 (adressage PAR CLÉ, D-44-84)
     this.workflows.runWorkflow(this.entityKey(), this.recordId(), key).subscribe({
@@ -194,11 +195,16 @@ export class StudioRecordWorkflowsTabComponent {
     });
   }
 
-  /** 4.6d2 (D-44-96) : ouvre la confirmation inline (le motif repart vide pour chaque cible). */
+  /** 4.6d2 (D-44-96) : ouvre la confirmation inline (le motif repart vide pour chaque cible).
+   *  Revue ★ 4.6 : aucun changement de cible tant qu'une action est en cours. */
   cancel(row: WorkflowInstanceDto): void {
+    if (this.busy()) return;
     this.cancelReason.set('');
     this.cancelTarget.set(row);
   }
+
+  /** Ferme la confirmation (bouton « Retour » ou Échap) ; ignorée tant qu'une action est en cours. */
+  closeCancel(): void { if (!this.busy()) this.cancelTarget.set(null); }
 
   /** Annulation confirmée : motif optionnel borné à 500 côté saisie ET à l'envoi (même défense que le tiroir). */
   confirmCancel(): void {

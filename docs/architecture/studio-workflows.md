@@ -287,8 +287,9 @@ La phase 4.6 « Reliquats » (pile de PR brouillon 4.6a1 → 4.6T2, à partir de
 `D-46-01 → D-46-nn` : hub « Toutes les tables » paginé et recherché **côté serveur** (D-46-02/03) ;
 `WorkflowInstanceDto.startedByName` résolu en un lot par liste via `IStudioUserNameResolver` sur les quatre
 routes de lecture d'instances, `null` sur les réponses d'écriture (D-46-04 — `startedByName` n'est plus
-limité à l'inbox : D-45-03 étendu) ; surface lecteur strictement minimale — `Steps[].Result` et
-`Steps[].Error` nullés en portée lecteur (D-46-05 — résiduel D-45-27 levé) ; colonne « Demandé par » de
+limité à l'inbox : D-45-03 étendu) ; surface lecteur strictement minimale — `Steps[].Result`,
+`Steps[].Error` ET l'`Error` au niveau instance (détail et liste de la fiche) nullés en portée lecteur
+(D-46-05 — résiduel D-45-27 levé, revue ★ 4.6) ; colonne « Demandé par » de
 l'onglet Workflows de la fiche et nom du lanceur dans le tiroir (D-46-06) ; toasts du hub et du concepteur
 visibles (D-46-07 — D-44-95 clos) ; confirmation d'annulation inline avec motif optionnel et attributs
 d'accessibilité sur l'onglet (D-46-08 — D-44-96 clos) ; clé de jonction par défaut sans préfixe `v_`

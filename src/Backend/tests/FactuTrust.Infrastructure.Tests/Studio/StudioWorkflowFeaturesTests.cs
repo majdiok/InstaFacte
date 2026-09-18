@@ -800,6 +800,26 @@ public sealed class StudioWorkflowFeaturesTests
         Assert.Equal("Bob Martin", result.Value.Instance.StartedByName);
     }
 
+    // Revue ★ 4.6 / D-46-05 — symétrie : la route de conception sert toujours l'erreur au niveau
+    // instance (seule la portée lecteur la masque).
+    [Fact]
+    public async Task Get_instance_serves_the_instance_level_error_on_the_design_route()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        var instance = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.Manual, Uid, null, 0, null);
+        instance.Fail("erp indisponible (instance)");
+        _workflows.Setup(w => w.GetInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(instance);
+        _workflows.Setup(w => w.ListStepRunsAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<StudioWorkflowStepRun>());
+        _workflows.Setup(w => w.ListApprovalsForInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<StudioWorkflowApproval>());
+
+        var result = await GetInstanceHandler().Handle(new GetWorkflowInstanceQuery(instance.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error?.Description);
+        Assert.Equal("failed", result.Value.Instance.Status);
+        Assert.Equal("erp indisponible (instance)", result.Value.Instance.Error);
+    }
+
     [Fact]
     public async Task Get_instance_masks_previous_and_returns_steps_and_approvals()
     {
