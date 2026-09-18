@@ -159,3 +159,35 @@ export function stepRunStatusSeverity(status: WorkflowStepRunStatus): WorkflowSe
 export function slugifyWorkflowKey(input: string): string { return slugifyKey(input, 'wf_'); }
 
 export function stepsJsonBytes(doc: WorkflowStepsDocument): number { return new TextEncoder().encode(JSON.stringify(doc)).length; }
+
+// ---------------------------------------------------------------------------------------------
+// 4.7c2 — trace de la simulation pure `POST workflows/{id}/test` (4.7c1, R17). Les verdicts
+// sont figés côté serveur (`WorkflowTestVerdicts`) : ne jamais traduire ces valeurs.
+// ---------------------------------------------------------------------------------------------
+
+export const WORKFLOW_TEST_VERDICTS = {
+  wouldRun: 'would_run',
+  skipped: 'skipped',
+  wouldSuspend: 'would_suspend',
+  wouldFail: 'would_fail',
+} as const;
+
+export type WorkflowTestVerdict = (typeof WORKFLOW_TEST_VERDICTS)[keyof typeof WORKFLOW_TEST_VERDICTS];
+
+export interface WorkflowTestStepTraceDto {
+  key: string;
+  type: string;
+  label: string | null;
+  verdict: string;
+  detail: string | null;
+  rendered: Record<string, unknown> | null;
+}
+
+export interface WorkflowTestResultDto {
+  recordId: string;
+  entityKey: string;
+  evaluatedSteps: number;
+  suspended: boolean;
+  steps: WorkflowTestStepTraceDto[];
+  warnings: string[];
+}

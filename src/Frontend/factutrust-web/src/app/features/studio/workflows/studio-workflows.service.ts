@@ -18,6 +18,7 @@ import {
   WorkflowInstanceDetailDto,
   WorkflowInstanceDto,
   WorkflowStepCatalogDto,
+  WorkflowTestResultDto,
   WorkflowToggleRequest,
   WorkflowValidationResultDto
 } from './studio-workflows.models';
@@ -87,6 +88,14 @@ export class StudioWorkflowsService {
 
   toggleWorkflow(id: string, isActive: boolean): Observable<ApiResponse<WorkflowDefinitionDto>> {
     return this.http.post<ApiResponse<WorkflowDefinitionDto>>(`${this.base}/workflows/${id}/toggle`, { isActive } satisfies WorkflowToggleRequest, this.skipErrorUi);
+  }
+
+  /**
+   * 4.7c2 — simulation pure du premier segment (route 4.7c1, R17) : aucune écriture serveur.
+   * `skipErrorUi` : l'erreur est affichée inline dans le dialogue « Tester » du concepteur.
+   */
+  testWorkflow(id: string, recordId: string): Observable<ApiResponse<WorkflowTestResultDto>> {
+    return this.http.post<ApiResponse<WorkflowTestResultDto>>(`${this.base}/workflows/${id}/test`, { recordId }, this.skipErrorUi);
   }
 
   /** 200 même quand le workflow est invalide (erreurs localisées dans `errors[]/warnings[]`) — PAS de contexte skip (D-44-02). */

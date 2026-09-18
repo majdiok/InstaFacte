@@ -280,6 +280,19 @@ export const WF_RUNNABLE = [
   { id: 'wf-1', key: 'validation_intervention', name: 'Validation intervention', description: null, stepCount: 3 }
 ];
 
+/** 4.7c2 — trace de simulation pure (miroir `WorkflowTestResultDto` de 4.7c1) servie par `POST wf-1/test`. */
+export const WF_TEST_TRACE = {
+  recordId: 'r1',
+  entityKey: 'interventions',
+  evaluatedSteps: 2,
+  suspended: true,
+  steps: [
+    { key: 'si_prioritaire', type: 'condition', label: 'Priorité haute', verdict: 'would_run', detail: 'Condition remplie (match = all).', rendered: { passed: true, match: 'all' } },
+    { key: 'valide', type: 'approval', label: 'Validation', verdict: 'would_suspend', detail: 'Approbation assignée au rôle « Admin » — échéance 2026-09-21T08:00:00Z.', rendered: { title: 'Validation intervention', message: 'Merci de valider.' } }
+  ],
+  warnings: []
+};
+
 // ---------------------------------------------------------------------------------------------
 
 export interface StudioWorkflowMockOptions {
@@ -379,6 +392,8 @@ export async function installStudioWorkflowMocks(
 
   // — Définition wf-1 : historique des instances paginé (panneau 4.7a2), activation, GET/PUT/DELETE —
   await page.route('**/api/studio/workflows/wf-1/instances?**', route => fulfil(route, ok(pagedInstances(instances))));
+  // 4.7c2 — simulation pure (route 4.7c1) : trace fixe à 2 lignes, aucune écriture attendue.
+  await page.route('**/api/studio/workflows/wf-1/test', route => fulfil(route, ok(WF_TEST_TRACE)));
   await page.route('**/api/studio/workflows/wf-1/toggle', async route => {
     const body = (safeJson(route.request().postData()) ?? {}) as { isActive?: boolean };
     await fulfil(route, ok({ ...definitions[0], isActive: body.isActive ?? false }));

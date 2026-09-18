@@ -110,6 +110,14 @@ describe('StudioWorkflowsService', () => {
     req.flush({ success: true, data: null, message: null, errors: [] });
   });
 
+  it('testWorkflow poste { recordId } sur workflows/{id}/test (simulation pure, 4.7c2)', () => {
+    service.testWorkflow('w1', 'r-9').subscribe();
+    const req = http.expectOne(`${base}/workflows/w1/test`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ recordId: 'r-9' });
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
   it('validateWorkflow poste sur entities/{id}/workflows/validate', () => {
     service.validateWorkflow('e1', saveRequest).subscribe();
     const req = http.expectOne(`${base}/entities/e1/workflows/validate`);
