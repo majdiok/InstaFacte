@@ -25,6 +25,7 @@ import {
   CustomRecordViewDto, RECORD_VIEW_LIMITS, RECORD_VIEW_PERSISTED_KEYS, RecordViewCalendar, RecordViewColumn,
   RecordViewDefinition, RecordViewFilter, RecordViewKanban, RecordViewMode, RecordViewSort, SaveCustomRecordViewRequest
 } from './studio-record-views.models';
+import { slugifyKey } from '../shared/studio-text.util';
 
 /** Option `{ key, label }` d'un `p-select` de champ. */
 interface FieldOption { key: string; label: string; }
@@ -582,11 +583,5 @@ export class StudioRecordViewDesignerComponent implements OnInit {
   }
 }
 
-/** Clé auto-dérivée du nom (même règle que `slugify()` du concepteur de table, préfixe `v_` si chiffre initial). */
-export function slugifyViewKey(input: string): string {
-  const base = (input || '').trim().toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  if (!base) return '';
-  return /^[a-z]/.test(base) ? base.slice(0, 64) : ('v_' + base).slice(0, 64);
-}
+/** Clé auto-dérivée du nom : enveloppe de `slugifyKey` (shared/studio-text.util.ts, 4.5h), préfixe `v_` si chiffre initial. */
+export function slugifyViewKey(input: string): string { return slugifyKey(input, 'v_'); }

@@ -326,10 +326,8 @@ export const STUDIO_WORKFLOW_LABELS = {
 
 export type StudioWorkflowLabels = typeof STUDIO_WORKFLOW_LABELS;
 
-/** Remplace les `{jetons}` d'un libellé (copie de `formatLabel`, studio-ai-labels.ts l.697 — D-44-08). */
-export function formatWorkflowLabel(template: string, values: Record<string, string | number>): string {
-  return template.replace(/\{(\w+)\}/g, (_, k: string) => (values[k] !== undefined ? String(values[k]) : `{${k}}`));
-}
+/** Remplace les `{jetons}` d'un libellé — alias ré-exporté de `formatLabel` (shared/studio-text.util.ts, 4.5h — D-44-08 clos). */
+export { formatLabel as formatWorkflowLabel } from '../shared/studio-text.util';
 
 /** Libellé d'un type d'étape : `label` du catalogue s'il est fourni, sinon repli FR local, sinon la clé brute. */
 export function stepTypeLabel(type: WorkflowStepType, catalogLabel?: string | null): string {
