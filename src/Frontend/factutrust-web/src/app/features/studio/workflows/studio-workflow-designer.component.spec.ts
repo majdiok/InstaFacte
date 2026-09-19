@@ -67,7 +67,8 @@ describe('StudioWorkflowDesignerComponent', () => {
             queryParamMap: of(convertToParamMap({}))
           }
         },
-        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: false, breakpoints: {} }) } }
+        // 4.6T2 : le concepteur lit ViewportService (BreakpointObserver) — écran large stubbé.
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: false, breakpoints: {} }), isMatched: () => false } }
       ]
     });
     const router = TestBed.inject(Router);
