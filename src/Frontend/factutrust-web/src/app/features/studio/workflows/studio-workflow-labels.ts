@@ -256,6 +256,7 @@ export const STUDIO_WORKFLOW_LABELS = {
     colWorkflow: 'Workflow / étape',
     colRecord: 'Enregistrement',
     colStartedAt: 'Lancé le',
+    colRequestedBy: 'Demandé par',
     colRequestedAt: 'Demandé le',
     colDue: 'Échéance',
     colActions: 'Actions',
@@ -273,6 +274,7 @@ export const STUDIO_WORKFLOW_LABELS = {
     close: 'Fermer',
     record: 'Enregistrement',
     startedAt: 'Lancé le',
+    requestedBy: 'Demandé par',
     requestedAt: 'Demandé le',
     requestComment: 'Message du demandeur',
     openInstance: 'Voir l\'instance'
