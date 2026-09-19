@@ -89,7 +89,7 @@ Garde commune : si `Ollama:EnableStudioWorkflows` est `false`, chaque job journa
 | `StudioWorkflowResumeBatchSize` | 100 | 10..500 | Taille de lot des 4 phases |
 | `StudioWorkflowScheduledBatchSize` | 100 | 10..500 | Fiches traitées par tick d'un déclencheur planifié (v1.1) |
 | `StudioWorkflowRetentionDays` | 180 | 30..3650 | Âge minimal des instances terminales purgées (et horizon de l'onglet Historique de « Mes approbations ») |
-| `EnableStudioWorkflows` | `false` | — | Coupé ⇒ jobs inertes, routes runtime 404 |
+| `EnableStudioWorkflows` | `false` (défaut C# et `appsettings.json`) ; **prod : `true`** (`appsettings.Production.json`, PR #180, D-47-90) | — | Coupé ⇒ jobs inertes, routes runtime 404 |
 
 ## Lecture des logs
 
@@ -122,8 +122,11 @@ job expire l'approbation et applique `onTimeout`.
 
 ## Activation progressive
 
-1. `Ollama:EnableStudioWorkflows=true` sur un **tenant pilote** (les autres tenants ne sont pas affectés :
-   le job itère sur les tenants actifs mais les routes et les déclencheurs restent gardés).
+1. Depuis la PR #180, le drapeau est `true` par défaut en production : le pilotage se fait par surcharge
+   d'environnement `Ollama__EnableStudioWorkflows=false` sur les instances **hors** pilote (la variable prime
+   sur le fichier), ou en laissant l'activation par défaut. Avant : `Ollama:EnableStudioWorkflows=true` sur un
+   **tenant pilote** (les autres tenants ne sont pas affectés : le job itère sur les tenants actifs mais les
+   routes et les déclencheurs restent gardés).
 2. Créer un workflow `manual` à une étape `wait` courte sur une table de test, le lancer depuis la fiche.
 3. Après 2 ticks, vérifier qu'aucune instance n'est bloquée échue :
 
@@ -137,8 +140,9 @@ job expire l'approbation et applique `onTimeout`.
 
 ## Désactivation
 
-`Ollama:EnableStudioWorkflows=false` : les jobs (`studio-workflow-resume` et chaque
-`studio-workflow-scheduled:*`) sortent immédiatement à chaque tick, les **11 routes runtime**
+`Ollama__EnableStudioWorkflows=false` en **variable d'environnement** + redémarrage (prime sur le `true` de
+`appsettings.Production.json` ; ne pas repasser le fichier à `false` : `ProductionStudioFlagsTests` le
+garde) : les jobs (`studio-workflow-resume` et chaque `studio-workflow-scheduled:*`) sortent immédiatement à chaque tick, les **11 routes runtime**
 (`StudioWorkflowRuntimeController` : boîte de réception, historique et compteur des approbations, approve / reject,
 instances d'une fiche et détail, workflows lançables, run / cancel / remind) répondent `404` « Les workflows Studio
 ne sont pas activés. » avant tout traitement. La route `GET api/studio/records/{entityKey}/{id}/history`

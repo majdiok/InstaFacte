@@ -711,9 +711,10 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
 ## Workflows Studio — moteur, déclencheur et API de conception (PR 4.1)
 
 > Architecture : [`docs/architecture/studio-workflows.md`](../architecture/studio-workflows.md).
-> Prérequis : migration tenant `20260912150000_AddStudioWorkflows_Tenant` appliquée ; drapeau activé **par
-> variable d'environnement** `Ollama__EnableStudioWorkflows=true` (les deux `appsettings*.json` restent à
-> `false`) ; une table Studio `commandes` (champs `statut` Select `brouillon`/`valide`, `montant` Money,
+> Prérequis : migration tenant `20260912150000_AddStudioWorkflows_Tenant` appliquée ; drapeau
+> `EnableStudioWorkflows` actif — en développement **par variable d'environnement**
+> `Ollama__EnableStudioWorkflows=true` (`appsettings.json` reste à `false`), en production `true` par défaut
+> dans `appsettings.Production.json` depuis la PR #180 (D-47-90) ; une table Studio `commandes` (champs `statut` Select `brouillon`/`valide`, `montant` Money,
 > `traite_le` DateTime, `ref` AutoNumber) et une table `taches` (champ `titre` Text) alimentées ; un compte
 > avec `studio:design_entities` (conception) et `custom_records:write` (déclenchement). Appels Swagger /
 > `curl` — le frontend arrive en PR 4.4. Les numéros 75–80 sont ceux du registre du plan maître ; l'ordre du
