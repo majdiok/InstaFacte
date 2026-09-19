@@ -155,13 +155,18 @@ public sealed record CreateManyToManyRelationRequest(
     Guid TargetEntityId,
     string? Label,
     string? JunctionKey,
-    string? JunctionDisplayName);
+    string? JunctionDisplayName,
+    // v1.1 / D-47-40 (R4) : attribut de liaison optionnel — un champ `Number` portant ce libellé est
+    // ajouté à la jonction (clé slugifiée) APRÈS les deux champs de liaison ; non fourni ⇒ comportement v1.
+    string? JunctionAttributeLabel = null);
 
 /// <summary>Result of a many-to-many creation: the junction entity and its two relation fields.</summary>
 public sealed record ManyToManyRelationDto(
     CustomEntityDto Junction,
     CustomFieldDto SourceField,
-    CustomFieldDto TargetField);
+    CustomFieldDto TargetField,
+    // v1.1 / D-47-40 : le champ attribut créé, null quand `JunctionAttributeLabel` n'est pas fourni.
+    CustomFieldDto? AttributeField = null);
 
 // ---- Records ----
 
