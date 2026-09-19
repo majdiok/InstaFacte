@@ -135,7 +135,7 @@ const DETAIL_LABELS = {
               <span [title]="i.recordId">{{ shortId(i.recordId) }}</span>
             }
           </dd>
-          @if (i.originInstanceId && !recordId()) {
+          @if (i.originInstanceId && !scope()) {
             <dt>{{ localLabels.origin }}</dt>
             <dd>
               <button pButton type="button" size="small" [text]="true" [label]="localLabels.open"
@@ -316,10 +316,22 @@ export class StudioWorkflowInstanceDetailComponent {
   );
   protected readonly approvals = computed(() => this.detail()?.approvals ?? []);
 
+  /**
+   * Portée figée à l'ouverture (revue 4.5i★, D-45-29) : `{ entityKey, recordId }` lus quand `instanceId`
+   * change, pour qu'un « Réessayer » ou un rechargement 409 garde la route runtime même si l'hôte
+   * (« Mes approbations ») a perdu sa sélection entre-temps — sinon bascule vers la route de conception ⇒ 403 lecteur.
+   */
+  protected readonly scope = signal<{ entityKey: string; recordId: string } | null>(null);
+
   constructor() {
     effect(() => {
       const id = this.instanceId();
-      untracked(() => (id ? this.load(id) : this.reset()));
+      untracked(() => {
+        const ek = this.entityKey();
+        const rid = this.recordId();
+        this.scope.set(id && ek && rid ? { entityKey: ek, recordId: rid } : null);
+        id ? this.load(id) : this.reset();
+      });
     });
   }
 
@@ -344,9 +356,8 @@ export class StudioWorkflowInstanceDetailComponent {
     this.error.set(null);
     this.cancelMode.set(false);
     this.reason.set('');
-    const ek = this.entityKey();
-    const rid = this.recordId();
-    const src$ = ek && rid ? this.workflowsSvc.getRecordInstance(ek, rid, id) : this.workflowsSvc.getInstance(id);
+    const scope = this.scope();
+    const src$ = scope ? this.workflowsSvc.getRecordInstance(scope.entityKey, scope.recordId, id) : this.workflowsSvc.getInstance(id);
     src$.subscribe({
       next: r => { this.detail.set(r.data ?? null); this.loading.set(false); },
       error: (err: HttpErrorResponse) => {

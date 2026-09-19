@@ -14,8 +14,7 @@ function inboxItem(over: { title?: string; dueAt?: string | null; startedByName?
     },
     instanceId: 'i1', workflowKey: 'validation_devis', workflowName: 'Validation devis',
     entityKey: 'devis', entityName: 'Devis', recordId: 'r1', recordLabel: 'DEV-001',
-    startedBy: null, startedAt: '2026-09-16T09:00:00Z',
-    ...(over.startedByName !== undefined ? { startedByName: over.startedByName } : {})
+    startedBy: null, startedAt: '2026-09-16T09:00:00Z', startedByName: over.startedByName
   };
 }
 

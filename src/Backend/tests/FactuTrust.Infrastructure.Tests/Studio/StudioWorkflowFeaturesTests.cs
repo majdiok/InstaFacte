@@ -663,6 +663,29 @@ public sealed class StudioWorkflowFeaturesTests
     }
 
     [Fact]
+    public async Task List_tenant_workflows_bounds_page_so_that_skip_never_overflows()
+    {
+        // Revue 4.5i★ (D-45-28) : `?page=2147483647` ne doit pas produire un Skip négatif (500) — page bornée à int.MaxValue / MaxPageSize.
+        SetupDesignPermission();
+        var skips = new List<int>();
+        _workflows.Setup(w => w.CountByTenantAsync(Tid, null, It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        _workflows.Setup(w => w.ListByTenantAsync(Tid, null, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, string?, int, int, CancellationToken>((_, _, skip, _, _) => skips.Add(skip))
+            .ReturnsAsync(Array.Empty<StudioWorkflowCatalogRow>());
+        _workflows.Setup(w => w.CountOpenInstancesForDefinitionsAsync(Tid, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, int>());
+
+        var result = await ListTenantHandler().Handle(
+            new ListTenantWorkflowsQuery(null, Page: int.MaxValue, PageSize: ListTenantWorkflowsQueryHandler.MaxPageSize), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(int.MaxValue / ListTenantWorkflowsQueryHandler.MaxPageSize, result.Value.Page);
+        var skip = Assert.Single(skips);
+        Assert.True(skip >= 0);
+        Assert.Equal((result.Value.Page - 1) * ListTenantWorkflowsQueryHandler.MaxPageSize, skip);
+    }
+
+    [Fact]
     public async Task List_tenant_workflows_truncates_overlong_search_before_querying()
     {
         SetupDesignPermission();
@@ -731,7 +754,7 @@ public sealed class StudioWorkflowFeaturesTests
     {
         var def = Definition();
         SetupDefinition(def);
-        const string contextJson = """{ "record": { "statut": "valide" }, "previous": { "statut": "brouillon", "secret": "x" }, "vars": { "a": 1 } }""";
+        const string contextJson = """{ "record": { "statut": "valide" }, "previous": { "statut": "brouillon", "secret": "x" }, "vars": { "a": 1 }, "startedBy": { "id": "u1", "email": "bob@exemple.fr" }, "results": { "erp": { "raw": "ok" } } }""";
         var instance = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.OnUpdate, Uid, contextJson, 1, Guid.NewGuid());
         _workflows.Setup(w => w.GetInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(instance);
 
@@ -762,6 +785,9 @@ public sealed class StudioWorkflowFeaturesTests
         Assert.Equal("valide", detail.Context["record"]!["statut"]!.GetValue<string>());
         Assert.Equal(1, detail.Context["vars"]!["a"]!.GetValue<int>());
         Assert.DoesNotContain("brouillon", detail.Context.ToJsonString(), StringComparison.Ordinal);
+        // Route de conception : contexte complet (l'expurgation D-45-27 ne concerne que la portée lecteur).
+        Assert.Equal("bob@exemple.fr", detail.Context["startedBy"]!["email"]!.GetValue<string>());
+        Assert.Equal("ok", detail.Context["results"]!["erp"]!["raw"]!.GetValue<string>());
 
         // Étapes triées par index ; Result reparsé (objet) ou null (JSON non objet).
         Assert.Equal(new[] { 0, 1 }, detail.Steps.Select(s => s.StepIndex).ToArray());

@@ -140,7 +140,9 @@ public sealed class GetRecordWorkflowInstanceQueryHandler
         if (instance is null || instance.RecordId != query.RecordId || instance.EntityDefinitionId != entity.Id)
             return Result.Failure<WorkflowInstanceDetailDto>(Error.NotFound("StudioWorkflowInstance", query.InstanceId));
 
-        return Result.Success(await StudioWorkflowInstanceDetailBuilder.BuildAsync(_workflows, tenantId, instance, cancellationToken));
+        // Portée lecteur : contexte expurgé (e-mail du lanceur, results, vars — D-45-27).
+        return Result.Success(await StudioWorkflowInstanceDetailBuilder.BuildAsync(
+            _workflows, tenantId, instance, cancellationToken, readerScope: true));
     }
 }
 

@@ -17,8 +17,7 @@ function inboxItem(startedByName?: string | null): WorkflowApprovalInboxItemDto 
     },
     instanceId: 'i1', workflowKey: 'validation_devis', workflowName: 'Validation devis',
     entityKey: 'devis', entityName: 'Devis', recordId: 'r1', recordLabel: 'DEV-001',
-    startedBy: null, startedAt: '2026-09-16T09:00:00Z',
-    ...(startedByName !== undefined ? { startedByName } : {})
+    startedBy: null, startedAt: '2026-09-16T09:00:00Z', startedByName
   };
 }
 
