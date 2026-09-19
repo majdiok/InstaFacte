@@ -25,12 +25,16 @@ test.describe('Studio — relations plusieurs-à-plusieurs (2.5)', () => {
     await page.getByTestId('m2m-target').click();
     await page.getByRole('option', { name: 'Techniciens' }).click();
     await expect(page.getByTestId('m2m-junction-key')).toHaveAttribute('placeholder', 'interventions_techniciens');
-    await expect(page.getByText('Attribut de liaison — Bientôt')).toBeVisible();
+    // v1.1 (D-47-40) : « Attribut de liaison » est un champ actif (plus de bloc « Bientôt »).
+    await expect(page.getByTestId('m2m-attribute')).toBeVisible();
+    await expect(page.getByText('Attribut de liaison — Bientôt')).toHaveCount(0);
+    await page.getByTestId('m2m-attribute').fill('Quantité');
     await page.getByTestId('m2m-submit').click();
 
     const posts = ctx.find('relations/many-to-many', 'POST');
     expect(posts.length).toBe(1);
     expect((posts[0].body as Record<string, unknown>)['targetEntityId']).toBe('e-tech');
+    expect((posts[0].body as Record<string, unknown>)['junctionAttributeLabel']).toBe('Quantité');
     await expect(page.getByRole('dialog', { name: 'Ajouter une relation plusieurs-à-plusieurs' })).toHaveCount(0);
   });
 
