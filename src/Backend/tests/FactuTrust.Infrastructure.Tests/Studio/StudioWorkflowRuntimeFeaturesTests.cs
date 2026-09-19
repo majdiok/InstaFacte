@@ -162,6 +162,57 @@ public class StudioWorkflowRuntimeFeaturesTests
         Assert.DoesNotContain("confidentiel", json, StringComparison.Ordinal);
     }
 
+    // Revue ★ 4.6 / D-46-05 — l'erreur au niveau instance (texte interne possible) suit la même règle
+    // que les erreurs des étapes : elle ne sort ni par le détail ni par la liste en portée lecteur.
+    [Fact]
+    public async Task GetRecordWorkflowInstance_masks_the_instance_level_error_in_reader_scope()
+    {
+        var record = CustomRecord.Create(TenantId, _entity.Id, "{}", Uid);
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        var instance = StudioWorkflowInstance.Start(TenantId, definition, record.Id, StudioWorkflowTriggerKind.Manual, StartedBy,
+            "{ \"record\": { \"a\": 1 }, \"startedBy\": { \"id\": \"u1\", \"email\": \"alice@exemple.fr\" } }", 0, null);
+        instance.Fail("pile interne erp confidentielle");
+
+        SetupReadPermission();
+        SetupEntityAndRecord(record);
+        _workflows.Setup(r => r.GetInstanceAsync(TenantId, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(instance);
+        _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>())).ReturnsAsync(definition);
+        _workflows.Setup(r => r.ListStepRunsAsync(TenantId, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<StudioWorkflowStepRun>());
+        _workflows.Setup(r => r.ListApprovalsForInstanceAsync(TenantId, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<StudioWorkflowApproval>());
+
+        var result = await NewGetInstanceHandler().Handle(
+            new GetRecordWorkflowInstanceQuery("customer", record.Id, instance.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("failed", result.Value.Instance.Status);
+        Assert.Null(result.Value.Instance.Error);
+    }
+
+    [Fact]
+    public async Task ListRecordWorkflowInstances_masks_the_instance_level_error_in_reader_scope()
+    {
+        var record = CustomRecord.Create(TenantId, _entity.Id, "{}", Uid);
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        var failed = StudioWorkflowInstance.Start(TenantId, definition, record.Id, StudioWorkflowTriggerKind.Manual, StartedBy, null, 0, null);
+        failed.Fail("pile interne erp confidentielle");
+
+        SetupReadPermission();
+        SetupEntityAndRecord(record);
+        _workflows.Setup(r => r.ListInstancesForRecordAsync(TenantId, record.Id, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { failed });
+        _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>())).ReturnsAsync(definition);
+
+        var handler = new ListRecordWorkflowInstancesQueryHandler(
+            _workflows.Object, _entities.Object, _records.Object, _currentUser.Object, _userNames.Object);
+        var result = await handler.Handle(
+            new ListRecordWorkflowInstancesQuery("customer", record.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var item = Assert.Single(result.Value);
+        Assert.Equal("failed", item.Status);
+        Assert.Null(item.Error);
+    }
+
     // 4.6b1 / D-46-B01 — le nom du lanceur est servi aussi en portée lecteur (colonne « Demandé par »
     // de l'inbox, 4.5e) ; seul l'e-mail du contexte reste masqué.
     [Fact]

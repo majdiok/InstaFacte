@@ -166,17 +166,20 @@ demande, depuis la fiche), une suite d’étapes s’exécute — approbations, 
 d’enregistrements, actions ERP.
 
 - **Hub et concepteur** (concepteurs, menu Studio → **Workflows**) : liste par table ou vue **Toutes les
-  tables** (l’ensemble des workflows de l’entreprise, jusqu’à 200 ; au-delà, choisissez une table pour voir
-  les autres), création en trois colonnes (étapes réordonnables, éditeur par type, instances récentes),
-  **Valider** avant **Enregistrer**, activation par interrupteur. Un workflow est créé **inactif**.
+  tables** — l’ensemble des workflows de l’entreprise, paginé par 50 avec **recherche** (nom ou clé) —
+  création en trois colonnes (étapes réordonnables, éditeur par type, instances récentes — les 50 plus
+  récentes), **Valider** avant **Enregistrer**, activation par interrupteur. Les succès et erreurs de vos
+  actions (enregistrement, activation, duplication, suppression) s’affichent en bas d’écran. Un workflow
+  est créé **inactif**.
 
   ![Hub des workflows](../screenshots/studio-ia-workflows-hub.png)
   ![Concepteur de workflow](../screenshots/studio-ia-workflows-concepteur.png)
 
 - **Fiche enregistrement** : l’onglet **Workflows (n)** liste les instances de la fiche (statut, étape,
-  dates) et permet d’**en lancer un** (permission d’écriture) ; **Détail** ouvre le déroulé des étapes pour
-  toute personne qui peut lire la fiche — annulation avec motif et relance des approbateurs (une fois par
-  24 h) restent réservées à la permission d’écriture.
+  dates, colonne **Demandé par** — qui a lancé l’instance, « — » si inconnu) et permet d’**en lancer un**
+  (permission d’écriture) ; **Détail** ouvre le déroulé des étapes pour toute personne qui peut lire la
+  fiche — annulation (désormais **confirmée** : un panneau demande un motif optionnel avant l’envoi) et
+  relance des approbateurs (une fois par 24 h) restent réservées à la permission d’écriture.
 
   ![Onglet Workflows de la fiche](../screenshots/studio-ia-workflows-fiche.png)
 

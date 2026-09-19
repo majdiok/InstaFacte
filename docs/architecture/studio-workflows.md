@@ -189,9 +189,12 @@ Livré en PR 4.4 (tranches a1 → l2). Arborescence :
   sur les sondes et écritures gérées localement, `workflowErrorMessage` pour l'enveloppe
   `{ success, data, message, error }`).
 - **Hub** `studio-workflows-hub.component.ts` (`/studio/workflows`) : sans `?entity=`, vue « Toutes les
-  tables » en **une** requête `GET workflows?page=1&pageSize=200` (page unique ; au-delà de 200, message de
-  troncature invitant à choisir une table — 4.5f, la borne « 25 tables » a disparu) ; avec `?entity=`,
-  `GET entities/{id}/workflows`. Création, activation, duplication, suppression confirmée.
+  tables » **paginée côté serveur** — `GET workflows?search=&page=n&pageSize=50`, `p-paginator` dès que
+  `totalCount > 50`, recherche branchée sur le paramètre `search` de l'API (saisie anti-rebond 300 ms,
+  retour page 1 ; la page unique de 200 et le message de troncature ont disparu — 4.6a1, D-46-02/03) ;
+  avec `?entity=`,
+  `GET entities/{id}/workflows` (liste intégrale, filtre local). Création, activation, duplication,
+  suppression confirmée. Hôte `<p-toast>` propre à la page (4.6d1 — D-44-95 clos).
 - **Concepteur** `studio-workflow-designer.component.ts` (`/studio/workflows/new`, `/studio/workflows/:id`,
   grille `1fr · 320 px · 250 px`, `p-drawer` < 1 280 px) : éditeur d'étapes
   (`step-editor/`), liste réordonnable, arbre de condition en lecture, validation côté serveur avant
@@ -279,6 +282,20 @@ toast unique de l'onglet (D-45-19/20 — D-44-64/89 clos), `studio-text.util.ts`
 « Mes approbations » réaligné (colonne « Demandé par », repli 404 vers `/dashboard` — D-45-26), retours de la revue ★ :
 contexte expurgé sur la route lecteur (`startedBy.email`, `results`, `vars` — D-45-27), `page` borné contre le
 débordement (D-45-28), portée du tiroir figée à l'ouverture (D-45-29).
+
+La phase 4.6 « Reliquats » (pile de PR brouillon 4.6a1 → 4.6T2, à partir de la PR #140) est consignée en
+`D-46-01 → D-46-nn` : hub « Toutes les tables » paginé et recherché **côté serveur** (D-46-02/03) ;
+`WorkflowInstanceDto.startedByName` résolu en un lot par liste via `IStudioUserNameResolver` sur les quatre
+routes de lecture d'instances, `null` sur les réponses d'écriture (D-46-04 — `startedByName` n'est plus
+limité à l'inbox : D-45-03 étendu) ; surface lecteur strictement minimale — `Steps[].Result`,
+`Steps[].Error` ET l'`Error` au niveau instance (détail et liste de la fiche) nullés en portée lecteur
+(D-46-05 — résiduel D-45-27 levé, revue ★ 4.6) ; colonne « Demandé par » de
+l'onglet Workflows de la fiche et nom du lanceur dans le tiroir (D-46-06) ; toasts du hub et du concepteur
+visibles (D-46-07 — D-44-95 clos) ; confirmation d'annulation inline avec motif optionnel et attributs
+d'accessibilité sur l'onglet (D-46-08 — D-44-96 clos) ; clé de jonction par défaut sans préfixe `v_`
+(D-46-09, voir `studio-many-to-many.md`) ; panneau « instances récentes » du concepteur porté à 50 avec
+invite bornée, pagination complète reportée à v1.1 (D-46-01) ; endpoint `capabilities` inchangé, accès
+lecteur reporté et motivé (D-46-10).
 
 ## Exécution différée (4.2)
 

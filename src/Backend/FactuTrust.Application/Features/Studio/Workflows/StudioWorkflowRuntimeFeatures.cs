@@ -98,7 +98,9 @@ public sealed class ListRecordWorkflowInstancesQueryHandler
                     tenantId, instance.WorkflowDefinitionId, cancellationToken);
                 definitions[instance.WorkflowDefinitionId] = definition;
             }
-            result.Add(StudioWorkflowMapping.ToDto(instance, definition));
+            // Route lecteur : l'erreur au niveau instance (texte interne possible) ne sort pas
+            // (revue ★ 4.6 / D-46-05 — même règle que le détail ; l'onglet fiche ne la rend pas).
+            result.Add(StudioWorkflowMapping.ToDto(instance, definition) with { Error = null });
         }
 
         // 4.6b1 / D-46-B01 — « Demandé par » : une résolution en lot pour la page (motif inbox 4.5a2).

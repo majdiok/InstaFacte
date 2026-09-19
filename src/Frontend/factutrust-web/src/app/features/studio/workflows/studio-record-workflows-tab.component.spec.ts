@@ -181,7 +181,7 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
   });
 
   it("annule après confirmation inline (motif optionnel borné à 500), réinitialise le formulaire et émet changed (D-44-96)", () => {
-    setup({ instances: [instance('i1', 'waiting_approval')] });
+    setup({ instances: [instance('i1', 'waiting_approval'), instance('i2', 'running')] });
 
     clickButton('srw-cancel-i1');
     fixture.detectChanges();
@@ -192,6 +192,11 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     component.cancelReason.set('  Facture annulée côté ERP  ');
     fixture.detectChanges();
     clickButton('srw-cancel-confirm');
+    // Revue ★ 4.6 : tant que le POST est en cours, un autre « Annuler » ne change pas la cible.
+    expect(component.busy()).toBeTrue();
+    clickButton('srw-cancel-i2');
+    expect(component.cancelTarget()?.id).toBe('i1');
+    expect(component.cancelReason()).toBe('  Facture annulée côté ERP  ');
     const cancelReq = httpMock.expectOne(`${API}/workflows/instances/i1/cancel`);
     expect(cancelReq.request.method).toBe('POST');
     expect(cancelReq.request.body).toEqual({ reason: 'Facture annulée côté ERP' }); // trimmé (motif du tiroir)
@@ -214,6 +219,13 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     expect(changedSpy).toHaveBeenCalledTimes(1);                        // pas de second changed
     expect(component.cancelTarget()).not.toBeNull();
     expect(toastSpy).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'warn', detail: 'Instance déjà terminée.' }));
+
+    // Échap ferme le panneau (hors action en cours) — même garde que « Retour ».
+    const panel = fixture.nativeElement.querySelector('[data-testid="srw-cancel-panel"]') as HTMLElement;
+    panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expect(component.cancelTarget()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-cancel-panel"]')).toBeNull();
   });
 
   it("« Retour » ferme la confirmation sans POST (D-44-96) et l'accessibilité est posée (aria-labels + th libellé)", () => {

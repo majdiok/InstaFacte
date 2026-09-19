@@ -5,7 +5,7 @@ import { BadgeModule } from 'primeng/badge';
 import { ButtonModule } from 'primeng/button';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { STUDIO_WORKFLOW_LABELS } from './studio-workflow-labels';
+import { STUDIO_WORKFLOW_LABELS, formatWorkflowLabel } from './studio-workflow-labels';
 import { StudioWorkflowStatusTagComponent } from './studio-workflow-status-tag.component';
 import { WorkflowInstanceDto, isOpenInstance } from './studio-workflows.models';
 import { StudioWorkflowsService } from './studio-workflows.service';
@@ -159,7 +159,7 @@ export class StudioWorkflowInstancesPanelComponent {
 
   /** Vrai quand la route a renvoyé autant d'instances que sa borne : il en existe peut-être d'autres (D-46-01). */
   protected readonly capped = computed(() => this.instances().length >= INSTANCES_PANEL_MAX);
-  protected readonly cappedText = PANEL_LABELS.capped.replace('{max}', INSTANCES_PANEL_MAX.toString());
+  protected readonly cappedText = formatWorkflowLabel(PANEL_LABELS.capped, { max: INSTANCES_PANEL_MAX });
 
   /** Bouton « Réessayer » de l'état d'erreur. */
   protected retry(): void {

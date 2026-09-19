@@ -52,6 +52,9 @@ audits :
    (`Validation.source` / `Validation.target`), quota d'entités (`StudioQuotas.MaxEntitiesKey`).
 2. Clé de jonction : `junctionKey` explicite (slugifiée) ou `{source}_{target}` ; en collision, la clé
    par défaut est suffixée `_2` … `_9`, une clé **explicite** en collision renvoie `Conflict` (409).
+   Le dialogue propose la même clé par défaut `{source}_{target}` **sans préfixe** (4.6e, D-46-09 — le
+   préfixe de repli `v_`, réservé aux vues, n'est plus utilisé ; les jonctions `v_*` existantes restent
+   valides, aucune migration).
    Nom : `junctionDisplayName` ou « Source – Cible » ; icône `link` ; `SystemId` = celui de la source.
 3. Deux champs `RelationCustom` **requis, non uniques**, clés = clés des entités liées
    (`employes`, `projets`) ; `_ref` si la clé est réservée (`id`…), `_a` / `_b` pour un auto‑lien

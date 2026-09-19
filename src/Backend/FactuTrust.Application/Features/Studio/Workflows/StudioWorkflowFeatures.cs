@@ -914,6 +914,11 @@ internal static class StudioWorkflowInstanceDetailBuilder
         if (userNames is not null)
             summary = await StudioWorkflowStartedByNameSupport.ResolveOneAsync(userNames, tenantId, summary, cancellationToken);
 
+        // Portée lecteur (revue ★ 4.6) : l'erreur au niveau instance (texte interne possible) suit la même
+        // règle que les erreurs des étapes ci-dessous — elle ne sort pas de la route lecteur.
+        if (readerScope)
+            summary = summary with { Error = null };
+
         // Portée lecteur (D-46-B02, lève le résiduel de D-45-27) : les sorties (même tronquées) et les erreurs
         // internes des étapes ne sortent pas — le tiroir ne les rend pas.
         var steps = stepRuns.OrderBy(r => r.StepIndex).ThenBy(r => r.StartedAt)

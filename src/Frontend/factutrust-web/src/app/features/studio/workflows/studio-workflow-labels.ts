@@ -287,12 +287,6 @@ export const STUDIO_WORKFLOW_LABELS = {
     started: 'Workflow lancé.',
     quota: 'Limite de 200 instances atteinte pour cet enregistrement.',
     empty: 'Aucun workflow exécuté sur cet enregistrement.',
-    columns: {
-      workflow: 'Workflow',
-      status: 'Statut',
-      currentStep: 'Étape courante',
-      startedBy: 'Démarré par'
-    },
     // 4.4h2 (H-3, ajout additif) — les clés déjà définies en 4.4a1 (`label`, `launch`, `run`
     // = « Lancer », `started`, `empty` = « Aucun workflow exécuté sur cet enregistrement. »…)
     // gardent leur libellé d'origine ; l'onglet n'utilise que les clés plates ci-dessous
