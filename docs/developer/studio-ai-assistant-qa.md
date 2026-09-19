@@ -1175,6 +1175,10 @@ création ; à corriger au lot ★ (plan C7) : ne pas le compter comme un échec
 - Portée automatisée : Infra `StudioAiWorkflowSpecTests.Keeps_scheduled_workflows_with_cron_and_filters`,
   `StudioAiWorkflowSpecTests.Parses_a_scheduled_only_plan_with_the_french_alias`,
   `StudioAiWorkflowPlannerTests.Review_blocks_a_scheduled_workflow_without_a_valid_cron`.
+- **Écart connu (prompt)** : la règle 14 du prompt StudioBuilder (`AiContextBuilder.cs`) dit encore « pas de déclencheur
+  planifié » (fait `Workflow_rule_14_stays_short_and_names_no_scheduled_trigger`) alors que l'outil accepte `scheduled`
+  avec cron : le modèle **conserve** un planifié demandé mais ne le propose pas de lui-même — décision produit signalée
+  (D-47-73), hors lot ★. Ne pas compter comme un échec de cette section.
 
 ### 127. `POST workflows/{id}/test` : simulation pure
 

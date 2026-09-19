@@ -190,7 +190,7 @@ Aucune donnée existante n'est modifiée : les quatre tables sont nouvelles. Le 
 
 Si l'onglet **Historique** d'une fiche Studio (`GET /api/studio/records/{entityKey}/{id}/history`, 4.7h2) répond correctement mais **lentement** sur un tenant dont la table `AuditLogs` est volumineuse :
 
-- **Symptôme :** aucune erreur SQL ni HTTP — la requête filtre `AuditLogs` sur `EntityType = 'CustomRecord'` et `EntityId`, triée par `CreatedAt` décroissant ; sans l'index, SQL Server balaye la table (plan d'exécution : *Clustered Index Scan* sur `AuditLogs`).
+- **Symptôme :** aucune erreur SQL ni HTTP — la requête filtre `AuditLogs` sur `EntityType = 'CustomRecord'` et `EntityId`, triée par `CreatedAt` décroissant ; sans l'index, aucun index existant ne couvre le couple (`EntityType`, `EntityId`) : plan avec lecture large (scan, ou seek sur `IX_AuditLogs_EntityType` suivi d'un *Key Lookup* massif) puis tri.
 - **Cause :** la migration tenant `20260918100000_AddAuditLogsEntityHistoryIndex_Tenant` (programme Studio IA « v1.1 », PR #171) n'est pas appliquée. Elle crée le seul index **non unique** `IX_AuditLogs_EntityHistory` sur `AuditLogs (EntityType, EntityId, CreatedAt)` ; elle ne touche à aucune donnée ni à aucune colonne. `Up` et `Down` sont idempotents (`IF NOT EXISTS` / `IF EXISTS`), donc rejouables sans erreur.
 
 ### Solution

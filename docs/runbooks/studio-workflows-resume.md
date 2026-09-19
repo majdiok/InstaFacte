@@ -48,15 +48,20 @@ Garde commune : si `Ollama:EnableStudioWorkflows` est `false`, chaque job journa
   « définition absente ou non planifiée — job retiré ») ; filtres illisibles ⇒ `Warning` « tick ignoré » ; sinon
   balayage des enregistrements filtrés par lot et **une instance système par fiche** (`StartedBy = null` — la
   reprise sans impersonation est gérée par le runner). Une fiche ayant déjà une instance **ouverte** de ce workflow
-  (ou de sa chaîne) est ignorée ; le quota `MaxWorkflowInstancesPerRecord` s'applique ; une fiche en erreur
+  (quelle qu'en soit l'origine, `HasOpenInstanceInChainAsync(…, originInstanceId: null)`) est ignorée ; une fiche
+  dont l'instance est **terminée** et qui correspond encore aux filtres est **relancée** (le filtre doit exprimer
+  l'éligibilité) ; le quota `MaxWorkflowInstancesPerRecord` (instances **ouvertes**) s'applique ; une fiche en erreur
   n'interrompt pas les autres.
 - **Lecture des compteurs** (`Information`, par tick) : `Studio workflow planifié {WorkflowId} (tenant {TenantId}) :
-  {Scanned} enregistrement(s) balayé(s), {Started} instance(s) démarrée(s), {Skipped} ignorée(s), {Failed} échouée(s)`.
+  {Scanned} enregistrement(s) balayé(s), {Started} instance(s) démarrée(s), {Skipped} ignorée(s), {Failed} échec(s).`.
   `Warning` « lot de {Take} atteint sur {Total} enregistrement(s) correspondant(s) — la suite au prochain tick » :
-  plus de fiches que `StudioWorkflowScheduledBatchSize` — normal sur un premier passage, à surveiller si permanent
-  (augmenter le lot, resserrer les filtres ou espacer le cron). `Warning` « démarrage impossible {DefinitionId}
+  plus de fiches que `StudioWorkflowScheduledBatchSize`. Attention : chaque tick relit les **`Take` fiches les plus
+  récentes** correspondant aux filtres (tri par défaut `CreatedAt DESC`, sans décalage) — « la suite » n'est atteinte
+  que lorsque les premières sortent des filtres. Normal sur un premier passage, à surveiller si permanent : faire
+  sortir les fiches traitées des filtres (étape `update_field`), resserrer les filtres ou augmenter le lot ; espacer
+  le cron ne change rien. `Warning` « démarrage impossible {DefinitionId}
   {RecordId} » : une fiche isolée en échec (compteur `Failed`).
-- **Inventaire des jobs** (SQL, schéma Hangfire `hangfire`) :
+- **Inventaire des jobs** (SQL sur la base **master** — `MasterConnection`, `Program.cs` —, schéma Hangfire `hangfire`) :
 
   ```sql
   SELECT s.[Value] AS JobId, h.[Field], h.[Value]
