@@ -285,6 +285,28 @@ export const STUDIO_WORKFLOW_LABELS = {
     openInstance: 'Voir l\'instance'
   },
 
+  /** 4.7c2 — dialogue « Tester sur un enregistrement » (simulation pure, 4.7c1). */
+  test: {
+    button: 'Tester sur un enregistrement',
+    saveFirst: 'Enregistrez d\u2019abord pour tester.',
+    dialogTitle: 'Tester le workflow',
+    banner: 'Simulation — aucune donnée n\u2019a été écrite.',
+    searchPlaceholder: 'Rechercher un enregistrement…',
+    searching: 'Recherche…',
+    noRecords: 'Aucun enregistrement.',
+    run: 'Lancer le test',
+    error: 'La simulation a échoué.',
+    rendered: 'Valeurs rendues',
+    evaluatedSuffix: 'étape(s) réellement évaluée(s)',
+    suspendedSuffix: 'le workflow s\u2019arrêterait en attente',
+    verdicts: {
+      wouldRun: 'Exécutée',
+      skipped: 'Sautée',
+      wouldSuspend: 'En attente',
+      wouldFail: 'En échec'
+    }
+  },
+
   recordTab: {
     label: 'Workflows',
     launch: 'Lancer un workflow',
