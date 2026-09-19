@@ -52,6 +52,8 @@ public sealed class StudioWorkflowFeaturesTests
     private readonly Mock<ICurrentUser> _currentUser = new();
     private readonly Mock<IStudioWorkflowEngine> _engine = new(MockBehavior.Strict);
     private readonly Mock<IStudioUserNameResolver> _userNames = new(MockBehavior.Strict);
+    // 4.7b2 / D-47-B03 : ordonnancement (lâche — les faits dédiés vérifient les appels).
+    private readonly Mock<IStudioWorkflowScheduleService> _schedule = new();
 
     public StudioWorkflowFeaturesTests()
     {
@@ -125,16 +127,16 @@ public sealed class StudioWorkflowFeaturesTests
     }
 
     private CreateWorkflowCommandHandler CreateHandler() =>
-        new(_workflows.Object, _entities.Object, _fields.Object, _quota.Object, _audit.Object, _currentUser.Object);
+        new(_workflows.Object, _entities.Object, _fields.Object, _quota.Object, _audit.Object, _currentUser.Object, _schedule.Object);
 
     private UpdateWorkflowCommandHandler UpdateHandler() =>
-        new(_workflows.Object, _entities.Object, _fields.Object, _audit.Object, _currentUser.Object);
+        new(_workflows.Object, _entities.Object, _fields.Object, _audit.Object, _currentUser.Object, _schedule.Object);
 
     private ToggleWorkflowCommandHandler ToggleHandler() =>
-        new(_workflows.Object, _audit.Object, _currentUser.Object);
+        new(_workflows.Object, _audit.Object, _currentUser.Object, _schedule.Object);
 
     private DeleteWorkflowCommandHandler DeleteHandler() =>
-        new(_workflows.Object, _engine.Object, _audit.Object, _currentUser.Object, NullLogger<DeleteWorkflowCommandHandler>.Instance);
+        new(_workflows.Object, _engine.Object, _audit.Object, _currentUser.Object, NullLogger<DeleteWorkflowCommandHandler>.Instance, _schedule.Object);
 
     private DuplicateWorkflowCommandHandler DuplicateHandler() =>
         new(_workflows.Object, _quota.Object, _audit.Object, _currentUser.Object);
@@ -246,6 +248,69 @@ public sealed class StudioWorkflowFeaturesTests
 
         _workflows.Verify(w => w.AddDefinitionAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<CancellationToken>()), Times.Never);
         VerifyAudit("Studio.Workflow.Created", Times.Never());
+        _schedule.Verify(s => s.SyncDefinitionAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // 4.7b2 / D-47-B03 — l'ordonnancement est synchronisé aux écritures (comportement Hangfire : StudioWorkflowScheduleServiceTests).
+    [Fact]
+    public async Task Create_syncs_the_schedule_after_the_write()
+    {
+        SetupCreateRepository();
+
+        var result = await CreateHandler().Handle(new CreateWorkflowCommand(Entity.Id, Request()), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        _schedule.Verify(s => s.SyncDefinitionAsync(
+            It.Is<StudioWorkflowDefinition>(d => d.Key == "relance"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_syncs_the_schedule_after_a_successful_write()
+    {
+        var def = Definition();
+        SetupDefinition(def, openInstances: 1);
+        var token = Convert.ToBase64String(RowVersion1);
+        _workflows.Setup(w => w.UpdateDefinitionWithConcurrencyAsync(def, It.Is<byte[]>(b => b.SequenceEqual(RowVersion1)), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var updated = await UpdateHandler().Handle(
+            new UpdateWorkflowCommand(def.Id, Request(rowVersion: token, name: "Relance v2")), CancellationToken.None);
+
+        Assert.True(updated.IsSuccess, updated.Error.Description);
+        _schedule.Verify(s => s.SyncDefinitionAsync(def, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Toggle_syncs_the_schedule_once_per_effective_change()
+    {
+        var def = Definition(isActive: true);
+        SetupDefinition(def, openInstances: 0);
+        _workflows.Setup(w => w.UpdateDefinitionWithConcurrencyAsync(def, null, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var toggled = await ToggleHandler().Handle(new ToggleWorkflowCommand(def.Id, IsActive: false), CancellationToken.None);
+        Assert.True(toggled.IsSuccess, toggled.Error.Description);
+        _schedule.Verify(s => s.SyncDefinitionAsync(
+            It.Is<StudioWorkflowDefinition>(d => !d.IsActive), It.IsAny<CancellationToken>()), Times.Once);
+
+        // Idempotent : même état ⇒ aucune écriture, aucune synchronisation supplémentaire.
+        var again = await ToggleHandler().Handle(new ToggleWorkflowCommand(def.Id, IsActive: false), CancellationToken.None);
+        Assert.True(again.IsSuccess);
+        _schedule.Verify(s => s.SyncDefinitionAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Delete_removes_the_scheduled_job()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        _workflows.Setup(w => w.UpdateDefinitionWithConcurrencyAsync(def, null, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _workflows.Setup(w => w.ListOpenInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<StudioWorkflowInstance>());
+
+        var deleted = await DeleteHandler().Handle(new DeleteWorkflowCommand(def.Id), CancellationToken.None);
+
+        Assert.True(deleted.IsSuccess, deleted.Error.Description);
+        _schedule.Verify(s => s.RemoveDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

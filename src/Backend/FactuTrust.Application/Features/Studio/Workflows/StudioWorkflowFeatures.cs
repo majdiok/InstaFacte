@@ -401,6 +401,7 @@ public sealed class CreateWorkflowCommandHandler : IRequestHandler<CreateWorkflo
     private readonly IStudioQuotaService _quota;
     private readonly IAuditService _audit;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioWorkflowScheduleService _schedule;
 
     public CreateWorkflowCommandHandler(
         IStudioWorkflowRepository workflows,
@@ -408,7 +409,8 @@ public sealed class CreateWorkflowCommandHandler : IRequestHandler<CreateWorkflo
         ICustomFieldRepository fields,
         IStudioQuotaService quota,
         IAuditService audit,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IStudioWorkflowScheduleService schedule)
     {
         _workflows = workflows;
         _entities = entities;
@@ -416,6 +418,7 @@ public sealed class CreateWorkflowCommandHandler : IRequestHandler<CreateWorkflo
         _quota = quota;
         _audit = audit;
         _currentUser = currentUser;
+        _schedule = schedule;
     }
 
     public async Task<Result<WorkflowDefinitionDto>> Handle(CreateWorkflowCommand command, CancellationToken cancellationToken)
@@ -464,6 +467,9 @@ public sealed class CreateWorkflowCommandHandler : IRequestHandler<CreateWorkflo
             },
             cancellationToken);
 
+        // 4.7b2 / D-47-B03 : ordonnancement synchronisé à l'écriture (best-effort — jamais de 500 métier).
+        await _schedule.SyncDefinitionAsync(definition, cancellationToken);
+
         return Result.Success(StudioWorkflowMapping.ToDto(definition, 0));
     }
 }
@@ -479,19 +485,22 @@ public sealed class UpdateWorkflowCommandHandler : IRequestHandler<UpdateWorkflo
     private readonly ICustomFieldRepository _fields;
     private readonly IAuditService _audit;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioWorkflowScheduleService _schedule;
 
     public UpdateWorkflowCommandHandler(
         IStudioWorkflowRepository workflows,
         ICustomEntityRepository entities,
         ICustomFieldRepository fields,
         IAuditService audit,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IStudioWorkflowScheduleService schedule)
     {
         _workflows = workflows;
         _entities = entities;
         _fields = fields;
         _audit = audit;
         _currentUser = currentUser;
+        _schedule = schedule;
     }
 
     public async Task<Result<WorkflowDefinitionDto>> Handle(UpdateWorkflowCommand command, CancellationToken cancellationToken)
@@ -561,6 +570,9 @@ public sealed class UpdateWorkflowCommandHandler : IRequestHandler<UpdateWorkflo
             },
             cancellationToken);
 
+        // 4.7b2 / D-47-B03 : cron / actif / déclencheur ont pu changer ⇒ synchronisation systématique.
+        await _schedule.SyncDefinitionAsync(definition, cancellationToken);
+
         var open = await _workflows.CountOpenInstancesForDefinitionAsync(tenantId, definition.Id, cancellationToken);
         return Result.Success(StudioWorkflowMapping.ToDto(definition, open));
     }
@@ -575,12 +587,14 @@ public sealed class ToggleWorkflowCommandHandler : IRequestHandler<ToggleWorkflo
     private readonly IStudioWorkflowRepository _workflows;
     private readonly IAuditService _audit;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioWorkflowScheduleService _schedule;
 
-    public ToggleWorkflowCommandHandler(IStudioWorkflowRepository workflows, IAuditService audit, ICurrentUser currentUser)
+    public ToggleWorkflowCommandHandler(IStudioWorkflowRepository workflows, IAuditService audit, ICurrentUser currentUser, IStudioWorkflowScheduleService schedule)
     {
         _workflows = workflows;
         _audit = audit;
         _currentUser = currentUser;
+        _schedule = schedule;
     }
 
     public async Task<Result<WorkflowDefinitionDto>> Handle(ToggleWorkflowCommand command, CancellationToken cancellationToken)
@@ -616,6 +630,9 @@ public sealed class ToggleWorkflowCommandHandler : IRequestHandler<ToggleWorkflo
             new { definition.IsActive },
             cancellationToken);
 
+        // 4.7b2 / D-47-B03 : active un workflow planifié (job enregistré) ou le suspend (job retiré).
+        await _schedule.SyncDefinitionAsync(definition, cancellationToken);
+
         return Result.Success(StudioWorkflowMapping.ToDto(definition, open));
     }
 }
@@ -631,19 +648,22 @@ public sealed class DeleteWorkflowCommandHandler : IRequestHandler<DeleteWorkflo
     private readonly IAuditService _audit;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<DeleteWorkflowCommandHandler> _logger;
+    private readonly IStudioWorkflowScheduleService _schedule;
 
     public DeleteWorkflowCommandHandler(
         IStudioWorkflowRepository workflows,
         IStudioWorkflowEngine engine,
         IAuditService audit,
         ICurrentUser currentUser,
-        ILogger<DeleteWorkflowCommandHandler> logger)
+        ILogger<DeleteWorkflowCommandHandler> logger,
+        IStudioWorkflowScheduleService schedule)
     {
         _workflows = workflows;
         _engine = engine;
         _audit = audit;
         _currentUser = currentUser;
         _logger = logger;
+        _schedule = schedule;
     }
 
     public async Task<Result<WorkflowDeletionResultDto>> Handle(DeleteWorkflowCommand command, CancellationToken cancellationToken)
@@ -693,6 +713,9 @@ public sealed class DeleteWorkflowCommandHandler : IRequestHandler<DeleteWorkflo
             old,
             new { CancelledInstances = cancelled },
             cancellationToken);
+
+        // 4.7b2 / D-47-B03 : le job planifié est retiré avec la définition.
+        await _schedule.RemoveDefinitionAsync(tenantId, definition.Id, cancellationToken);
 
         return Result.Success(new WorkflowDeletionResultDto(cancelled));
     }
