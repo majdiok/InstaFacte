@@ -72,6 +72,7 @@ describe('StudioWorkflowDesignerComponent', () => {
     });
     const router = TestBed.inject(Router);
     spyOn(router, 'navigate').and.resolveTo(true);
+    spyOn(TestBed.inject(MessageService), 'add'); // 4.6d1 : vérifie les toasts sans les rendre
     fixture = TestBed.createComponent(StudioWorkflowDesignerComponent);
     component = fixture.componentInstance;
     httpMock = TestBed.inject(HttpTestingController);
@@ -107,6 +108,19 @@ describe('StudioWorkflowDesignerComponent', () => {
     expect(fixture.debugElement.query(By.css('[data-testid="wf-validate"]'))).not.toBeNull();
     expect(fixture.debugElement.query(By.css('[data-testid="wf-save"]'))).not.toBeNull();
     expect(fixture.debugElement.query(By.css('[data-testid="wf-toggle"]'))).not.toBeNull();
+  });
+
+  it('héberge le p-toast des messages de la page (D-44-95) et affiche le succès après enregistrement', () => {
+    expect(fixture.debugElement.query(By.css('p-toast'))).not.toBeNull();
+
+    component.save();
+    httpMock.expectOne(r => r.method === 'POST' && r.url === `${API}/entities/e1/workflows/validate`)
+      .flush({ success: true, data: { isValid: true, errors: [], warnings: [], stepCount: 1 }, message: null, error: null });
+    httpMock.expectOne(r => r.method === 'PUT' && r.url === `${API}/workflows/w1`)
+      .flush({ success: true, data: { ...workflow, version: 2, rowVersion: 'rv2' }, message: null, error: null });
+
+    const toast = TestBed.inject(MessageService);
+    expect((toast.add as jasmine.Spy).calls.allArgs().some(args => args[0].severity === 'success')).toBeTrue();
   });
 
   it('enchaîne validate puis update avec rowVersion et remonte les erreurs par étape sans enregistrer si invalide', () => {

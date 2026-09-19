@@ -812,8 +812,8 @@ public sealed class StudioWorkflowFeaturesTests
         var now = DateTime.UtcNow;
         var runB = StudioWorkflowStepRun.Record(Tid, instance.Id, 1, "maj", "update_field", StudioWorkflowStepRunStatus.Succeeded,
             StudioWorkflowStepOutcome.Continue, null, """{ "updated": ["montant"] }""", null, now.AddSeconds(1), now.AddSeconds(2), Uid);
-        var runA = StudioWorkflowStepRun.Record(Tid, instance.Id, 0, "verif", "condition", StudioWorkflowStepRunStatus.Succeeded,
-            StudioWorkflowStepOutcome.Continue, null, "pas-un-objet", null, now, now.AddSeconds(1), Uid);
+        var runA = StudioWorkflowStepRun.Record(Tid, instance.Id, 0, "verif", "condition", StudioWorkflowStepRunStatus.Failed,
+            null, null, "pas-un-objet", "erp indisponible", now, now.AddSeconds(1), Uid);
         _workflows.Setup(w => w.ListStepRunsAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { runB, runA });
 
         var approved = StudioWorkflowApproval.Create(Tid, instance.Id, "validation", null, "Administrators", "Valider ?", null, null);
@@ -840,8 +840,11 @@ public sealed class StudioWorkflowFeaturesTests
         Assert.Equal("bob@exemple.fr", detail.Context["startedBy"]!["email"]!.GetValue<string>());
         Assert.Equal("ok", detail.Context["results"]!["erp"]!["raw"]!.GetValue<string>());
 
-        // Étapes triées par index ; Result reparsé (objet) ou null (JSON non objet).
+        // Étapes triées par index ; Result reparsé (objet) ou null (JSON non objet). Route de conception :
+        // Result et Error servis intacts (le nullage ne concerne que la portée lecteur, D-46-B02).
         Assert.Equal(new[] { 0, 1 }, detail.Steps.Select(s => s.StepIndex).ToArray());
+        Assert.Equal("failed", detail.Steps[0].Status);
+        Assert.Equal("erp indisponible", detail.Steps[0].Error);
         Assert.Null(detail.Steps[0].Result);
         Assert.Equal("montant", detail.Steps[1].Result!["updated"]![0]!.GetValue<string>());
         Assert.Equal("succeeded", detail.Steps[1].Status);

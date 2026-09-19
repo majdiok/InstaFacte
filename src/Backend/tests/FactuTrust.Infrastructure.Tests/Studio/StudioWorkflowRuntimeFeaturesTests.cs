@@ -122,9 +122,9 @@ public class StudioWorkflowRuntimeFeaturesTests
             """, 0, null);
         var now = DateTime.UtcNow;
         var runIndex1 = StudioWorkflowStepRun.Record(TenantId, instance.Id, 1, "maj", "update_field", StudioWorkflowStepRunStatus.Succeeded,
-            StudioWorkflowStepOutcome.Continue, null, null, null, now.AddSeconds(1), now.AddSeconds(2), Uid);
-        var runIndex0 = StudioWorkflowStepRun.Record(TenantId, instance.Id, 0, "verif", "condition", StudioWorkflowStepRunStatus.Succeeded,
-            StudioWorkflowStepOutcome.Continue, null, null, null, now, now.AddSeconds(1), Uid);
+            StudioWorkflowStepOutcome.Continue, null, """{ "erp": { "raw": "confidentiel-etape" } }""", null, now.AddSeconds(1), now.AddSeconds(2), Uid);
+        var runIndex0 = StudioWorkflowStepRun.Record(TenantId, instance.Id, 0, "verif", "condition", StudioWorkflowStepRunStatus.Failed,
+            null, null, null, "pile interne erp", now, now.AddSeconds(1), Uid);
         var pending = StudioWorkflowApproval.Create(TenantId, instance.Id, "validation", Uid, null, "Accord ?", null, null);
 
         SetupReadPermission();
@@ -144,6 +144,9 @@ public class StudioWorkflowRuntimeFeaturesTests
         Assert.Equal(instance.Id, detail.Instance.Id);
         Assert.Equal(definition.Key, detail.Instance.WorkflowKey);
         Assert.Equal(new[] { 0, 1 }, detail.Steps.Select(st => st.StepIndex).ToArray());
+        // 4.6b2 / D-46-B02 : les sorties (même tronquées) et les erreurs internes des étapes ne sortent
+        // pas en portée lecteur (le tiroir ne les rend pas).
+        Assert.All(detail.Steps, st => { Assert.Null(st.Result); Assert.Null(st.Error); });
         Assert.Single(detail.Approvals);
         Assert.True(detail.Context.ContainsKey("previous"));
         Assert.Null(detail.Context["previous"]);

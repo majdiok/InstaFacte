@@ -117,7 +117,8 @@ const DETAIL_LABELS = {
           <dt>{{ L.instances.startedAt }}</dt>
           <dd>{{ i.startedAt | date:'dd/MM/yyyy HH:mm' }}</dd>
           <dt>{{ L.instances.startedBy }}</dt>
-          <dd>{{ i.startedBy ?? localLabels.system }}</dd>
+          <!-- 4.6c1 (D-46-F03) : nom lisible (4.6b1), guid en repli, « Système » si null. -->
+          <dd [attr.data-testid]="'wf-detail-started-by-' + i.id">{{ i.startedByName ?? i.startedBy ?? localLabels.system }}</dd>
           <dt>{{ L.designer.trigger }}</dt>
           <dd>{{ L.triggers[i.trigger] }}</dd>
           <dt>{{ L.instances.currentStep }}</dt>

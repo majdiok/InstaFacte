@@ -886,7 +886,7 @@ public sealed class ListWorkflowInstancesQueryHandler : IRequestHandler<ListWork
 /// partagé par la route de conception (<see cref="GetWorkflowInstanceQueryHandler"/>) et la route runtime lecteur (4.5b1, D-45-05).
 /// En portée lecteur (<paramref name="readerScope"/>), le contexte est en outre expurgé de l'e-mail du lanceur et des sorties
 /// brutes des étapes (<c>results</c>, <c>vars</c>) : un profil <c>custom_records:read</c> n'a pas à recevoir ces données
-/// que le tiroir ne rend pas (D-45-27 ; les résultats tronqués restent dans <c>Steps[].Result</c>).
+/// que le tiroir ne rend pas (D-45-27 ; 4.6b2 / D-46-B02 : <c>Steps[].Result</c> et <c>Steps[].Error</c> sont aussi nullés).
 /// </summary>
 internal static class StudioWorkflowInstanceDetailBuilder
 {
@@ -914,9 +914,18 @@ internal static class StudioWorkflowInstanceDetailBuilder
         if (userNames is not null)
             summary = await StudioWorkflowStartedByNameSupport.ResolveOneAsync(userNames, tenantId, summary, cancellationToken);
 
+        // Portée lecteur (D-46-B02, lève le résiduel de D-45-27) : les sorties (même tronquées) et les erreurs
+        // internes des étapes ne sortent pas — le tiroir ne les rend pas.
+        var steps = stepRuns.OrderBy(r => r.StepIndex).ThenBy(r => r.StartedAt)
+            .Select(r =>
+            {
+                var dto = StudioWorkflowMapping.ToDto(r);
+                return readerScope ? dto with { Result = null, Error = null } : dto;
+            });
+
         return new WorkflowInstanceDetailDto(
             summary,
-            stepRuns.OrderBy(r => r.StepIndex).ThenBy(r => r.StartedAt).Select(StudioWorkflowMapping.ToDto).ToList(),
+            steps.ToList(),
             approvals.Select(StudioWorkflowMapping.ToDto).ToList(),
             context);
     }
