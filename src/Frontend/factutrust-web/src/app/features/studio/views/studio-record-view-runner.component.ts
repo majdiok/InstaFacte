@@ -22,6 +22,8 @@ interface RunRequestParams {
   page: number;
   pageSize: number;
   search: string;
+  /** 4.7v2 : mode aperçu (concepteur) — POST /views/preview avec le brouillon, sans id de vue. */
+  preview: boolean;
   rangeStart?: string | null;
   rangeEnd?: string | null;
 }
@@ -125,6 +127,13 @@ export class StudioRecordViewRunnerComponent {
   readonly search = input('');
   /** Tronque le rendu côté client (réutilisation 2.5c) ; `null` = pas de troncature client. */
   readonly previewLimit = input<number | null>(null);
+  /**
+   * 4.7v2 (R3) : mode aperçu du concepteur — exécute le brouillon via `POST …/views/preview`
+   * (sans id de vue, rien de persisté) au lieu de `run`. L'erreur réseau ne toaste PAS en
+   * mode preview (une frappe en cours de définition ne doit pas toaster) ; l'état d'erreur
+   * inline avec « Réessayer » reste.
+   */
+  readonly preview = input(false);
 
   readonly editRow = output<DynamicRow>();
   readonly deleteRow = output<DynamicRow>();
@@ -201,22 +210,34 @@ export class StudioRecordViewRunnerComponent {
         this.loading.set(true);
         this.error.set(false);
         this.fetched = true;
-        return this.viewsService
-          .runRecordView(params.entityKey, params.view.id, {
-            page: params.page,
-            pageSize: params.pageSize,
-            search: params.search.trim() || null,
-            rangeStart: params.rangeStart ?? null,
-            rangeEnd: params.rangeEnd ?? null
-          })
-          .pipe(catchError(() => of(null)));
+        // Mode aperçu (4.7v2) : le brouillon part dans le corps, sans id — ni search ni extraFilters.
+        const request$ = params.preview
+          ? this.viewsService.previewRecordView(params.entityKey, {
+              mode: params.view.mode,
+              definition: params.view.definition,
+              page: params.page,
+              pageSize: params.pageSize,
+              rangeStart: params.rangeStart ?? null,
+              rangeEnd: params.rangeEnd ?? null
+            })
+          : this.viewsService.runRecordView(params.entityKey, params.view.id, {
+              page: params.page,
+              pageSize: params.pageSize,
+              search: params.search.trim() || null,
+              rangeStart: params.rangeStart ?? null,
+              rangeEnd: params.rangeEnd ?? null
+            });
+        return request$.pipe(catchError(() => of(null)));
       }),
       takeUntilDestroyed()
     ).subscribe(res => {
       this.loading.set(false);
       if (res === null) {
         this.error.set(true);
-        this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.labels.views.error });
+        // 4.7v2 : en mode aperçu, pas de toast à la frappe — l'état d'erreur inline suffit.
+        if (!this.preview()) {
+          this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.labels.views.error });
+        }
         return;
       }
       if (res.success) {
@@ -303,6 +324,6 @@ export class StudioRecordViewRunnerComponent {
       rangeStart = this.calendarRange.rangeStart;
       rangeEnd = this.calendarRange.rangeEnd;
     }
-    this.runRequests$.next({ view: v, entityKey: key, page, pageSize, search: this.search(), rangeStart, rangeEnd });
+    this.runRequests$.next({ view: v, entityKey: key, page, pageSize, search: this.search(), preview: this.preview(), rangeStart, rangeEnd });
   }
 }

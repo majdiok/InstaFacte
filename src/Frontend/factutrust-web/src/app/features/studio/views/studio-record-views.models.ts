@@ -83,6 +83,20 @@ export interface RecordViewRunRequest {
   rangeEnd?: string | null;
 }
 
+/**
+ * Miroir de `PreviewRecordViewRequest` (4.7v1, R3) : exécution d'un brouillon de définition,
+ * sans identifiant de vue. Ni `search` ni `extraFilters` — le concepteur édite les filtres
+ * de la définition. Corps camelCase, `mode` en chaîne PascalCase (JsonStringEnumConverter global).
+ */
+export interface RecordViewPreviewRequest {
+  mode: RecordViewMode;
+  definition: RecordViewDefinition;
+  page?: number;
+  pageSize?: number | null;
+  rangeStart?: string | null;
+  rangeEnd?: string | null;
+}
+
 export interface RecordViewKanbanGroupDto {
   value: string | null;
   label: string;

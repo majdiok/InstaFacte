@@ -74,9 +74,17 @@ describe('StudioRecordViewDesignerComponent', () => {
     fixture.detectChanges();
   }
 
-  /** Vide la requête /run automatique de l'aperçu R3 quand le runner est monté (édition). */
+  /** Attente réelle (anti-rebond 300 ms de l'aperçu) — les tests d'aperçu sont en async réel
+   *  (zone/fakeAsync annule les XHR en attente pendant tick() : motif retenu = sleep + drain). */
+  const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+  const previewResult = (mode = 'List', pageSize = 25) => ({
+    success: true, data: { mode, items: [], total: 0, page: 1, pageSize, groups: mode === 'Kanban' ? [] : null, events: null, truncated: false }, message: null, errors: []
+  });
+
+  /** Vide les requêtes d'aperçu (4.7v2 : POST /views/preview ; /run n'est plus appelé par le concepteur). */
   function drainPreviewRun(): void {
-    httpMock.match(req => req.url.endsWith('/run')).forEach(req => {
+    httpMock.match(req => req.url.endsWith('/run') || req.url.endsWith('/views/preview')).forEach(req => {
       if (!req.cancelled) req.flush(
         { success: true, data: { mode: 'List', items: [], total: 0, page: 1, pageSize: 25, groups: null, events: null, truncated: false }, message: null, errors: [] });
     });
@@ -91,7 +99,14 @@ describe('StudioRecordViewDesignerComponent', () => {
     expect(component.availableColumnOptions().map(o => o.key)).toEqual(['nom', 'statut', 'debut', 'createdAt', 'updatedAt']);
     expect(component.canSave()).toBeFalse();
     expect(fixture.debugElement.query(By.css('[data-testid="designer-delete"]'))).toBeNull();
-    expect(fixture.nativeElement.textContent).toContain(STUDIO_RUNTIME_LABELS.designer.previewHint);
+    // 4.7v2 (R3) : l'aperçu en direct est monté dès la création et poste /views/preview (jamais /run).
+    expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).not.toBeNull();
+    expect(fixture.nativeElement.textContent).toContain(STUDIO_RUNTIME_LABELS.designer.previewDraft);
+    const mountPreview = httpMock.match(`${API}/views/preview`);
+    expect(mountPreview.length).toBe(1);
+    expect(mountPreview[0].request.method).toBe('POST');
+    expect(mountPreview[0].request.body.mode).toBe('List');
+    expect(httpMock.match(r => r.url.endsWith('/run')).length).toBe(0);
 
     component.onNameChange('Vue à planifier 2026');
     expect(component.key()).toBe('vue_a_planifier_2026');
@@ -172,53 +187,104 @@ describe('StudioRecordViewDesignerComponent', () => {
     component.patchCalendar({ endFieldKey: 'debut', titleFieldKey: 'nom', colorFieldKey: 'statut' });
     expect(component.modeValid()).toBeTrue();
     expect(component.definition().calendar?.startFieldKey).toBe('debut');
-    expect(component.previewView()).toBeNull();
-    expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).toBeNull();
+    // 4.7v2 : le brouillon est prévisualisable en création — placeholder 'apercu', jamais émis.
+    expect(component.previewView()).not.toBeNull();
+    expect(component.previewView()?.id).toBe('apercu');
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).not.toBeNull();
   });
 
-  it('édition : l’aperçu R3 rend le runner et « Actualiser » poste /run (une frappe ne redispatche pas)', async () => {
+  it('édition : l’aperçu en direct poste /views/preview ; une frappe reprogramme après 300 ms ; « Actualiser » force l’exécution', async () => {
     setup('v1');
     await fixture.whenStable();
     fixture.detectChanges();
     expect(component.previewView()?.id).toBe('v1');
-    const refresh = fixture.debugElement.query(By.css('[data-testid="designer-preview-refresh"]'));
-    expect(refresh).not.toBeNull();
-    // Montage : un seul /run automatique (le brouillon initial).
+    expect(fixture.debugElement.query(By.css('[data-testid="designer-preview-refresh"]'))).not.toBeNull();
+    // Montage : un seul /views/preview automatique (le brouillon initial), jamais /run.
+    expect(httpMock.match(r => r.url.endsWith('/run')).length).toBe(0);
     drainPreviewRun();
 
-    // Modifier le brouillon ne relance PAS /run (seul « Actualiser l’aperçu » le fait).
-    component.onNameChange('Actives (brouillon)');
+    // Une modification de la DÉFINITION (pageSize) reprogramme l'aperçu après 300 ms de calme —
+    // aucune requête avant (D-44-86). (Le nom ne fait pas partie de la définition exécutée.)
+    component.pageSize.set(75);
     fixture.detectChanges();
-    await fixture.whenStable();
-    expect(httpMock.match(`${API}/views/v1/run`).length).toBe(0);
+    await sleep(250);
+    expect(httpMock.match(`${API}/views/preview`).length).toBe(0);
+    await sleep(150); // 400 ms > 300 ms : l'anti-rebond a expiré
+    const afterType = httpMock.match(`${API}/views/preview`);
+    expect(afterType.length).toBe(1);
+    expect(afterType[0].request.body.pageSize).toBe(75); // le brouillon, pas la version enregistrée (50)
+    afterType.forEach(r => r.flush(previewResult('List', 75)));
 
     component.refreshPreview(); // (le clic synthétique n'atteint pas l'output `onClick` du p-button)
-    const runs = httpMock.match(`${API}/views/v1/run`);
-    expect(runs.length).toBe(1);
-    const req = runs[0];
-    expect(req.request.method).toBe('POST');
-    expect(req.request.body.pageSize).toBe(50); // mode Liste : pageSize du brouillon
-    req.flush({ success: true, data: { mode: 'List', items: [], total: 0, page: 1, pageSize: 50, groups: null, events: null, truncated: false }, message: null, errors: [] });
+    const forced = httpMock.match(`${API}/views/preview`).filter(r => !r.cancelled && !afterType.includes(r));
+    expect(forced.length).toBe(1);
+    expect(forced[0].request.method).toBe('POST');
+    forced.forEach(r => r.flush(previewResult('List', 50)));
   });
 
-  it('édition : changer de mode masque l’aperçu (le run exécute la définition enregistrée) avec un hint', async () => {
+  it('édition : changer de mode met à jour l’aperçu en direct (plus de masque « version enregistrée »)', async () => {
     setup('v1');
     await fixture.whenStable();
     fixture.detectChanges();
     drainPreviewRun();
     expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).not.toBeNull();
 
+    // onModeChange applique les défauts du mode (regroupement « statut ») ⇒ toujours éligible :
+    // le runner reste monté et /preview repart avec le nouveau mode après l'anti-rebond.
     component.onModeChange('Kanban');
     fixture.detectChanges();
-    expect(component.previewModeChanged()).toBeTrue();
-    expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).toBeNull();
-    expect(fixture.debugElement.nativeElement.textContent).toContain('reflète la version enregistrée');
+    expect(component.modeValid()).toBeTrue();
+    expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).not.toBeNull();
+    expect(fixture.debugElement.nativeElement.textContent).not.toContain('reflète la version enregistrée');
+    await sleep(350);
+    const kanbanPreview = httpMock.match(`${API}/views/preview`).filter(r => !r.cancelled);
+    expect(kanbanPreview.length).toBe(1);
+    expect(kanbanPreview[0].request.body.mode).toBe('Kanban');
+    expect(kanbanPreview[0].request.body.definition.kanban.groupByFieldKey).toBe('statut');
+    kanbanPreview.forEach(r => r.flush(previewResult('Kanban', 200)));
 
     component.onModeChange('List');
     fixture.detectChanges();
-    expect(component.previewModeChanged()).toBeFalse();
-    expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).not.toBeNull();
-    drainPreviewRun();
+    await sleep(350);
+    const listPreview = httpMock.match(`${API}/views/preview`).filter(r => !r.cancelled && !kanbanPreview.includes(r));
+    expect(listPreview.length).toBe(1);
+    expect(listPreview[0].request.body.mode).toBe('List');
+    listPreview.forEach(r => r.flush(previewResult('List', 50)));
+  });
+
+  it('définition invalide (kanban sans regroupement) ⇒ hint, aucune requête d’aperçu émise', async () => {
+    setup(null);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    drainPreviewRun(); // l'exécution de montage (brouillon List valide)
+
+    component.mode.set('Kanban'); // sans groupByFieldKey ⇒ modeValid() faux
+    fixture.detectChanges();
+    expect(component.previewEligible()).toBeFalse();
+    expect(fixture.debugElement.query(By.css('[data-testid="designer-preview-invalid"]'))).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).toBeNull();
+    await sleep(400);
+    expect(httpMock.match(`${API}/views/preview`).length).toBe(0);
+  });
+
+  it('lecture seule (sans droit de conception) ⇒ hint « réservé aux concepteurs », pas de runner', () => {
+    setup(null, false);
+    expect(component.canDesign()).toBeFalse();
+    expect(fixture.debugElement.query(By.css('[data-testid="designer-preview-design-only"]'))).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).toBeNull();
+    expect(httpMock.match(`${API}/views/preview`).length).toBe(0);
+  });
+
+  it('la première exécution vient du montage du runner — l’effet anti-rebond ne la duplique pas', async () => {
+    setup('v1');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const mount = httpMock.match(`${API}/views/preview`);
+    expect(mount.length).toBe(1);
+    mount.forEach(r => r.flush(previewResult('List', 50)));
+    await sleep(450); // bien au-delà des 300 ms : aucune seconde requête sans modification du brouillon
+    expect(httpMock.match(`${API}/views/preview`).filter(r => !r.cancelled).length).toBe(0);
   });
 
   it('POST /views en création puis navigue vers la liste avec ?view=<id>', () => {
