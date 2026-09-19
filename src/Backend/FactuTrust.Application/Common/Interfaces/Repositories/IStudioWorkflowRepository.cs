@@ -48,9 +48,12 @@ public interface IStudioWorkflowRepository
     Task<IReadOnlyList<StudioWorkflowInstance>> ListInstancesForRecordAsync(
         Guid tenantId, Guid recordId, int max, CancellationToken cancellationToken = default);
 
-    /// <summary>Instances d'une définition, les plus récentes d'abord ; <paramref name="max"/> borné à [1, 200].</summary>
+    /// <summary>Page d'instances d'une définition, les plus récentes d'abord ; <paramref name="take"/> borné à [1, 200] (4.7a1 / D-47-B01).</summary>
     Task<IReadOnlyList<StudioWorkflowInstance>> ListInstancesForDefinitionAsync(
-        Guid tenantId, Guid definitionId, int max, CancellationToken cancellationToken = default);
+        Guid tenantId, Guid definitionId, int skip, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>Nombre total d'instances d'une définition (pagination du panneau « Historique », 4.7a1).</summary>
+    Task<int> CountInstancesForDefinitionAsync(Guid tenantId, Guid definitionId, CancellationToken cancellationToken = default);
 
     /// <summary>Instances ouvertes (Running, Waiting, WaitingApproval) d'une définition, les plus récentes d'abord.</summary>
     Task<IReadOnlyList<StudioWorkflowInstance>> ListOpenInstancesForDefinitionAsync(

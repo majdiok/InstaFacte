@@ -117,15 +117,24 @@ public sealed class StudioWorkflowRepository : IStudioWorkflowRepository
     }
 
     public async Task<IReadOnlyList<StudioWorkflowInstance>> ListInstancesForDefinitionAsync(
-        Guid tenantId, Guid definitionId, int max, CancellationToken cancellationToken = default)
+        Guid tenantId, Guid definitionId, int skip, int take, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
         return await context.StudioWorkflowInstances
             .Where(i => i.TenantId == tenantId && i.WorkflowDefinitionId == definitionId)
             .OrderByDescending(i => i.StartedAt)
-            .Take(Math.Clamp(max, 1, 200))
+            .Skip(skip)
+            .Take(Math.Clamp(take, 1, 200))
             .AsNoTracking()
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> CountInstancesForDefinitionAsync(
+        Guid tenantId, Guid definitionId, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.StudioWorkflowInstances
+            .CountAsync(i => i.TenantId == tenantId && i.WorkflowDefinitionId == definitionId, cancellationToken);
     }
 
     public async Task<IReadOnlyList<StudioWorkflowInstance>> ListOpenInstancesForDefinitionAsync(

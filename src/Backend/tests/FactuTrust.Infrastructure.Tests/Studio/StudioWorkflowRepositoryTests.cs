@@ -154,6 +154,44 @@ public sealed class StudioWorkflowRepositoryTests : IClassFixture<StudioWorkflow
         Assert.Equal(all.Select(i => i.StartedAt).OrderByDescending(t => t), all.Select(i => i.StartedAt));
     }
 
+    // 4.7a1 / D-47-B01 — pagination des instances d'une définition (skip/take) + total dédié.
+    [SkippableFact]
+    public async Task Instances_for_definition_are_paginated_newest_first_and_counted()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+
+        var tenantId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
+        var repo = _sql.NewRepository();
+
+        var definition = NewDefinition(tenantId, entityId, "inst_paged");
+        var other = NewDefinition(tenantId, entityId, "inst_paged_other");
+        await repo.AddDefinitionAsync(definition);
+        await repo.AddDefinitionAsync(other);
+
+        var ids = new List<Guid>();
+        for (var i = 0; i < 5; i++)
+        {
+            var instance = NewInstance(tenantId, definition, Guid.NewGuid());
+            await repo.AddInstanceAsync(instance);
+            ids.Add(instance.Id);
+        }
+        await repo.AddInstanceAsync(NewInstance(tenantId, other, Guid.NewGuid())); // hors périmètre : autre définition
+
+        Assert.Equal(5, await repo.CountInstancesForDefinitionAsync(tenantId, definition.Id));
+
+        var page1 = await repo.ListInstancesForDefinitionAsync(tenantId, definition.Id, skip: 0, take: 3);
+        var page2 = await repo.ListInstancesForDefinitionAsync(tenantId, definition.Id, skip: 3, take: 3);
+        Assert.Equal(3, page1.Count);
+        Assert.Equal(2, page2.Count);
+        // L'union des pages = les 5 instances de la définition (celle de l'autre définition n'apparaît jamais).
+        Assert.Equal(ids.ToHashSet(), page1.Concat(page2).Select(i => i.Id).ToHashSet());
+        Assert.Equal(page1.Select(i => i.StartedAt).OrderByDescending(t => t), page1.Select(i => i.StartedAt));
+
+        // take = 0 est borné à 1 (Math.Clamp(take, 1, 200)).
+        Assert.Single(await repo.ListInstancesForDefinitionAsync(tenantId, definition.Id, skip: 0, take: 0));
+    }
+
     [SkippableFact]
     public async Task Has_open_instance_in_chain_detects_running_waiting_and_origin_links()
     {
