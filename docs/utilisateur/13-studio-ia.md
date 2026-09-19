@@ -159,6 +159,19 @@ Dans le **concepteur de table** (hors assistant), modifiez un champ existant et 
 
 ---
 
+## Relier deux tables (plusieurs-à-plusieurs)
+
+Dans le **concepteur de table**, la section **Relations** permet d'ajouter une relation **plusieurs-à-plusieurs** vers une autre table (par exemple *Interventions* ↔ *Techniciens*) : choisissez la table cible, donnez un nom à la relation et, si besoin, un **attribut de liaison** (par exemple *Quantité*) — une information chiffrée portée par chaque lien.
+
+Sur la **fiche d'un enregistrement**, les liens se gèrent à deux endroits :
+
+- sous le formulaire, une **carte de puces** par relation : chaque puce affiche l'enregistrement lié et sa quantité ; ajoutez un lien (recherche + quantité), retirez-le par la croix, ou cliquez la quantité pour la corriger ;
+- dans l'**onglet « Liés »**, la même liste en tableau, avec la quantité affichée, saisie à l'ajout et modifiable en ligne.
+
+Un lien ne peut pas exister en double : l'application affiche « Lien déjà existant. ». Si quelqu'un modifie le lien entre-temps, le message « Modifié entre-temps — liste rechargée. » apparaît et la liste se rafraîchit. Sans droit d'écriture, les puces et quantités restent visibles mais aucune action n'est proposée.
+
+---
+
 ## Les vues enregistrées
 
 Une proposition peut inclure des **vues** (liste, kanban, calendrier). Dans une table, le sélecteur de vue en haut de la liste applique la vue choisie ; le kanban permet de déplacer une carte d'une colonne à l'autre (avec le droit d'écriture), le calendrier place les enregistrements sur leurs dates.

@@ -24,7 +24,8 @@ public static class EntityRelationKinds
 /// <summary>
 /// Crée une relation plusieurs‑à‑plusieurs entre <see cref="SourceEntityId"/> et
 /// <c>Request.TargetEntityId</c> : une table de jonction <see cref="CustomEntityKind.Junction"/> portant
-/// deux champs <see cref="CustomFieldType.RelationCustom"/> requis (source, cible).
+/// deux champs <see cref="CustomFieldType.RelationCustom"/> requis (source, cible), plus un champ
+/// attribut <see cref="CustomFieldType.Number"/> optionnel quand <c>JunctionAttributeLabel</c> est fourni.
 /// Réutilise <see cref="CreateCustomEntityCommand"/> et <see cref="CreateCustomFieldCommand"/> via
 /// MediatR (chemin unique IA / manuel : quotas, audit, index JSON).
 /// </summary>
@@ -100,18 +101,18 @@ public sealed class CreateManyToManyRelationCommandHandler
 
         // (3bis) Junction attribute (v1.1 / D-47-40, R4): optional 3rd Number field. The key is derived
         // from the label and validated BEFORE any write — a validation failure creates nothing at all.
+        var (sourceFieldKey, targetFieldKey) = ResolveFieldKeys(source.Key, target.Key);
         string? attributeKey = null;
         string? attributeLabel = null;
         if (!string.IsNullOrWhiteSpace(req.JunctionAttributeLabel))
         {
             attributeLabel = req.JunctionAttributeLabel.Trim();
             attributeKey = StudioKey.Slugify(attributeLabel);
-            var (guardSourceKey, guardTargetKey) = ResolveFieldKeys(source.Key, target.Key);
             if (attributeKey.Length == 0
                 || !StudioKey.IsValidShape(attributeKey)
                 || StudioKey.IsReservedFieldKey(attributeKey)
-                || string.Equals(attributeKey, guardSourceKey, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(attributeKey, guardTargetKey, StringComparison.OrdinalIgnoreCase))
+                || string.Equals(attributeKey, sourceFieldKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(attributeKey, targetFieldKey, StringComparison.OrdinalIgnoreCase))
                 return Result.Failure<ManyToManyRelationDto>(Error.Validation("junctionAttributeLabel",
                     "Le libellé de l'attribut de liaison ne produit pas une clé de champ valide (ou entre en collision avec un champ de liaison)."));
         }
@@ -142,9 +143,7 @@ public sealed class CreateManyToManyRelationCommandHandler
         // (5) Two required RelationCustom fields, strictly sequential; compensate on failure (7) —
         // on a failed Result AND on an exception (timeout SQL, DbUpdateException, cancellation):
         // otherwise the junction would stay active with 0 or 1 field (hidden from the nav, unprotected
-        // by the pair check).
-        var (sourceFieldKey, targetFieldKey) = ResolveFieldKeys(source.Key, target.Key);
-
+        // by the pair check). Field keys resolved at (3bis).
         Result<CustomFieldDto> sourceFieldResult;
         Result<CustomFieldDto> targetFieldResult;
         Result<CustomFieldDto>? attributeFieldResult = null;

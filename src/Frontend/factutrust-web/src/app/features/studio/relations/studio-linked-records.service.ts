@@ -49,6 +49,34 @@ export function primaryLabel(record: CustomRecord, fields: CustomField[]): strin
 }
 
 /**
+ * Projection jonctions → lignes affichées (libellé résolu ou repli sur l'id tronqué), partagée par
+ * l'onglet « Liés » et l'éditeur de puces de la fiche. Sans attribut de liaison (`attributeKey`
+ * null), la ligne reste STRICTEMENT la v1 (pas de clé `attributeValue`).
+ */
+export function projectLinkedRows(
+  junctions: CustomRecord[], targetFieldKey: string | null | undefined,
+  labelsById: ReadonlyMap<string, string>, attributeKey?: string | null): LinkedRecordRow[] {
+  if (!targetFieldKey) return [];
+  return junctions
+    .map(j => ({ junction: j, targetId: String(j.data?.[targetFieldKey] ?? '') }))
+    .filter(p => p.targetId.length > 0)
+    .map(p => {
+      const row: LinkedRecordRow = {
+        junctionRecordId: p.junction.id,
+        targetId: p.targetId,
+        targetLabel: labelsById.get(p.targetId) ?? p.targetId.slice(0, 8),
+        rowVersion: p.junction.rowVersion,
+        createdAt: p.junction.createdAt
+      };
+      if (attributeKey) {
+        const value = p.junction.data?.[attributeKey];
+        row.attributeValue = typeof value === 'number' || typeof value === 'string' ? value : null;
+      }
+      return row;
+    });
+}
+
+/**
  * Accès aux enregistrements liés (relations plusieurs-à-plusieurs, PR 2.5e). **Aucun endpoint
  * « linked » dédié n'existe côté backend** : le service compose les endpoints CRUD de la jonction :
  * liste = `GET records/{jonction}?filterField=<fieldKey source>&filterValue=<recordId>`, ajout =
@@ -99,7 +127,7 @@ export class StudioLinkedRecordsService {
       cached = this.http.get<ApiResponse<CustomEntitySchema>>(`${this.base}/${rel.junctionEntityKey}/schema`).pipe(
         map(res => {
           if (!res.success || !res.data) return null;
-          const field = res.data.fields
+          const field = [...res.data.fields]
             .filter(f => f.isActive && parseFieldType(f.fieldType) !== CustomFieldType.RelationCustom)
             .sort((a, b) => a.sortOrder - b.sortOrder)[0];
           if (!field) return null;
@@ -135,12 +163,27 @@ export class StudioLinkedRecordsService {
 
   /**
    * Cibles candidates : `GET records/{cible}?search=…&page=1&pageSize=…` triées par libellé.
-   * `pageSize` 20 pour la liste déroulante ; la passe de résolution de libellés de l'onglet
-   * « Liés » monte à 200 (borne haute du endpoint) pour couvrir les cibles déjà liées.
+   * `pageSize` 20 pour la liste déroulante ; `resolveTargetLabels` monte à 200 (borne haute du
+   * endpoint) pour couvrir les cibles déjà liées.
    */
   searchTargets(rel: EntityRelationDto, search: string | null, pageSize = 20): Observable<ApiResponse<PagedResult<CustomRecord>>> {
     let params = new HttpParams().set('page', 1).set('pageSize', pageSize);
     if (search) params = params.set('search', search);
     return this.http.get<ApiResponse<PagedResult<CustomRecord>>>(`${this.base}/${rel.targetEntityKey}`, { params });
+  }
+
+  /**
+   * Libellés des cibles en une passe (pageSize 200, borne haute — couvre les cibles déjà liées),
+   * partagée par l'onglet « Liés » et l'éditeur de puces. Recherche indisponible ⇒ Map vide
+   * (les lignes retombent sur l'id tronqué).
+   */
+  resolveTargetLabels(rel: EntityRelationDto): Observable<Map<string, string>> {
+    return this.searchTargets(rel, null, 200).pipe(
+      map(res => {
+        const labels = new Map<string, string>();
+        if (res.success) for (const r of res.data.items ?? []) labels.set(r.id, primaryLabel(r, []));
+        return labels;
+      }),
+      catchError(() => of(new Map<string, string>())));
   }
 }
