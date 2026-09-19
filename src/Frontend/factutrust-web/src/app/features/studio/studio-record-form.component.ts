@@ -128,8 +128,8 @@ export class StudioRecordFormComponent implements OnInit {
     ...(this.showWorkflowsTab()
       ? [{ key: 'workflows', label: STUDIO_WORKFLOW_LABELS.recordTab.tabLabel, badge: this.openWorkflowCount() || null }]
       : []),
-    // 4.7h5 / D-B3 : « Historique » toujours en dernier, sans badge.
-    { key: 'history', label: this.runtimeLabels.history.tabLabel }
+    // 4.7h5 / D-B3 : « Historique » toujours en dernier, sans badge — fiche existante seulement (D-B2).
+    ...(this.recordId ? [{ key: 'history', label: this.runtimeLabels.history.tabLabel }] : [])
   ]);
   readonly activeRelation = computed(() => {
     const key = this.activeTab();

@@ -1156,9 +1156,12 @@ Une ligne par entrée telle que servie (plus récent d'abord) : date `dd/MM/yyyy
 (grisé), changements `Champ : ancien → nouveau` — création `Champ : nouveau`, retrait `… → (vide)`,
 suppression « — ». Libellé de champ résolu sur le **schéma complet** (champs inactifs compris, D-B8), repli
 sur la clé brute (`_raw`, champ supprimé) ; valeurs `Boolean` ⇒ Oui / Non, `Select` ⇒ libellé d'option ;
-au-delà de 5 changements, **« Afficher les n autres »** / **« Réduire »** (`aria-expanded`).
+au-delà de 5 changements, **« Afficher les n autres »** / **« Réduire »** (`aria-expanded` + `aria-controls`).
+Limites connues (v1) : les valeurs `Date`, `DateTime`, `MultiSelect`, `Money`… sont affichées brutes
+(`2026-09-19T10:30:00`, `["a","b"]`) ; une clé explicitement nulle dans un document créé est rendue
+`Champ : (vide)` (kind `added`, sans flèche) — volontaire, testé côté util.
 
-- Portée automatisée : Karma util (9 : libellés, sévérités, formats, repli, dédoublonnage) ; Karma composant
+- Portée automatisée : Karma util (9 : libellés, sévérités, formats, repli, dédoublonnage, nul → nul) ; Karma composant
   (lignes, tags, utilisateur inconnu, changements changed / added / removed, « — », libellés + repli,
   repli > 5 puis dépliage) ; Playwright (`srh-action-h1` = « Modification », `srh-change-h1-statut` contient
   « À planifier → Terminé », `srh-user-h2` = « Utilisateur inconnu »).
@@ -1185,6 +1188,11 @@ l'utilisateur (jamais d'identifiant, d'e-mail ni d'adresse IP — le backend n'e
 `/edit` exige `custom_records:write` (D-B1) : un profil `custom_records:read` seul ne voit pas l'onglet (constat
 consigné — « mode lecteur de la fiche » hors périmètre 4.7). Le backend re-vérifie `custom_records:read` sur la
 route `/history` (403 sinon) et répond 404 si la fiche n'existe pas.
+
+Portée de l'audit (rappel, `StudioRecordAudit`) : seules les mutations via l'API records (POST / PUT / PATCH /
+DELETE) sont journalisées — le moteur de workflows et l'outil IA `update_field` écrivent hors de ces handlers
+(traçables via StepRuns / plan IA) ; pas de rétroactivité. Le guide utilisateur l'énonce dans les mêmes termes.
+En mode création, `tabs()` ne contient que `form` (aucune barre d'onglets, aucune requête `/history`).
 
 - Portée automatisée : Karma composant (aucun bouton d'écriture, aucun champ, aucun e-mail dans le DOM) ;
   Playwright (aucun `input/textarea/select` dans `srh-panel`) ; contrats backend `StudioRecordsController`

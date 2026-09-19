@@ -24,7 +24,7 @@ export interface StudioRecordHistoryEntry {
   id: string;
   /** Action connue ou action brute inattendue (affichée telle quelle plutôt que de casser). */
   action: StudioRecordHistoryAction | string;
-  /** ISO 8601 (UTC). */
+  /** Horodatage ISO 8601 tel que sérialisé par l'API (`CreatedAt`), affiché via `DatePipe`. */
   createdAt: string;
   /** Nom d'affichage ; nul ⇒ « Utilisateur inconnu ». */
   userName: string | null;

@@ -73,7 +73,7 @@ import {
                     @if (changes.length === 0) {
                       <span class="srh-deleted" [attr.data-testid]="'srh-changes-' + row.id">{{ labels.noChanges }}</span>
                     } @else {
-                      <ul class="srh-changes" [attr.aria-label]="labels.colChanges" [attr.data-testid]="'srh-changes-' + row.id">
+                      <ul class="srh-changes" [id]="'srh-changes-' + row.id" [attr.aria-label]="labels.colChanges" [attr.data-testid]="'srh-changes-' + row.id">
                         @for (change of visibleChanges(row.id, changes); track change.key) {
                           <li class="srh-change" [attr.data-testid]="'srh-change-' + row.id + '-' + change.key">
                             <strong class="srh-change__label">{{ change.label }}</strong><span class="srh-change__sep"> : </span>
@@ -82,14 +82,15 @@ import {
                             } @else {
                               <span class="srh-val srh-old" [attr.title]="change.oldText">{{ change.oldText }}</span>
                               <span class="srh-change__arrow"> → </span>
-                              <span class="srh-val srh-new" [class.srh-val--null]="change.kind === 'removed'" [attr.title]="change.newText">{{ change.newText }}</span>
+                              <span class="srh-val srh-new" [class.srh-val--null]="change.kind === 'removed'"
+                                [attr.title]="change.kind === 'removed' ? null : change.newText">{{ change.newText }}</span>
                             }
                           </li>
                         }
                       </ul>
                       @if (changes.length > inlineLimit) {
                         <button type="button" class="srh-more" (click)="toggle(row.id)" [attr.aria-expanded]="expanded().has(row.id)"
-                          [attr.data-testid]="'srh-more-' + row.id">
+                          [attr.aria-controls]="'srh-changes-' + row.id" [attr.data-testid]="'srh-more-' + row.id">
                           {{ expanded().has(row.id) ? labels.showLess : moreLabel(changes.length) }}
                         </button>
                       }

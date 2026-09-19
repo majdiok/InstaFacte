@@ -237,6 +237,7 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
     setup(null, [], true, 'off');
     fixture.detectChanges();
     expect(component.showTabs()).toBeFalse();
+    expect(component.tabs().map(t => t.key)).toEqual(['form']);
     expect(fixture.debugElement.query(By.css('app-studio-record-tabs'))).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="studio-tab-history"]')).toBeNull();
     expect(fixture.debugElement.query(By.css('app-studio-record-history-tab'))).toBeNull();
