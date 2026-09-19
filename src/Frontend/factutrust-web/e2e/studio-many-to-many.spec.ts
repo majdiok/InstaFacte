@@ -60,6 +60,48 @@ test.describe('Studio — relations plusieurs-à-plusieurs (2.5)', () => {
     await expect(page.getByTestId('linked-row-t1')).toBeVisible();
   });
 
+  test('fiche : puces inline — affichage quantité, ajout avec quantité, doublon 409, retrait', async ({ page }) => {
+    const writePermissions = [...STUDIO_E2E_USER.effectivePermissions, 'custom_records:write'];
+    await installStudioAuth(page, writePermissions);
+    const ctx = await installStudioApiMocks(page, { capabilities: M2M_CAPABILITIES, permissions: writePermissions });
+    await installStudioRuntimeMocks(page, ctx, { junctionAttribute: true });
+
+    await page.goto('/studio/d/interventions/r1/edit');
+    // v1.1 (D-47-40) : une carte de puces par relation N-N SOUS le formulaire (onglet Fiche).
+    await expect(page.getByTestId('chips-intervention_technicien')).toBeVisible();
+    await expect(page.getByTestId('chip-t1')).toContainText('Ben Ali');
+    await expect(page.getByTestId('chip-attr-t1')).toContainText('3');
+
+    // Ajout avec quantité.
+    await page.getByTestId('chip-search').click();
+    await page.getByRole('option', { name: 'Sassi' }).click();
+    await page.getByTestId('chip-attr-input').locator('input').fill('2');
+    await page.getByTestId('chip-add').click();
+    const posts = ctx.find('/records/intervention_technicien', 'POST');
+    expect(posts.length).toBe(1);
+    expect((posts[0].body as Record<string, Record<string, unknown>>)['data'])
+      .toEqual({ intervention_id: 'r1', technicien_id: 't2', quantite: 2 });
+
+    // Doublon ⇒ 409 « Lien déjà existant. » en ligne (route surchargée APRÈS ⇒ prioritaire).
+    await page.route('**/api/studio/records/intervention_technicien', route => {
+      if (route.request().method() === 'POST') {
+        return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(
+          { success: false, data: null, message: 'Lien déjà existant.', errors: [], code: 'record.duplicate_link' }) });
+      }
+      return route.fallback();
+    });
+    await page.getByTestId('chip-search').click();
+    await page.getByRole('option', { name: 'Ben Ali' }).click();
+    await page.getByTestId('chip-add').click();
+    await expect(page.getByTestId('chips-error')).toContainText('Lien déjà existant.');
+    await expect(page.getByTestId('chip-t1')).toBeVisible();
+
+    // Retrait ⇒ DELETE, puce retirée.
+    await page.getByTestId('chip-remove-t1').click();
+    expect(ctx.find('/records/intervention_technicien/j-rec-1', 'DELETE').length).toBe(1);
+    await expect(page.getByTestId('chip-t1')).toHaveCount(0);
+  });
+
   test('page /studio/relations : tableau dédoublonné + diagramme role=img', async ({ page }) => {
     await installStudioAuth(page);
     const ctx = await installStudioApiMocks(page, { capabilities: M2M_CAPABILITIES });

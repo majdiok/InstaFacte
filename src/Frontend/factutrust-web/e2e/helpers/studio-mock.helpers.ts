@@ -453,6 +453,9 @@ export interface StudioRuntimeMockOptions {
   junctionKey?: string;
   /** `POST records/{jonction}` renvoie 409 `record.duplicate_link`. */
   duplicateLinkOn409?: boolean;
+  /** v1.1 (D-47-40) : la jonction porte un attribut de liaison `quantite` (Number) — le schéma de la
+   *  jonction est servi et les enregistrements de jonction portent `quantite`. */
+  junctionAttribute?: boolean;
   /** `PATCH records/{clé}/{id}` renvoie 409 (conflit rowVersion, drag kanban). */
   patchConflict409?: boolean;
   /** Schéma sans vues enregistrées (cas « drapeau coupé » côté liste). */
@@ -602,7 +605,24 @@ export async function installStudioRuntimeMocks(
     await fulfil(route, paged([]));
   });
   await page.route(`**/api/studio/records/${junction}?**`, route =>
-    fulfil(route, paged([{ id: 'j-rec-1', data: { intervention_id: 'r1', technicien_id: 't1' }, createdAt: '2026-09-03T00:00:00Z', updatedAt: '2026-09-03T00:00:00Z', rowVersion: 'J1' }])));
+    fulfil(route, paged([{ id: 'j-rec-1', data: options.junctionAttribute
+      ? { intervention_id: 'r1', technicien_id: 't1', quantite: 3 }
+      : { intervention_id: 'r1', technicien_id: 't1' },
+      createdAt: '2026-09-03T00:00:00Z', updatedAt: '2026-09-03T00:00:00Z', rowVersion: 'J1' }])));
+  if (options.junctionAttribute) {
+    // v1.1 : schéma de la jonction avec l'attribut `quantite` (Number) — enregistré APRÈS
+    // `records/${junction}/*` (qui renverrait une page vide) ⇒ prioritaire (ordre inverse).
+    await page.route(`**/api/studio/records/${junction}/schema`, route =>
+      fulfil(route, ok({
+        entity: { id: 'e-jct', key: junction, displayName: 'Intervention × Technicien' },
+        fields: [
+          { id: 'jf1', key: 'intervention_id', label: 'Intervention', fieldType: 'RelationCustom', isRequired: true, isUnique: false, sortOrder: 0, rules: null, options: null, relation: { kind: 'custom', ref: 'interventions' }, isActive: true },
+          { id: 'jf2', key: 'technicien_id', label: 'Technicien', fieldType: 'RelationCustom', isRequired: true, isUnique: false, sortOrder: 1, rules: null, options: null, relation: { kind: 'custom', ref: 'techniciens' }, isActive: true },
+          { id: 'jf3', key: 'quantite', label: 'Quantité', fieldType: 'Number', isRequired: false, isUnique: false, sortOrder: 2, rules: null, options: null, relation: null, isActive: true }
+        ],
+        form: { sections: [] }, relations: [], views: []
+      })));
+  }
   await page.route(`**/api/studio/records/${junction}`, async route => {
     if (route.request().method() === 'POST') {
       if (options.duplicateLinkOn409) {

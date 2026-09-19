@@ -32,6 +32,15 @@ const m2m: EntityRelationDto = {
 };
 const m2o: EntityRelationDto = { ...m2m, kind: 'many_to_one', junctionEntityKey: null, junctionTargetFieldKey: null };
 
+const JUNCTION = `${environment.apiUrl}/studio/records/intervention_technicien`;
+const TARGETS = `${environment.apiUrl}/studio/records/techniciens`;
+const emptyJunctionPage = { success: true, data: { items: [], page: 1, pageSize: 50, totalCount: 0, totalPages: 0 }, message: null, errors: [] };
+const emptyTargetsPage = { success: true, data: { items: [], page: 1, pageSize: 20, totalCount: 0, totalPages: 0 }, message: null, errors: [] };
+const junctionSchemaNoAttr = { success: true, data: { entity: { id: 'j1', key: 'intervention_technicien' }, fields: [
+  { id: 'f1', key: 'intervention_id', label: 'Intervention', fieldType: 'RelationCustom', isActive: true, sortOrder: 0 },
+  { id: 'f2', key: 'technicien_id', label: 'Technicien', fieldType: 'RelationCustom', isActive: true, sortOrder: 1 }
+], form: null }, message: null, errors: [] };
+
 const schema = (relations: EntityRelationDto[] | null) => ({
   entity: { id: 'e1', key: 'interventions', displayName: 'Interventions' },
   fields: [{ id: 'f1', key: 'nom', label: 'Nom', fieldType: 0, isRequired: false, isActive: true }],
@@ -81,6 +90,19 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
 
   afterEach(() => httpMock.verify());
 
+  /** Vide les requêtes d'une carte de puces (4.7r4) ou de l'onglet Liés montés dans le test. */
+  function drainLinkSurfaces(): void {
+    httpMock.match(r => r.urlWithParams.startsWith(`${JUNCTION}?page=1`)).forEach(req => {
+      if (!req.cancelled) req.flush(emptyJunctionPage);
+    });
+    httpMock.match(r => r.url === `${JUNCTION}/schema`).forEach(req => {
+      if (!req.cancelled) req.flush(junctionSchemaNoAttr);
+    });
+    httpMock.match(r => r.urlWithParams.startsWith(`${TARGETS}?page=1`)).forEach(req => {
+      if (!req.cancelled) req.flush(emptyTargetsPage);
+    });
+  }
+
   it('sans relation N-N ⇒ pas d\'onglets, formulaire seul', () => {
     setup('r1', [], true, 'off');   // sonde drainée en 404 : contrat inchangé (4.4h2)
     expect(component.showTabs()).toBeFalse();
@@ -111,17 +133,34 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
     expect(fixture.debugElement.query(By.css('app-dynamic-form'))).not.toBeNull();
     expect(fixture.debugElement.query(By.css('app-studio-linked-records-tab'))).toBeNull();
 
+    // 4.7r4 : l'onglet Fiche porte une carte de puces par relation N-N — ses requêtes montent dès
+    // le montage (jonction + schéma de jonction + cibles).
+    expect(fixture.debugElement.queryAll(By.css('app-studio-link-chips-editor')).length).toBe(1);
+    drainLinkSurfaces();
+
     component.activeTab.set('linked:intervention_technicien');
     fixture.detectChanges();
     expect(fixture.debugElement.query(By.css('app-dynamic-form'))).toBeNull();
     expect(fixture.debugElement.query(By.css('app-studio-linked-records-tab'))).not.toBeNull();
     expect(component.activeRelation()?.targetEntityKey).toBe('techniciens');
-    // L'onglet Liés monte ses requêtes : on les vide (jonction + cibles ×2).
-    httpMock.expectOne(`${API.replace('/interventions','')}/intervention_technicien?page=1&pageSize=50&filterField=intervention_id&filterValue=r1`)
-      .flush({ success: true, data: { items: [], page: 1, pageSize: 50, totalCount: 0, totalPages: 0 }, message: null, errors: [] });
-    httpMock.match(r => r.urlWithParams.startsWith(`${API.replace('/interventions','')}/techniciens?page=1`)).forEach(req => {
-      if (!req.cancelled) req.flush({ success: true, data: { items: [], page: 1, pageSize: 20, totalCount: 0, totalPages: 0 }, message: null, errors: [] });
-    });
+    // L'onglet Liés monte ses requêtes : on les vide (jonction + schéma de jonction + cibles ×2).
+    drainLinkSurfaces();
+  });
+
+  it('édition : une carte de puces par relation N-N sous le formulaire (4.7r4)', () => {
+    setup('r1', [m2m], true, 'off');
+    fixture.detectChanges();
+    const cards = fixture.debugElement.queryAll(By.css('app-studio-link-chips-editor'));
+    expect(cards.length).toBe(1);
+    expect(cards[0].nativeElement.getAttribute('data-testid') ?? cards[0].query(By.css('[data-testid^="chips-"]'))).toBeTruthy();
+    drainLinkSurfaces();
+  });
+
+  it('création : aucune carte de puces (recordId requis — même garde que les onglets)', () => {
+    setup(null, [m2m], true, 'off');
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('app-studio-link-chips-editor'))).toBeNull();
+    // Aucune requête de puces n'a été émise (verify() le garantit en afterEach).
   });
 
   it("ajoute l'onglet Workflows avec le nombre d'instances ouvertes quand la sonde répond", () => {
@@ -145,6 +184,7 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
 
   it("n'affiche pas l'onglet Workflows quand la sonde répond 404 ou 403", () => {
     setup('r1', [m2m], true, 'off');                               // 404 au chargement
+    drainLinkSurfaces();                                           // carte de puces montée (4.7r4)
     expect(component.workflowInstances()).toBeNull();
     expect(component.showWorkflowsTab()).toBeFalse();
     expect(component.tabs().map(t => t.key)).toEqual(['form', 'linked:intervention_technicien']);

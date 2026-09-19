@@ -14,6 +14,7 @@ import { AuthService } from '@core/services/auth.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { StudioRecordTabsComponent, StudioRecordTab } from './shared/studio-record-tabs.component';
 import { StudioLinkedRecordsTabComponent } from './relations/studio-linked-records-tab.component';
+import { StudioLinkChipsEditorComponent } from './relations/studio-link-chips-editor.component';
 import { StudioRecordWorkflowsTabComponent } from './workflows/studio-record-workflows-tab.component';
 import { StudioWorkflowsService } from './workflows/studio-workflows.service';
 import { STUDIO_WORKFLOW_LABELS } from './workflows/studio-workflow-labels';
@@ -28,7 +29,7 @@ function linkedTabKey(r: { junctionEntityKey?: string | null; targetEntityKey: s
 @Component({
   selector: 'app-studio-record-form',
   standalone: true,
-  imports: [CommonModule, RouterModule, ToastModule, DynamicFormComponent, StudioPageShellComponent, SkeletonTableComponent, StudioRecordTabsComponent, StudioLinkedRecordsTabComponent, StudioRecordWorkflowsTabComponent],
+  imports: [CommonModule, RouterModule, ToastModule, DynamicFormComponent, StudioPageShellComponent, SkeletonTableComponent, StudioRecordTabsComponent, StudioLinkedRecordsTabComponent, StudioLinkChipsEditorComponent, StudioRecordWorkflowsTabComponent],
   template: `
     <p-toast></p-toast>
     @if (entity(); as e) {
@@ -59,6 +60,13 @@ function linkedTabKey(r: { junctionEntityKey?: string | null; targetEntityKey: s
                 Cette table n'a pas encore de champ.
                 <a [routerLink]="['/studio', e.id]">Ajoutez des champs</a> avant de saisir des données.
               </p>
+            }
+            @if (recordId) {
+              <!-- v1.1 / D-47-40 (R4) : une carte de puces par relation N-N, SOUS le formulaire ;
+                   édition seulement (recordId requis — même garde que les onglets « Liés »). -->
+              @for (rel of manyToMany(); track rel.junctionEntityKey) {
+                <app-studio-link-chips-editor [relation]="rel" [recordId]="recordId!" [canWrite]="canWrite()" />
+              }
             }
           }
           @case ('workflows') {
