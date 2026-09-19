@@ -12,7 +12,8 @@ namespace FactuTrust.Infrastructure.Tests.Studio;
 /// PR 4.3c — <see cref="StudioAiWorkflowPlanner"/> : contrôles légers à l'aperçu contre le schéma réel
 /// (table introuvable/inactive, champ inconnu dans <c>update_field.set</c> / <c>condition.filters</c> /
 /// <c>triggerConfig.field</c>, action ERP inconnue ou non pontable, lanceur approbateur), tolérance des
-/// préfixes runtime, avertissements de la spec transmis et « créés inactifs » ajouté aux plans acceptés.
+/// préfixes runtime et « créés inactifs » ajouté aux plans acceptés. Depuis 4.7b5 : un déclencheur
+/// planifié sans cron valide (<c>triggerConfig.cron</c>, 5 champs UTC) bloque le plan.
 /// </summary>
 public sealed class StudioAiWorkflowPlannerTests
 {
@@ -118,11 +119,12 @@ public sealed class StudioAiWorkflowPlannerTests
     }
 
     [Fact]
-    public void Review_tolerates_runtime_prefixes_in_condition_filters_and_forwards_spec_warnings()
+    public void Review_tolerates_runtime_prefixes_in_condition_filters()
     {
         var spec = Parse("""
         { "workflows": [
             { "entityKey": "factures", "name": "Relance hebdo", "trigger": "scheduled",
+              "triggerConfig": { "cron": "0 6 * * *" },
               "steps": [ { "key": "attente", "type": "wait", "hours": 1 } ] },
             { "entityKey": "factures", "name": "Contrôle", "trigger": "manual", "steps": [
                 { "key": "si", "type": "condition", "filters": [
@@ -135,18 +137,38 @@ public sealed class StudioAiWorkflowPlannerTests
             ] }
         ] }
         """);
-        Assert.Single(spec.Workflows);
-        Assert.Single(spec.Warnings);
+        Assert.Equal(2, spec.Workflows.Count);
+        Assert.Empty(spec.Warnings);
         var schemas = new Dictionary<string, CustomEntitySchemaDto> { ["factures"] = Schema("factures", "Facture") };
 
         var review = Review(spec, schemas, RealActions);
 
         Assert.False(review.IsBlocked);
         Assert.Empty(review.BlockingErrors);
-        Assert.Equal(2, review.Warnings.Count);
-        Assert.Contains("bientôt disponible", review.Warnings[0]);
-        Assert.Contains("« Relance hebdo »", review.Warnings[0]);
-        Assert.Equal(InactiveWarning, review.Warnings[^1]);
+        // 4.7b5 : le parseur n'a plus d'avertissement propre ; reste « créés inactifs ».
+        Assert.Equal([InactiveWarning], review.Warnings);
+    }
+
+    [Fact]
+    public void Review_blocks_a_scheduled_workflow_without_a_valid_cron()
+    {
+        var spec = Parse("""
+        { "workflows": [
+            { "entityKey": "factures", "name": "Sans cron", "trigger": "scheduled",
+              "steps": [ { "key": "attente", "type": "wait", "hours": 1 } ] },
+            { "entityKey": "factures", "name": "Cron invalide", "trigger": "scheduled",
+              "triggerConfig": { "cron": "61 * * * *" },
+              "steps": [ { "key": "attente", "type": "wait", "hours": 1 } ] } ] }
+        """);
+        var schemas = new Dictionary<string, CustomEntitySchemaDto> { ["factures"] = Schema("factures", "Facture") };
+
+        var review = Review(spec, schemas, RealActions);
+
+        Assert.True(review.IsBlocked);
+        Assert.Equal(2, review.BlockingErrors.Count);
+        Assert.All(review.BlockingErrors, e => Assert.Contains("cron", e));
+        Assert.Contains("« Sans cron »", review.BlockingErrors[0]);
+        Assert.Contains("« Cron invalide »", review.BlockingErrors[1]);
     }
 
     // ---------------------------------------------------------------- helpers

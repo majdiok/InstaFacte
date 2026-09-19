@@ -34,13 +34,15 @@ public sealed record ParsedWorkflowItem(
 /// Parse la spec tolérante émise par le modèle (alias FR/EN insensibles à la casse et aux accents,
 /// racine tableau ou objet) et la normalise vers la forme exacte de
 /// <see cref="StudioWorkflowStepsSpec"/> (<c>{ "version": 1, "steps": [ { "key", "type", … } ] }</c>).
-/// Jamais silencieux : toute dégradation est un avertissement (déclencheur <c>scheduled</c> retiré)
-/// ou une erreur en clair (jamais de troncature). Les bornes fines (10 filtres, 20 mappings, 720 h)
-/// sont laissées à <see cref="StudioWorkflowStepsSpec.Validate"/> (4.3f) pour ne pas dupliquer le validateur.
+/// Jamais silencieux : toute dégradation est une erreur en clair (jamais de troncature). Depuis 4.7b5,
+/// le déclencheur <c>scheduled</c> est conservé (D5 levé en 4.7b1) : la validation du cron et des
+/// filtres fait foi en aval (<see cref="StudioWorkflowStepsSpec.Validate"/> + contrôle bloquant du
+/// planificateur). Les bornes fines (10 filtres, 20 mappings, 720 h) sont laissées à
+/// <see cref="StudioWorkflowStepsSpec.Validate"/> (4.3f) pour ne pas dupliquer le validateur.
 /// </summary>
 public static class StudioAiWorkflowSpec
 {
-    /// <summary>Nombre maximal de workflows dans un plan (après retrait des planifiés).</summary>
+    /// <summary>Nombre maximal de workflows dans un plan.</summary>
     public const int MaxWorkflows = 5;
 
     /// <summary>Parse une spec JSON complète (outil <c>studio_plan_workflow</c>).</summary>
@@ -97,12 +99,7 @@ public static class StudioAiWorkflowSpec
 
             var name = Str(GetAliased(wf, "name", "nom"))?.Trim();
             var triggerRaw = Str(GetAliased(wf, "trigger", "declencheur"));
-            if (IsScheduled(triggerRaw))
-            {
-                // Bientôt disponible : retiré avec avertissement, jamais créé (le validateur refuse scheduled).
-                warnings.Add($"Déclencheur planifié : bientôt disponible — workflow « {name ?? "(sans nom)"} » ignoré.");
-                continue;
-            }
+            // 4.7b5 : `scheduled` est conservé (D5 levé en b1) — cron et filtres validés en aval.
             if (!TryParseItem(wf, name, triggerRaw, out var item, out error))
                 return false;
             items.Add(item!);
@@ -110,7 +107,7 @@ public static class StudioAiWorkflowSpec
 
         if (items.Count == 0)
         {
-            error = "La spec ne contient aucun workflow réalisable (les déclencheurs planifiés ne sont pas encore disponibles).";
+            error = "La spec ne contient aucun workflow.";
             return false;
         }
         if (items.Count > MaxWorkflows)
@@ -166,8 +163,8 @@ public static class StudioAiWorkflowSpec
         if (trigger is null)
         {
             error = string.IsNullOrWhiteSpace(triggerRaw)
-                ? $"Workflow « {name} » : trigger est obligatoire (on_create, on_update, field_changed ou manual)."
-                : $"Workflow « {name} » : déclencheur inconnu « {triggerRaw} » (attendu : on_create, on_update, field_changed ou manual).";
+                ? $"Workflow « {name} » : trigger est obligatoire (on_create, on_update, field_changed, manual ou scheduled)."
+                : $"Workflow « {name} » : déclencheur inconnu « {triggerRaw} » (attendu : on_create, on_update, field_changed, manual ou scheduled).";
             return false;
         }
 
@@ -285,16 +282,15 @@ public static class StudioAiWorkflowSpec
             "on_update" or "modification" => StudioWorkflowTriggerKind.OnUpdate,
             "field_changed" or "changement_champ" => StudioWorkflowTriggerKind.FieldChanged,
             "manual" or "manuel" => StudioWorkflowTriggerKind.Manual,
+            "scheduled" or "planifie" => StudioWorkflowTriggerKind.Scheduled,
             _ => null
         };
 
-    private static bool IsScheduled(string? raw) =>
-        raw is not null && NormalizeAlias(raw) is "scheduled" or "planifie";
-
     /// <summary>
     /// Configuration normalisée du déclencheur : <c>field|champ</c>, <c>from|de</c>, <c>to|vers</c> pour
-    /// <c>field_changed</c> ; objet vide par défaut. Les clés inconnues sont conservées (le validateur
-    /// les signalera) — sauf les alias reconnus, traduits.
+    /// <c>field_changed</c> ; <c>filters|filtres</c> pour <c>scheduled</c> (4.7b5) ; objet vide par
+    /// défaut. Les clés inconnues sont conservées (le validateur les signalera) — sauf les alias
+    /// reconnus, traduits.
     /// </summary>
     private static JsonObject? ParseTriggerConfig(JsonObject wf, StudioWorkflowTriggerKind trigger, out string? error)
     {
@@ -309,15 +305,23 @@ public static class StudioAiWorkflowSpec
         }
         foreach (var prop in obj)
         {
-            var key = trigger == StudioWorkflowTriggerKind.FieldChanged
-                ? NormalizeAlias(prop.Key) switch
+            var key = trigger switch
+            {
+                StudioWorkflowTriggerKind.FieldChanged => NormalizeAlias(prop.Key) switch
                 {
                     "field" or "champ" => "field",
                     "from" or "de" => "from",
                     "to" or "vers" => "to",
                     _ => prop.Key
-                }
-                : prop.Key;
+                },
+                // 4.7b5 : alias FR des filtres planifiés ; cron et bornes validés en aval (b1).
+                StudioWorkflowTriggerKind.Scheduled => NormalizeAlias(prop.Key) switch
+                {
+                    "filters" or "filtres" => "filters",
+                    _ => prop.Key
+                },
+                _ => prop.Key
+            };
             config[key] = prop.Value?.DeepClone();
         }
         return config;

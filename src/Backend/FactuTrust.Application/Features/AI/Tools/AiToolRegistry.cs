@@ -1795,10 +1795,11 @@ public static class AiToolRegistry
                 + "dépense au-delà de 1000 », « relance 7 jours après échéance », « facturer à la fin d'une intervention ». "
                 + "Appelle d'abord studio_get_table_schema pour connaître les VRAIES clés de champ. Fournir UN seul "
                 + "argument `spec_json` : { \"workflows\": [ { \"entityKey\": clé de la table, \"name\": libellé, "
-                + "\"trigger\": \"on_create\"|\"on_update\"|\"field_changed\"|\"manual\", "
-                + "\"triggerConfig\"?: { \"field\", \"from\"?, \"to\"? }, "
+                + "\"trigger\": \"on_create\"|\"on_update\"|\"field_changed\"|\"manual\"|\"scheduled\", "
+                + "\"triggerConfig\"?: pour field_changed { \"field\", \"from\"?, \"to\"? } ; pour scheduled { \"cron\", \"filters\"? } "
+                + "(déclencheur planifié : cron de 5 champs REQUIS, fuseau UTC — ex. \"0 6 * * 1\" = chaque lundi à 06:00 UTC), "
                 + "\"steps\": [ { \"type\": \"condition\"|\"update_field\"|\"erp_action\"|\"notify\"|\"approval\"|\"wait\"|\"create_record\", … } ] } ] } "
-                + "(5 workflows max). Pas de déclencheur planifié (bientôt disponible).",
+                + "(5 workflows max).",
             Parameters = new Dictionary<string, AiToolParameter>
             {
                 ["spec_json"] = new()
