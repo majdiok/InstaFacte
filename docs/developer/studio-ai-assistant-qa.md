@@ -1571,7 +1571,7 @@ Passe de sécurité **S-base** (S1–S17, plan C §4.2) sur le périmètre v1.1 
   `page=3`, `pageSize=20` partout.
 - Écart de test consigné : l'hôte `<p-dialog data-testid="wf-test-dialog">` n'a pas de boîte visible (PrimeNG 19) — le
   dialogue est ciblé par `getByRole('dialog', { name: 'Tester le workflow' })`, le `data-testid` vérifié par `toHaveCount(1)`.
-- Portée automatisée ★2 : Infra +55 cas (`StudioWorkflowCronSpecTests` 40, `AddAuditLogsEntityHistoryIndexMigrationTests` 6,
+- Portée automatisée ★2 : Infra +51 cas (`StudioWorkflowCronSpecTests` 40, `AddAuditLogsEntityHistoryIndexMigrationTests` 6,
   job 1, simulation 1, `RecordQuerySql` 1, approbations 2), API +1 (`StudioRecordsControllerContractTests` : 21 cas),
   Karma +3, Playwright +3 (suite Studio attendue 47 réussis / 11 ignorés — captures docs — / 58).
 
@@ -1603,3 +1603,6 @@ lecture croisée (R56) avant commit : « aucun blocage », deux agents.
 - Portée automatisée ★3 : Infra +14 (`StudioWorkflowJsonTests` 12, DI 1, borne simulation 1), Karma +1 net
   (`studio-workflow-test-dialog.component.spec.ts` 4 cas déplacés + 1 intégration concepteur ; dossier `workflows` 105),
   Playwright inchangé (`studio-workflows.spec.ts` 9 réussis / 3 ignorés ; suite Studio 47 / 11 / 58).
+- V-full du lot ★ (HEAD `107d44d2`, Release, collections xUnit sérialisées) : Infra 8552 / 8552 (d3 : 8485, soit +67 = ★1 2 +
+  ★2 51 + ★3 14), API 450 / 450 (+1), 0 ignoré ; Karma 3955 (d3 : 3950) ; Playwright Studio 47 / 11 / 58 ; `build:prod`
+  initial 1,38 Mo inchangé ; `npm audit` critique 0 ; parité catalogue OK ; aucune migration dans le diff `d0c6111d..HEAD`.
