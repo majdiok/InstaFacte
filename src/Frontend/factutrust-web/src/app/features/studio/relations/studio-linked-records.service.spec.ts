@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { provideHttpClient } from '@angular/common/http';
 import { environment } from '@environments/environment';
 import { CustomField } from '@shared/studio-runtime/studio-runtime.models';
-import { StudioLinkedRecordsService, primaryLabel } from './studio-linked-records.service';
+import { JunctionAttribute, StudioLinkedRecordsService, primaryLabel } from './studio-linked-records.service';
 import { EntityRelationDto } from './studio-relations.models';
 import { CustomRecord } from '../studio.models';
 
@@ -63,6 +63,49 @@ describe('StudioLinkedRecordsService', () => {
     const req = httpMock.expectOne(`${base}/intervention_technicien/j9`);
     expect(req.request.method).toBe('DELETE');
     req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('getJunctionAttribute résout le premier champ actif non-relation et met en cache (un seul HTTP)', () => {
+    const schema = { success: true, data: { entity: {}, fields: [
+      { id: 'f1', key: 'intervention_id', label: 'Intervention', fieldType: 'RelationCustom', isActive: true, sortOrder: 0 },
+      { id: 'f2', key: 'technicien_id', label: 'Technicien', fieldType: 'RelationCustom', isActive: true, sortOrder: 1 },
+      { id: 'f3', key: 'quantite', label: 'Quantité', fieldType: 'Number', isActive: true, sortOrder: 2 },
+      { id: 'f4', key: 'note', label: 'Note', fieldType: 'Text', isActive: false, sortOrder: 3 }
+    ], form: null }, message: null, errors: [] };
+
+    let first: JunctionAttribute | null | undefined;
+    let second: JunctionAttribute | null | undefined;
+    service.getJunctionAttribute(rel).subscribe(a => first = a);
+    service.getJunctionAttribute(rel).subscribe(a => second = a);   // partage shareReplay(1)
+
+    httpMock.expectOne(`${base}/intervention_technicien/schema`).flush(schema);
+    expect(first).toEqual({ key: 'quantite', label: 'Quantité', numeric: true });
+    expect(second).toEqual(first!);
+    httpMock.expectNone(`${base}/intervention_technicien/schema`);
+  });
+
+  it('getJunctionAttribute : schéma indisponible (404 drapeau/entité) ⇒ null dégradé, sans throw', () => {
+    let attr: JunctionAttribute | null | undefined;
+    service.getJunctionAttribute(rel).subscribe(a => attr = a);
+    httpMock.expectOne(`${base}/intervention_technicien/schema`)
+      .flush({ success: false, data: null, message: 'Introuvable', errors: [] }, { status: 404, statusText: 'Not Found' });
+    expect(attr).toBeNull();
+  });
+
+  it('link avec quantité ajoute la clé attribut au data (v1.1)', () => {
+    service.link(rel, 'rec-1', 't2', { key: 'quantite', label: 'Quantité', numeric: true }, 5).subscribe();
+    const req = httpMock.expectOne(`${base}/intervention_technicien`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ data: { intervention_id: 'rec-1', technicien_id: 't2', quantite: 5 } });
+    req.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
+  it('patchLink émet un PATCH { data, rowVersion } sur records/{jonction}/{id} (v1.1)', () => {
+    service.patchLink(rel, 'j1', { quantite: 7 }, 'AA').subscribe();
+    const req = httpMock.expectOne(`${base}/intervention_technicien/j1`);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ data: { quantite: 7 }, rowVersion: 'AA' });
+    req.flush({ success: true, data: null, message: null, errors: [] });
   });
 
   it('searchTargets ⇒ GET records/{cible} avec search, page=1, pageSize=20', () => {
