@@ -51,4 +51,33 @@ describe('StudioRecordTabsComponent', () => {
     component.onKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 2);
     expect(component.active()).toBe('form');
   });
+
+  // 4.7 « v1.1 » (ap-f) — onglet désactivé (« Déléguées » — Bientôt) et aria-label paramétrable.
+  it('désactive un onglet marqué disabled (infobulle, aucun basculement au clic ni au clavier)', () => {
+    fixture.componentRef.setInput('tabs', [
+      { key: 'pending', label: 'À traiter' },
+      { key: 'delegated', label: 'Déléguées', disabled: true, title: 'Bientôt' },
+      { key: 'history', label: 'Historique' }
+    ]);
+    fixture.componentRef.setInput('active', 'pending');
+    fixture.detectChanges();
+
+    const delegated = fixture.debugElement.query(By.css('[data-testid="studio-tab-delegated"]'));
+    expect(delegated.attributes['disabled']).toBeDefined();
+    expect(delegated.attributes['title']).toBe('Bientôt');
+
+    component.select('delegated');
+    expect(component.active()).toBe('pending');
+    component.onKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 0);
+    expect(component.active()).toBe('pending');   // l'onglet désactivé n'est pas activé au clavier
+  });
+
+  it('utilise ariaLabel en attribut du tablist (défaut « Fiche enregistrement »)', () => {
+    expect(fixture.debugElement.query(By.css('[role="tablist"]')).attributes['aria-label'])
+      .toBe('Fiche enregistrement');
+    fixture.componentRef.setInput('ariaLabel', 'Mes approbations');
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('[role="tablist"]')).attributes['aria-label'])
+      .toBe('Mes approbations');
+  });
 });

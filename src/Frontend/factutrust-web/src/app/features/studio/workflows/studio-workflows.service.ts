@@ -130,6 +130,11 @@ export class StudioWorkflowsService {
     return this.http.get<ApiResponse<WorkflowApprovalInboxItemDto[]>>(`${this.base}/workflows/approvals/mine`, { params: new HttpParams().set('max', clampMax(max)), ...this.skipErrorUi });
   }
 
+  /** 4.7 « v1.1 » (D-47-60) : mes décisions passées (approuvées/refusées), même forme que l'inbox. */
+  listMyApprovalHistory(max = 50): Observable<ApiResponse<WorkflowApprovalInboxItemDto[]>> {
+    return this.http.get<ApiResponse<WorkflowApprovalInboxItemDto[]>>(`${this.base}/workflows/approvals/mine/history`, { params: new HttpParams().set('max', clampMax(max)), ...this.skipErrorUi });
+  }
+
   /** Sonde fail-closed du badge d'approbations. */
   countMyApprovals(): Observable<ApiResponse<ApprovalCountDto>> {
     return this.http.get<ApiResponse<ApprovalCountDto>>(`${this.base}/workflows/approvals/mine/count`, this.skipErrorUi);

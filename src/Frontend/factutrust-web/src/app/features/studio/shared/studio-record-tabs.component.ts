@@ -5,6 +5,9 @@ export interface StudioRecordTab {
   key: string;
   label: string;
   badge?: number | null;
+  /** 4.7 « v1.1 » (ap-f) : onglet désactivé (ex. « Déléguées » — Bientôt) ; `title` = infobulle. */
+  disabled?: boolean | null;
+  title?: string | null;
 }
 
 /**
@@ -17,10 +20,11 @@ export interface StudioRecordTab {
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="studio-tabs" role="tablist" aria-label="Fiche enregistrement">
+    <div class="studio-tabs" role="tablist" [attr.aria-label]="ariaLabel()">
       @for (tab of tabs(); track tab.key; let i = $index) {
         <button type="button" class="studio-tab" role="tab" [id]="'studio-tab-' + tab.key"
           [attr.aria-selected]="active() === tab.key" [attr.tabindex]="active() === tab.key ? 0 : -1"
+          [disabled]="tab.disabled ?? false" [attr.title]="tab.title ?? null"
           [attr.data-testid]="'studio-tab-' + tab.key"
           (click)="select(tab.key)" (keydown)="onKeydown($event, i)">
           {{ tab.label }}
@@ -54,6 +58,7 @@ export interface StudioRecordTab {
       border-bottom-color: var(--color-primary-600, #2563eb);
     }
     .studio-tab:focus-visible { outline: 2px solid var(--color-primary-500, #3b82f6); outline-offset: -2px; }
+    .studio-tab:disabled { opacity: .55; cursor: not-allowed; }
     .studio-tab__badge {
       display: inline-block;
       margin-left: var(--spacing-1);
@@ -68,8 +73,11 @@ export interface StudioRecordTab {
 export class StudioRecordTabsComponent {
   readonly tabs = input.required<StudioRecordTab[]>();
   readonly active = model<string>('form');
+  /** 4.7 « v1.1 » (ap-f) : aria-label du tablist paramétrable (défaut = valeur historique). */
+  readonly ariaLabel = input<string>('Fiche enregistrement');
 
   select(key: string): void {
+    if (this.tabs().find(t => t.key === key)?.disabled) return;   // onglet désactivé (« Bientôt »)
     this.active.set(key);
   }
 
@@ -80,7 +88,7 @@ export class StudioRecordTabsComponent {
     else if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
     if (next === null || !tabs[next]) return;
     event.preventDefault();
-    this.select(tabs[next].key);
+    if (!tabs[next].disabled) this.select(tabs[next].key);
     const host = (event.target as HTMLElement | null)?.closest?.('.studio-tabs');
     (host?.querySelectorAll<HTMLElement>('[role="tab"]')[next])?.focus();
   }

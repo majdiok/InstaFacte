@@ -308,4 +308,91 @@ describe('StudioApprovalsPageComponent', () => {
     expect(fixture.nativeElement.querySelector('.sai-banner--error')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="sap-row-a1"]')).not.toBeNull();
   });
+
+  // ---- 4.7 « v1.1 » (ap-f, D-47-60/61) : onglets « Déléguées » (Bientôt) et « Historique » ----
+
+  /** Décision passée au format H-1 (même forme que l'inbox). */
+  function historyItem(id: string, status: 'approved' | 'rejected', comment: string | null,
+                       startedByName: string | null = 'Alice Martin'): WorkflowApprovalInboxItemDto {
+    const item = inboxItem(id);
+    item.approval = {
+      ...item.approval, status, comment,
+      decidedBy: 'u-me', decidedAt: status === 'approved' ? '2026-09-17T15:30:00Z' : '2026-09-18T09:05:00Z'
+    };
+    item.startedByName = startedByName;
+    return item;
+  }
+
+  function flushHistory(items: WorkflowApprovalInboxItemDto[]): void {
+    httpMock.expectOne(r => r.method === 'GET' && r.url === `${API}/workflows/approvals/mine/history`)
+      .flush({ success: true, data: items, message: null, error: null });
+    fixture.detectChanges();
+  }
+
+  function clickTab(key: string): void {
+    (fixture.nativeElement.querySelector(`[data-testid="studio-tab-${key}"]`) as HTMLElement).click();
+    fixture.detectChanges();
+  }
+
+  it('onglet « Historique » : chargé à la première activation seulement, statut et date affichés', () => {
+    perms = new Set([PERMISSIONS.customData.recordsRead, PERMISSIONS.customData.recordsWrite]);
+    setup();
+    flushInbox([inboxItem('a1')]);
+    httpMock.expectNone(r => r.url === `${API}/workflows/approvals/mine/history`);   // paresseux
+
+    clickTab('history');
+    flushHistory([historyItem('h1', 'rejected', 'Non justifié.'), historyItem('h2', 'approved', null, null)]);
+
+    const row = fixture.nativeElement.querySelector('[data-testid="sap-history-row-h1"]') as HTMLElement;
+    expect(row).not.toBeNull();
+    expect(row.textContent).toContain('Alice Martin');
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-decided-h1"]').textContent).toContain('18/09/2026');
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-decision-h1"]').textContent)
+      .toContain(labels.decisionRejected);
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-decision-h2"]').textContent)
+      .toContain(labels.decisionApproved);
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-comment-h1"]').textContent)
+      .toContain('Non justifié.');
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-comment-h2"]').textContent)
+      .toContain('—');
+
+    // Retour « À traiter » puis « Historique » : aucune nouvelle requête.
+    clickTab('pending');
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-row-a1"]')).not.toBeNull();
+    clickTab('history');
+    httpMock.expectNone(r => r.url === `${API}/workflows/approvals/mine/history`);
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-row-h1"]')).not.toBeNull();
+  });
+
+  it('onglet « Déléguées » : désactivé avec infobulle « Bientôt », jamais activé', () => {
+    perms = new Set([PERMISSIONS.customData.recordsRead]);
+    setup();
+    flushInbox([]);
+
+    const tab = fixture.nativeElement.querySelector('[data-testid="studio-tab-delegated"]') as HTMLButtonElement;
+    expect(tab.disabled).toBeTrue();
+    expect(tab.title).toBe(labels.delegatedSoon);
+    tab.click();
+    fixture.detectChanges();
+    expect(component.activeTab()).toBe('pending');
+  });
+
+  it('onglet « Historique » : erreur ⇒ bannière + Réessayer', () => {
+    perms = new Set([PERMISSIONS.customData.recordsRead]);
+    setup();
+    flushInbox([]);
+    clickTab('history');
+    httpMock.expectOne(r => r.method === 'GET' && r.url === `${API}/workflows/approvals/mine/history`)
+      .flush('panne', { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+
+    const banner = fixture.nativeElement.querySelector('.sai-banner--error') as HTMLElement;
+    expect(banner.textContent).toContain(labels.historyLoadError);
+
+    (fixture.nativeElement.querySelector('[data-testid="sap-history-retry"] button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    flushHistory([historyItem('h1', 'approved', 'Vu.')]);
+    expect(fixture.nativeElement.querySelector('.sai-banner--error')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-row-h1"]')).not.toBeNull();
+  });
 });

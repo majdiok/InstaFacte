@@ -48,6 +48,37 @@ async function setup(page: Page, options: SetupOptions = {}): Promise<StudioMock
 }
 
 test.describe('Studio — mes approbations (4.4)', () => {
+  // 4.7 « v1.1 » (ap-f, D-47-60/61) — onglets de la page : « Déléguées » désactivé, « Historique » réel.
+  test('onglets : Déléguées « Bientôt » désactivé ; Historique charge mes décisions à l\'activation', async ({ page }) => {
+    await setup(page, { permissions: WRITE_PERMISSIONS });
+    await page.goto('/studio/approvals');
+
+    // Badge « À traiter » = 2 ; « Déléguées » désactivé avec infobulle.
+    await expect(page.getByTestId('studio-tab-pending')).toContainText('2');
+    const delegated = page.getByTestId('studio-tab-delegated');
+    await expect(delegated).toBeDisabled();
+    await expect(delegated).toHaveAttribute('title', 'Bientôt');
+    await delegated.click({ force: true });
+    await expect(page.getByTestId('sap-row-a1')).toBeVisible();   // toujours sur « À traiter »
+
+    // « Historique » : chargé à l'activation, deux décisions (refusée puis approuvée).
+    await page.getByTestId('studio-tab-history').click();
+    const h1 = page.getByTestId('sap-history-row-h1');
+    await expect(h1).toBeVisible();
+    await expect(h1).toContainText('Vanne C7');
+    await expect(h1).toContainText('Alice Martin');
+    await expect(page.getByTestId('sap-history-decision-h1')).toContainText('Refusée');
+    await expect(page.getByTestId('sap-history-comment-h1')).toContainText('Non justifié.');
+    const h2 = page.getByTestId('sap-history-row-h2');
+    await expect(h2).toBeVisible();
+    await expect(page.getByTestId('sap-history-decision-h2')).toContainText('Approuvée');
+    await expect(page.getByTestId('sap-history-comment-h2')).toContainText('—');
+
+    // Retour « À traiter » : l'inbox est intacte ; l'historique ne se recharge pas.
+    await page.getByTestId('studio-tab-pending').click();
+    await expect(page.getByTestId('sap-row-a1')).toBeVisible();
+  });
+
   test('la page liste les approbations et calcule les KPI', async ({ page }) => {
     await setup(page);
     await page.goto('/studio/approvals');

@@ -275,6 +275,32 @@ export const WF_APPROVALS = [
   }
 ];
 
+/** 4.7 « v1.1 » (D-47-60) — onglet « Historique » : mes décisions passées (même forme que l'inbox). */
+export const WF_APPROVAL_HISTORY = [
+  {
+    approval: {
+      id: 'h1', instanceId: 'inst-9', stepKey: 'approval_1', assigneeUserId: null,
+      assigneeRole: 'Administrator', title: 'Validation de l\'intervention', message: null,
+      status: 'rejected', decidedBy: 'u-e2e', decidedAt: iso(-2 * HOUR_MS), comment: 'Non justifié.',
+      dueAt: null, createdAt: iso(-30 * HOUR_MS), rowVersion: 'AhAAAB'
+    },
+    instanceId: 'inst-9', workflowKey: 'validation_intervention', workflowName: 'Validation intervention',
+    entityKey: 'interventions', entityName: 'Interventions', recordId: 'r9', recordLabel: 'Vanne C7',
+    startedBy: null, startedAt: iso(-30 * HOUR_MS), startedByName: 'Alice Martin'
+  },
+  {
+    approval: {
+      id: 'h2', instanceId: 'inst-10', stepKey: 'approval_1', assigneeUserId: 'u-e2e',
+      assigneeRole: null, title: 'Accord devis', message: null,
+      status: 'approved', decidedBy: 'u-e2e', decidedAt: iso(-26 * HOUR_MS), comment: null,
+      dueAt: null, createdAt: iso(-50 * HOUR_MS), rowVersion: 'AiAAAB'
+    },
+    instanceId: 'inst-10', workflowKey: 'validation_devis', workflowName: 'Validation devis',
+    entityKey: 'devis', entityName: 'Devis', recordId: 'r10', recordLabel: 'DEV-0042',
+    startedBy: null, startedAt: iso(-50 * HOUR_MS), startedByName: null
+  }
+];
+
 /** `RunnableWorkflowDto[]` — dialog « Lancer un workflow » de la fiche (4.4h2). */
 export const WF_RUNNABLE = [
   { id: 'wf-1', key: 'validation_intervention', name: 'Validation intervention', description: null, stepCount: 3 }
@@ -304,6 +330,8 @@ export interface StudioWorkflowMockOptions {
   instances?: unknown[];
   /** Boîte d'approbations (défaut `WF_APPROVALS` : 1 en retard, 1 sous 24 h). */
   approvals?: unknown[];
+  /** 4.7 « v1.1 » (ap-f) : onglet « Historique » (défaut `WF_APPROVAL_HISTORY` : 1 approuvée, 1 refusée). */
+  approvalHistory?: unknown[];
   /** Statut de la sonde count + de la liste (200 par défaut ; 403/404 = garde fail-closed). */
   approvalsStatus?: 200 | 403 | 404;
   /** Statut de la sonde d'instances de la fiche (200 par défaut ; 404 = onglet masqué, D21). */
@@ -342,6 +370,7 @@ export async function installStudioWorkflowMocks(
   const definitions = (options.definitions ?? WF_DEFINITIONS) as Record<string, unknown>[];
   const instances = (options.instances ?? WF_INSTANCES) as Record<string, unknown>[];
   const approvals = (options.approvals ?? WF_APPROVALS) as unknown[];
+  const approvalHistory = (options.approvalHistory ?? WF_APPROVAL_HISTORY) as unknown[];
   const approvalsStatus = options.approvalsStatus ?? 200;
   const recordProbeStatus = options.recordProbeStatus ?? 200;
   /** Définition renvoyée par le POST de création — resservie par GET wf-new après la navigation. */
@@ -380,6 +409,12 @@ export async function installStudioWorkflowMocks(
     if (approvalsStatus === 403) return fulfil(route, forbidden, 403);
     if (approvalsStatus === 404) return fulfil(route, notFound, 404);
     return fulfil(route, ok(approvals));
+  });
+  // 4.7 « v1.1 » (ap-f) — onglet « Historique » (motif distinct de `mine?**`, aucune collision).
+  await page.route('**/api/studio/workflows/approvals/mine/history?**', async route => {
+    if (approvalsStatus === 403) return fulfil(route, forbidden, 403);
+    if (approvalsStatus === 404) return fulfil(route, notFound, 404);
+    return fulfil(route, ok(approvalHistory));
   });
   await page.route('**/api/studio/workflows/approvals/*/approve', route => fulfil(route, ok(instances[0])));
   await page.route('**/api/studio/workflows/approvals/*/reject', route => fulfil(route, ok(instances[0])));

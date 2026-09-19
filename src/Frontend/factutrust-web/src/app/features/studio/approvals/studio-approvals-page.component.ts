@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MessageService } from 'primeng/api';
@@ -17,6 +17,7 @@ import { ViewportService } from '@core/services/viewport.service';
 import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-table.component';
 import { StudioPageShellComponent } from '../shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from '../shared/studio-breadcrumb.util';
+import { StudioRecordTab, StudioRecordTabsComponent } from '../shared/studio-record-tabs.component';
 import { STUDIO_WORKFLOW_LABELS } from '../workflows/studio-workflow-labels';
 import { workflowErrorMessage } from '../workflows/studio-workflow-http.util';
 import { StudioWorkflowInstanceDetailComponent } from '../workflows/studio-workflow-instance-detail.component';
@@ -52,7 +53,8 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
   imports: [
     DatePipe, FormsModule, RouterLink,
     ButtonModule, DialogModule, DrawerModule, TableModule, TagModule, TextareaModule, ToastModule,
-    StudioPageShellComponent, SkeletonTableComponent, StudioApprovalDetailPanelComponent, StudioWorkflowInstanceDetailComponent
+    StudioPageShellComponent, SkeletonTableComponent, StudioApprovalDetailPanelComponent, StudioWorkflowInstanceDetailComponent,
+    StudioRecordTabsComponent
   ],
   template: `
     <app-studio-page-shell [title]="labels.title" [subtitle]="labels.subtitle" [breadcrumbs]="breadcrumbs">
@@ -81,6 +83,11 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
         <p class="sap-readonly" role="note"><i class="fa-solid fa-lock" aria-hidden="true"></i> {{ labels.readOnly }}</p>
       }
 
+      <!-- 4.7 « v1.1 » (ap-f, D-47-60/61) : onglets — « Déléguées » désactivé « Bientôt » (aucune
+           délégation dans le domaine), « Historique » chargé paresseusement à la 1ʳᵉ activation. -->
+      <app-studio-record-tabs [tabs]="tabs()" [(active)]="activeTab" [ariaLabel]="labels.title" />
+
+      @if (activeTab() === 'pending') {
       @if (error(); as message) {
         <div class="sai-banner sai-banner--error" role="alert">
           {{ message }}
@@ -156,6 +163,66 @@ import { ApprovalDueState, ApprovalRow, approvalKpis, dueLabel, dueState, toAppr
           }
         </div>
       }
+      } @else if (activeTab() === 'history') {
+        <!-- Onglet « Historique » : mes décisions passées (route 4.7p1, forme inbox). -->
+        @if (historyError(); as hError) {
+          <div class="sai-banner sai-banner--error" role="alert">
+            {{ hError }}
+            <p-button [label]="labels.retry" [text]="true" (onClick)="loadHistory()" data-testid="sap-history-retry" />
+          </div>
+        } @else if (historyLoading()) {
+          <app-skeleton-table [rows]="5" [columns]="historySkeletonColumns" />
+        } @else {
+          <div class="ft-table-card">
+            <p-table [value]="historyItems()" dataKey="id" styleClass="p-datatable-sm" [rowHover]="true">
+              <ng-template pTemplate="header">
+                <tr>
+                  <th>{{ labels.colWorkflow }}</th>
+                  <th>{{ labels.colRecord }}</th>
+                  <th>{{ labels.colRequestedBy }}</th>
+                  <th>{{ labels.colDecidedAt }}</th>
+                  <th>{{ labels.colDecision }}</th>
+                  <th>{{ labels.colComment }}</th>
+                </tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-item>
+                <tr [attr.data-testid]="'sap-history-row-' + item.id">
+                  <td>
+                    <strong>{{ item.workflowName }}</strong>
+                    <div class="studio-muted">{{ item.stepTitle }}</div>
+                  </td>
+                  <td>
+                    @if (canDecide()) {
+                      <a [routerLink]="recordLink(item)">{{ item.recordLabel ?? item.recordId }}</a>
+                    } @else {
+                      {{ item.recordLabel ?? item.recordId }}
+                    }
+                    <div class="studio-muted">{{ item.entityName }}</div>
+                  </td>
+                  <td>{{ item.startedByName ?? '—' }}</td>
+                  <td [attr.data-testid]="'sap-history-decided-' + item.id">{{ item.decidedAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                  <td>
+                    <p-tag [severity]="item.status === 'approved' ? 'success' : 'danger'"
+                      [value]="item.status === 'approved' ? labels.decisionApproved : labels.decisionRejected"
+                      [attr.data-testid]="'sap-history-decision-' + item.id" />
+                  </td>
+                  <td [attr.data-testid]="'sap-history-comment-' + item.id">
+                    <span [attr.title]="item.comment">{{ truncateComment(item.comment) }}</span>
+                  </td>
+                </tr>
+              </ng-template>
+              <ng-template pTemplate="emptymessage">
+                <tr>
+                  <td colspan="6" class="ft-empty">
+                    <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> {{ labels.historyEmpty }}
+                    <div class="studio-muted">{{ labels.historyEmptyHint }}</div>
+                  </td>
+                </tr>
+              </ng-template>
+            </p-table>
+          </div>
+        }
+      }
     </app-studio-page-shell>
 
     @if (selected(); as sel) {
@@ -227,6 +294,19 @@ export class StudioApprovalsPageComponent implements OnInit {
   readonly labels = STUDIO_WORKFLOW_LABELS.approvals;
   readonly breadcrumbs = STUDIO_BREADCRUMBS.approvals();                       // déclaré par 4.4d (H-6)
   readonly skeletonColumns = [{ width: '20%' }, { width: '20%' }, { width: '11%' }, { width: '13%' }, { width: '11%' }, { width: '10%' }, { width: '15%' }];
+  readonly historySkeletonColumns = [{ width: '22%' }, { width: '22%' }, { width: '14%' }, { width: '14%' }, { width: '12%' }, { width: '16%' }];
+
+  // 4.7 « v1.1 » (ap-f) — onglets de la page. KPI = inbox, toujours visibles en tête.
+  readonly activeTab = signal<'pending' | 'delegated' | 'history'>('pending');
+  readonly tabs = computed<StudioRecordTab[]>(() => [
+    { key: 'pending', label: this.labels.tabPending, badge: this.items().length || null },   // D-44-58 : badge masqué à 0
+    { key: 'delegated', label: this.labels.tabDelegated, disabled: true, title: this.labels.delegatedSoon },
+    { key: 'history', label: this.labels.tabHistory }
+  ]);
+  readonly historyItems = signal<ApprovalRow[]>([]);
+  readonly historyLoading = signal(false);
+  readonly historyError = signal<string | null>(null);
+  private historyRequested = false;
 
   readonly items = signal<ApprovalRow[]>([]);
   readonly loading = signal(true);
@@ -248,6 +328,37 @@ export class StudioApprovalsPageComponent implements OnInit {
   readonly wide = inject(ViewportService).isWide;
 
   ngOnInit(): void { this.load(); }
+
+  constructor() {
+    // Chargement paresseux de l'historique à la première activation de l'onglet (une seule fois,
+    // sauf erreur ⇒ « Réessayer » relance explicitement).
+    effect(() => {
+      if (this.activeTab() === 'history' && !this.historyRequested) {
+        this.historyRequested = true;
+        this.loadHistory();
+      }
+    });
+  }
+
+  loadHistory(): void {
+    this.historyLoading.set(true);
+    this.historyError.set(null);
+    this.workflows.listMyApprovalHistory().subscribe({                      // GET workflows/approvals/mine/history?max=50 (skipErrorUi)
+      next: res => {
+        this.historyItems.set(res.success ? (res.data ?? []).map(toApprovalRow) : []);
+        this.historyLoading.set(false);
+      },
+      error: (err: HttpErrorResponse) => {
+        this.historyError.set(workflowErrorMessage(err) || this.labels.historyLoadError);
+        this.historyLoading.set(false);
+      }
+    });
+  }
+
+  truncateComment(comment: string | null): string {
+    if (!comment) return '—';
+    return comment.length > 80 ? comment.slice(0, 80) + '…' : comment;
+  }
 
   select(item: ApprovalRow): void { this.selected.set(item); }
   clearSelection(): void { this.selected.set(null); }
