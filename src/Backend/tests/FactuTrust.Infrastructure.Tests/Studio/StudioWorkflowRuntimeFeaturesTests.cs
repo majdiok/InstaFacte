@@ -32,6 +32,7 @@ public class StudioWorkflowRuntimeFeaturesTests
     private readonly Mock<INotificationService> _notifications = new(MockBehavior.Strict);
     private readonly Mock<IAuditService> _audit = new(MockBehavior.Strict);
     private readonly Mock<ICurrentUser> _currentUser = new(MockBehavior.Strict);
+    private readonly Mock<IStudioUserNameResolver> _userNames = new(MockBehavior.Strict);
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 9, 17, 10, 0, 0, TimeSpan.Zero));
 
     private readonly CustomEntityDefinition _entity =
@@ -42,6 +43,9 @@ public class StudioWorkflowRuntimeFeaturesTests
         _currentUser.Setup(c => c.TenantId).Returns(TenantId);
         _currentUser.Setup(c => c.UserId).Returns(Uid);
         _currentUser.Setup(c => c.Role).Returns(UserRole.SalesRep);
+        // 4.6b1 : par défaut aucun lanceur n'est résolu (null) ; les tests « Demandé par » posent un nom.
+        _userNames.Setup(r => r.GetDisplayNamesAsync(TenantId, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string>());
     }
 
     private void SetupReadPermission(bool granted = true) =>
@@ -72,7 +76,7 @@ public class StudioWorkflowRuntimeFeaturesTests
             .ReturnsAsync(definition);
 
         var handler = new ListRecordWorkflowInstancesQueryHandler(
-            _workflows.Object, _entities.Object, _records.Object, _currentUser.Object);
+            _workflows.Object, _entities.Object, _records.Object, _currentUser.Object, _userNames.Object);
         var result = await handler.Handle(
             new ListRecordWorkflowInstancesQuery("customer", record.Id, Max: 10_000), CancellationToken.None);
 
@@ -93,7 +97,7 @@ public class StudioWorkflowRuntimeFeaturesTests
             .ReturnsAsync((CustomRecord?)null);
 
         var handler = new ListRecordWorkflowInstancesQueryHandler(
-            _workflows.Object, _entities.Object, _records.Object, _currentUser.Object);
+            _workflows.Object, _entities.Object, _records.Object, _currentUser.Object, _userNames.Object);
         var result = await handler.Handle(
             new ListRecordWorkflowInstancesQuery("customer", recordId), CancellationToken.None);
 
@@ -103,7 +107,7 @@ public class StudioWorkflowRuntimeFeaturesTests
 
     // 4.5b1 / D11 — détail d'instance pour les lecteurs, borné à la fiche (D-45-04), même corps que la route de conception (D-45-05).
     private GetRecordWorkflowInstanceQueryHandler NewGetInstanceHandler() =>
-        new(_workflows.Object, _entities.Object, _records.Object, _currentUser.Object);
+        new(_workflows.Object, _entities.Object, _records.Object, _currentUser.Object, _userNames.Object);
 
     [Fact]
     public async Task GetRecordWorkflowInstance_returns_detail_with_sorted_steps_approvals_and_masked_previous()
@@ -153,6 +157,65 @@ public class StudioWorkflowRuntimeFeaturesTests
         var json = detail.Context.ToJsonString();
         Assert.DoesNotContain("alice@exemple.fr", json, StringComparison.Ordinal);
         Assert.DoesNotContain("confidentiel", json, StringComparison.Ordinal);
+    }
+
+    // 4.6b1 / D-46-B01 — le nom du lanceur est servi aussi en portée lecteur (colonne « Demandé par »
+    // de l'inbox, 4.5e) ; seul l'e-mail du contexte reste masqué.
+    [Fact]
+    public async Task GetRecordWorkflowInstance_includes_started_by_name_while_context_email_stays_masked()
+    {
+        var record = CustomRecord.Create(TenantId, _entity.Id, "{}", Uid);
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        var instance = StudioWorkflowInstance.Start(TenantId, definition, record.Id, StudioWorkflowTriggerKind.Manual, StartedBy,
+            """{ "record": { "a": 1 }, "startedBy": { "id": "u1", "email": "alice@exemple.fr" } }""", 0, null);
+
+        SetupReadPermission();
+        SetupEntityAndRecord(record);
+        _workflows.Setup(r => r.GetInstanceAsync(TenantId, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(instance);
+        _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>())).ReturnsAsync(definition);
+        _workflows.Setup(r => r.ListStepRunsAsync(TenantId, instance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<StudioWorkflowStepRun>());
+        _workflows.Setup(r => r.ListApprovalsForInstanceAsync(TenantId, instance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<StudioWorkflowApproval>());
+        _userNames.Setup(r => r.GetDisplayNamesAsync(TenantId, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [StartedBy] = "Alice Martin" });
+
+        var result = await NewGetInstanceHandler().Handle(
+            new GetRecordWorkflowInstanceQuery("customer", record.Id, instance.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Alice Martin", result.Value.Instance.StartedByName);
+        Assert.Null(result.Value.Context["startedBy"]!["email"]);
+    }
+
+    // 4.6b1 / D-46-B01 — « Demandé par » sur l'onglet Workflows de la fiche : une résolution en lot par page.
+    [Fact]
+    public async Task ListRecordWorkflowInstances_resolves_started_by_name_in_one_batch()
+    {
+        var record = CustomRecord.Create(TenantId, _entity.Id, "{}", Uid);
+        var definition = NewDefinition(_entity.Id, StudioWorkflowTriggerKind.Manual);
+        var named = NewInstance(definition, record.Id);
+        var systemStarted = StudioWorkflowInstance.Start(TenantId, definition, record.Id, StudioWorkflowTriggerKind.OnCreate, null, "{}", 0, null);
+        SetupReadPermission();
+        SetupEntityAndRecord(record);
+        _workflows.Setup(r => r.ListInstancesForRecordAsync(TenantId, record.Id, 10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StudioWorkflowInstance> { named, systemStarted });
+        _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(definition);
+        _userNames.Setup(r => r.GetDisplayNamesAsync(TenantId, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [StartedBy] = "Alice Martin" });
+
+        var handler = new ListRecordWorkflowInstancesQueryHandler(
+            _workflows.Object, _entities.Object, _records.Object, _currentUser.Object, _userNames.Object);
+        var result = await handler.Handle(
+            new ListRecordWorkflowInstancesQuery("customer", record.Id, Max: 10), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Alice Martin", result.Value[0].StartedByName);
+        Assert.Null(result.Value[1].StartedByName);   // lanceur null (déclencheur automatique) ⇒ jamais résolu
+        _userNames.Verify(r => r.GetDisplayNamesAsync(TenantId,
+            It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1 && ids.Contains(StartedBy)),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
