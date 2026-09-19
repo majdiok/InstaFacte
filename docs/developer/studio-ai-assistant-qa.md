@@ -720,7 +720,7 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
 > fichier suit les PR.
 
 75. **Drapeau éteint** — sans `Ollama__EnableStudioWorkflows`, appeler les 13 routes de
-    `StudioWorkflowsController` (`GET api/studio/workflows/step-catalog`, `GET api/studio/workflows` (hub, 4.5f),
+    `StudioWorkflowsController` (`GET api/studio/workflows/step-catalog`, `GET api/studio/workflows` (catalogue tenant, 4.5c3 — consommé par le hub 4.5f),
     `GET/POST api/studio/entities/{entityId}/workflows`, `POST …/workflows/validate`, `GET/PUT/DELETE api/studio/workflows/{id}`,
     `POST …/toggle`, `POST …/duplicate`, `POST …/test` (4.7c1), `GET …/instances?page=&pageSize=` (paginée depuis 4.7a1),
     `GET api/studio/workflows/instances/{instanceId}` — contrat figé `FrozenRoutes` = 13, QA 129) ⇒ `404`
@@ -753,8 +753,9 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     sans `cron` ⇒ `400` `path="triggerConfig.cron"` « Une expression cron (5 champs, UTC) est requise pour le
     déclencheur « scheduled ». » ; cron à 4 ou 6 champs, texte libre, hors bornes ou plage inversée ⇒ `400`
     « Expression cron invalide : « … » (5 champs : minute heure jour-du-mois mois jour-de-semaine). » ; toute autre
-    clé que `cron` / `filters` ⇒ « Propriété « x » non reconnue. » ; `filters` non tableau ou > 10 entrées ⇒
-    « « filters » doit être un tableau de 0 à 10 filtres { field, op, value, value2? }. ». `POST …/validate` avec le
+    clé que `cron` / `filters` ⇒ « Propriété « x » non reconnue. » ; `filters` non tableau ⇒
+    « « filters » doit être un tableau de 0 à 10 filtres { field, op, value, value2? }. » ; plus de 10 entrées ⇒
+    « Le déclencheur planifié accepte au plus 10 filtres. » (chemin `triggerConfig.filters` dans les deux cas). `POST …/validate` avec le
     même corps ⇒ `200` `isValid=false` et les mêmes issues ; aucune définition créée ni modifiée. Détail : QA 122.
 79. **Anti-boucle** — workflow **A** sur `commandes`, `trigger: "on_update"`, une étape `update_field`
     (`set: { "montant": "{{ montant }}" }`) : modifier un enregistrement ⇒ `GET workflows/{A}/instances` ⇒
@@ -1101,7 +1102,9 @@ DOM ; il ne change pas quand on charge plus de pages.
 cron à 4 ou 6 champs, texte libre (« chaque jour »), valeur hors bornes (`61 * * * *`, `0 6 * * 8`), pas nul
 (`*/0 * * * *`), plage inversée ⇒ `400` « Expression cron invalide : … » ; clé autre que `cron` / `filters` ⇒ « Propriété « x » non reconnue. » ; `filters` > 10 entrées ou
 non tableau ⇒ `400` `triggerConfig.filters` ; filtre sur champ inconnu, inactif ou calculé, sur `_previous` /
-`_results`, ou avec un opérateur incompatible avec le type ⇒ `400` sur `triggerConfig.filters[i]` ; forme valide
+`_results`, ou avec un opérateur incompatible avec le type ⇒ `400` sur `triggerConfig.filters` (chemin **sans**
+indice, contrairement aux étapes `condition` ; messages « Champ de filtre inconnu ou inactif : « x ». », « Champ
+calculé non filtrable : « x ». », « Opérateur « op » incompatible avec le champ « x ». », « Opérateur inconnu : « op ». ») ; forme valide
 (`*/10 * * * *`, `0 6 * * 1`, `0 0 1 JAN *`, `0 18 * * MON-FRI`, `0 6 * * 0`) avec 0..10 filtres ⇒ `201` / `200`,
 `triggerConfig` restitué tel quel (`TriggerConfigJson`, aucune migration). `POST …/validate` renvoie les mêmes issues
 avec `isValid=false`.
@@ -1165,7 +1168,9 @@ Assistant, outil `studio_plan_workflow` : « rappel tous les lundis à 6 h » �
 (`trigger: scheduled`, alias FR « planifié », `triggerConfig.cron`, alias `filtres` ⇒ `filters`) ; sans cron ou cron
 invalide ⇒ contrôle **bloquant** « Workflow « … » : déclencheur planifié sans expression cron valide (triggerConfig.cron
 — 5 champs, UTC). », plan non créé ; la description de l'outil (`AiToolRegistry`) ne parle plus de « bientôt
-disponible ». Voir QA 88 (réécrite).
+disponible ». Voir QA 88 (réécrite). **Écart connu (frontend)** : l'aperçu du plan dans l'atelier affiche encore le
+déclencheur comme « Planifié (bientôt) » (`studio-ai-labels.ts`, clé `scheduled`) — libellé périmé, sans effet sur la
+création ; à corriger au lot ★ (plan C7) : ne pas le compter comme un échec de cette section.
 
 - Portée automatisée : Infra `StudioAiWorkflowSpecTests.Keeps_scheduled_workflows_with_cron_and_filters`,
   `StudioAiWorkflowSpecTests.Parses_a_scheduled_only_plan_with_the_french_alias`,
@@ -1190,9 +1195,9 @@ contrôleur ; le handler re-vérifie la permission).
 ### 128. Dialogue « Tester sur un enregistrement »
 
 Concepteur : bouton `wf-test` (après « Valider ») **désactivé** tant que le brouillon est sale ou non enregistré,
-infobulle « Enregistrez d'abord pour tester. » ; ouverture ⇒ 10 enregistrements chargés, recherche anti-rebond
+infobulle « Enregistrez d’abord pour tester. » (apostrophe typographique, comme le libellé) ; ouverture ⇒ 10 enregistrements chargés, recherche anti-rebond
 300 ms, libellé = premier champ texte (D-44-24) ; « Lancer le test » ⇒ `POST { recordId }` puis trace rendue
-(verdict par étape — Exécutée / Sautée / En attente / En échec —, détail, « Valeurs rendues ») sous le bandeau « Simulation — aucune donnée n'a été écrite. » ; `400` / `404`
+(verdict par étape — Exécutée / Sautée / En attente / En échec —, détail, « Valeurs rendues ») sous le bandeau « Simulation — aucune donnée n’a été écrite. » ; `400` / `404`
 affichés **en ligne** dans le dialogue (aucun toast, `skipErrorUi`) ; aucun appel d'écriture émis.
 
 - Portée automatisée : Karma concepteur `describe('dialogue « Tester » (4.7c2)')` (4 `it` : bouton désactivé +
@@ -1201,8 +1206,8 @@ affichés **en ligne** dans le dialogue (aucun toast, `skipErrorUi`) ; aucun app
 
 ### 129. Garde-fous conception v1.1
 
-`StudioWorkflowsController` expose **13 routes figées** (`FrozenRoutes` : 11 de la PR 4.1 + `GET workflows` du hub
-4.5f + `POST workflows/{id}/test`) ; drapeau coupé ⇒ `404` sur les 13 sans appel au médiateur ; policy de classe
+`StudioWorkflowsController` expose **13 routes figées** (`FrozenRoutes` : 11 de la PR 4.1 + `GET workflows` — catalogue tenant
+4.5c3, consommé par le hub 4.5f — + `POST workflows/{id}/test`) ; drapeau coupé ⇒ `404` sur les 13 sans appel au médiateur ; policy de classe
 `StudioDesignEntities`, aucune action avec un `[Authorize]` plus faible ; `?max=` a disparu de la route
 `instances` (rupture interne assumée, seul consommateur = panneau).
 
@@ -1261,7 +1266,7 @@ non consommé.
 ### 134. Onglet « Historique » de Mes approbations
 
 Onglets `À traiter | Déléguées | Historique` (`app-studio-record-tabs`). Première activation de **Historique** ⇒
-**1 GET** `workflows/approvals/mine/history?max=50`, squelette (5 lignes) puis tableau Workflow / Enregistrement /
+**1 GET** `workflows/approvals/mine/history?max=50`, squelette (5 lignes) puis tableau Workflow / étape / Enregistrement /
 Demandé par / Décidée le (`dd/MM/yyyy HH:mm`) / Décision (`p-tag` « Approuvée » vert, « Refusée » rouge) /
 Commentaire (tronqué à 80 caractères + « … », texte complet en `title`). Revenir sur « À traiter » puis sur
 « Historique » ⇒ **aucun** nouvel appel (chargement paresseux, une seule fois). Le badge de « À traiter » reste
@@ -1490,7 +1495,7 @@ la permission et n'appelle rien).
 ### 152. Sans drapeau + index
 
 `EnableStudioWorkflows=false` (et tout autre drapeau Studio coupé) ⇒ la route `/history` répond toujours `200`
-(R-h2 : l'historique ne dépend d'aucune fonctionnalité optionnelle) ; les 8 routes de `StudioRecordsController` et
+(4.7h2 / D-47-63 : route sans drapeau — l'historique ne dépend d'aucune fonctionnalité optionnelle) ; les 8 routes de `StudioRecordsController` et
 leurs policies sont inchangées depuis la PR #171. En base tenant : index non unique `IX_AuditLogs_EntityHistory`
 sur `AuditLogs (EntityType, EntityId, CreatedAt)` présent (migration `20260918100000_AddAuditLogsEntityHistoryIndex_Tenant`,
 `Up` `IF NOT EXISTS` / `Down` `IF EXISTS`, jumeau `docs/runbooks/sql/AddAuditLogsEntityHistoryIndex_Tenant.idempotent.sql`) ;
