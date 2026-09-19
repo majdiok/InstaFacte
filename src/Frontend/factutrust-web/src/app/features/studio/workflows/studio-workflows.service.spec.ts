@@ -52,6 +52,23 @@ describe('StudioWorkflowsService', () => {
     req.flush({ success: true, data: [], message: null, errors: [] });
   });
 
+  it('listAllWorkflows liste tous les workflows du tenant via GET workflows?page=&pageSize= (et search= si fourni)', () => {
+    service.listAllWorkflows().subscribe();
+    const req = http.expectOne(r => r.method === 'GET' && r.url === `${base}/workflows`);
+    expect(req.request.params.get('page')).toBe('1');
+    expect(req.request.params.get('pageSize')).toBe('200');
+    expect(req.request.params.has('search')).toBeFalse();
+    expect(req.request.context.get(SKIP_ERROR_TOAST)).toBe(true);
+    req.flush({ success: true, data: { items: [], page: 1, pageSize: 200, totalCount: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false }, message: null, errors: [] });
+
+    service.listAllWorkflows('devis', 2, 50).subscribe();
+    const searched = http.expectOne(r => r.method === 'GET' && r.url === `${base}/workflows`);
+    expect(searched.request.params.get('search')).toBe('devis');
+    expect(searched.request.params.get('page')).toBe('2');
+    expect(searched.request.params.get('pageSize')).toBe('50');
+    searched.flush({ success: true, data: null, message: null, errors: [] });
+  });
+
   it('createWorkflow poste la requête sur entities/{id}/workflows', () => {
     service.createWorkflow('e1', saveRequest).subscribe();
     const req = http.expectOne(`${base}/entities/e1/workflows`);

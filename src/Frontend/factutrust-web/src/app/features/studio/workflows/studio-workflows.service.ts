@@ -3,7 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, shareReplay } from 'rxjs';
 import { environment } from '@environments/environment';
 import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
-import { ApiResponse } from '@core/services/client.service';
+import { ApiResponse, PagedResult } from '@core/services/client.service';
 import { clampMax } from './studio-workflow-http.util';
 import {
   ApprovalCountDto,
@@ -13,6 +13,7 @@ import {
   WorkflowApprovalInboxItemDto,
   WorkflowCancelRequest,
   WorkflowDefinitionDto,
+  WorkflowDefinitionListItemDto,
   WorkflowDeletionResultDto,
   WorkflowInstanceDetailDto,
   WorkflowInstanceDto,
@@ -53,6 +54,16 @@ export class StudioWorkflowsService {
 
   listWorkflows(entityId: string): Observable<ApiResponse<WorkflowDefinitionDto[]>> {
     return this.http.get<ApiResponse<WorkflowDefinitionDto[]>>(`${this.base}/entities/${entityId}/workflows`);
+  }
+
+  /**
+   * 4.5c3 / D-44-20 — tous les workflows du tenant (concepteurs, `studio:design_entities`), paginés ;
+   * `pageSize` borné 1..200 côté API. Erreur gérée localement par le hub (toast + liste vide) ⇒ `skipErrorUi`.
+   */
+  listAllWorkflows(search: string | null = null, page = 1, pageSize = 200): Observable<ApiResponse<PagedResult<WorkflowDefinitionListItemDto>>> {
+    let params = new HttpParams().set('page', page).set('pageSize', pageSize);
+    if (search) params = params.set('search', search);
+    return this.http.get<ApiResponse<PagedResult<WorkflowDefinitionListItemDto>>>(`${this.base}/workflows`, { params, ...this.skipErrorUi });
   }
 
   /** 201 (`CreatedAtAction`) ; 400 validation / quota. */

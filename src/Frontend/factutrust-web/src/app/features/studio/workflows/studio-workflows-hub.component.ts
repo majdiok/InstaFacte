@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } 
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { forkJoin, of } from 'rxjs';
+import { of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { MessageService } from 'primeng/api';
 import { ConfirmationService } from '@core/services/confirmation.service';
@@ -22,9 +22,6 @@ import { STUDIO_WORKFLOW_LABELS, formatWorkflowLabel } from './studio-workflow-l
 import { workflowErrorMessage } from './studio-workflow-http.util';
 import { WorkflowDefinitionDto, WorkflowTrigger } from './studio-workflows.models';
 import { StudioWorkflowsService } from './studio-workflows.service';
-
-/** Agrégation multi-tables bornée (D-44-20) : au-delà, le hub impose le choix d'une table. */
-const HUB_MAX_TABLES = 25;
 
 type HubWorkflow = WorkflowDefinitionDto & { entityName: string };
 
@@ -58,15 +55,13 @@ type HubWorkflow = WorkflowDefinitionDto & { entityName: string };
         <input pInputText type="search" class="studio-search-input" [placeholder]="L.hub.search"
           [ngModel]="search()" (ngModelChange)="search.set($event)" [attr.aria-label]="L.hub.search" />
         <span class="studio-toolbar__spacer"></span>
-        @if (!loading() && !tooManyTables()) {
+        @if (!loading()) {
           <span class="studio-muted">{{ filtered().length }} workflow(s)</span>
         }
       </div>
 
       @if (loading()) {
         <app-skeleton-table [rows]="5" [columns]="skeletonColumns" />
-      } @else if (tooManyTables()) {
-        <p class="studio-muted" data-testid="wf-hub-too-many-tables">{{ L.hub.tooManyTables }}</p>
       } @else if (filtered().length === 0) {
         <div class="wf-hub-empty">
           <i class="fa-solid fa-diagram-project" aria-hidden="true"></i>
@@ -120,6 +115,10 @@ type HubWorkflow = WorkflowDefinitionDto & { entityName: string };
             </tr>
           </ng-template>
         </p-table>
+        <!-- 4.5f (D-45-F07) : page unique de 200 (borne API) — au-delà, invite à filtrer par table. -->
+        @if (truncatedCount(); as n) {
+          <p class="studio-muted" data-testid="wf-hub-truncated">{{ formatWorkflowLabel(L.hub.truncated, { count: n }) }}</p>
+        }
       }
     </app-studio-page-shell>
   `,
@@ -148,7 +147,9 @@ export class StudioWorkflowsHubComponent implements OnInit {
   readonly workflows = signal<HubWorkflow[]>([]);
   readonly loading = signal(true);
   readonly search = signal('');
-  readonly tooManyTables = signal(false);
+  /** Vue « Toutes les tables » : nombre de workflows affichés quand `totalCount` dépasse la page renvoyée (4.5f), sinon `null`. */
+  readonly truncatedCount = signal<number | null>(null);
+  protected readonly formatWorkflowLabel = formatWorkflowLabel;
 
   readonly filtered = computed(() => {
     const q = this.search().trim().toLowerCase();
@@ -172,29 +173,38 @@ export class StudioWorkflowsHubComponent implements OnInit {
     });
   }
 
+  /**
+   * 4.5f (D-45-F07, D-44-20 clos) : sans `?entity=`, UNE requête paginée `GET workflows`
+   * (page unique de 200, borne API) au lieu de N `forkJoin` par table — la borne
+   * « 25 tables » disparaît ; si `totalCount` dépasse la page, `truncatedCount` invite à
+   * filtrer par table. Avec `?entity=`, le chemin `listWorkflows(entityId)` est conservé
+   * (table inconnue / jonction ⇒ liste vide sans appel, comme avant).
+   */
   private load(): void {
-    const targets = this.entityId() ? this.entities().filter(e => e.id === this.entityId()) : this.entities();
-    if (!this.entityId() && targets.length > HUB_MAX_TABLES) {
-      this.tooManyTables.set(true);
-      this.workflows.set([]);
-      this.loading.set(false);
-      return;
-    }
     this.loading.set(true);
-    this.tooManyTables.set(false);
-    if (targets.length === 0) {
+    this.truncatedCount.set(null);
+    const entityId = this.entityId();
+    const entity = entityId ? this.entities().find(e => e.id === entityId) : undefined;
+    if (entityId && !entity) {
       this.workflows.set([]);
       this.loading.set(false);
       return;
     }
-    // Motif Relations (l.100–102) : une table en erreur ne fait pas échouer la page.
-    forkJoin(targets.map(e =>
-      this.workflowsSvc.listWorkflows(e.id).pipe(
-        map(r => (r.data ?? []).map(w => ({ ...w, entityName: e.displayName }))),
-        catchError(() => of([] as HubWorkflow[]))
-      )
-    )).subscribe(all => {
-      this.workflows.set(all.flat().sort((a, b) => a.entityName.localeCompare(b.entityName) || a.name.localeCompare(b.name)));
+    const src$ = entity
+      ? this.workflowsSvc.listWorkflows(entity.id).pipe(map(r => ({
+          items: (r.data ?? []).map(w => ({ ...w, entityName: entity.displayName })),
+          total: null as number | null
+        })))
+      : this.workflowsSvc.listAllWorkflows().pipe(map(r => ({
+          items: (r.data?.items ?? []).map(i => ({ ...i.workflow, entityName: i.entityDisplayName })),
+          total: r.data?.totalCount ?? null
+        })));
+    src$.pipe(catchError(() => {
+      this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.L.hub.loadError });
+      return of({ items: [] as HubWorkflow[], total: null as number | null });
+    })).subscribe(({ items, total }) => {
+      this.workflows.set([...items].sort((a, b) => a.entityName.localeCompare(b.entityName) || a.name.localeCompare(b.name)));
+      if (total !== null && total > items.length) this.truncatedCount.set(items.length);
       this.loading.set(false);
     });
   }

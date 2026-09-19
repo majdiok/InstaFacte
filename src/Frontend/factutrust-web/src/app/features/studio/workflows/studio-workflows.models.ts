@@ -96,6 +96,9 @@ export interface WorkflowApprovalInboxItemDto { approval: WorkflowApprovalDto; i
 /** StudioWorkflowRuntimeFeatures.cs l.19. */
 export interface RunnableWorkflowDto { id: string; key: string; name: string; description: string | null; stepCount: number }
 
+/** StudioWorkflowDtos.cs (4.5c2) — ligne de la liste globale du tenant : définition + table porteuse (`PagedResult` côté API, D-44-20). */
+export interface WorkflowDefinitionListItemDto { workflow: WorkflowDefinitionDto; entityKey: string; entityDisplayName: string }
+
 /** StudioWorkflowApprovalFeatures.cs l.22. */
 export interface ApprovalCountDto { count: number }
 

@@ -337,8 +337,13 @@ export async function installStudioWorkflowMocks(
   const notFound = { success: false, data: null, message: 'Introuvable.', errors: [] };
 
   // — Génériques d'abord (évaluées en dernier) —
-  // Hub : une requête de liste par table active — vide par défaut pour les tables sans workflow.
+  // Hub avec ?entity= : une requête de liste par table — vide par défaut pour les tables sans workflow.
   await page.route('**/api/studio/entities/*/workflows', route => fulfil(route, ok([])));
+  // Hub « Toutes les tables » (4.5f) : GET api/studio/workflows?page=&pageSize= ⇒ PagedResult vide. RegExp (et non
+  // glob `workflows?**`) pour ne jamais capturer `workflows/wf-1`, `workflows/step-catalog`, etc. Aucun scénario
+  // actuel ne charge le hub sans ?entity= — filet contre un 404 réel si un futur test l'omet.
+  await page.route(/\/api\/studio\/workflows(\?[^/]*)?$/, route =>
+    fulfil(route, ok({ items: [], page: 1, pageSize: 200, totalCount: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false })));
   // Pont ERP du concepteur (picker erp_action) : liste vide — non couvert par le filet paginé.
   await page.route('**/api/studio/automations/actions', route => fulfil(route, ok([])));
 
