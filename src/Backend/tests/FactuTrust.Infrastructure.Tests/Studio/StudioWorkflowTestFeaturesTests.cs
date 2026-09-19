@@ -282,15 +282,37 @@ public sealed class StudioWorkflowTestFeaturesTests : IClassFixture<StudioWorkfl
         Assert.Contains("Unauthorized", result.Error.Code);
     }
 
+    /// <summary>4.7★1 (D-47-74, U6) : concepteur sans <c>custom_records:read</c> ⇒ refus avant toute lecture de fiche.</summary>
+    [SkippableFact]
+    public async Task Without_records_read_the_test_is_unauthorized()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+        var h = NewHarness(granted: true, recordsRead: false);
+        var (entity, record) = await h.SeedAsync("noread");
+        var definition = await h.NewDefinitionAsync(entity, """
+        { "version": 1, "steps": [
+            { "key": "notifie", "type": "notify", "to": { "kind": "role", "value": "Admin" },
+              "title": "Facture {{numero}}", "body": "Montant {{montant}}" }
+        ] }
+        """);
+
+        var result = await h.Handler.Handle(new TestWorkflowQuery(definition.Id, record.Id), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("Unauthorized", result.Error.Code);
+        Assert.Contains("lecture des enregistrements", result.Error.Description);
+        await h.AssertNoWriteAsync();
+    }
+
     // ---------------------------------------------------------------- harness
 
-    private Harness NewHarness(bool granted = true) => new(_sql, granted);
+    private Harness NewHarness(bool granted = true, bool recordsRead = true) => new(_sql, granted, recordsRead);
 
     private sealed class Harness
     {
         private readonly SqlFixture _sql;
 
-        public Harness(SqlFixture sql, bool granted)
+        public Harness(SqlFixture sql, bool granted, bool recordsRead = true)
         {
             _sql = sql;
             TenantId = Guid.NewGuid();
@@ -302,6 +324,8 @@ public sealed class StudioWorkflowTestFeaturesTests : IClassFixture<StudioWorkfl
             currentUser.Setup(u => u.TenantId).Returns(TenantId);
             currentUser.Setup(u => u.UserId).Returns(Guid.NewGuid());
             currentUser.Setup(u => u.HasPermission(Permissions.Studio.DesignEntities)).Returns(granted);
+            // 4.7★1 (D-47-74, U6) : le handler exige aussi la lecture des enregistrements ; accordée par défaut.
+            currentUser.Setup(u => u.HasPermission(Permissions.CustomData.RecordsRead)).Returns(recordsRead);
             Handler = new TestWorkflowQueryHandler(
                 Workflows, Entities, Fields, Records, currentUser.Object, new FakeTimeProvider());
         }

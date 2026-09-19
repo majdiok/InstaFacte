@@ -70,6 +70,10 @@ public sealed class TestWorkflowQueryHandler : IRequestHandler<TestWorkflowQuery
         // Le contrôleur porte déjà la policy ; le handler la reprend (motif B-pag-1, S-base).
         if (!_currentUser.HasPermission(Permissions.Studio.DesignEntities))
             return Result.Failure<WorkflowTestResultDto>(Error.Unauthorized("Permission de conception Studio requise."));
+        // 4.7★1 (D-47-74, U6) — défense en profondeur : la trace rend les gabarits sur une fiche RÉELLE ;
+        // un concepteur sans lecture des enregistrements ne doit pas la voir (motif CustomRecordHistoryFeatures).
+        if (!_currentUser.HasPermission(Permissions.CustomData.RecordsRead))
+            return Result.Failure<WorkflowTestResultDto>(Error.Unauthorized("Permission de lecture des enregistrements requise."));
 
         var definition = await _workflows.GetDefinitionAsync(tenantId, query.WorkflowId, cancellationToken);
         if (definition is null)

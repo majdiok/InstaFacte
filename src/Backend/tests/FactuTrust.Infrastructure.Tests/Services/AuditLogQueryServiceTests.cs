@@ -196,6 +196,30 @@ public sealed class AuditLogQueryServiceTests
         Assert.Equal(0, r.Value.TotalCount);
     }
 
+    /// <summary>4.7★1 (D-47-75, R52) : <c>page</c> ≈ <c>int.MaxValue</c> ne fait plus déborder <c>(page - 1) * pageSize</c> (500 sur SQL Server).</summary>
+    [Fact]
+    public async Task GetEntityHistoryAsync_bounds_page_so_that_skip_never_overflows()
+    {
+        var db = $"AuditHist_{Guid.NewGuid()}";
+        var factory = new TestTenantDbContextFactory(db);
+        var target = Guid.NewGuid();
+        await using (var ctx = factory.CreateContext())
+        {
+            ctx.AuditLogs.Add(NewLog(target, "A0", new DateTime(2026, 9, 18, 10, 0, 0, DateTimeKind.Utc)));
+            await ctx.SaveChangesAsync();
+        }
+        var sut = new AuditLogQueryService(factory);
+
+        var r = await sut.GetEntityHistoryAsync("CustomRecord", target, int.MaxValue, 100, CancellationToken.None);
+
+        Assert.True(r.IsSuccess);
+        Assert.Equal(int.MaxValue / 100, r.Value.Page);
+        Assert.Equal(100, r.Value.PageSize);
+        Assert.True((long)(r.Value.Page - 1) * r.Value.PageSize <= int.MaxValue, "le décalage doit rester un int");
+        Assert.Empty(r.Value.Items);
+        Assert.Equal(1, r.Value.TotalCount);
+    }
+
     [Fact]
     public async Task GetEntityHistoryAsync_projects_internal_columns_only_and_keeps_values()
     {

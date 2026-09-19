@@ -1168,9 +1168,8 @@ Assistant, outil `studio_plan_workflow` : « rappel tous les lundis à 6 h » �
 (`trigger: scheduled`, alias FR « planifié », `triggerConfig.cron`, alias `filtres` ⇒ `filters`) ; sans cron ou cron
 invalide ⇒ contrôle **bloquant** « Workflow « … » : déclencheur planifié sans expression cron valide (triggerConfig.cron
 — 5 champs, UTC). », plan non créé ; la description de l'outil (`AiToolRegistry`) ne parle plus de « bientôt
-disponible ». Voir QA 88 (réécrite). **Écart connu (frontend)** : l'aperçu du plan dans l'atelier affiche encore le
-déclencheur comme « Planifié (bientôt) » (`studio-ai-labels.ts`, clé `scheduled`) — libellé périmé, sans effet sur la
-création ; à corriger au lot ★ (plan C7) : ne pas le compter comme un échec de cette section.
+disponible ». Voir QA 88 (réécrite). L'aperçu du plan dans l'atelier affiche le déclencheur comme « Planifié »
+(`studio-ai-labels.ts`, clé `scheduled` — libellé « Planifié (bientôt) » corrigé au lot ★1, D-47-76 ; QA 153).
 
 - Portée automatisée : Infra `StudioAiWorkflowSpecTests.Keeps_scheduled_workflows_with_cron_and_filters`,
   `StudioAiWorkflowSpecTests.Parses_a_scheduled_only_plan_with_the_french_alias`,
@@ -1507,3 +1506,29 @@ sans l'index, `/history` reste fonctionnel mais lent sur un gros journal (aucune
 
 - Portée automatisée : API `Routes_and_policies_are_unchanged` ; test de migration (`Up`/`Down` idempotents, ligne
   `__EFMigrationsHistory` du jumeau) : **à ajouter en ★2** (U7) — aucun test aujourd'hui.
+
+## Studio IA 4.7 « v1.1 » — passes ★ (revue sécurité, tests, simplify)
+
+### 153. Passes ★ 4.7
+
+Passe de sécurité **S-base** (S1–S17, plan C §4.2) sur le périmètre v1.1 puis passes de tests et de simplification —
+**aucun changement de contrat** (routes, `data-testid`, libellés hors D-47-76, codes d'erreur, migrations).
+
+**★1 — corrections de revue (D-47-74 → D-47-76, D-47-81).**
+
+- **D-47-74 (S3 / U6)** : avec un profil disposant de `studio:design_entities` **sans** `custom_records:read`, ouvrir un
+  workflow ⇒ **Tester sur un enregistrement** ⇒ choisir une fiche ⇒ **Lancer le test** : le dialogue affiche le message
+  serveur « Permission de lecture des enregistrements requise. » (403), aucune trace rendue. Avec les deux permissions
+  (rôles livrés) : trace inchangée (QA 128). Aucune écriture dans les deux cas.
+- **D-47-75 (S9 / R52)** : `GET api/studio/records/{entityKey}/{id}/history?page=2147483647` ⇒ `200`, page vide,
+  `page` renvoyé = `21474836` (`int.MaxValue / 100`), `totalCount` réel — plus de `500`. `pageSize=999` ⇒ `200`, `pageSize`
+  renvoyé `100` (QA 151 inchangée).
+- **D-47-76 (S17)** : atelier IA, plan contenant un workflow au déclencheur planifié ⇒ onglet **Workflows** de l'aperçu :
+  « Déclencheur : Planifié » (plus de « (bientôt) »).
+- **D-47-81** : constats consignés sans code (Journal) — purge des `AuditLogs` absente (R41 / R51), job récurrent orphelin
+  (R54, runbook), cron « chaque minute » accepté (U5), mécanique `soon` conservée (P-d), 22 `skipErrorUi` relus (S13),
+  journaux du job planifié sans valeur métier (S15).
+
+- Portée automatisée : Infra `StudioWorkflowTestFeaturesTests.Without_records_read_the_test_is_unauthorized` (+ les 10
+  faits existants, harnais accordant `RecordsRead`), `AuditLogQueryServiceTests.GetEntityHistoryAsync_bounds_page_so_that_skip_never_overflows` ;
+  Karma `studio-ai-workflows-tab.component.spec.ts` « affiche « Planifié » (sans « bientôt ») … D-47-76 ».
