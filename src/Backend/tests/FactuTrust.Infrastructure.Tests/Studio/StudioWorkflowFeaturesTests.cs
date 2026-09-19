@@ -95,8 +95,11 @@ public sealed class StudioWorkflowFeaturesTests
         string? rowVersion = null,
         bool isActive = true,
         JsonObject? steps = null,
-        string name = "Relance")
-        => new(key, name, "  Relance des commandes  ", trigger, null, steps ?? ValidSteps(), isActive, rowVersion);
+        string name = "Relance",
+        string? triggerConfig = null)
+        => new(key, name, "  Relance des commandes  ", trigger,
+            triggerConfig is null ? null : JsonNode.Parse(triggerConfig)!.AsObject(),
+            steps ?? ValidSteps(), isActive, rowVersion);
 
     private static StudioWorkflowDefinition Definition(string key = "relance", bool isActive = true, byte[]? rowVersion = null)
     {
@@ -204,17 +207,45 @@ public sealed class StudioWorkflowFeaturesTests
         VerifyAudit("Studio.Workflow.Created", Times.Never());
     }
 
+    // 4.7b1 / D-47-B02 (D5 levé) : le déclencheur planifié est accepté avec un cron valide.
     [Fact]
-    public async Task Create_rejects_the_scheduled_trigger_as_a_validation_error()
+    public async Task Create_accepts_a_scheduled_trigger_with_a_valid_cron()
+    {
+        StudioWorkflowDefinition? added = null;
+        SetupCreateRepository();
+        _workflows.Setup(w => w.AddDefinitionAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<CancellationToken>()))
+            .Callback<StudioWorkflowDefinition, CancellationToken>((d, _) => added = d)
+            .Returns(Task.CompletedTask);
+
+        var result = await CreateHandler().Handle(new CreateWorkflowCommand(Entity.Id,
+            Request(trigger: "scheduled", triggerConfig: """{ "cron": "0 6 * * 1" }""")), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.NotNull(added);
+        Assert.Equal(StudioWorkflowTriggerKind.Scheduled, added!.Trigger);
+        Assert.Contains("\"cron\"", added.TriggerConfigJson);
+        VerifyAudit("Studio.Workflow.Created", Times.Once());
+    }
+
+    [Fact]
+    public async Task Create_rejects_a_scheduled_trigger_without_a_valid_cron()
     {
         SetupCreateRepository();
 
-        var result = await CreateHandler().Handle(new CreateWorkflowCommand(Entity.Id, Request(trigger: "scheduled")), CancellationToken.None);
+        // cron absent ⇒ « Validation.triggerConfig.cron ».
+        var missing = await CreateHandler().Handle(new CreateWorkflowCommand(Entity.Id,
+            Request(trigger: "scheduled")), CancellationToken.None);
+        Assert.True(missing.IsFailure);
+        Assert.Equal("Validation.triggerConfig.cron", missing.Error.Code);
 
-        Assert.True(result.IsFailure);
-        Assert.Equal("Validation.trigger", result.Error.Code);
-        Assert.Equal("Déclencheur planifié : bientôt disponible.", result.Error.Description);
+        // cron invalide ⇒ idem, jamais d'écriture partielle.
+        var invalid = await CreateHandler().Handle(new CreateWorkflowCommand(Entity.Id,
+            Request(trigger: "scheduled", triggerConfig: """{ "cron": "chaque jour" }""")), CancellationToken.None);
+        Assert.True(invalid.IsFailure);
+        Assert.Equal("Validation.triggerConfig.cron", invalid.Error.Code);
+
         _workflows.Verify(w => w.AddDefinitionAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<CancellationToken>()), Times.Never);
+        VerifyAudit("Studio.Workflow.Created", Times.Never());
     }
 
     [Fact]
@@ -554,14 +585,14 @@ public sealed class StudioWorkflowFeaturesTests
     [Fact]
     public async Task Validate_returns_success_with_issues_for_an_invalid_definition()
     {
-        // Déclencheur planifié + étape invalide ⇒ 200, IsValid false, deux erreurs localisées, StepCount renseigné.
+        // Déclencheur planifié sans cron + étape invalide ⇒ 200, IsValid false, deux erreurs localisées, StepCount renseigné.
         var invalidSteps = Steps("""{ "key": "aa", "type": "update_field", "set": { "fantome": 1 } }""", UpdateStep);
         var result = await ValidateHandler().Handle(
             new ValidateWorkflowQuery(Entity.Id, Request(trigger: "scheduled", steps: invalidSteps)), CancellationToken.None);
 
         Assert.True(result.IsSuccess, result.Error.Description);
         Assert.False(result.Value.IsValid);
-        Assert.Contains(result.Value.Errors, e => e.Path == "trigger" && e.Message == "Déclencheur planifié : bientôt disponible.");
+        Assert.Contains(result.Value.Errors, e => e.Path == "triggerConfig.cron");
         Assert.Contains(result.Value.Errors, e => e.Path == "steps[0].set");
         Assert.Equal(2, result.Value.StepCount);
         Assert.Empty(result.Value.Warnings);

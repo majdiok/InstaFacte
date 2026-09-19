@@ -356,13 +356,82 @@ public sealed class StudioWorkflowStepsSpecTests
         Assert.Empty(valid.Errors);
     }
 
-    [Fact]
-    public void Scheduled_trigger_is_rejected_with_the_coming_soon_message()
-    {
-        var outcome = Validate(StepsDoc(Notify("aa")), StudioWorkflowTriggerKind.Scheduled);
+    // ---- Déclencheur planifié (4.7b1 / D-47-B02, D5 levé) ----
 
-        Assert.Contains(outcome.Errors,
-            e => e.Path == "trigger" && e.Message == "Déclencheur planifié : bientôt disponible.");
+    [Fact]
+    public void Scheduled_trigger_requires_a_valid_cron()
+    {
+        // cron absent ⇒ « triggerConfig.cron ».
+        var missing = Validate(StepsDoc(Notify("aa")), StudioWorkflowTriggerKind.Scheduled);
+        var only = Assert.Single(missing.Errors);
+        Assert.Equal("triggerConfig.cron", only.Path);
+
+        // cron invalides : 4 ou 6 champs, texte libre, hors bornes, pas nul, plage inversée.
+        foreach (var bad in new[] { "0 6 * *", "* * * * * *", "chaque jour", "61 * * * *", "* 25 * * *", "0 6 32 * *", "0 6 * 13 *", "0 6 * * 8", "*/0 * * * *", "5-1 * * * *" })
+        {
+            var outcome = Validate(StepsDoc(Notify("aa")), StudioWorkflowTriggerKind.Scheduled,
+                $$"""{ "cron": "{{bad}}" }""");
+            Assert.Contains(outcome.Errors, e => e.Path == "triggerConfig.cron");
+        }
+    }
+
+    [Fact]
+    public void Scheduled_trigger_accepts_valid_cron_expressions()
+    {
+        foreach (var cron in new[] { "*/10 * * * *", "0 6 * * 1", "30 6 1 * *", "0 0 1 JAN *", "0 18 * * MON-FRI", "0 6 * * 0" })
+        {
+            var outcome = Validate(StepsDoc(Notify("aa")), StudioWorkflowTriggerKind.Scheduled,
+                $$"""{ "cron": "{{cron}}" }""");
+            Assert.Empty(outcome.Errors);
+        }
+    }
+
+    [Fact]
+    public void Scheduled_trigger_rejects_unknown_properties_and_bad_filters()
+    {
+        // Propriété non reconnue (le fuseau est fixé à UTC — pas de « timezone »).
+        var unknown = Validate(StepsDoc(Notify("aa")), StudioWorkflowTriggerKind.Scheduled,
+            """{ "cron": "0 6 * * *", "timezone": "Europe/Paris" }""");
+        Assert.Contains(unknown.Errors, e => e.Path == "triggerConfig" && e.Message.Contains("timezone"));
+
+        // « filters » n'est pas un tableau.
+        var notArray = Validate(StepsDoc(Notify("aa")), StudioWorkflowTriggerKind.Scheduled,
+            """{ "cron": "0 6 * * *", "filters": {} }""");
+        Assert.Contains(notArray.Errors, e => e.Path == "triggerConfig.filters");
+
+        // 11 filtres ⇒ borne dépassée.
+        var eleven = string.Join(",", Enumerable.Range(0, 11).Select(k => $$"""{ "field": "statut", "op": "eq", "value": {{k}} }"""));
+        var tooMany = Validate(StepsDoc(Notify("aa")), StudioWorkflowTriggerKind.Scheduled,
+            $$"""{ "cron": "0 6 * * *", "filters": [{{eleven}}] }""");
+        Assert.Contains(tooMany.Errors, e => e.Path == "triggerConfig.filters" && e.Message.Contains("10"));
+
+        // Opérateur inconnu.
+        var badOp = Validate(StepsDoc(Notify("aa")), StudioWorkflowTriggerKind.Scheduled,
+            """{ "cron": "0 6 * * *", "filters": [ { "field": "statut", "op": "almost", "value": "x" } ] }""");
+        Assert.Contains(badOp.Errors, e => e.Path == "triggerConfig.filters" && e.Message.Contains("Opérateur inconnu"));
+
+        // Champ inconnu.
+        var unknownField = Validate(StepsDoc(Notify("aa")), StudioWorkflowTriggerKind.Scheduled,
+            """{ "cron": "0 6 * * *", "filters": [ { "field": "fantome", "op": "eq", "value": "x" } ] }""");
+        Assert.Contains(unknownField.Errors, e => e.Path == "triggerConfig.filters" && e.Message.Contains("fantome"));
+
+        // Champ calculé non filtrable.
+        var computed = Validate(StepsDoc(Notify("aa")), StudioWorkflowTriggerKind.Scheduled,
+            """{ "cron": "0 6 * * *", "filters": [ { "field": "total", "op": "gt", "value": 3 } ] }""");
+        Assert.Contains(computed.Errors, e => e.Path == "triggerConfig.filters" && e.Message.Contains("calculé"));
+
+        // Variable « _previous » interdite : le balayage planifié n'a ni valeur précédente ni résultats d'étapes.
+        var previous = Validate(StepsDoc(Notify("aa")), StudioWorkflowTriggerKind.Scheduled,
+            """{ "cron": "0 6 * * *", "filters": [ { "field": "_previous.statut", "op": "eq", "value": "x" } ] }""");
+        Assert.Contains(previous.Errors, e => e.Path == "triggerConfig.filters");
+    }
+
+    [Fact]
+    public void Scheduled_trigger_accepts_valid_filters()
+    {
+        var outcome = Validate(StepsDoc(Notify("aa")), StudioWorkflowTriggerKind.Scheduled,
+            """{ "cron": "0 6 * * 1", "filters": [ { "field": "statut", "op": "eq", "value": "en_attente" }, { "field": "montant", "op": "gte", "value": 100 } ] }""");
+        Assert.Empty(outcome.Errors);
     }
 
     [Fact]
