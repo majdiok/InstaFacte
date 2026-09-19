@@ -61,7 +61,7 @@ export const STUDIO_WORKFLOW_LABELS = {
     on_update: 'Se déclenche à chaque modification.',
     field_changed: 'Se déclenche quand le champ surveillé change (valeurs optionnelles).',
     manual: 'Lancé depuis la fiche par un utilisateur autorisé.',
-    scheduled: 'Bientôt disponible.'
+    scheduled: 'Selon un horaire (UTC), sur les enregistrements filtrés.'
   },
 
   designer: {
@@ -74,6 +74,11 @@ export const STUDIO_WORKFLOW_LABELS = {
     watchedField: 'Champ surveillé',
     from: 'Ancienne valeur',
     to: 'Nouvelle valeur',
+    cronPreset: 'Fréquence',
+    cronPresets: { hourly: 'Toutes les heures', daily: 'Chaque jour à 06:00 UTC', weekly: 'Chaque lundi à 06:00 UTC', custom: 'Personnalisé' },
+    cron: 'Expression cron (5 champs)',
+    cronHint: 'Format « minute heure jour mois jour-de-semaine » — fuseau UTC.',
+    scheduledFilters: 'Enregistrements concernés (filtres optionnels)',
     active: 'Actif',
     inactive: 'Inactif',
     validate: 'Valider',

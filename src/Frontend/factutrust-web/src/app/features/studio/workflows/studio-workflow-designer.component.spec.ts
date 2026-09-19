@@ -149,4 +149,96 @@ describe('StudioWorkflowDesignerComponent', () => {
     expect(component.version()).toBe(2);
     expect(component.dirty()).toBeFalse();
   });
+
+  // ---- 4.7b4 : déclencheur « Planifié » ----
+
+  it('rend la carte « Planifié » sélectionnable et exige un cron non vide pour enregistrer (1:1 du veto D5)', () => {
+    const card = fixture.debugElement.query(By.css('[data-testid="wf-trigger-scheduled"]'));
+    expect(card).not.toBeNull();
+    expect(card.classes['wf-trigger--disabled'] ?? false).toBeFalsy();
+    expect(card.query(By.css('p-tag'))).toBeNull();            // plus de pastille « Bientôt »
+
+    card.triggerEventHandler('click', null);
+    fixture.detectChanges();
+
+    expect(component.trigger()).toBe('scheduled');
+    expect(fixture.debugElement.query(By.css('[data-testid="wf-scheduled-config"]'))).not.toBeNull();
+    expect(component.canSave()).toBeFalse();                   // cron vide
+    component.onCronInput('0 6 * * *');
+    expect(component.canSave()).toBeTrue();                    // 1:1 de l'ancien veto
+  });
+
+  it('un preset remplit l\'expression cron ; « Personnalisé » conserve la saisie libre', () => {
+    component.selectTrigger({ value: 'scheduled' });
+    component.onCronPreset('0 6 * * 1');
+    expect(component.triggerConfig()?.cron).toBe('0 6 * * 1');
+    expect(component.cronPresetSelection()).toBe('0 6 * * 1');
+
+    component.onCronInput('15 3 * * *');                       // saisie libre ⇒ preset « Personnalisé »
+    expect(component.triggerConfig()?.cron).toBe('15 3 * * *');
+    expect(component.cronPresetSelection()).toBe('__custom__');
+    component.onCronPreset('__custom__');                      // choisir « Personnalisé » ne touche pas le cron
+    expect(component.triggerConfig()?.cron).toBe('15 3 * * *');
+  });
+
+  it('porte les filtres planifiés via l\'adaptateur (between replié en value/value2)', () => {
+    component.selectTrigger({ value: 'scheduled' });
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('[data-testid="wf-scheduled-config"] app-studio-filter-builder'))).not.toBeNull();
+
+    component.onScheduledFilters([{ fieldKey: 'montant', op: 'between', value: [10, 20] }]);
+    expect(component.triggerConfig()?.filters).toEqual([{ field: 'montant', op: 'between', value: 10, value2: 20 }]);
+    component.onScheduledFilters([]);
+    expect(component.triggerConfig()?.filters).toEqual([]);
+  });
+
+  it('réinitialise la configuration quand le déclencheur change (aucune clé field_changed sur scheduled)', () => {
+    component.selectTrigger({ value: 'field_changed' });
+    component.patchTriggerConfig({ field: 'montant', from: 'a', to: 'b' });
+    component.selectTrigger({ value: 'scheduled' });
+    expect(component.triggerConfig()).toEqual({});             // ni field, ni from, ni to
+    component.patchTriggerConfig({ cron: '0 6 * * *' });
+    component.selectTrigger({ value: 'scheduled' });           // re-clic : conserve la saisie
+    expect(component.triggerConfig()).toEqual({ cron: '0 6 * * *' });
+    component.selectTrigger({ value: 'on_update' });
+    expect(component.triggerConfig()).toBeNull();
+  });
+
+  it('enregistre un déclencheur planifié avec triggerConfig { cron, filters }', () => {
+    component.selectTrigger({ value: 'scheduled' });
+    component.onCronInput('0 6 * * *');
+    component.onScheduledFilters([{ fieldKey: 'nom', op: 'is_not_empty' }]);
+
+    component.save();
+    const validate = httpMock.expectOne(r => r.method === 'POST' && r.url === `${API}/entities/e1/workflows/validate`);
+    expect(validate.request.body.trigger).toBe('scheduled');
+    expect(validate.request.body.triggerConfig).toEqual({ cron: '0 6 * * *', filters: [{ field: 'nom', op: 'is_not_empty' }] });
+    validate.flush({ success: true, data: { isValid: true, errors: [], warnings: [], stepCount: 1 }, message: null, error: null });
+    const put = httpMock.expectOne(r => r.method === 'PUT' && r.url === `${API}/workflows/w1`);
+    expect(put.request.body.triggerConfig?.cron).toBe('0 6 * * *');
+    put.flush({
+      success: true,
+      data: { ...workflow, trigger: 'scheduled', triggerConfig: { cron: '0 6 * * *', filters: [{ field: 'nom', op: 'is_not_empty' }] }, version: 2, rowVersion: 'rv2' },
+      message: null, error: null
+    });
+    expect(component.trigger()).toBe('scheduled');
+    expect(component.dirty()).toBeFalse();
+  });
+
+  it('affiche le 400 serveur « triggerConfig.cron » en bannière', () => {
+    component.selectTrigger({ value: 'scheduled' });
+    component.onCronInput('61 * * * *');                       // passe le garde-fou local, refusé par le serveur (b1)
+
+    component.save();
+    httpMock.expectOne(r => r.method === 'POST' && r.url === `${API}/entities/e1/workflows/validate`)
+      .flush({ success: true, data: { isValid: true, errors: [], warnings: [], stepCount: 1 }, message: null, error: null });
+    httpMock.expectOne(r => r.method === 'PUT' && r.url === `${API}/workflows/w1`)
+      .flush({ success: false, data: null, message: null, error: 'triggerConfig.cron : expression cron invalide' }, { status: 400, statusText: 'Bad Request' });
+    fixture.detectChanges();
+
+    const banner = fixture.debugElement.query(By.css('[data-testid="wf-banner"]'));
+    expect(banner).not.toBeNull();
+    expect(banner.nativeElement.textContent).toContain('triggerConfig.cron');
+    expect(component.saving()).toBeFalse();
+  });
 });
