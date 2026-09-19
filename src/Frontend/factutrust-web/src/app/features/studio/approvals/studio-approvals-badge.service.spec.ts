@@ -1,18 +1,27 @@
+import { signal } from '@angular/core';
 import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { AuthService } from '@core/services/auth.service';
 import { environment } from '@environments/environment';
 import { StudioApprovalsBadgeService } from './studio-approvals-badge.service';
 
 describe('StudioApprovalsBadgeService', () => {
   let http: HttpTestingController;
   let service: StudioApprovalsBadgeService;
+  /** Stub d'`AuthService.isAuthenticated` (4.5g) : le vrai service injecterait HttpClient + Router. */
+  let authed: ReturnType<typeof signal<boolean>>;
 
   const COUNT_URL = `${environment.apiUrl}/studio/workflows/approvals/mine/count`;
 
   beforeEach(() => {
+    authed = signal(true);
     TestBed.configureTestingModule({
-      providers: [provideHttpClient(), provideHttpClientTesting()]
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: AuthService, useValue: { isAuthenticated: authed } }
+      ]
     });
     http = TestBed.inject(HttpTestingController);
     service = TestBed.inject(StudioApprovalsBadgeService);
@@ -84,6 +93,35 @@ describe('StudioApprovalsBadgeService', () => {
 
     service.reset();
     expect(service.available()).toBe(false);
+  }));
+
+  it('remet le compteur à zéro et arrête le polling à la déconnexion (D-44-64)', fakeAsync(() => {
+    service.start();
+    tick(0);
+    http.expectOne(COUNT_URL).flush({ success: true, data: { count: 3 }, message: null, error: null });
+    expect(service.count()).toBe(3);
+    expect(service.polling()).toBe(true);
+    expect(service.available()).toBe(true);
+
+    authed.set(false);
+    TestBed.flushEffects();
+
+    expect(service.count()).toBe(0);
+    expect(service.visible()).toBe(false);
+    expect(service.polling()).toBe(false);
+    expect(service.available()).toBe(false);
+    tick(StudioApprovalsBadgeService.POLL_INTERVAL_MS);
+    http.expectNone(COUNT_URL); // polling arrêté : plus aucune sonde
+
+    // Reconnexion : reset() (non définitif) autorise un nouveau start() piloté par le shell.
+    authed.set(true);
+    TestBed.flushEffects();
+    service.start();
+    tick(0);
+    http.expectOne(COUNT_URL).flush({ success: true, data: { count: 1 }, message: null, error: null });
+    expect(service.count()).toBe(1);
+
+    service.stop();
   }));
 
   it('garde la dernière valeur sur une erreur réseau puis réessaie', fakeAsync(() => {

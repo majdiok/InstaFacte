@@ -88,6 +88,11 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     document.querySelectorAll('.p-dialog, .p-dialog-mask, .p-drawer, .p-drawer-mask').forEach(el => el.remove());
   });
 
+  it("ne rend pas de p-toast : la fiche hôte porte l'unique toast (D-44-89)", () => {
+    setup();
+    expect((fixture.nativeElement as HTMLElement).querySelector('p-toast')).toBeNull();
+  });
+
   it('liste les instances avec leur statut et leur étape courante', () => {
     setup({
       instances: [
