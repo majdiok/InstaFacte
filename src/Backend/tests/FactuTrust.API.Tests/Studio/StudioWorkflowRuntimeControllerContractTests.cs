@@ -56,6 +56,7 @@ public sealed class StudioWorkflowRuntimeControllerContractTests
                 .GetCustomAttributes(typeof(T), true).Cast<T>().Single().Template!;
 
         Assert.Equal(PermissionPolicies.CustomRecordsRead, PolicyOf(nameof(StudioWorkflowRuntimeController.ListMyApprovals)));
+        Assert.Equal(PermissionPolicies.CustomRecordsRead, PolicyOf(nameof(StudioWorkflowRuntimeController.ListMyApprovalHistory)));
         Assert.Equal(PermissionPolicies.CustomRecordsRead, PolicyOf(nameof(StudioWorkflowRuntimeController.CountMyApprovals)));
         Assert.Equal(PermissionPolicies.CustomRecordsRead, PolicyOf(nameof(StudioWorkflowRuntimeController.ListRecordInstances)));
         Assert.Equal(PermissionPolicies.CustomRecordsRead, PolicyOf(nameof(StudioWorkflowRuntimeController.GetRecordInstance)));
@@ -67,6 +68,7 @@ public sealed class StudioWorkflowRuntimeControllerContractTests
         Assert.Equal(PermissionPolicies.CustomRecordsWrite, PolicyOf(nameof(StudioWorkflowRuntimeController.Remind)));
 
         Assert.Equal("workflows/approvals/mine", TemplateOf<HttpGetAttribute>(nameof(StudioWorkflowRuntimeController.ListMyApprovals)));
+        Assert.Equal("workflows/approvals/mine/history", TemplateOf<HttpGetAttribute>(nameof(StudioWorkflowRuntimeController.ListMyApprovalHistory)));
         Assert.Equal("workflows/approvals/mine/count", TemplateOf<HttpGetAttribute>(nameof(StudioWorkflowRuntimeController.CountMyApprovals)));
         Assert.Equal("workflows/approvals/{approvalId:guid}/approve", TemplateOf<HttpPostAttribute>(nameof(StudioWorkflowRuntimeController.Approve)));
         Assert.Equal("workflows/approvals/{approvalId:guid}/reject", TemplateOf<HttpPostAttribute>(nameof(StudioWorkflowRuntimeController.Reject)));
@@ -85,6 +87,7 @@ public sealed class StudioWorkflowRuntimeControllerContractTests
         var controller = CreateController(mediator, workflowsEnabled: false);
 
         Assert.IsType<NotFoundObjectResult>(await controller.ListMyApprovals(cancellationToken: CancellationToken.None));
+        Assert.IsType<NotFoundObjectResult>(await controller.ListMyApprovalHistory(cancellationToken: CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(await controller.CountMyApprovals(CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(await controller.Approve(ApprovalId, null, CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(
@@ -210,6 +213,31 @@ public sealed class StudioWorkflowRuntimeControllerContractTests
         var web = new JsonSerializerOptions(JsonSerializerDefaults.Web);
         Assert.Contains("\"startedByName\":\"Amine Zorgati\"", JsonSerializer.Serialize(named, web));
         Assert.Contains("\"startedByName\":null", JsonSerializer.Serialize(legacy, web));
+    }
+
+    // 4.7 « v1.1 » (D-47-60) — historique de mes décisions : même forme de DTO que l'inbox, max par défaut 50.
+    [Fact]
+    public async Task ListMyApprovalHistory_returns_200_with_the_inbox_item_shape_and_default_max_50()
+    {
+        var approval = new WorkflowApprovalDto(ApprovalId, InstanceId, "approve", null, "SalesRep", "Accord ?", null,
+            "approved", ApprovalId, DateTime.UtcNow, "Vu.", null, DateTime.UtcNow, "AAAAAAAAB9E=");
+        var item = new WorkflowApprovalInboxItemDto(approval, InstanceId, "wf", "Relance", EntityKey, "Clients", RecordId,
+            "Dossier A", Guid.NewGuid(), DateTime.UtcNow, "Amine Zorgati");
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        mediator.Setup(m => m.Send(It.Is<ListMyApprovalHistoryQuery>(q => q.Max == 50), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<WorkflowApprovalInboxItemDto>>(new[] { item }));
+
+        var result = await CreateController(mediator, workflowsEnabled: true)
+            .ListMyApprovalHistory(cancellationToken: CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<IReadOnlyList<WorkflowApprovalInboxItemDto>>>(ok.Value);
+        Assert.True(body.Success);
+        var single = Assert.Single(body.Data!);
+        Assert.Equal("approved", single.Approval.Status);
+        Assert.Equal("Vu.", single.Approval.Comment);
+        var web = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        Assert.Contains("\"startedByName\":\"Amine Zorgati\"", JsonSerializer.Serialize(single, web));
     }
 
     [Fact]

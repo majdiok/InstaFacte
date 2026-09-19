@@ -154,6 +154,15 @@ public interface IStudioWorkflowRepository
         Guid tenantId, Guid userId, string? role, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Décisions d'approbation <paramref name="userId"/> (4.7 « v1.1 », D‑47‑60) : statuts
+    /// <c>Approved</c>/<c>Rejected</c> décidés par l'utilisateur (les annulées/expirées ne sont pas
+    /// des décisions), tri <c>DecidedAt</c> puis <c>Id</c> décroissants, borné à
+    /// <c>Math.Clamp(max, 1, 200)</c>. Miroir de <see cref="ListPendingApprovalsForUserAsync"/>.
+    /// </summary>
+    Task<IReadOnlyList<StudioWorkflowApproval>> ListDecidedApprovalsByUserAsync(
+        Guid tenantId, Guid userId, int max, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Supprime les instances terminales (<c>Completed</c>/<c>Failed</c>/<c>Cancelled</c>) achevées avant
     /// <paramref name="completedBeforeUtc"/> avec leurs exécutions d'étapes et leurs approbations
     /// (pas de FK : enfants d'abord). Retourne le nombre d'instances supprimées, borné à
