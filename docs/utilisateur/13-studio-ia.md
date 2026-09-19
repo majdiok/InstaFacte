@@ -180,19 +180,40 @@ Une proposition peut inclure des **vues** (liste, kanban, calendrier). Dans une 
 
 ## Workflows et approbations
 
-Les **workflows Studio** automatisent vos validations : à la création ou modification d’une fiche (ou à la
-demande, depuis la fiche), une suite d’étapes s’exécute — approbations, mises à jour de champs, création
-d’enregistrements, actions ERP.
+Les **workflows Studio** automatisent vos validations : à la création ou modification d’une fiche, à la
+demande depuis la fiche, ou **selon un horaire** (déclencheur **Planifié**), une suite d’étapes s’exécute —
+approbations, mises à jour de champs, création d’enregistrements, actions ERP.
 
 - **Hub et concepteur** (concepteurs, menu Studio → **Workflows**) : liste par table ou vue **Toutes les
   tables** — l’ensemble des workflows de l’entreprise, paginé par 50 avec **recherche** (nom ou clé) —
-  création en trois colonnes (étapes réordonnables, éditeur par type, instances récentes — les 50 plus
-  récentes), **Valider** avant **Enregistrer**, activation par interrupteur. Les succès et erreurs de vos
-  actions (enregistrement, activation, duplication, suppression) s’affichent en bas d’écran. Un workflow
-  est créé **inactif**.
+  création en trois colonnes (étapes réordonnables, éditeur par type, panneau **Historique** des
+  instances — par pages de 20, du plus récent au plus ancien, **Charger plus** pour la suite, badge du nombre
+  d’instances ouvertes), **Valider** avant **Enregistrer**, activation par interrupteur. Les succès et erreurs
+  de vos actions (enregistrement, activation, duplication, suppression) s’affichent en bas d’écran. Un
+  workflow est créé **inactif**.
 
   ![Hub des workflows](../screenshots/studio-ia-workflows-hub.png)
   ![Concepteur de workflow](../screenshots/studio-ia-workflows-concepteur.png)
+
+- **Déclencheur « Planifié »** (concepteur, carte **Planifié** — « Selon un horaire (UTC), sur les
+  enregistrements filtrés. ») : choisissez une **Fréquence** — **Toutes les heures**, **Chaque jour à
+  06:00 UTC**, **Chaque lundi à 06:00 UTC** ou **Personnalisé** (expression cron à 5 champs « minute heure
+  jour mois jour-de-semaine », toujours en **UTC**) — et, si besoin, des **filtres** pour limiter les fiches
+  concernées. À chaque échéance, le workflow démarre **une instance par fiche** qui correspond aux filtres
+  (dans l’onglet **Workflows** de la fiche, la colonne **Demandé par** affiche « — » : c’est le système qui
+  a lancé l’instance). Une fiche qui a déjà une instance **en cours** de ce workflow n’est pas relancée ;
+  une fiche qui a atteint son quota d’instances est ignorée. Le workflow doit être **actif** pour que
+  l’horaire s’applique ; le désactiver ou le supprimer arrête l’horaire. Vous pouvez aussi demander un
+  workflow planifié à l’assistant IA (« chaque lundi à 6 h », « tous les jours à 8 h ») : sans horaire
+  compréhensible, l’assistant vous le signale au lieu d’inventer une fréquence.
+
+- **« Tester sur un enregistrement »** (concepteur, bouton après **Valider**) : **enregistrez d’abord** votre
+  workflow (le bouton reste grisé tant que le brouillon n’est pas sauvegardé — « Enregistrez d’abord pour
+  tester. »), choisissez une fiche dans la liste (recherche par texte), puis **Lancer le test**. Le résultat
+  est une **simulation** : chaque étape reçoit un verdict — **Exécutée**, **Sautée**, **En attente** (une
+  approbation arrêterait le workflow ici) ou **En échec** — avec ses **Valeurs rendues** (les gabarits
+  remplis avec la fiche choisie). Le bandeau le rappelle : **aucune donnée n’a été écrite** — ni instance,
+  ni approbation, ni modification de fiche, ni notification.
 
 - **Fiche enregistrement** : l’onglet **Workflows (n)** liste les instances de la fiche (statut, étape,
   dates, colonne **Demandé par** — qui a lancé l’instance, « — » si inconnu) et permet d’**en lancer un**
@@ -221,6 +242,13 @@ d’enregistrements, actions ERP.
   ou **Refuser** (un commentaire est alors obligatoire). Les notifications de la cloche vous y ramènent.
   Les utilisateurs disposant du droit de lecture des enregistrements accèdent à « Mes approbations » et au
   détail d’une instance depuis la fiche, sans être concepteurs. À la déconnexion, le badge repasse à zéro.
+  La page a trois onglets : **À traiter** (les demandes en attente, avec le badge), **Déléguées** (grisé,
+  « Bientôt » — la délégation n’existe pas encore) et **Historique** : vos **50 dernières décisions**
+  (approuvées ou refusées), de la plus récente à la plus ancienne — workflow, enregistrement, demandeur,
+  date et heure de la décision, **Approuvée** / **Refusée** et votre commentaire. L’historique se charge à
+  l’ouverture de l’onglet ; les décisions dont l’instance a été purgée (au-delà de la durée de conservation,
+  180 jours par défaut) n’y figurent plus. Si l’historique ne se charge pas, un bouton **Réessayer** relance
+  la lecture.
 
   ![Page Mes approbations](../screenshots/studio-ia-workflows-approbations.png)
 
@@ -240,3 +268,6 @@ Le Studio utilise une teinte indigo pour distinguer clairement l’espace de con
 
 **Un message « Ce plan est introuvable ou a expiré » s’affiche quand je reprends une proposition.**
 La proposition a dépassé son délai de validité ou a déjà été validée/annulée. Refaites la demande depuis l’atelier ; l’historique conserve la trace de l’ancienne.
+
+**Pourquoi mon workflow planifié n’a rien lancé ?**
+Vérifiez, dans l’ordre : le workflow est **actif** (interrupteur du hub) ; l’horaire est bien passé **en UTC** (« 0 6 * * 1 » = lundi 06:00 UTC, pas 06:00 heure locale) ; des fiches correspondent aux **filtres** du déclencheur ; les fiches visées n’ont pas déjà une instance **en cours** de ce workflow (elle n’est pas relancée) ni atteint leur quota d’instances ; enfin, chaque échéance traite au plus un lot de fiches (100 par défaut) — au-delà, la suite part à l’échéance suivante. Si les workflows Studio sont désactivés par votre administrateur, aucun horaire ne s’exécute. Le panneau **Historique** du concepteur liste les instances lancées, échéance après échéance ; dans l’onglet **Workflows** d’une fiche, une instance planifiée affiche « — » en **Demandé par**.

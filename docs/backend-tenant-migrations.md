@@ -186,6 +186,34 @@ Aucune donnée existante n'est modifiée : les quatre tables sont nouvelles. Le 
 
 ---
 
+## Historique d'une fiche Studio lent : index `IX_AuditLogs_EntityHistory` absent
+
+Si l'onglet **Historique** d'une fiche Studio (`GET /api/studio/records/{entityKey}/{id}/history`, 4.7h2) répond correctement mais **lentement** sur un tenant dont la table `AuditLogs` est volumineuse :
+
+- **Symptôme :** aucune erreur SQL ni HTTP — la requête filtre `AuditLogs` sur `EntityType = 'CustomRecord'` et `EntityId`, triée par `CreatedAt` décroissant ; sans l'index, SQL Server balaye la table (plan d'exécution : *Clustered Index Scan* sur `AuditLogs`).
+- **Cause :** la migration tenant `20260918100000_AddAuditLogsEntityHistoryIndex_Tenant` (programme Studio IA « v1.1 », PR #171) n'est pas appliquée. Elle crée le seul index **non unique** `IX_AuditLogs_EntityHistory` sur `AuditLogs (EntityType, EntityId, CreatedAt)` ; elle ne touche à aucune donnée ni à aucune colonne. `Up` et `Down` sont idempotents (`IF NOT EXISTS` / `IF EXISTS`), donc rejouables sans erreur.
+
+### Solution
+
+Appliquer les migrations tenant via l'une des options de la section [Erreur HTTP 503](#erreur-http-503--tenant_migration_failed) (`dotnet ef database update`, backoffice plateforme ou script de déploiement).
+
+**Script idempotent (production / DBA) :** [`docs/runbooks/sql/AddAuditLogsEntityHistoryIndex_Tenant.idempotent.sql`](runbooks/sql/AddAuditLogsEntityHistoryIndex_Tenant.idempotent.sql) — rejouable, crée l'index s'il manque. Il n'insère **pas** encore la ligne `__EFMigrationsHistory` (à ajouter au lot 4.7★2, U7) : après l'avoir joué, `dotnet ef database update` ré-exécutera la migration, qui ne fera rien (`IF NOT EXISTS`) et consignera la ligne.
+
+**Vérification SQL :**
+
+```sql
+SELECT MigrationId FROM __EFMigrationsHistory
+WHERE MigrationId LIKE '%AddAuditLogsEntityHistoryIndex%';
+
+SELECT name, is_unique FROM sys.indexes
+WHERE object_id = OBJECT_ID('dbo.AuditLogs') AND name = 'IX_AuditLogs_EntityHistory';
+-- attendu : 1 ligne, is_unique = 0
+```
+
+**Retour arrière :** `Down` supprime l'index s'il existe (garde `IF EXISTS` puis `DROP INDEX`), sans effet sur les données ; la route `/history` reste fonctionnelle, seulement plus lente. La route ne dépend d'aucun drapeau `Ollama:*` : l'index est utile dès que des fiches Studio sont modifiées, que les workflows soient activés ou non.
+
+---
+
 ## Erreur « Invalid column name 'ValidatedAt' / 'ValidatedBy' » sur l'échéancier fiscal
 
 Si la page **Échéancier fiscal** (`/accounting/fiscal-schedule`) affiche **« Chargement impossible »** avec une erreur HTTP **500** dans la console :
@@ -660,3 +688,4 @@ DROP TABLE #drift;
 
 - En **développement**, corriger l'erreur de migration puis redémarrer l'API.
 - En **production**, utiliser le backoffice plateforme ou un script de déploiement qui applique les migrations tenant avant le trafic utilisateur.
+- Une migration **additive et idempotente** (par exemple l'index `IX_AuditLogs_EntityHistory` de 4.7h2) peut être jouée par son jumeau SQL `docs/runbooks/sql/*.idempotent.sql` sur les bases existantes, puis reprise sans erreur par `dotnet ef database update`.
