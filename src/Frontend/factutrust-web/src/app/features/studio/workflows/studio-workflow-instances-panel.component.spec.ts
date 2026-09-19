@@ -37,9 +37,9 @@ describe('StudioWorkflowInstancesPanelComponent', () => {
 
   afterEach(() => httpMock.verify());
 
-  it('charge 20 instances au plus quand workflowId est fourni et émet open au clic', () => {
+  it('charge 50 instances au plus (borne API) quand workflowId est fourni et émet open au clic', () => {
     setup('w1');
-    const req = httpMock.expectOne(r => r.url === `${API}/workflows/w1/instances` && r.params.get('max') === '20');
+    const req = httpMock.expectOne(r => r.url === `${API}/workflows/w1/instances` && r.params.get('max') === '50');
     expect(req.request.method).toBe('GET');
     req.flush({
       success: true,
@@ -74,10 +74,30 @@ describe('StudioWorkflowInstancesPanelComponent', () => {
 
     fixture.componentRef.setInput('refreshToken', 1);
     fixture.detectChanges();
-    httpMock.expectOne(r => r.url === `${API}/workflows/w1/instances` && r.params.get('max') === '20')
+    httpMock.expectOne(r => r.url === `${API}/workflows/w1/instances` && r.params.get('max') === '50')
       .flush({ success: true, data: [], message: null, error: null });
     fixture.detectChanges();
     expect(fixture.debugElement.query(By.css('[data-testid="wf-instances-empty"]'))).not.toBeNull();
+  });
+
+  it('signale le plafond quand la route renvoie 50 instances (D-46-01)', () => {
+    setup('w1');
+    httpMock.expectOne(r => r.url === `${API}/workflows/w1/instances`)
+      .flush({ success: true, data: Array.from({ length: 50 }, (_, k) => inst({ id: `i${k}` })), message: null, error: null });
+    fixture.detectChanges();
+
+    const hint = fixture.debugElement.query(By.css('[data-testid="wf-instances-capped"]'));
+    expect(hint).not.toBeNull();
+    expect((hint.nativeElement as HTMLElement).textContent).toContain('Les 50 instances les plus récentes sont affichées');
+  });
+
+  it('ne signale pas le plafond sous la borne', () => {
+    setup('w1');
+    httpMock.expectOne(r => r.url === `${API}/workflows/w1/instances`)
+      .flush({ success: true, data: [inst(), inst({ id: 'i2' })], message: null, error: null });
+    fixture.detectChanges();
+
+    expect(fixture.debugElement.query(By.css('[data-testid="wf-instances-capped"]'))).toBeNull();
   });
 
   it('affiche l\'état vide sans requête quand workflowId est nul', () => {
