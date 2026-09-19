@@ -8,6 +8,7 @@ using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Repositories.Studio;
+using FactuTrust.Infrastructure.Services.Studio.Workflows;
 using FactuTrust.Infrastructure.Tests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -303,6 +304,13 @@ public sealed class StudioWorkflowTestFeaturesTests : IClassFixture<StudioWorkfl
         Assert.Contains("lecture des enregistrements", result.Error.Description);
         await h.AssertNoWriteAsync();
     }
+
+    /// <summary>4.7★3 (D-47-80) : la seule constante encore miroir de la simulation — la borne du premier segment —
+    /// reste égale à celle du moteur réel (les délais par défaut `approval` / `wait` sont désormais partagés via
+    /// <c>StudioWorkflowStepsSpec</c>, plus de miroir possible).</summary>
+    [Fact]
+    public void Simulated_segment_bound_matches_the_real_engine_segment_bound()
+        => Assert.Equal(StudioWorkflowEngine.MaxStepsPerSegment, TestWorkflowQueryHandler.MaxSimulatedSteps);
 
     /// <summary>4.7★2 (S2) : invariant D-47-B07 par construction — le handler de simulation ne reçoit aucun service
     /// d'écriture (moteur, notifications, audit, e-mail, médiateur, unité de travail) ; il ne peut donc rien persister.</summary>

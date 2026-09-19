@@ -1,14 +1,13 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, HostListener, OnInit, computed, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { EMPTY, Subject, forkJoin, of } from 'rxjs';
-import { catchError, debounceTime, map, switchMap } from 'rxjs/operators';
+import { EMPTY, forkJoin, of } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
-import { DialogModule } from 'primeng/dialog';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
@@ -26,7 +25,7 @@ import { StudioPageShellComponent } from '../shared/studio-page-shell.component'
 import { STUDIO_BREADCRUMBS } from '../shared/studio-breadcrumb.util';
 import { StudioFilterBuilderComponent } from '../shared/studio-filter-builder.component';
 import { StudioService } from '../studio.service';
-import { AutomationAction, CustomEntity, CustomRecord } from '../studio.models';
+import { AutomationAction, CustomEntity } from '../studio.models';
 import type { RecordViewFilter } from '../views/studio-record-views.models';
 import { toRecordViewFilters, toWorkflowFilters } from './step-editor/studio-workflow-filter.adapter';
 import { StudioWorkflowConditionTreeComponent } from './step-editor/studio-workflow-condition-tree.component';
@@ -36,6 +35,7 @@ import { STUDIO_WORKFLOW_LABELS, formatWorkflowLabel } from './studio-workflow-l
 import { workflowErrorMessage } from './studio-workflow-http.util';
 import { StudioWorkflowInstanceDetailComponent } from './studio-workflow-instance-detail.component';
 import { StudioWorkflowInstancesPanelComponent } from './studio-workflow-instances-panel.component';
+import { StudioWorkflowTestDialogComponent } from './studio-workflow-test-dialog.component';
 import {
   COMPUTED_FIELD_TYPES,
   STEP_KEY_REGEX,
@@ -50,8 +50,6 @@ import {
   WorkflowTriggerConfig,
   WorkflowValidationIssueDto,
   WorkflowValidationResultDto,
-  WORKFLOW_TEST_VERDICTS,
-  WorkflowTestResultDto,
   slugifyWorkflowKey,
   stepsJsonBytes
 } from './studio-workflows.models';
@@ -108,11 +106,11 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    CommonModule, FormsModule, ButtonModule, DialogModule, DrawerModule, InputTextModule, MessageModule, SelectModule,
+    CommonModule, FormsModule, ButtonModule, DrawerModule, InputTextModule, MessageModule, SelectModule,
     SkeletonModule, TagModule, TextareaModule, ToastModule, ToggleSwitchModule, StudioPageShellComponent,
     StudioFilterBuilderComponent,
     StudioWorkflowStepListComponent, StudioWorkflowStepEditorComponent, StudioWorkflowInstancesPanelComponent,
-    StudioWorkflowInstanceDetailComponent,
+    StudioWorkflowInstanceDetailComponent, StudioWorkflowTestDialogComponent,
     // Référencé UNIQUEMENT dans le bloc `@defer` ci-dessous : Angular l'isole dans un chunk
     // chargé à la demande (primeng/tree reste hors du bundle initial — 4.4c2 §3).
     StudioWorkflowConditionTreeComponent
@@ -126,7 +124,7 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
           data-testid="wf-validate" [disabled]="busy() || saving() || loading() || loadError()" (click)="validate()"></button>
         <button pButton type="button" [outlined]="true" icon="fa-solid fa-vial" [label]="L.test.button"
           data-testid="wf-test" [disabled]="busy() || saving() || loading() || loadError() || !id || dirty()"
-          [attr.title]="!id || dirty() ? L.test.saveFirst : null" (click)="openTestDialog()"></button>
+          [attr.title]="!id || dirty() ? L.test.saveFirst : null" (click)="testDialog.open()"></button>
         <button pButton type="button" icon="fa-solid fa-floppy-disk" [label]="L.designer.save"
           data-testid="wf-save" [loading]="saving()" [disabled]="saving() || !canSave()" (click)="save()"></button>
         @if (id) {
@@ -331,60 +329,8 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
           </div>
         }
       </ng-template>
-      <!-- 4.7c2 (R17) : dialogue « Tester sur un enregistrement » — simulation pure (4.7c1), aucune écriture serveur. -->
-      <p-dialog [header]="L.test.dialogTitle" [(visible)]="testDialogVisible" [modal]="true"
-        [style]="{ width: '42rem' }" styleClass="studio-theme" data-testid="wf-test-dialog">
-        <p-message severity="info" [text]="L.test.banner" styleClass="wf-test-banner" data-testid="wf-test-banner" />
-        <div class="wf-test-picker">
-          <input pInputText type="text" class="wf-test-search" [ngModel]="testSearch()" (ngModelChange)="onTestSearch($event)"
-            [placeholder]="L.test.searchPlaceholder" data-testid="wf-test-search" />
-          @if (testSearching()) { <span class="wf-test-hint">{{ L.test.searching }}</span> }
-        </div>
-        <ul class="wf-test-records" data-testid="wf-test-records">
-          @for (r of testRecords(); track r.id) {
-            <li>
-              <button type="button" class="wf-test-record" [class.wf-test-record--selected]="testRecord()?.id === r.id"
-                (click)="pickTestRecord(r)">
-                <span class="wf-test-record-label">{{ testRecordLabel(r) }}</span>
-                <small class="wf-test-record-id" [title]="r.id">{{ shortRecordId(r.id) }}</small>
-              </button>
-            </li>
-          } @empty {
-            @if (!testSearching()) { <li class="wf-test-hint" data-testid="wf-test-empty">{{ L.test.noRecords }}</li> }
-          }
-        </ul>
-        <button pButton type="button" icon="fa-solid fa-play" [label]="L.test.run" data-testid="wf-test-run"
-          [loading]="testRunning()" [disabled]="!testRecord() || testRunning()" (click)="runTest()"></button>
-        @if (testError()) {
-          <p-message severity="error" [text]="testError()!" styleClass="wf-test-msg" data-testid="wf-test-error" />
-        }
-        @if (testTrace(); as trace) {
-          <div class="wf-test-trace" data-testid="wf-test-trace">
-            @if (trace.warnings.length) {
-              <ul class="wf-test-warnings" data-testid="wf-test-warnings">
-                @for (w of trace.warnings; track w) { <li><i class="fa-solid fa-triangle-exclamation"></i> {{ w }}</li> }
-              </ul>
-            }
-            <ol class="wf-trace">
-              @for (step of trace.steps; track $index) {
-                <li class="wf-trace-row wf-trace-row--{{ testVerdictClass(step.verdict) }}" [attr.data-verdict]="step.verdict">
-                  <i [class]="testVerdictIcon(step.verdict)"></i>
-                  <span class="wf-trace-name">{{ step.label ?? step.key }} <small>({{ step.type }})</small></span>
-                  <span class="wf-trace-verdict">{{ testVerdictLabel(step.verdict) }}</span>
-                  @if (step.detail) { <div class="wf-trace-detail">{{ step.detail }}</div> }
-                  @if (step.rendered) {
-                    <details class="wf-trace-rendered"><summary>{{ L.test.rendered }}</summary><pre>{{ step.rendered | json }}</pre></details>
-                  }
-                </li>
-              }
-            </ol>
-            <div class="wf-trace-summary" data-testid="wf-test-summary">
-              {{ trace.evaluatedSteps }} {{ L.test.evaluatedSuffix }}
-              @if (trace.suspended) { — {{ L.test.suspendedSuffix }} }
-            </div>
-          </div>
-        }
-      </p-dialog>
+      <!-- 4.7c2 (R17) : dialogue « Tester sur un enregistrement » — composant dédié depuis 4.7★3 (D-47-80), ouvert par le bouton wf-test via #testDialog. -->
+      <app-studio-workflow-test-dialog #testDialog [workflowId]="id" [entityKey]="entity()?.key ?? null" [fields]="fields()" />
     </app-studio-page-shell>
   `,
   styleUrls: ['../shared/studio-layout.scss', './studio-workflow-designer.scss']
@@ -482,11 +428,6 @@ export class StudioWorkflowDesignerComponent implements OnInit {
   /** Champ surveillé `field_changed` : champs actifs non calculés (même règle que `update_field.set`). */
   readonly watchableFields = computed(() =>
     this.fields().filter(f => f.isActive && !COMPUTED.has(f.fieldType)).map(f => ({ label: `${f.label} (${f.key})`, value: f.key })));
-
-  constructor() {
-    // Recherche d'enregistrement anti-rebond (300 ms) du dialogue « Tester ».
-    this.testSearchQuery$.pipe(debounceTime(300), takeUntilDestroyed()).subscribe(q => this.searchTestRecords(q));
-  }
 
   ngOnInit(): void {
     this.id = this.route.snapshot.paramMap.get('id');
@@ -587,99 +528,6 @@ export class StudioWorkflowDesignerComponent implements OnInit {
 
   onScheduledFilters(filters: RecordViewFilter[]): void {
     this.patchTriggerConfig({ filters: toWorkflowFilters(filters) });
-  }
-
-  // ---- 4.7c2 — dialogue « Tester sur un enregistrement » (simulation pure, route 4.7c1) ----
-
-  /** Recherche anti-rebond 300 ms (D-44-86) — branchée dans le constructeur. */
-  private readonly testSearchQuery$ = new Subject<string>();
-
-  readonly testDialogVisible = signal(false);
-  readonly testSearch = signal('');
-  readonly testSearching = signal(false);
-  readonly testRecords = signal<CustomRecord[]>([]);
-  readonly testRecord = signal<CustomRecord | null>(null);
-  readonly testRunning = signal(false);
-  readonly testTrace = signal<WorkflowTestResultDto | null>(null);
-  readonly testError = signal<string | null>(null);
-
-  openTestDialog(): void {
-    this.testDialogVisible.set(true);
-    this.testRecord.set(null);
-    this.testTrace.set(null);
-    this.testError.set(null);
-    this.searchTestRecords(this.testSearch().trim());
-  }
-
-  onTestSearch(value: string): void {
-    this.testSearch.set(value);
-    this.testSearchQuery$.next(value.trim());
-  }
-
-  pickTestRecord(record: CustomRecord): void {
-    this.testRecord.set(record);
-    this.testTrace.set(null);
-    this.testError.set(null);
-  }
-
-  runTest(): void {
-    const record = this.testRecord();
-    if (!this.id || !record || this.testRunning()) return;
-    this.testRunning.set(true);
-    this.testTrace.set(null);
-    this.testError.set(null);
-    this.workflowsSvc.testWorkflow(this.id, record.id).subscribe({
-      next: res => { this.testRunning.set(false); this.testTrace.set(res.data ?? null); },
-      error: err => { this.testRunning.set(false); this.testError.set(workflowErrorMessage(err) || this.L.test.error); }
-    });
-  }
-
-  /** Libellé d'un enregistrement candidat : premier champ texte actif renseigné, sinon identifiant tronqué (D-44-24). */
-  testRecordLabel(record: CustomRecord): string {
-    const titleKey = this.fields().find(f => f.isActive && f.fieldType === CustomFieldType.Text)?.key;
-    const value = titleKey && record.data ? record.data[titleKey] : null;
-    if (typeof value === 'string' && value.trim()) return value;
-    return this.shortRecordId(record.id);
-  }
-
-  shortRecordId(id: string): string { return id.length > 8 ? id.slice(0, 8) + '…' : id; }
-
-  testVerdictIcon(verdict: string): string {
-    switch (verdict) {
-      case WORKFLOW_TEST_VERDICTS.wouldRun: return 'fa-solid fa-check';
-      case WORKFLOW_TEST_VERDICTS.skipped: return 'fa-solid fa-forward';
-      case WORKFLOW_TEST_VERDICTS.wouldSuspend: return 'fa-solid fa-pause';
-      default: return 'fa-solid fa-xmark';
-    }
-  }
-
-  testVerdictClass(verdict: string): string {
-    switch (verdict) {
-      case WORKFLOW_TEST_VERDICTS.wouldRun: return 'run';
-      case WORKFLOW_TEST_VERDICTS.skipped: return 'skip';
-      case WORKFLOW_TEST_VERDICTS.wouldSuspend: return 'suspend';
-      default: return 'fail';
-    }
-  }
-
-  testVerdictLabel(verdict: string): string {
-    const v = this.L.test.verdicts;
-    switch (verdict) {
-      case WORKFLOW_TEST_VERDICTS.wouldRun: return v.wouldRun;
-      case WORKFLOW_TEST_VERDICTS.skipped: return v.skipped;
-      case WORKFLOW_TEST_VERDICTS.wouldSuspend: return v.wouldSuspend;
-      default: return v.wouldFail;
-    }
-  }
-
-  private searchTestRecords(query: string): void {
-    const entityKey = this.entity()?.key;
-    if (!entityKey) return;
-    this.testSearching.set(true);
-    this.studio.listRecords(entityKey, query || null, 1, 10).subscribe({
-      next: res => { this.testSearching.set(false); this.testRecords.set(res.data?.items ?? []); },
-      error: () => { this.testSearching.set(false); this.testRecords.set([]); }
-    });
   }
 
   protected asText(v: unknown): string { return typeof v === 'string' ? v : v == null ? '' : String(v); }

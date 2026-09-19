@@ -1574,3 +1574,32 @@ Passe de sécurité **S-base** (S1–S17, plan C §4.2) sur le périmètre v1.1 
 - Portée automatisée ★2 : Infra +55 cas (`StudioWorkflowCronSpecTests` 40, `AddAuditLogsEntityHistoryIndexMigrationTests` 6,
   job 1, simulation 1, `RecordQuerySql` 1, approbations 2), API +1 (`StudioRecordsControllerContractTests` : 21 cas),
   Karma +3, Playwright +3 (suite Studio attendue 47 réussis / 11 ignorés — captures docs — / 58).
+
+**★3 — simplify (D-47-79, D-47-80).** Aucun changement de contrat (routes, `data-testid`, libellés, migrations) ; passe de
+lecture croisée (R56) avant commit : « aucun blocage », deux agents.
+
+- **S16 DI du job planifié (D-47-79)** : `StudioWorkflowScheduledJob` n'était pas enregistré dans `DependencyInjection.cs`
+  (l'activateur Hangfire le construisait implicitement, contrairement à `StudioWorkflowResumeJob`) ⇒ `AddScoped` explicite,
+  et fait `StudioWorkflowDependencyInjectionTests.Scheduled_and_resume_jobs_are_registered_scoped_and_the_scheduled_job_resolves`
+  (descripteur unique, `Scoped`, résolution depuis un scope du conteneur de production `AddApplication` + `AddInfrastructure`).
+- **Constantes moteur (D-47-80)** : `StudioWorkflowStepsSpec.DefaultApprovalDueInHours` (72) et `DefaultWaitMaxHours`
+  (`= MaxHours`, 720) remplacent quatre constantes privées (handlers `approval` / `wait` et leurs miroirs dans la simulation) ;
+  la dernière valeur miroir (`MaxSimulatedSteps` ↔ `StudioWorkflowEngine.MaxStepsPerSegment`) est verrouillée par
+  `Simulated_segment_bound_matches_the_real_engine_segment_bound`.
+- **Helper JSON** : `StudioWorkflowJson.TryParseObject` (Application/Spec) remplace trois blocs identiques (cron, filtres du
+  déclencheur, colonnes JSON du mapping) ; testé directement (`StudioWorkflowJsonTests`, 12 cas : absent, blanc, illisible,
+  tronqué, tableau, `null`, scalaire, chaîne ⇒ `false` ; objets ⇒ `true`).
+- **Dialogue « Tester » extrait** : `StudioWorkflowTestDialogComponent` (`app-studio-workflow-test-dialog`, entrées
+  `workflowId` / `entityKey` / `fields`, ouvert par `#testDialog.open()` depuis le bouton `wf-test`) ; gabarit, styles
+  (`studio-workflow-test-dialog.scss`) et les 4 cas Karma déplacés à l'identique ; le concepteur garde le test du bouton
+  désactivé et gagne un test d'intégration (entrées propagées, `visible` bascule au clic, `GET records … pageSize=10`).
+- Conservés volontairement (consignés D-47-80) : double clamp `max` 1..200 du dépôt (`ListDecidedApprovalsByUserAsync`,
+  contrat documenté de `IStudioWorkflowRepository`, défense en profondeur) ; `cronPresets` mutable (`p-select [options]`
+  exige `any[]` en PrimeNG 19.1) ; préfixe `test*` des signaux du dialogue (déplacement vérifiable à l'identique).
+- Vérification manuelle (Chromium, administrateur du tenant de démonstration, `dotnet run` + `ng serve`) : dialogue « Tester »
+  identique — bouton grisé tant que le brouillon est sale, recherche anti-rebond, 10 fiches, trace et verdicts, erreur 404
+  inline ; approbation sans `dueInHours` ⇒ échéance +72 h, attente sans `maxHours` ⇒ plafond 720 h ; tick planifié
+  inchangé (filtres lus, `value2` replié).
+- Portée automatisée ★3 : Infra +14 (`StudioWorkflowJsonTests` 12, DI 1, borne simulation 1), Karma +1 net
+  (`studio-workflow-test-dialog.component.spec.ts` 4 cas déplacés + 1 intégration concepteur ; dossier `workflows` 105),
+  Playwright inchangé (`studio-workflows.spec.ts` 9 réussis / 3 ignorés ; suite Studio 47 / 11 / 58).

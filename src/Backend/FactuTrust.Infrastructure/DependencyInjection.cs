@@ -515,6 +515,9 @@ public static class DependencyInjection
         services.AddScoped<FactuTrust.Infrastructure.Services.Background.CashFlowRecomputationJob>();
         // Job récurrent des workflows Studio (PR 4.2d) : même garde de flag (EnableStudioWorkflows).
         services.AddScoped<Services.Studio.Workflows.StudioWorkflowResumeJob>();
+        // 4.7★3 (D-47-79, S16) : job des déclencheurs planifiés (4.7b2) — enregistré explicitement comme
+        // les autres jobs Hangfire, au lieu de dépendre de la construction implicite de l'activateur.
+        services.AddScoped<Services.Studio.Workflows.StudioWorkflowScheduledJob>();
 
         // Lot C5 — Providers paiement (Konnect / Paymee / Virement) + webhooks signés HMAC
         services.AddScoped<FactuTrust.Infrastructure.Services.Billing.PaymentProviderConfigService>();

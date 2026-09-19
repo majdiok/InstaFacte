@@ -36,10 +36,6 @@ public sealed class TestWorkflowQueryHandler : IRequestHandler<TestWorkflowQuery
     /// <summary>Borne du premier segment simulé — même valeur que <c>StudioWorkflowEngine.MaxStepsPerSegment</c> (B-test-1).</summary>
     public const int MaxSimulatedSteps = 30;
 
-    // Miroirs des constantes privées des handlers réels (bornes validées en amont par b1).
-    private const int DefaultWaitMaxHours = 720;   // WaitStepHandler.DefaultMaxHours
-    private const int DefaultApprovalDueHours = 72; // ApprovalStepHandler.DefaultDueInHours
-
     private readonly IStudioWorkflowRepository _workflows;
     private readonly ICustomEntityRepository _entities;
     private readonly ICustomFieldRepository _fields;
@@ -236,7 +232,7 @@ public sealed class TestWorkflowQueryHandler : IRequestHandler<TestWorkflowQuery
                 {
                     evaluated++;
                     var assignee = ReadAssignee(step.Raw);
-                    var dueAt = nowUtc.AddHours(Math.Clamp(ReadInt(step.Raw, "dueInHours") ?? DefaultApprovalDueHours, 1, 720));
+                    var dueAt = nowUtc.AddHours(Math.Clamp(ReadInt(step.Raw, "dueInHours") ?? StudioWorkflowStepsSpec.DefaultApprovalDueInHours, 1, StudioWorkflowStepsSpec.MaxHours));
                     trace.Add(new(step.Key, step.Type, step.Label, WorkflowTestVerdicts.WouldSuspend,
                         $"Approbation {assignee} ; échéance calculée : {Iso(dueAt)}.",
                         new JsonObject
@@ -271,7 +267,7 @@ public sealed class TestWorkflowQueryHandler : IRequestHandler<TestWorkflowQuery
                             break;
                         }
                     }
-                    var cap = nowUtc.AddHours(Math.Clamp(ReadInt(step.Raw, "maxHours") ?? DefaultWaitMaxHours, 1, 720));
+                    var cap = nowUtc.AddHours(Math.Clamp(ReadInt(step.Raw, "maxHours") ?? StudioWorkflowStepsSpec.DefaultWaitMaxHours, 1, StudioWorkflowStepsSpec.MaxHours));
                     if (dueAt > cap)
                         dueAt = cap;
 
