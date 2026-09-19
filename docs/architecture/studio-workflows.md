@@ -217,7 +217,7 @@ Livré en PR 4.4 (tranches a1 → l2). Arborescence :
   enregistrement (`rowVersion`, issues mappées par étape), panneau « Historique » des instances
   (4.7a2, D-47-F01/F02 : `GET workflows/{id}/instances?page=n&pageSize=20`, pages de 20 accumulées,
   bouton « Charger plus — encore N », `refreshToken` recharge la page 1 ; badge « ouvertes » alimenté
-  par `openInstances()`), bouton **« Tester »** (4.7c2, D-47-F04 : `POST workflows/{id}/test`, désactivé
+  par `openInstances()`), bouton **« Tester sur un enregistrement »** (4.7c2, D-47-F04 : `POST workflows/{id}/test`, désactivé
   si le brouillon est sale ou non enregistré, `p-dialog` de recherche d'un enregistrement — anti-rebond
   300 ms —, trace rendue, bandeau « Simulation — aucune donnée n'a été écrite »).
 - **Exécution** : `studio-workflow-status-tag.component.ts` (étiquette de statut partagée),
@@ -348,9 +348,11 @@ qui itère sur les tenants actifs et, pour chacun, moissonne les baux périmés,
   (une instance ouverte du même workflow ⇒ ignoré ; instance terminée ou autre workflow ⇒ éligible), quota
   `MaxWorkflowInstancesPerRecord`, puis `engine.StartAsync(…, TriggerKind.Scheduled, startedBy: null)` ; total
   supérieur au lot ⇒ `LogWarning` « suite au prochain tick » ; compteurs balayés / démarrés / ignorés / échoués
-  en fin de tick. Un cron « chaque minute » est accepté (U5) : la surveillance est décrite dans le runbook.
+  en fin de tick. Un cron « chaque minute » est accepté (U5) : la surveillance (inventaire des jobs, retrait manuel) est
+  décrite dans `docs/runbooks/studio-workflows-resume.md`, section « Déclencheurs planifiés » (ajoutée en 4.7d3).
 - **Frontend** (4.7b4, D-47-F03) : carte « Planifié » sélectionnable, sous-formulaire `wf-scheduled-config`
-  (préréglages UTC — chaque heure, chaque jour 06:00, lundi 06:00, « Personnalisé » — + `wf-cron`), filtres via
+  (préréglages — « Toutes les heures », « Chaque jour à 06:00 UTC », « Chaque lundi à 06:00 UTC »,
+  « Personnalisé » — + `wf-cron`), filtres via
   `app-studio-filter-builder`, `canSave` exige un cron non vide, `selectTrigger` réinitialise la config au
   changement de type.
 
