@@ -304,6 +304,23 @@ public sealed class StudioWorkflowTestFeaturesTests : IClassFixture<StudioWorkfl
         await h.AssertNoWriteAsync();
     }
 
+    /// <summary>4.7★2 (S2) : invariant D-47-B07 par construction — le handler de simulation ne reçoit aucun service
+    /// d'écriture (moteur, notifications, audit, e-mail, médiateur, unité de travail) ; il ne peut donc rien persister.</summary>
+    [Fact]
+    public void TestWorkflowQueryHandler_depends_on_no_writing_service()
+    {
+        var ctor = Assert.Single(typeof(TestWorkflowQueryHandler).GetConstructors());
+        var parameterTypes = ctor.GetParameters().Select(p => p.ParameterType.Name).ToArray();
+
+        Assert.Equal(
+            new[] { "IStudioWorkflowRepository", "ICustomEntityRepository", "ICustomFieldRepository", "ICustomRecordRepository", "ICurrentUser", "TimeProvider" },
+            parameterTypes);
+
+        var forbidden = new[] { "Engine", "Runner", "Notification", "Audit", "Email", "Sender", "Mediator", "Publisher", "UnitOfWork", "DbContext", "Writer", "Schedule", "Quota" };
+        foreach (var name in parameterTypes)
+            Assert.DoesNotContain(forbidden, f => name.Contains(f, StringComparison.Ordinal));
+    }
+
     // ---------------------------------------------------------------- harness
 
     private Harness NewHarness(bool granted = true, bool recordsRead = true) => new(_sql, granted, recordsRead);

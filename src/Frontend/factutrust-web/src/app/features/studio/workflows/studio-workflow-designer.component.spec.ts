@@ -329,6 +329,33 @@ describe('StudioWorkflowDesignerComponent', () => {
       httpMock.expectNone(r => (r.method === 'POST' || r.method === 'PUT' || r.method === 'DELETE') && !r.url.endsWith('/test'));
     }));
 
+    // 4.7★2 (S12) : le détail et les valeurs rendues viennent du serveur (données d'enregistrement interpolées) —
+    // ils doivent rester du texte (interpolation Angular), jamais du HTML interprété.
+    it('échappe le HTML contenu dans le détail et les valeurs rendues de la trace (aucun élément injecté)', fakeAsync(() => {
+      const hostile = '<img src=x onerror="alert(1)"><b>gras</b>';
+      const hostileTrace: WorkflowTestResultDto = {
+        ...trace, evaluatedSteps: 1, suspended: false, warnings: [`Avertissement ${hostile}`],
+        steps: [{ key: 'notifie', type: 'notify', label: `Étape ${hostile}`, verdict: 'would_run',
+          detail: `Notification « ${hostile} »`, rendered: { title: hostile, body: `<script>alert(2)</script>` } }]
+      };
+      component.openTestDialog();
+      flushRecords([record1]);
+      component.pickTestRecord(record1);
+      component.runTest();
+      httpMock.expectOne(r => r.method === 'POST' && r.url === `${API}/workflows/w1/test`)
+        .flush({ success: true, data: hostileTrace, message: null, error: null });
+      fixture.detectChanges();
+      tick();
+
+      const dialog = fixture.debugElement.query(By.css('[data-testid="wf-test-trace"]')).nativeElement as HTMLElement;
+      expect(dialog.querySelectorAll('img, b, script').length).toBe(0);
+      expect(fixture.debugElement.query(By.css('.wf-trace-detail')).nativeElement.textContent).toContain('<img src=x onerror="alert(1)">');
+      expect(fixture.debugElement.query(By.css('.wf-trace-rendered pre')).nativeElement.textContent).toContain('<script>alert(2)</script>');
+      const warnings = fixture.debugElement.query(By.css('[data-testid="wf-test-warnings"]')).nativeElement as HTMLElement;
+      expect(warnings.querySelectorAll('img, b').length).toBe(0);
+      expect(warnings.textContent).toContain('<b>gras</b>');
+    }));
+
     it('affiche l\u2019erreur 404 inline quand l\u2019enregistrement a disparu', fakeAsync(() => {
       component.openTestDialog();
       flushRecords([record1]);

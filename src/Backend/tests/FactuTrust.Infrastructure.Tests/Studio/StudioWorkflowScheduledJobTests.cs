@@ -1,3 +1,4 @@
+using System.Reflection;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
@@ -13,6 +14,7 @@ using FactuTrust.Infrastructure.Services.Studio.Workflows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Hangfire;
 using Moq;
 using Xunit;
 
@@ -122,6 +124,28 @@ public sealed class StudioWorkflowScheduledJobTests
                 null, null, null, 0, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => StudioWorkflowInstance.Start(
                 TenantId, definition, record.Id, StudioWorkflowTriggerKind.Scheduled, null, "{}", 0, null));
+    }
+
+    /// <summary>4.7★2 (S5) : les attributs Hangfire sont sur la MÉTHODE <c>FireAsync</c> — un tick à la fois par
+    /// (type, méthode, args) pendant 540 s, aucun retry automatique (le prochain tick reprend) ; motif du job de reprise.</summary>
+    [Fact]
+    public void Fire_is_decorated_with_disable_concurrent_execution_540s_and_no_retry()
+    {
+        var fire = typeof(StudioWorkflowScheduledJob).GetMethod(nameof(StudioWorkflowScheduledJob.FireAsync));
+        Assert.NotNull(fire);
+
+        // Hangfire n'expose pas le délai publiquement : on relit l'argument du constructeur via CustomAttributeData.
+        var disableData = CustomAttributeData.GetCustomAttributes(fire!)
+            .SingleOrDefault(a => a.AttributeType == typeof(DisableConcurrentExecutionAttribute));
+        Assert.NotNull(disableData);
+        Assert.Equal(540, (int)disableData!.ConstructorArguments[0].Value!);
+
+        var retry = fire.GetCustomAttribute<AutomaticRetryAttribute>();
+        Assert.NotNull(retry);
+        Assert.Equal(0, retry!.Attempts);
+
+        // Le tick attend un identifiant de tenant et de définition (l'id de job les porte : {tenantId:N}:{definitionId:N}).
+        Assert.Equal(new[] { typeof(Guid), typeof(Guid), typeof(CancellationToken) }, fire.GetParameters().Select(p => p.ParameterType).ToArray());
     }
 
     [Fact]

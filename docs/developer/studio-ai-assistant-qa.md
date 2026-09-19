@@ -1532,3 +1532,45 @@ Passe de sécurité **S-base** (S1–S17, plan C §4.2) sur le périmètre v1.1 
 - Portée automatisée : Infra `StudioWorkflowTestFeaturesTests.Without_records_read_the_test_is_unauthorized` (+ les 10
   faits existants, harnais accordant `RecordsRead`), `AuditLogQueryServiceTests.GetEntityHistoryAsync_bounds_page_so_that_skip_never_overflows` ;
   Karma `studio-ai-workflows-tab.component.spec.ts` « affiche « Planifié » (sans « bientôt ») … D-47-76 ».
+
+**★2 — tests (D-47-77, D-47-78).** Aucun code de production ; un seul fichier hors tests, le jumeau SQL (`docs/runbooks/sql/`).
+
+- **S6 cron** : `StudioWorkflowCronSpecTests` — 5 champs exigés, bornes (`60`, `24`, `0`/`32`, `0`/`13`, `8` refusés), pas
+  (`*/0`, `*/-5`, `*/` refusés), plages inversées, listes vides, noms `SUN-SAT` / `JAN-DEC` (pas `LUN`, `JANV`), `?` / `L`
+  refusés, normalisation des espaces ; les 24 sorties des helpers `Hangfire.Cron.*` sont acceptées ; recoupement par
+  réflexion avec l'analyseur Cronos embarqué dans Hangfire.Core 1.8.14 (tout ce que la spec accepte, Cronos l'accepte ;
+  les bornes hors plage sont refusées des deux côtés). `* * * * *` reste accepté (U5).
+- **S14 migration (U7)** : `AddAuditLogsEntityHistoryIndexMigrationTests` — 6 faits dont un sur SQL Server réel
+  (`MigrateAsync` ×2 puis rejeu du jumeau : 1 index `IX_AuditLogs_EntityHistory` sur `(EntityType, EntityId, CreatedAt)`,
+  1 ligne `__EFMigrationsHistory`). Jumeau SQL complété de la ligne d'historique (R37) ; migration intacte.
+- **S5 job planifié** : `Fire_is_decorated_with_disable_concurrent_execution_540s_and_no_retry` (attributs relus par
+  `CustomAttributeData`, signature `(Guid, Guid, CancellationToken)`).
+- **S2 simulation** : `TestWorkflowQueryHandler_depends_on_no_writing_service` — constructeur limité à 6 dépendances de
+  lecture (`IStudioWorkflowRepository`, `ICustomEntityRepository`, `ICustomFieldRepository`, `ICustomRecordRepository`,
+  `ICurrentUser`, `TimeProvider`) ; aucun type `Engine` / `Notification` / `Audit` / `Mediator` / `UnitOfWork`…
+- **S7 filtre sur champ supprimé** : `RecordQuerySqlTests.Eq_on_a_field_that_no_longer_exists_falls_back_to_a_parameterized_text_comparison`
+  — un filtre planifié dont le champ n'existe plus est traduit en `JSON_VALUE(...) = @p0` (texte, paramétré), sans
+  exception : le tick continue (l'isolement d'une fiche en échec reste couvert par
+  `Tick_isolates_a_failing_record_and_processes_the_rest`).
+- **S10 historique des approbations** : borne haute déjà couverte (`ListMyApprovalHistory_clamps_max_to_200`) ; ajout de la
+  borne basse `ListMyApprovalHistory_clamps_max_to_1_when_not_positive` (0 et −25 ⇒ dépôt appelé avec `1`).
+- **S1 surface `StudioRecordsController`** : `Action_surface_is_frozen_with_an_explicit_policy_per_action_and_history_reads_no_flag`
+  — exactement 8 actions, verbe / gabarit / policy figés par action, `[Authorize]` de classe sans policy, aucun
+  `[AllowAnonymous]` ; drapeaux tous à `false` ⇒ `History` répond `200`, `Patch` répond `404` sans MediatR.
+- **S12 Karma (+3)** : panneau d'instances — badge absent quand `openCount = 0` même avec des instances en cours sur la
+  page (D-47-F02) ; « Charger plus » porte `p-button-loading` / `p-disabled` pendant la page 2 et un second clic n'émet
+  aucune requête ; concepteur — trace « Tester » hostile (`<img onerror>`, `<b>`, `<script>` dans `detail`, `rendered`,
+  `warnings`) rendue en texte : aucun élément `img` / `b` / `script` dans `wf-test-trace`.
+- **Playwright (+3, `e2e/studio-workflows.spec.ts`, API mockée)** : (a) carte **Planifié** cliquable (plus de
+  `aria-disabled`), préréglage « Chaque jour à 06:00 UTC » ⇒ `wf-cron` = `0 6 * * *`, saisie libre ⇒ préréglage
+  « Personnalisé », **Enregistrer** ⇒ `PUT wf-1` avec `trigger: 'scheduled'` et `triggerConfig.cron` ; (b) **Tester** ⇒
+  boîte de dialogue « Tester le workflow », fiches de `GET records/interventions?page=1&pageSize=10`, **Lancer le test**
+  désactivé sans fiche, trace 2 lignes (`would_run` « Priorité haute », `would_suspend` « Validation »), résumé « 2 »,
+  aucun avertissement, un seul `POST …/test` et **aucune** autre écriture ; (c) panneau d'instances 22 instances en
+  2 pages ⇒ 20 lignes, « Charger plus — encore 2 », clic ⇒ 22 lignes, bouton retiré, une seule requête `page=2`, aucune
+  `page=3`, `pageSize=20` partout.
+- Écart de test consigné : l'hôte `<p-dialog data-testid="wf-test-dialog">` n'a pas de boîte visible (PrimeNG 19) — le
+  dialogue est ciblé par `getByRole('dialog', { name: 'Tester le workflow' })`, le `data-testid` vérifié par `toHaveCount(1)`.
+- Portée automatisée ★2 : Infra +55 cas (`StudioWorkflowCronSpecTests` 40, `AddAuditLogsEntityHistoryIndexMigrationTests` 6,
+  job 1, simulation 1, `RecordQuerySql` 1, approbations 2), API +1 (`StudioRecordsControllerContractTests` : 21 cas),
+  Karma +3, Playwright +3 (suite Studio attendue 47 réussis / 11 ignorés — captures docs — / 58).
