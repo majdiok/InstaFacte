@@ -10,8 +10,9 @@
 
 Un **workflow Studio** est une suite ordonnée d'**étapes** (≤ 30) rattachée à une table Studio
 (`CustomEntityDefinition`) et démarrée par un **déclencheur** : création d'un enregistrement, mise à
-jour, changement d'un champ précis, lancement manuel (le déclencheur planifié est réservé : refusé à la
-validation). Chaque exécution est une **instance** exécutée par segments côté serveur, avec un
+jour, changement d'un champ précis, lancement manuel ou **planification** (4.7b, D-47-B02 : expression
+cron à 5 champs en UTC et 0 à 10 filtres optionnels, `triggerConfig = { cron, filters? }`, voir
+« Déclencheur planifié »). Chaque exécution est une **instance** exécutée par segments côté serveur, avec un
 journal d'étapes append-only et, à terme, des approbations humaines.
 
 Public : le concepteur (`studio:design_entities`) dessine et active les workflows ; les utilisateurs
@@ -36,7 +37,7 @@ Cinq enums, exposées par l'API en **snake_case** via `StudioWorkflowEnumNames` 
 
 | Enum | Valeurs API |
 |---|---|
-| `StudioWorkflowTriggerKind` | `on_create`, `on_update`, `field_changed`, `manual`, `scheduled` (réservé) |
+| `StudioWorkflowTriggerKind` | `on_create`, `on_update`, `field_changed`, `manual`, `scheduled` (cron 5 champs UTC + 0..10 filtres — 4.7b1) |
 | `StudioWorkflowInstanceStatus` | `running`, `waiting`, `waiting_approval`, `completed`, `failed`, `cancelled` |
 | `StudioWorkflowStepRunStatus` | `succeeded`, `skipped`, `failed`, `suspended` |
 | `StudioWorkflowApprovalStatus` | `pending`, `approved`, `rejected`, `cancelled`, `expired` |
@@ -87,8 +88,15 @@ Les sept types d'étapes (`StudioWorkflowStepTypes.All`, ordre figé du catalogu
 Validation (`StudioWorkflowStepsSpec.Parse` puis `Validate`) : chaque problème est localisé par un
 chemin — `trigger`, `triggerConfig.field`, `steps`, `steps[i].key`, `steps[i].type`, `steps[i].field`,
 `steps[i].action`, `steps[i].gotoKey`… ; clés d'étapes uniques ; `goto` uniquement **vers l'avant** ;
-`scheduled` ⇒ `trigger` « Déclencheur planifié : bientôt disponible. ». `Lint` produit des
-**avertissements** non bloquants (étape jamais atteinte, gabarit vers une variable inconnue…).
+`scheduled` ⇒ `triggerConfig = { cron, filters? }` (`ValidateScheduledTriggerConfig`, 4.7b1) :
+`triggerConfig.cron` **requis** et valide (`StudioWorkflowCronSpec` — 5 champs minute heure jour-du-mois
+mois jour-de-semaine, jetons `*` `,` `-` `/`, noms `JAN-DEC` / `SUN-SAT`, `0` et `7` = dimanche, UTC ;
+sinon « Une expression cron (5 champs, UTC) est requise… » / « Expression cron invalide : « … » ») ;
+toute autre clé ⇒ `triggerConfig` « Propriété « x » non reconnue. » ; `triggerConfig.filters` = tableau
+de **0 à 10** filtres `{ field, op, value, value2? }` (champ actif non calculé, ni `_previous` ni
+résultats, opérateur compatible avec le type — `TryValidateFilterShape`), 400 sinon. Stockage dans
+`TriggerConfigJson` existant (aucune migration). `Lint` produit des **avertissements** non bloquants
+(étape jamais atteinte, gabarit vers une variable inconnue…).
 
 ## Déclenchement
 
@@ -155,7 +163,8 @@ médiateur**. Erreurs via `StudioErrorMapping` : 409 `Conflict`, 404 `*.NotFound
 | `DELETE workflows/{id}` | — | **200** `WorkflowDeletionResultDto { cancelledInstances }` (soft delete + annulation des instances ouvertes) | 404 ; 409 `Conflict` (course perdue à l'écriture, D-41-16) |
 | `POST workflows/{id}/duplicate` | — | **201** copie **inactive** « <nom> (copie) », clé `<clé>_copie` … `_copie_9` | 400 `Validation.Plan` ; 409 `Conflict` (copies épuisées) ; 404 |
 | `POST entities/{entityId}/workflows/validate` | `SaveWorkflowRequest` | 200 `WorkflowValidationResultDto { isValid, errors[{path,message}], warnings[], stepCount }` — **même invalide** | 404 `CustomEntity.NotFound` |
-| `GET workflows/{id}/instances?max=50` | — | 200 `WorkflowInstanceDto[]` (`max` borné 1..200 côté Application) | 404 |
+| `GET workflows/{id}/instances?page=1&pageSize=50` (4.7a1, D-47-B01) | — | 200 `PagedResult<WorkflowInstanceDto>` (`page` clampée 1..`int.MaxValue / 200` — D-45-28 —, `pageSize` 1..200 ; 2 requêtes total + page, page sautée si total nul ; `startedByName` résolu en un lot). L'ancien `?max=` a disparu (rupture interne assumée, seul consommateur = panneau « Historique ») | 404 |
+| `POST workflows/{id}/test` (4.7c1, D-47-B07/B08 — R17) | `WorkflowTestRequest { recordId }` | 200 `WorkflowTestResultDto { recordId, entityKey, evaluatedSteps, suspended, steps[{ key, type, label, verdict, detail, rendered }], warnings[] }` — simulation **sans écriture** du premier segment (≤ 30 lignes de trace) sur une copie de `DataJson` ; verdicts `would_run` / `skipped` / `would_suspend` / `would_fail` ; sorties `_results.*` ⇒ avertissement « sorties fictives » ; permission `studio:design_entities` re-vérifiée au handler | 400 `Validation.steps` (`StepsJson` illisible) ; 404 `StudioWorkflowDefinition` / `CustomEntityDefinition` / `CustomRecord.NotFound` (non révélateur) |
 | `GET workflows/instances/{instanceId}` | — | 200 `WorkflowInstanceDetailDto { instance, steps, approvals, context }` (`context.previous = null`) | 404 `StudioWorkflowInstance.NotFound` |
 
 `SaveWorkflowRequest` : `key`, `name`, `description`, `trigger`, `triggerConfig`, `steps`, `isActive`,
@@ -173,6 +182,12 @@ majuscules est déjà refusée en `400 Validation.key` avant d'atteindre ce cont
   `Studio.Workflow.Created`, `Updated`, `Toggled`, `Deleted`, `Duplicated`, `InstanceStarted`,
   `InstanceFailed`, `InstanceCancelled`. Aucune valeur d'enregistrement ni `StepsJson` dans les journaux
   applicatifs (identifiants seulement).
+- Audit des **enregistrements** (4.7h1, `StudioRecordAudit`, D-47-62/63) : actions `Studio.Record.Created`,
+  `Studio.Record.Updated`, `Studio.Record.Deleted` sur `entityType = CustomRecord` — création = document
+  canonique aplati (repli `_raw`), mise à jour / patch = **diff des clés de premier niveau** (aucune ligne
+  si identique), suppression sans valeurs ; écrit **best-effort** (`SafeLogAsync`, `IAuditService?`
+  optionnel) depuis les 4 handlers de l'API records uniquement — le moteur de workflows et l'outil IA
+  `update_field` ne sont pas audités ici. Lecture : `GET records/{entityKey}/{id}/history` (voir « API runtime »).
 - Notifications (`NotificationType`) : `StudioWorkflowApprovalRequested = 15`, `StudioWorkflowApprovalDecided = 16`,
   `StudioWorkflowStepFailed = 17`, `StudioWorkflowMessage = 18`.
 
@@ -185,7 +200,8 @@ Livré en PR 4.4 (tranches a1 → l2). Arborescence :
   `isOpenInstance`, `slugifyWorkflowKey`) ; **libellés** (`studio-workflow-labels.ts` :
   `STUDIO_WORKFLOW_LABELS`, `formatWorkflowLabel` — alias de `formatLabel` de
   `features/studio/shared/studio-text.util.ts`, qui porte aussi `slugifyKey` (4.5h) —, `STEP_TYPE_ICONS`) ;
-  **service** (`studio-workflows.service.ts` : 22 méthodes — 12 conception + 10 exécution — `skipErrorUi`
+  **service** (`studio-workflows.service.ts` : 24 méthodes — 13 conception dont `testWorkflow` (4.7c2)
+  + 11 exécution dont `listMyApprovalHistory` (4.7p2) — `skipErrorUi`
   sur les sondes et écritures gérées localement, `workflowErrorMessage` pour l'enveloppe
   `{ success, data, message, error }`).
 - **Hub** `studio-workflows-hub.component.ts` (`/studio/workflows`) : sans `?entity=`, vue « Toutes les
@@ -198,7 +214,12 @@ Livré en PR 4.4 (tranches a1 → l2). Arborescence :
 - **Concepteur** `studio-workflow-designer.component.ts` (`/studio/workflows/new`, `/studio/workflows/:id`,
   grille `1fr · 320 px · 250 px`, `p-drawer` < 1 280 px) : éditeur d'étapes
   (`step-editor/`), liste réordonnable, arbre de condition en lecture, validation côté serveur avant
-  enregistrement (`rowVersion`, issues mappées par étape), panneau « instances récentes ».
+  enregistrement (`rowVersion`, issues mappées par étape), panneau « Historique » des instances
+  (4.7a2, D-47-F01/F02 : `GET workflows/{id}/instances?page=n&pageSize=20`, pages de 20 accumulées,
+  bouton « Charger plus — encore N », `refreshToken` recharge la page 1 ; badge « ouvertes » alimenté
+  par `openInstances()`), bouton **« Tester »** (4.7c2, D-47-F04 : `POST workflows/{id}/test`, désactivé
+  si le brouillon est sale ou non enregistré, `p-dialog` de recherche d'un enregistrement — anti-rebond
+  300 ms —, trace rendue, bandeau « Simulation — aucune donnée n'a été écrite »).
 - **Exécution** : `studio-workflow-status-tag.component.ts` (étiquette de statut partagée),
   `studio-workflow-instance-detail.component.ts` (tiroir `p-drawer` **bi-mode** : en portée conception
   — `?instance=` du concepteur — il lit `GET workflows/instances/{id}` ; en portée fiche — entrée
@@ -293,8 +314,9 @@ limité à l'inbox : D-45-03 étendu) ; surface lecteur strictement minimale —
 l'onglet Workflows de la fiche et nom du lanceur dans le tiroir (D-46-06) ; toasts du hub et du concepteur
 visibles (D-46-07 — D-44-95 clos) ; confirmation d'annulation inline avec motif optionnel et attributs
 d'accessibilité sur l'onglet (D-46-08 — D-44-96 clos) ; clé de jonction par défaut sans préfixe `v_`
-(D-46-09, voir `studio-many-to-many.md`) ; panneau « instances récentes » du concepteur porté à 50 avec
-invite bornée, pagination complète reportée à v1.1 (D-46-01) ; endpoint `capabilities` inchangé, accès
+(D-46-09, voir `studio-many-to-many.md`) ; panneau des instances du concepteur porté à 50 avec
+invite bornée (D-46-01 — **levé en 4.7a1/a2**, D-47-B01/F01 : panneau « Historique » paginé par 20 côté
+serveur) ; endpoint `capabilities` inchangé, accès
 lecteur reporté et motivé (D-46-10).
 
 ## Exécution différée (4.2)
@@ -304,6 +326,33 @@ Le moteur ne connaît ni Hangfire ni HTTP : toute reprise hors requête passe pa
 qui itère sur les tenants actifs et, pour chacun, moissonne les baux périmés, expire les approbations
 échues, reprend les instances dues et purge les instances terminales au-delà de la rétention
 (`docs/runbooks/studio-workflows-resume.md`).
+
+### Déclencheur planifié (4.7b)
+
+- **Forme** : `trigger = scheduled`, `triggerConfig = { "cron": "<5 champs UTC>", "filters"?: [ { field, op, value, value2? } ≤ 10 ] }`
+  (validation `StudioWorkflowStepsSpec.ValidateScheduledTriggerConfig`, cron analysé par `StudioWorkflowCronSpec`
+  — pur, sous-ensemble volontaire du gabarit Cronos/Hangfire, la forme exacte est revérifiée par Hangfire).
+- **Synchronisation** (`IStudioWorkflowScheduleService`, Infrastructure, `AddScoped` — 4.7b2, D-47-B03) : un job
+  récurrent par définition, identifiant contractuel `studio-workflow-scheduled:{tenantId:N}:{definitionId:N}` ;
+  `SyncDefinitionAsync` ⇒ `IRecurringJobManager.AddOrUpdate` **idempotent** (UTC) si la définition est active
+  **et** planifiée, `RemoveIfExists` sinon ; cron illisible ⇒ `LogWarning` + retrait ; toute erreur Hangfire est
+  absorbée (la mutation métier n'échoue jamais). Accroches : création, mise à jour (systématique), bascule
+  d'activation (sauf bascule idempotente), suppression (`RemoveDefinitionAsync`).
+- **Tick** (`StudioWorkflowScheduledJob.FireAsync(tenantId, definitionId)`, `DisableConcurrentExecution 540 s`,
+  `AutomaticRetry 0` — 4.7b3, D-47-B04) : garde drapeau `EnableStudioWorkflows` (coupé ⇒ tick ignoré, journalisé),
+  résolution de la chaîne de connexion + `ITenantContext.SetTenant` dans un scope dédié ; **auto-guérison** :
+  définition supprimée, inactive ou retypée ⇒ retrait du job ; filtres relus depuis `TriggerConfigJson`
+  (`value2` replié en `[value, value2]`), illisibles ⇒ tick ignoré ; **balayage filtré** de la table par
+  `ICustomRecordRepository.QueryAsync` (`RecordQuerySpec`, `Take` = `Ollama:StudioWorkflowScheduledBatchSize`
+  clampé 10..500, défaut **100** — D-47-B05) ; par enregistrement : anti-doublon `HasOpenInstanceInChainAsync`
+  (une instance ouverte du même workflow ⇒ ignoré ; instance terminée ou autre workflow ⇒ éligible), quota
+  `MaxWorkflowInstancesPerRecord`, puis `engine.StartAsync(…, TriggerKind.Scheduled, startedBy: null)` ; total
+  supérieur au lot ⇒ `LogWarning` « suite au prochain tick » ; compteurs balayés / démarrés / ignorés / échoués
+  en fin de tick. Un cron « chaque minute » est accepté (U5) : la surveillance est décrite dans le runbook.
+- **Frontend** (4.7b4, D-47-F03) : carte « Planifié » sélectionnable, sous-formulaire `wf-scheduled-config`
+  (préréglages UTC — chaque heure, chaque jour 06:00, lundi 06:00, « Personnalisé » — + `wf-cron`), filtres via
+  `app-studio-filter-builder`, `canSave` exige un cron non vide, `selectTrigger` réinitialise la config au
+  changement de type.
 
 ```mermaid
 sequenceDiagram
@@ -366,6 +415,17 @@ instance annule ses approbations `pending` (moteur, D-20).
 | 8 | POST | `records/{entityKey}/{recordId}/workflows/{workflowKey}/run` | `custom_records:write` | 201 + `Location` vers `workflows/instances/{id}` (conception, contrat 4.2 figé) |
 | 9 | POST | `workflows/instances/{instanceId}/cancel` | `custom_records:write` | 200 `WorkflowInstanceDto` |
 | 10 | POST | `workflows/instances/{instanceId}/remind` | `custom_records:write` | 200 (409 si < 24 h) |
+| 11 | GET | `workflows/approvals/mine/history?max=50` (4.7p1, D-47-60) | `custom_records:read` | 200 `WorkflowApprovalInboxItemDto[]` — mes décisions passées (`DecidedBy` = moi, `approved` / `rejected`, `DecidedAt` desc, `max` clampé 1..200, même DTO que l'inbox via `StudioApprovalInboxEnrichment`) ; consommé par l'onglet « Historique » de « Mes approbations » (4.7p2, D-47-61) |
+
+**Historique d'une fiche** (4.7h2, hors table : route de `StudioRecordsController`, **sans drapeau**) :
+`GET records/{entityKey}/{id:guid}/history?page=1&pageSize=20` — policy `CustomRecordsRead` re-vérifiée au
+handler (`ListCustomRecordHistoryQuery`), 400 `Validation.entityKey` (table inconnue / inactive), 404
+`CustomRecord.NotFound` ; réponse `PagedResult<RecordHistoryEntryDto { id, action, createdAt, userName?,
+changes[{ key, oldValue?, newValue? }] }>` (`IAuditLogQueryService.GetEntityHistoryAsync` : projection sans
+IP, agent ni hash, tri `CreatedAt` desc puis `Id`, `pageSize` 1..100, valeurs tronquées à 200 caractères,
+nom via `IStudioUserNameResolver`) ; index `IX_AuditLogs_EntityHistory (EntityType, EntityId, CreatedAt)`
+(migration `20260918100000_AddAuditLogsEntityHistoryIndex_Tenant`, idempotente, jumeau SQL dans
+`docs/runbooks/sql/`). Consommé par l'onglet « Historique » de la fiche (4.7h3–h5, D-47-64…66).
 
 ## IA (4.3)
 
@@ -374,7 +434,8 @@ Le Studio IA peut **proposer** des workflows : le modèle appelle l'outil `studi
 EnableStudioAiWorkflowTools && EnableStudioAiPlanPreview` sont levés — règle unique
 `StudioAiPlanCreation.WorkflowToolsEnabled`), dont la spec est revue par `StudioAiWorkflowPlanner`
 (table existante et active, champs réels, `erp_action.action` pontable, `approval.assignee.kind`
-différent de `startedBy`, déclencheurs planifiés écartés avec avertissement) puis persistée comme plan
+différent de `startedBy` ; le déclencheur `scheduled` — alias FR « planifié » — est **conservé** depuis 4.7b5
+(D-47-B06) et le plan est **bloqué** si `triggerConfig.cron` est absent ou invalide) puis persistée comme plan
 `Workflow` (aperçu `summary.workflows[]` — contrat figé, voir `studio-ai-plans.md`). À la
 confirmation, `StudioAiPlanExecutor` délègue à `StudioAiWorkflowExecutor` (Infrastructure) :
 dépendance unique `IMediator`, création **inactive** par `CreateWorkflowCommand` (normalisation,
