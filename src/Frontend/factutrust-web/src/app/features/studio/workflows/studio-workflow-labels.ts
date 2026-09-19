@@ -192,7 +192,8 @@ export const STUDIO_WORKFLOW_LABELS = {
   },
 
   instances: {
-    recent: 'Instances récentes',
+    /** 4.7a2 / D-47-F01 — le panneau devient l'historique paginé (était « Instances récentes »). */
+    history: 'Historique',
     empty: 'Aucune instance.',
     detail: 'Détail',
     close: 'Fermer',

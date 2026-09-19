@@ -94,8 +94,16 @@ export class StudioWorkflowsService {
     return this.http.post<ApiResponse<WorkflowValidationResultDto>>(`${this.base}/entities/${entityId}/workflows/validate`, request);
   }
 
-  listInstances(id: string, max = 20): Observable<ApiResponse<WorkflowInstanceDto[]>> {
-    return this.http.get<ApiResponse<WorkflowInstanceDto[]>>(`${this.base}/workflows/${id}/instances`, { params: new HttpParams().set('max', clampMax(max)) });
+  /**
+   * 4.7a2 / D-47-F01 — instances d'un workflow paginées (route 4.7a1 : `?page=&pageSize=`,
+   * enveloppe `PagedResult`, `pageSize` borné 1..200 côté API). GET de conception sans
+   * `skipErrorUi` : l'intercepteur global affiche le toast, le panneau son état d'erreur.
+   */
+  listInstances(id: string, page = 1, pageSize = 20): Observable<ApiResponse<PagedResult<WorkflowInstanceDto>>> {
+    const params = new HttpParams()
+      .set('page', Math.max(1, Math.trunc(page) || 1))
+      .set('pageSize', clampMax(pageSize, 200));
+    return this.http.get<ApiResponse<PagedResult<WorkflowInstanceDto>>>(`${this.base}/workflows/${id}/instances`, { params });
   }
 
   getInstance(instanceId: string): Observable<ApiResponse<WorkflowInstanceDetailDto>> {

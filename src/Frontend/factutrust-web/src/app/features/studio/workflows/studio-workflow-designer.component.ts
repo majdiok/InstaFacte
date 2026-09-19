@@ -66,7 +66,7 @@ const COMPUTED: ReadonlySet<CustomFieldType> = new Set(COMPUTED_FIELD_TYPES);
  * Libellés FR locaux absents de `STUDIO_WORKFLOW_LABELS` (4.4a1, non modifié dans cette
  * tranche — même motif que `LIST_LABELS` de la liste d'étapes, 4.4c2) ; à centraliser si un
  * autre composant en a besoin. `L.designer.error` et `L.instances.title`, cités par l'annexe,
- * n'existent pas : remplacés par `saveError` et `L.instances.recent`.
+ * n'existent pas : remplacés par `saveError` et `L.instances.history` (4.7a2).
  */
 const DESIGNER_LABELS = {
   description: 'Description',
@@ -267,7 +267,7 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
             </div>
             <div class="wf-designer__col wf-designer__col--side">
               <app-studio-workflow-instances-panel [workflowId]="id" [entityKey]="entity()?.key ?? null"
-                [refreshToken]="refreshToken()" (open)="openInstance($event)" />
+                [refreshToken]="refreshToken()" [openCount]="openInstances()" (open)="openInstance($event)" />
             </div>
           }
         </div>

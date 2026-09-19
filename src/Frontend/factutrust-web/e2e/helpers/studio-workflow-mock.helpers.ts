@@ -299,6 +299,12 @@ export interface StudioWorkflowMockOptions {
 
 const ok = <T>(data: T) => ({ success: true, data, message: null, errors: [] });
 
+/** 4.7a2 — enveloppe `PagedResult` de la route instances paginée (4.7a1) : tableau brut ⇒ page unique. */
+const pagedInstances = <T>(items: T[]) => ({
+  items, page: 1, pageSize: 20, totalCount: items.length,
+  totalPages: items.length ? 1 : 0, hasPreviousPage: false, hasNextPage: false
+});
+
 function safeJson(raw: string | null): unknown {
   if (!raw) return null;
   try {
@@ -371,8 +377,8 @@ export async function installStudioWorkflowMocks(
     fulfil(route, ok({ ...instances[0], status: 'cancelled' })));
   await page.route('**/api/studio/workflows/instances/inst-1/remind', route => fulfil(route, ok(instances[0])));
 
-  // — Définition wf-1 : instances récentes (panneau 4.4e2), activation, GET/PUT/DELETE —
-  await page.route('**/api/studio/workflows/wf-1/instances?**', route => fulfil(route, ok(instances)));
+  // — Définition wf-1 : historique des instances paginé (panneau 4.7a2), activation, GET/PUT/DELETE —
+  await page.route('**/api/studio/workflows/wf-1/instances?**', route => fulfil(route, ok(pagedInstances(instances))));
   await page.route('**/api/studio/workflows/wf-1/toggle', async route => {
     const body = (safeJson(route.request().postData()) ?? {}) as { isActive?: boolean };
     await fulfil(route, ok({ ...definitions[0], isActive: body.isActive ?? false }));
@@ -418,7 +424,7 @@ export async function installStudioWorkflowMocks(
 
   // Après création, le concepteur navigue (replaceUrl) vers /studio/workflows/wf-new et
   // recharge la définition + ses instances (panneau vide pour un workflow neuf).
-  await page.route('**/api/studio/workflows/wf-new/instances?**', route => fulfil(route, ok([])));
+  await page.route('**/api/studio/workflows/wf-new/instances?**', route => fulfil(route, ok(pagedInstances([]))));
   await page.route('**/api/studio/workflows/wf-new', route =>
     fulfil(route, ok(created ?? { ...definitions[0], id: 'wf-new', isActive: false, openInstances: 0 })));
 }

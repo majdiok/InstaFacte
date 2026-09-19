@@ -118,12 +118,18 @@ describe('StudioWorkflowsService', () => {
     req.flush({ success: true, data: { isValid: true, errors: [], warnings: [], stepCount: 0 }, message: null, errors: [] });
   });
 
-  it('listInstances interroge GET workflows/{id}/instances?max=', () => {
+  // 4.7a2 / D-47-F01 — route paginée (4.7a1) : ?page=&pageSize= ⇒ enveloppe PagedResult.
+  it('listInstances interroge GET workflows/{id}/instances?page=&pageSize=', () => {
     service.listInstances('w1').subscribe();
-    const req = http.expectOne(`${base}/workflows/w1/instances?max=20`);
+    const req = http.expectOne(`${base}/workflows/w1/instances?page=1&pageSize=20`);
     expect(req.request.method).toBe('GET');
-    expect(req.request.params.get('max')).toBe('20');
-    req.flush({ success: true, data: [], message: null, errors: [] });
+    expect(req.request.params.get('page')).toBe('1');
+    expect(req.request.params.get('pageSize')).toBe('20');
+    req.flush({
+      success: true,
+      data: { items: [], page: 1, pageSize: 20, totalCount: 0, totalPages: 0, hasPreviousPage: false, hasNextPage: false },
+      message: null, errors: []
+    });
   });
 
   it('getInstance interroge GET workflows/instances/{id}', () => {
@@ -240,12 +246,18 @@ describe('StudioWorkflowsService', () => {
     req2.flush({ success: true, data: catalog, message: null, errors: [] });
   });
 
-  it('listInstances borne max entre 1 et 100', () => {
-    service.listInstances('w1', 0).subscribe();
-    expect(http.expectOne(`${base}/workflows/w1/instances?max=1`).request.params.get('max')).toBe('1');
+  it('listInstances borne la page à 1 au moins et pageSize entre 1 et 200', () => {
+    service.listInstances('w1', 0, 0).subscribe();
+    const low = http.expectOne(r => r.url === `${base}/workflows/w1/instances`);
+    expect(low.request.params.get('page')).toBe('1');
+    expect(low.request.params.get('pageSize')).toBe('1');
+    low.flush({ success: true, data: null, message: null, errors: [] });
 
-    service.listInstances('w1', 999).subscribe();
-    expect(http.expectOne(`${base}/workflows/w1/instances?max=100`).request.params.get('max')).toBe('100');
+    service.listInstances('w1', 3, 999).subscribe();
+    const high = http.expectOne(r => r.url === `${base}/workflows/w1/instances`);
+    expect(high.request.params.get('page')).toBe('3');
+    expect(high.request.params.get('pageSize')).toBe('200');
+    high.flush({ success: true, data: null, message: null, errors: [] });
   });
 
   it('les sondes et les écritures gérées localement portent le contexte SKIP_ERROR_TOAST', () => {
