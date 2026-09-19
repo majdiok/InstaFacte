@@ -804,7 +804,7 @@ export class TransferCreateComponent implements OnInit {
       icon: 'pi pi-trash',
       acceptLabel: 'Retirer',
       rejectLabel: 'Annuler',
-      acceptButtonStyleClass: 'p-button-danger',
+      acceptButtonStyleClass: 'btn-danger',
       accept: () => this.lines.splice(index, 1),
     });
   }
