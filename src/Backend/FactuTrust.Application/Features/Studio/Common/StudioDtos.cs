@@ -224,3 +224,21 @@ public sealed record UpdateCustomSystemRequest(
     string? Description,
     IReadOnlyList<string>? OnboardingSteps,
     bool IsActive);
+
+/// <summary>
+/// Un changement d'une clé de premier niveau du document canonique (Studio 4.7 — D5) : valeurs en
+/// texte, tronquées à 200 caractères. <c>OldValue</c> nul à la création, <c>NewValue</c> nul au retrait.
+/// </summary>
+public sealed record RecordHistoryChangeDto(string Key, string? OldValue, string? NewValue);
+
+/// <summary>
+/// Entrée de l'historique d'un enregistrement (Studio 4.7 — D5) : action, date, nom affichable de
+/// l'auteur (nul si indisponible — jamais d'identifiant ni d'email exposé) et liste des changements
+/// (vide à la suppression).
+/// </summary>
+public sealed record RecordHistoryEntryDto(
+    Guid Id,
+    string Action,
+    DateTime CreatedAt,
+    string? UserName,
+    IReadOnlyList<RecordHistoryChangeDto> Changes);
