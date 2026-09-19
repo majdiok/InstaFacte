@@ -50,6 +50,7 @@ public sealed class StudioWorkflowsControllerContractTests
             [nameof(StudioWorkflowsController.Validate)] = ("POST", "entities/{entityId:guid}/workflows/validate"),
             [nameof(StudioWorkflowsController.ListInstances)] = ("GET", "workflows/{id:guid}/instances"),
             [nameof(StudioWorkflowsController.GetInstance)] = ("GET", "workflows/instances/{instanceId:guid}"),
+            [nameof(StudioWorkflowsController.Test)] = ("POST", "workflows/{id:guid}/test"),
         };
 
     // ---- Politique, routes, drapeau ----
@@ -122,6 +123,7 @@ public sealed class StudioWorkflowsControllerContractTests
             await controller.Validate(EntityId, Save(), ct),
             await controller.ListInstances(WorkflowId, cancellationToken: ct),
             await controller.GetInstance(InstanceId, ct),
+            await controller.Test(WorkflowId, new WorkflowTestRequest(Guid.NewGuid()), ct),
         };
 
         Assert.Equal(FrozenRoutes.Count, results.Length);
@@ -235,6 +237,57 @@ public sealed class StudioWorkflowsControllerContractTests
         Assert.IsType<NotFoundObjectResult>(await controller.Get(WorkflowId, CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(await controller.GetInstance(InstanceId, CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(await controller.List(EntityId, CancellationToken.None));
+    }
+
+    // ---- Simulation « Tester sur un enregistrement » (4.7c1) ----
+
+    [Fact]
+    public async Task Test_sends_the_query_and_returns_200_with_the_trace()
+    {
+        var recordId = Guid.NewGuid();
+        var trace = new WorkflowTestResultDto(
+            recordId, "clients", 2, true,
+            new[]
+            {
+                new WorkflowTestStepTraceDto("si", "condition", "Montant élevé", WorkflowTestVerdicts.WouldRun, "Condition remplie (match = all).", null),
+                new WorkflowTestStepTraceDto("valide", "approval", null, WorkflowTestVerdicts.WouldSuspend, "Approbation assignée au rôle « Admin ».", null)
+            },
+            new[] { "Sorties fictives : « _results.fact.* » ne sera renseigné qu'à l'exécution réelle." });
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        TestWorkflowQuery? captured = null;
+        mediator.Setup(m => m.Send(It.IsAny<TestWorkflowQuery>(), It.IsAny<CancellationToken>()))
+            .Callback<IRequest<Result<WorkflowTestResultDto>>, CancellationToken>((q, _) => captured = (TestWorkflowQuery)q)
+            .ReturnsAsync(Result.Success(trace));
+
+        var result = await CreateController(mediator).Test(WorkflowId, new WorkflowTestRequest(recordId), CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<WorkflowTestResultDto>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal(recordId, body.Data!.RecordId);
+        Assert.True(body.Data.Suspended);
+        Assert.Equal("would_suspend", body.Data.Steps[1].Verdict);
+        Assert.NotNull(captured);
+        Assert.Equal(WorkflowId, captured!.WorkflowId);
+        Assert.Equal(recordId, captured.RecordId);
+    }
+
+    [Fact]
+    public async Task Test_maps_not_found_to_404_and_invalid_definition_to_400()
+    {
+        var notFoundMediator = new Mock<IMediator>(MockBehavior.Strict);
+        notFoundMediator.Setup(m => m.Send(It.IsAny<TestWorkflowQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<WorkflowTestResultDto>(Error.NotFound("CustomRecord", Guid.NewGuid())));
+        var notFound = await CreateController(notFoundMediator).Test(WorkflowId, new WorkflowTestRequest(Guid.NewGuid()), CancellationToken.None);
+        Assert.IsType<NotFoundObjectResult>(notFound);
+
+        var invalidMediator = new Mock<IMediator>(MockBehavior.Strict);
+        invalidMediator.Setup(m => m.Send(It.IsAny<TestWorkflowQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<WorkflowTestResultDto>(Error.Validation("steps", "Définition invalide.")));
+        var invalid = await CreateController(invalidMediator).Test(WorkflowId, new WorkflowTestRequest(Guid.NewGuid()), CancellationToken.None);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(invalid);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<string>>(badRequest.Value);
+        Assert.Equal("Définition invalide.", body.Error);
     }
 
     // ---- Suppression, instances, validation, catalogue ----

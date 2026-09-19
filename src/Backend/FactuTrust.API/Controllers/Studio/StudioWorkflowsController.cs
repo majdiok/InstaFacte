@@ -170,6 +170,20 @@ public sealed class StudioWorkflowsController : ControllerBase
             detail => Ok(ApiResponse<WorkflowInstanceDetailDto>.Ok(detail)));
     }
 
+    /// <summary>
+    /// Simulation PURE du premier segment sur un enregistrement réel (4.7c1 / R17) : trace pas à pas
+    /// (verdicts <c>would_run</c>/<c>skipped</c>/<c>would_suspend</c>/<c>would_fail</c>, gabarits rendus)
+    /// — <b>aucune écriture</b> (ni instance, ni notification, ni audit). Route de conception, policy de classe.
+    /// </summary>
+    [HttpPost("workflows/{id:guid}/test")]
+    public async Task<IActionResult> Test(Guid id, [FromBody] WorkflowTestRequest request, CancellationToken cancellationToken)
+    {
+        if (Unavailable() is { } unavailable) return unavailable;
+        var result = await _mediator.Send(new TestWorkflowQuery(id, request.RecordId), cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            trace => Ok(ApiResponse<WorkflowTestResultDto>.Ok(trace)));
+    }
+
     /// <summary>404 à message fixe lorsque <c>Ollama:EnableStudioWorkflows</c> est coupé ; appelé avant tout <c>Send</c>.</summary>
     private IActionResult? Unavailable() =>
         _settings.EnableStudioWorkflows

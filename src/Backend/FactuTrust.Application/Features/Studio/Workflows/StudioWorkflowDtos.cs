@@ -135,6 +135,48 @@ public sealed record WorkflowInstanceDetailDto(
 /// <summary>Corps de <c>POST workflows/{id}/toggle</c>.</summary>
 public sealed record ToggleWorkflowRequest(bool IsActive);
 
+// ---- Simulation « Tester sur un enregistrement » (4.7c1 / D-47-B07) ----
+
+/// <summary>Corps de <c>POST workflows/{id}/test</c> : l'enregistrement réel sur lequel simuler.</summary>
+public sealed record WorkflowTestRequest(Guid RecordId);
+
+/// <summary>Verdicts d'une étape simulée (figés — consommés par le concepteur 4.7c2).</summary>
+public static class WorkflowTestVerdicts
+{
+    /// <summary>L'étape serait exécutée (ou évaluée, pour une condition).</summary>
+    public const string WouldRun = "would_run";
+
+    /// <summary>L'étape serait sautée (condition non remplie avec <c>onFalse = skip</c>, ou sautée par un <c>goto</c>).</summary>
+    public const string Skipped = "skipped";
+
+    /// <summary>L'étape suspendrait l'instance (<c>approval</c> / <c>wait</c>) — fin du segment simulé.</summary>
+    public const string WouldSuspend = "would_suspend";
+
+    /// <summary>L'étape mettrait l'instance en échec (défaut manifeste, gabarit invalide…).</summary>
+    public const string WouldFail = "would_fail";
+}
+
+/// <summary>
+/// Une ligne de trace : l'étape, son verdict, un détail lisible (branche, échéance calculée…)
+/// et les valeurs rendues (<c>set</c> appliqué, gabarits de <c>title</c>/<c>body</c>/<c>mapping</c>…).
+/// </summary>
+public sealed record WorkflowTestStepTraceDto(
+    string Key, string Type, string? Label, string Verdict, string? Detail, JsonObject? Rendered);
+
+/// <summary>
+/// Résultat de la simulation : <c>EvaluatedSteps</c> = étapes visitées (hors lignes « sautée par
+/// un branchement ») ; <c>Suspended</c> = le segment se serait interrompu (suspension ou épuisement) ;
+/// <c>Warnings</c> = limites de fidélité (sorties <c>_results.*</c> fictives, segment épuisé).
+/// Simulation PURE : aucune écriture (ni instance, ni journal, ni notification, ni audit).
+/// </summary>
+public sealed record WorkflowTestResultDto(
+    Guid RecordId,
+    string EntityKey,
+    int EvaluatedSteps,
+    bool Suspended,
+    IReadOnlyList<WorkflowTestStepTraceDto> Steps,
+    IReadOnlyList<string> Warnings);
+
 /// <summary>Résultat de <c>DELETE workflows/{id}</c> : nombre d'instances ouvertes annulées.</summary>
 public sealed record WorkflowDeletionResultDto(int CancelledInstances);
 
