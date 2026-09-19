@@ -6,7 +6,9 @@
 > Drapeau : `Ollama:EnableStudioWorkflows` (défaut C# `false`) — **`true` dans `appsettings.Production.json`
 > depuis la PR #180 (D-47-90)** ; `false` dans `appsettings.json` (développement : activation par
 > `Ollama__EnableStudioWorkflows=true`) ; désactivation en production par la variable d'environnement
-> `Ollama__EnableStudioWorkflows=false`, qui prime sur le fichier (rien n'est supprimé).
+> `Ollama__EnableStudioWorkflows=false` dans `deploy/.env` puis `docker compose up -d api` (recréation du
+> conteneur ; la variable prime sur le fichier, rien n'est supprimé). Le drapeau est global à l'instance
+> (tous les tenants), sans surcharge par tenant.
 > Migration tenant : `20260912150000_AddStudioWorkflows_Tenant` (additive, inerte drapeau coupé).
 
 ## Vue d'ensemble
