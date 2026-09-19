@@ -460,6 +460,11 @@ export interface StudioRuntimeMockOptions {
   patchConflict409?: boolean;
   /** Schéma sans vues enregistrées (cas « drapeau coupé » côté liste). */
   withoutViews?: boolean;
+  /** 4.7h5 : `GET records/{clé}/{id}/history` — `items` remplace la page 1 (`totalCount` = `items.length`
+   *  par défaut, pas de page 2). Sans option : 3 entrées + une page 2 de 2 entrées (5 au total). */
+  history?: { items: unknown[]; totalCount?: number };
+  /** `GET …/history` renvoie 500 (bannière d'erreur en ligne + « Réessayer »). */
+  historyStatus?: 200 | 500;
 }
 
 const RUNTIME_ENTITIES = [
@@ -505,6 +510,22 @@ const KANBAN_VIEW = {
     searchEnabled: false, pageSize: 25 },
   isDefault: false, isActive: true, rowVersion: 'V2', updatedAt: '2026-09-01T00:00:00Z'
 };
+
+/** 4.7h5 : historique de la fiche `r1` (plus récent d'abord) — page 1 (3 entrées) puis page 2 (2 entrées). */
+const RUNTIME_HISTORY_PAGE_1 = [
+  { id: 'h1', action: 'Studio.Record.Updated', createdAt: '2026-09-19T10:30:00Z', userName: 'Alice Martin',
+    changes: [{ key: 'statut', oldValue: 'a_planifier', newValue: 'termine' }, { key: 'nom', oldValue: 'Pompe A', newValue: 'Pompe A2' }] },
+  { id: 'h2', action: 'Studio.Record.Updated', createdAt: '2026-09-18T15:00:00Z', userName: null,
+    changes: [{ key: 'nom', oldValue: 'Pompe', newValue: 'Pompe A' }] },
+  { id: 'h3', action: 'Studio.Record.Updated', createdAt: '2026-09-18T09:00:00Z', userName: 'Alice Martin',
+    changes: [{ key: 'debut', oldValue: '2026-09-19', newValue: '2026-09-20' }] }
+];
+const RUNTIME_HISTORY_PAGE_2 = [
+  { id: 'h4', action: 'Studio.Record.Updated', createdAt: '2026-09-17T09:00:00Z', userName: 'Bob Sassi',
+    changes: [{ key: 'statut', oldValue: null, newValue: 'a_planifier' }] },
+  { id: 'h5', action: 'Studio.Record.Created', createdAt: '2026-09-16T09:00:00Z', userName: 'Alice Martin',
+    changes: [{ key: 'nom', oldValue: null, newValue: 'Pompe' }, { key: 'statut', oldValue: null, newValue: null }, { key: 'debut', oldValue: null, newValue: '2026-09-19' }] }
+];
 
 function runtimeSchema(): unknown {
   return {
@@ -572,6 +593,22 @@ export async function installStudioRuntimeMocks(
   //   le filet `**/api/**` répond un objet paginé et `workflowInstances().filter` jette en boucle
   //   (page à moitié figée). Enregistrée APRÈS `records/${key}/*` ⇒ prioritaire (ordre inverse).
   await page.route(`**/api/studio/records/${key}/*/workflow-instances?**`, route => fulfil(route, ok([])));
+  // — 4.7h5 : historique de la fiche (`GET records/{clé}/{id}/history?page&pageSize`) — même raison que la
+  //   sonde ci-dessus (le filet répondrait un objet inattendu) ; enregistrée APRÈS `records/${key}/*` ⇒ prioritaire.
+  await page.route(`**/api/studio/records/${key}/*/history?**`, async route => {
+    if (options.historyStatus === 500) {
+      await fulfil(route, { success: false, data: null, message: 'Historique indisponible.', error: 'Historique indisponible.' }, 500);
+      return;
+    }
+    const pageNo = Number(new URL(route.request().url()).searchParams.get('page') ?? '1') || 1;
+    if (options.history) {
+      const items = options.history.items;
+      await fulfil(route, ok({ items, page: 1, pageSize: 20, totalCount: options.history.totalCount ?? items.length, totalPages: 1, hasNextPage: false, hasPreviousPage: false }));
+      return;
+    }
+    const items = pageNo >= 2 ? RUNTIME_HISTORY_PAGE_2 : RUNTIME_HISTORY_PAGE_1;
+    await fulfil(route, ok({ items, page: pageNo, pageSize: 3, totalCount: 5, totalPages: 2, hasNextPage: pageNo < 2, hasPreviousPage: pageNo > 1 }));
+  });
   await page.route(`**/api/studio/records/${key}?**`, route => fulfil(route, paged(RUNTIME_RECORDS)));
   await page.route(`**/api/studio/records/${key}`, route => fulfil(route, paged(RUNTIME_RECORDS)));
   await page.route(`**/api/studio/records/${key}/schema`, route => fulfil(route, ok(schema)));

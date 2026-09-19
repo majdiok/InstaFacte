@@ -202,6 +202,14 @@ d’enregistrements, actions ERP.
 
   ![Onglet Workflows de la fiche](../screenshots/studio-ia-workflows-fiche.png)
 
+- **Historique de la fiche** : l’onglet **Historique**, toujours en dernière position de toute fiche
+  existante, liste qui a modifié quoi, du plus récent au plus ancien — colonnes **Date**, **Action**
+  (Création, Modification, Suppression), **Utilisateur** (« Utilisateur inconnu » si le compte a disparu)
+  et **Changements** (« ancien → nouveau » par champ, « (vide) » quand un champ est effacé ; au-delà de
+  cinq changements, **Afficher les n autres**). L’historique se charge quand vous ouvrez l’onglet ;
+  **Charger plus** ajoute les 20 entrées précédentes. Aucune action n’est possible depuis l’onglet : il
+  est disponible pour toute personne qui peut ouvrir la fiche.
+
 - **Mes approbations** (menu Studio, badge rouge du nombre en attente) : tout ce qui attend **votre**
   décision — indicateurs (à traiter, en retard, sous 24 h), colonne **Demandé par** (qui a lancé la
   demande ; « — » si l’utilisateur n’existe plus), message du demandeur, **Voir l’instance**, **Approuver**

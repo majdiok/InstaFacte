@@ -356,6 +356,10 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   (specs Karma `views/`, `shared/`, `relations/`, `studio-record-form`, `studio-entity-list`,
   `studio-entity-designer`) ; E2E API mockée : `npx playwright test e2e/studio-runtime-views.spec.ts
   e2e/studio-many-to-many.spec.ts --project=chromium`.
+- Frontend (historique de la fiche, 4.7h3–h5) : `npx ng test --watch=false --browsers=ChromeHeadless
+  --include='src/app/features/studio/records/**/*.spec.ts' --include='src/app/features/studio/studio.service.spec.ts'
+  --include='src/app/features/studio/studio-record-form.component.spec.ts'` ; E2E API mockée :
+  `npx playwright test e2e/studio-record-history.spec.ts --project=chromium`.
 - Backend (relations N-N) : `--filter "FullyQualifiedName~CreateManyToManyRelation|FullyQualifiedName~ListEntityRelations|FullyQualifiedName~CustomRecordJunctionUniqueness|FullyQualifiedName~CustomRecordRepositoryFilterSql|FullyQualifiedName~GetStudioNavQuery|FullyQualifiedName~AddStudioEntityKind"`
   (composition de la jonction, résolution des relations, unicité de paire, filtre SQL paramétré — nécessite
   `FACTUTRUST_TEST_SQL_CONNECTION` ou LocalDB, sinon `Skipped` —, nav sans jonction, migration `Kind`) ;
@@ -1125,3 +1129,63 @@ d'écriture (barre d'ajout, crayons et croix masqués) — miroir de la garde `c
 
 - Portée automatisée : Karma composant puces (lecture seule) ; Karma onglet (miroir existant) ;
   Playwright mocké (parcours lecteur couvert par les permissions mockées).
+
+## Studio IA 4.7 « v1.1 » — historique de la fiche (PR #173 à #175)
+
+Onglet **Historique** de la fiche enregistrement (`app-studio-record-history-tab`), consommateur de
+`GET api/studio/records/{entityKey}/{id}/history?page&pageSize` (audit `StudioRecordAudit`, 4.7h1–h2).
+Décisions D-47-64 (socle), D-47-65 (composant), D-47-66 (branchement) au Journal.
+
+### 146. Onglet Historique de la fiche
+
+Fiche **en édition** (`d/:key/:id/edit`) : onglets `Fiche | [Liés — …] | [Workflows] | Historique`, l'onglet
+Historique toujours **en dernier**, sans badge ; la barre d'onglets est désormais présente sur toute fiche
+existante (D-B2), même sans relation N-N ni workflow. Fiche **en création** : aucun onglet. Aucune requête
+`/history` tant que l'onglet n'est pas activé ; à l'activation : **1 GET** `page=1&pageSize=20`, squelette
+puis tableau.
+
+- Portée automatisée : Karma fiche (`studio-record-form.component.spec.ts` : onglets `['form','history']`,
+  `['form','linked:…','history']`, `['form','workflows','history']` ; aucune requête avant activation puis
+  1 GET ; création ⇒ ni onglet ni requête) ; Playwright mocké `e2e/studio-record-history.spec.ts` (ordre
+  des onglets, `ctx.find('/r1/history')` = 0 puis 1).
+
+### 147. Lignes : action, utilisateur, changements
+
+Une ligne par entrée telle que servie (plus récent d'abord) : date `dd/MM/yyyy HH:mm`, tag **Création**
+(`success`) / **Modification** (`info`) / **Suppression** (`danger`), utilisateur ou « Utilisateur inconnu »
+(grisé), changements `Champ : ancien → nouveau` — création `Champ : nouveau`, retrait `… → (vide)`,
+suppression « — ». Libellé de champ résolu sur le **schéma complet** (champs inactifs compris, D-B8), repli
+sur la clé brute (`_raw`, champ supprimé) ; valeurs `Boolean` ⇒ Oui / Non, `Select` ⇒ libellé d'option ;
+au-delà de 5 changements, **« Afficher les n autres »** / **« Réduire »** (`aria-expanded`).
+
+- Portée automatisée : Karma util (9 : libellés, sévérités, formats, repli, dédoublonnage) ; Karma composant
+  (lignes, tags, utilisateur inconnu, changements changed / added / removed, « — », libellés + repli,
+  repli > 5 puis dépliage) ; Playwright (`srh-action-h1` = « Modification », `srh-change-h1-statut` contient
+  « À planifier → Terminé », `srh-user-h2` = « Utilisateur inconnu »).
+
+### 148. Pagination « Charger plus » et états vide / erreur
+
+Compteur « {affichés} sur {total} » (masqué à 0). **« Charger plus »** rendu tant que `hasNextPage` ; ajoute
+la page suivante **dédoublonnée par `id`** (D-B5) puis disparaît ; en cas d'échec, le tableau reste affiché et
+un toast `warn` est émis. Historique vide ⇒ « Aucun historique pour cet enregistrement ». Erreur au chargement
+⇒ bannière **en ligne** (message serveur) + **« Réessayer »** qui relance la page 1 — aucun toast ni modale
+global (`skipErrorUi` côté service).
+
+- Portée automatisée : Karma service (URL, `page/pageSize`, `SKIP_ERROR_TOAST`) ; Karma composant (vide ;
+  500 ⇒ `srh-error` + `srh-retry` relance ; « Charger plus » présent si `hasNextPage`, ajoute la page 2,
+  disparaît ; échec de page suivante ⇒ toast `warn`, tableau conservé) ; Playwright (page 2 ⇒ 5 lignes,
+  bouton disparu, 2 GET ; `history.items: []` ⇒ `srh-empty` ; `historyStatus: 500` ⇒ `srh-error`,
+  « Réessayer » ⇒ 2 GET, aucun `.p-toast-message`).
+
+### 149. Garde-fous
+
+Aucune action d'écriture dans l'onglet (aucun bouton hors « Réessayer », « Charger plus » et le repli des
+changements ; aucun champ de saisie) ; aucun `innerHTML` ; aucune donnée personnelle hors le **nom** de
+l'utilisateur (jamais d'identifiant, d'e-mail ni d'adresse IP — le backend n'expose que `userName`). La route
+`/edit` exige `custom_records:write` (D-B1) : un profil `custom_records:read` seul ne voit pas l'onglet (constat
+consigné — « mode lecteur de la fiche » hors périmètre 4.7). Le backend re-vérifie `custom_records:read` sur la
+route `/history` (403 sinon) et répond 404 si la fiche n'existe pas.
+
+- Portée automatisée : Karma composant (aucun bouton d'écriture, aucun champ, aucun e-mail dans le DOM) ;
+  Playwright (aucun `input/textarea/select` dans `srh-panel`) ; contrats backend `StudioRecordsController`
+  (`CustomRecordsRead`) inchangés depuis #171.
