@@ -59,6 +59,35 @@ public sealed class AuditLogQueryService : IAuditLogQueryService
         return Result.Success(PagedResult<AuditLogEntryDto>.Create(list, page, pageSize, total));
     }
 
+    public async Task<Result<PagedResult<AuditEntityHistoryRowDto>>> GetEntityHistoryAsync(
+        string entityType, Guid entityId, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize <= 0 ? 20 : pageSize, 1, 100);
+
+        await using var ctx = _contextFactory.CreateContext();
+        var q = ctx.AuditLogs.AsNoTracking()
+            .Where(a => a.EntityType == entityType && a.EntityId == entityId);
+
+        var total = await q.CountAsync(cancellationToken);
+
+        var list = await q.OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(a => new AuditEntityHistoryRowDto
+            {
+                Id = a.Id,
+                Action = a.Action,
+                CreatedAt = a.CreatedAt,
+                UserId = a.UserId,
+                OldValues = a.OldValues,
+                NewValues = a.NewValues
+            })
+            .ToListAsync(cancellationToken);
+
+        return Result.Success(PagedResult<AuditEntityHistoryRowDto>.Create(list, page, pageSize, total));
+    }
+
     public async Task<Result<AuditLogDetailDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using var ctx = _contextFactory.CreateContext();

@@ -8,13 +8,14 @@ import { SelectModule } from 'primeng/select';
 import { CustomEntity, ManyToManyRelationDto } from '../studio.models';
 import { StudioService } from '../studio.service';
 import { STUDIO_RUNTIME_LABELS } from '../shared/studio-runtime-labels';
-import { slugifyViewKey } from '../views/studio-record-view-designer.component';
+import { slugifyKey } from '../shared/studio-text.util';
 
 /**
  * Dialog de création d'une relation plusieurs-à-plusieurs (2.5f, maquette M4) : cible parmi les
  * autres tables non-jonction, libellé facultatif, clé de jonction facultative (placeholder
- * `{source}_{cible}` — clé par défaut serveur). « Attribut de liaison » = bloc désactivé (Bientôt).
- * 409 ⇒ `relations.duplicateKey` ; 400 ⇒ message serveur en ligne (`Validation.target/junctionKey`).
+ * `{source}_{cible}` — clé par défaut serveur). v1.1 (D-47-40) : « Attribut de liaison » actif —
+ * libellé facultatif ⇒ champ `Number` créé sur la jonction (clé slugifiée côté serveur).
+ * 409 ⇒ `relations.duplicateKey` ; 400 ⇒ message serveur en ligne (`Validation.target/junctionKey/junctionAttributeLabel`).
  */
 @Component({
   selector: 'app-studio-many-to-many-dialog',
@@ -41,11 +42,11 @@ import { slugifyViewKey } from '../views/studio-record-view-designer.component';
           <small class="studio-hint" data-testid="m2m-key-invalid">Clé invalide : minuscule initiale, lettres, chiffres ou « _ » (2 à 64 caractères).</small>
         }
 
-        <label>Attribut de liaison</label>
-        <div class="studio-row studio-row-section m2m-soon">
-          <i class="pi pi-info-circle studio-mr"></i>
-          <span class="studio-grow">{{ labels.relations.junctionAttributeSoon }}</span>
-        </div>
+        <label for="m2m-attribute">Attribut de liaison</label>
+        <input pInputText id="m2m-attribute" class="studio-w-full" [ngModel]="junctionAttribute()"
+          (ngModelChange)="junctionAttribute.set($event)" placeholder="Quantité" maxlength="120"
+          data-testid="m2m-attribute" />
+        <small class="studio-hint">{{ labels.relations.junctionAttributeHint }}</small>
 
         @if (error(); as message) {
           <div class="studio-row studio-row-section" role="alert" data-testid="m2m-error">{{ message }}</div>
@@ -57,10 +58,9 @@ import { slugifyViewKey } from '../views/studio-record-view-designer.component';
       </ng-template>
     </p-dialog>
   `,
-  // studio-layout.scss fournit .studio-row / .studio-row-section / .studio-grow utilisés par le
-  // bloc « Bientôt » et les alertes d'erreur (encapsulation émulée : styleUrl requis ici).
-  styleUrl: '../shared/studio-layout.scss',
-  styles: [`.m2m-soon { opacity: .75; }`]
+  // studio-layout.scss fournit .studio-row / .studio-row-section / .studio-grow utilisés par les
+  // alertes d'erreur (encapsulation émulée : styleUrl requis ici).
+  styleUrl: '../shared/studio-layout.scss'
 })
 export class StudioManyToManyDialogComponent {
   readonly sourceEntity = input.required<CustomEntity>();
@@ -74,6 +74,7 @@ export class StudioManyToManyDialogComponent {
   readonly targetEntityId = signal<string | null>(null);
   readonly label = signal('');
   readonly junctionKey = signal('');
+  readonly junctionAttribute = signal('');
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
 
@@ -83,10 +84,14 @@ export class StudioManyToManyDialogComponent {
     .map(e => ({ label: e.displayName, value: e.id })));
   readonly selectedTargetLabel = computed(() =>
     this.targetOptions().find(o => o.value === this.targetEntityId())?.label ?? null);
-  /** Clé de jonction par défaut (même règle que le serveur : `{source}_{cible}` slugifiée). */
+  /** Clé de jonction par défaut (même règle que le serveur : `{source}_{cible}` slugifiée, SANS préfixe).
+   *  4.6e (D-46-F04) : le préfixe de repli `'v_'` (réservé aux VUES) était trompeur — la convention serveur
+   *  est `{a}_{b}` sans préfixe (ResolveJunctionKeyAsync). Les clés d'entités commencent toujours par une
+   *  lettre, donc le repli ne s'appliquait pas en pratique ; les jonctions `v_*` déjà créées restent valides
+   *  (aucune migration). */
   readonly defaultJunctionKey = computed(() => {
     const target = this.entities().find(e => e.id === this.targetEntityId());
-    return target ? slugifyViewKey(`${this.sourceEntity()?.key ?? ''}_${target.key}`) : '';
+    return target ? slugifyKey(`${this.sourceEntity()?.key ?? ''}_${target.key}`, '') : '';   // 4.5h : plus d'import du concepteur de vues
   });
   readonly junctionKeyValid = computed(() => {
     const key = this.junctionKey().trim();
@@ -105,7 +110,8 @@ export class StudioManyToManyDialogComponent {
       targetEntityId: target,
       label,
       junctionKey,
-      junctionDisplayName: label
+      junctionDisplayName: label,
+      junctionAttributeLabel: this.junctionAttribute().trim() || null
     }).subscribe({
       next: res => {
         this.saving.set(false);
@@ -125,6 +131,7 @@ export class StudioManyToManyDialogComponent {
     this.targetEntityId.set(null);
     this.label.set('');
     this.junctionKey.set('');
+    this.junctionAttribute.set('');
     this.error.set(null);
   }
 }

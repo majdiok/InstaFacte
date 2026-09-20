@@ -55,6 +55,8 @@ export interface ManyToManyRelationDto {
   junction: CustomEntity;
   sourceField: CustomField;
   targetField: CustomField;
+  /** v1.1 / D-47-40 : champ attribut créé (optionnel — tolère un backend pas encore déployé). */
+  attributeField?: CustomField | null;
 }
 
 export interface CustomRecord {

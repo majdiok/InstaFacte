@@ -68,6 +68,10 @@ const DETAIL_LABELS = {
  * S-base : `context` JAMAIS rendu (mention discrète en pied) ; `result` d'étape non
  * affiché ; `getInstance` est une route de CONCEPTION (policy `studio:design_entities`,
  * D-44-25) sans `skipErrorUi` ⇒ 404/403/autre mappés en message inline.
+ * Bi-mode (4.5d2, D-45-F04) : quand `entityKey` ET `recordId` sont fournis (onglet Workflows
+ * de la fiche, page approbations), le drawer passe par la route RUNTIME
+ * `records/{entityKey}/{recordId}/workflow-instances/{id}` (policy `custom_records:read`,
+ * 404 hors couple) et masque « Ouvrir l'origine » (la route conception exige `design_entities`).
  */
 @Component({
   selector: 'app-studio-workflow-instance-detail',
@@ -113,7 +117,8 @@ const DETAIL_LABELS = {
           <dt>{{ L.instances.startedAt }}</dt>
           <dd>{{ i.startedAt | date:'dd/MM/yyyy HH:mm' }}</dd>
           <dt>{{ L.instances.startedBy }}</dt>
-          <dd>{{ i.startedBy ?? localLabels.system }}</dd>
+          <!-- 4.6c1 (D-46-F03) : nom lisible (4.6b1), guid en repli, « Système » si null. -->
+          <dd [attr.data-testid]="'wf-detail-started-by-' + i.id">{{ i.startedByName ?? i.startedBy ?? localLabels.system }}</dd>
           <dt>{{ L.designer.trigger }}</dt>
           <dd>{{ L.triggers[i.trigger] }}</dd>
           <dt>{{ L.instances.currentStep }}</dt>
@@ -131,7 +136,7 @@ const DETAIL_LABELS = {
               <span [title]="i.recordId">{{ shortId(i.recordId) }}</span>
             }
           </dd>
-          @if (i.originInstanceId) {
+          @if (i.originInstanceId && !scope()) {
             <dt>{{ localLabels.origin }}</dt>
             <dd>
               <button pButton type="button" size="small" [text]="true" [label]="localLabels.open"
@@ -268,6 +273,11 @@ export class StudioWorkflowInstanceDetailComponent {
   readonly instanceId = model<string | null>(null);
   /** Clé de la table pour le lien « fiche » (le DTO ne porte que `entityDefinitionId` — D-44-24). */
   readonly entityKey = input<string | null>(null);
+  /**
+   * Identifiant de l'enregistrement (portée fiche, 4.5d2) : avec `entityKey`, bascule le
+   * chargement sur la route runtime `custom_records:read` (4.5b) ; `null` ⇒ route conception.
+   */
+  readonly recordId = input<string | null>(null);
   /** Émis après une annulation/relance réussie (le parent rafraîchit ses listes). */
   readonly changed = output<WorkflowInstanceDto>();
   /** Émis à la fermeture (partie B : `(closed)="openInstanceId.set(null)"`). */
@@ -307,10 +317,22 @@ export class StudioWorkflowInstanceDetailComponent {
   );
   protected readonly approvals = computed(() => this.detail()?.approvals ?? []);
 
+  /**
+   * Portée figée à l'ouverture (revue 4.5i★, D-45-29) : `{ entityKey, recordId }` lus quand `instanceId`
+   * change, pour qu'un « Réessayer » ou un rechargement 409 garde la route runtime même si l'hôte
+   * (« Mes approbations ») a perdu sa sélection entre-temps — sinon bascule vers la route de conception ⇒ 403 lecteur.
+   */
+  protected readonly scope = signal<{ entityKey: string; recordId: string } | null>(null);
+
   constructor() {
     effect(() => {
       const id = this.instanceId();
-      untracked(() => (id ? this.load(id) : this.reset()));
+      untracked(() => {
+        const ek = this.entityKey();
+        const rid = this.recordId();
+        this.scope.set(id && ek && rid ? { entityKey: ek, recordId: rid } : null);
+        id ? this.load(id) : this.reset();
+      });
     });
   }
 
@@ -327,13 +349,17 @@ export class StudioWorkflowInstanceDetailComponent {
    * GET de conception (policy `studio:design_entities`, D-44-25) SANS `skipErrorUi` (le
    * service n'en pose pas sur `getInstance`) : l'intercepteur global affiche son toast et
    * le drawer montre un message inline — 403 possible pour un non-concepteur (partie B).
+   * Portée fiche (`entityKey` + `recordId`, 4.5d2) : route runtime (4.5b, `custom_records:read`)
+   * avec `skipErrorUi` — même gestion 404 / 403 / autre en message inline.
    */
   private load(id: string): void {
     this.loading.set(true);
     this.error.set(null);
     this.cancelMode.set(false);
     this.reason.set('');
-    this.workflowsSvc.getInstance(id).subscribe({
+    const scope = this.scope();
+    const src$ = scope ? this.workflowsSvc.getRecordInstance(scope.entityKey, scope.recordId, id) : this.workflowsSvc.getInstance(id);
+    src$.subscribe({
       next: r => { this.detail.set(r.data ?? null); this.loading.set(false); },
       error: (err: HttpErrorResponse) => {
         this.loading.set(false);

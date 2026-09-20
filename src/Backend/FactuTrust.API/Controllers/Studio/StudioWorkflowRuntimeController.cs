@@ -10,8 +10,8 @@ namespace FactuTrust.API.Controllers.Studio;
 
 /// <summary>
 /// API runtime des workflows Studio (PR 4.2, tranche 4.2g) : boîte de réception des approbations,
-/// décision (approve/reject), instances d'un enregistrement, workflows lançables, lancement manuel,
-/// annulation et relance des approbateurs. Les GET exigent <c>custom_records:read</c>, les POST
+/// décision (approve/reject), instances d'un enregistrement et détail d'une instance (4.5b2), workflows
+/// lançables, lancement manuel, annulation et relance des approbateurs. Les GET exigent <c>custom_records:read</c>, les POST
 /// <c>custom_records:write</c> (R15 : pas de <c>studio:design_entities</c> pour le runtime lecteur).
 /// Toutes les routes sont gardées par le drapeau <c>Ollama:EnableStudioWorkflows</c> : coupé ⇒ 404 à
 /// message fixe AVANT tout appel au médiateur. Erreurs via <see cref="StudioErrorMapping"/> (409
@@ -41,6 +41,17 @@ public sealed class StudioWorkflowRuntimeController : ControllerBase
     {
         if (Unavailable() is { } unavailable) return unavailable;
         var result = await _mediator.Send(new ListMyApprovalsQuery(max), cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            items => Ok(ApiResponse<IReadOnlyList<WorkflowApprovalInboxItemDto>>.Ok(items)));
+    }
+
+    /// <summary>Mes décisions d'approbation passées (approuvées/refusées), triées de la plus récente (4.7 « v1.1 »).</summary>
+    [HttpGet("workflows/approvals/mine/history")]
+    [Authorize(Policy = PermissionPolicies.CustomRecordsRead)]
+    public async Task<IActionResult> ListMyApprovalHistory([FromQuery] int max = 50, CancellationToken cancellationToken = default)
+    {
+        if (Unavailable() is { } unavailable) return unavailable;
+        var result = await _mediator.Send(new ListMyApprovalHistoryQuery(max), cancellationToken);
         return StudioErrorMapping.ToActionResult(this, result,
             items => Ok(ApiResponse<IReadOnlyList<WorkflowApprovalInboxItemDto>>.Ok(items)));
     }
@@ -90,6 +101,21 @@ public sealed class StudioWorkflowRuntimeController : ControllerBase
         var result = await _mediator.Send(new ListRecordWorkflowInstancesQuery(entityKey, recordId, max), cancellationToken);
         return StudioErrorMapping.ToActionResult(this, result,
             instances => Ok(ApiResponse<IReadOnlyList<WorkflowInstanceDto>>.Ok(instances)));
+    }
+
+    /// <summary>
+    /// Détail d'une instance de l'enregistrement (résumé, étapes, approbations, contexte sans « previous ») pour les lecteurs
+    /// (<c>custom_records:read</c>, 4.5b2 / D11) — même corps que <see cref="StudioWorkflowsController.GetInstance"/>, mais borné à la fiche.
+    /// </summary>
+    [HttpGet("records/{entityKey}/{recordId:guid}/workflow-instances/{instanceId:guid}")]
+    [Authorize(Policy = PermissionPolicies.CustomRecordsRead)]
+    public async Task<IActionResult> GetRecordInstance(
+        string entityKey, Guid recordId, Guid instanceId, CancellationToken cancellationToken)
+    {
+        if (Unavailable() is { } unavailable) return unavailable;
+        var result = await _mediator.Send(new GetRecordWorkflowInstanceQuery(entityKey, recordId, instanceId), cancellationToken);
+        return StudioErrorMapping.ToActionResult(this, result,
+            detail => Ok(ApiResponse<WorkflowInstanceDetailDto>.Ok(detail)));
     }
 
     /// <summary>Workflows manuels actifs de la table (bouton « Lancer » de la fiche).</summary>

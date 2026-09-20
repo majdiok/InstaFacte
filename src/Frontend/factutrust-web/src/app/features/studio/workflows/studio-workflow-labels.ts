@@ -36,7 +36,6 @@ export const STUDIO_WORKFLOW_LABELS = {
     duplicateKey: 'Un workflow porte déjà cette clé pour cette table.',
     duplicated: 'Copie créée (inactive).',
     toggled: 'Workflow {state}.',
-    tooManyTables: 'Choisissez une table : plus de 25 tables actives.',
     loadError: 'Chargement des workflows impossible.',
     /** 4.4d — compléments du hub (libellés manquants ajoutés selon l'annexe, cités en PR). */
     edit: 'Modifier',
@@ -62,7 +61,7 @@ export const STUDIO_WORKFLOW_LABELS = {
     on_update: 'Se déclenche à chaque modification.',
     field_changed: 'Se déclenche quand le champ surveillé change (valeurs optionnelles).',
     manual: 'Lancé depuis la fiche par un utilisateur autorisé.',
-    scheduled: 'Bientôt disponible.'
+    scheduled: 'Selon un horaire (UTC), sur les enregistrements filtrés.'
   },
 
   designer: {
@@ -75,6 +74,11 @@ export const STUDIO_WORKFLOW_LABELS = {
     watchedField: 'Champ surveillé',
     from: 'Ancienne valeur',
     to: 'Nouvelle valeur',
+    cronPreset: 'Fréquence',
+    cronPresets: { hourly: 'Toutes les heures', daily: 'Chaque jour à 06:00 UTC', weekly: 'Chaque lundi à 06:00 UTC', custom: 'Personnalisé' },
+    cron: 'Expression cron (5 champs)',
+    cronHint: 'Format « minute heure jour mois jour-de-semaine » — fuseau UTC.',
+    scheduledFilters: 'Enregistrements concernés (filtres optionnels)',
     active: 'Actif',
     inactive: 'Inactif',
     validate: 'Valider',
@@ -193,7 +197,8 @@ export const STUDIO_WORKFLOW_LABELS = {
   },
 
   instances: {
-    recent: 'Instances récentes',
+    /** 4.7a2 / D-47-F01 — le panneau devient l'historique paginé (était « Instances récentes »). */
+    history: 'Historique',
     empty: 'Aucune instance.',
     detail: 'Détail',
     close: 'Fermer',
@@ -225,6 +230,19 @@ export const STUDIO_WORKFLOW_LABELS = {
     kpiLate: 'En retard',
     kpiSoon: 'Sous 24 h',
     tabPending: 'À traiter',
+    // 4.7 « v1.1 » (D-47-60/61) — onglets de la page ; « Déléguées » désactivé (pas de concept de
+    // délégation dans le domaine — convention « Bientôt », aucune donnée inventée).
+    tabDelegated: 'Déléguées',
+    tabHistory: 'Historique',
+    delegatedSoon: 'Bientôt',
+    colDecidedAt: 'Décidée le',
+    colDecision: 'Décision',
+    colComment: 'Commentaire',
+    decisionApproved: 'Approuvée',
+    decisionRejected: 'Refusée',
+    historyEmpty: 'Aucune décision passée',
+    historyEmptyHint: 'Vos décisions d\'approbation apparaîtront ici (conservées 180 jours).',
+    historyLoadError: 'Impossible de charger l\'historique.',
     columns: {
       workflow: 'Workflow',
       record: 'Enregistrement',
@@ -256,6 +274,7 @@ export const STUDIO_WORKFLOW_LABELS = {
     colWorkflow: 'Workflow / étape',
     colRecord: 'Enregistrement',
     colStartedAt: 'Lancé le',
+    colRequestedBy: 'Demandé par',
     colRequestedAt: 'Demandé le',
     colDue: 'Échéance',
     colActions: 'Actions',
@@ -273,9 +292,32 @@ export const STUDIO_WORKFLOW_LABELS = {
     close: 'Fermer',
     record: 'Enregistrement',
     startedAt: 'Lancé le',
+    requestedBy: 'Demandé par',
     requestedAt: 'Demandé le',
     requestComment: 'Message du demandeur',
     openInstance: 'Voir l\'instance'
+  },
+
+  /** 4.7c2 — dialogue « Tester sur un enregistrement » (simulation pure, 4.7c1). */
+  test: {
+    button: 'Tester sur un enregistrement',
+    saveFirst: 'Enregistrez d\u2019abord pour tester.',
+    dialogTitle: 'Tester le workflow',
+    banner: 'Simulation — aucune donnée n\u2019a été écrite.',
+    searchPlaceholder: 'Rechercher un enregistrement…',
+    searching: 'Recherche…',
+    noRecords: 'Aucun enregistrement.',
+    run: 'Lancer le test',
+    error: 'La simulation a échoué.',
+    rendered: 'Valeurs rendues',
+    evaluatedSuffix: 'étape(s) réellement évaluée(s)',
+    suspendedSuffix: 'le workflow s\u2019arrêterait en attente',
+    verdicts: {
+      wouldRun: 'Exécutée',
+      skipped: 'Sautée',
+      wouldSuspend: 'En attente',
+      wouldFail: 'En échec'
+    }
   },
 
   recordTab: {
@@ -286,12 +328,6 @@ export const STUDIO_WORKFLOW_LABELS = {
     started: 'Workflow lancé.',
     quota: 'Limite de 200 instances atteinte pour cet enregistrement.',
     empty: 'Aucun workflow exécuté sur cet enregistrement.',
-    columns: {
-      workflow: 'Workflow',
-      status: 'Statut',
-      currentStep: 'Étape courante',
-      startedBy: 'Démarré par'
-    },
     // 4.4h2 (H-3, ajout additif) — les clés déjà définies en 4.4a1 (`label`, `launch`, `run`
     // = « Lancer », `started`, `empty` = « Aucun workflow exécuté sur cet enregistrement. »…)
     // gardent leur libellé d'origine ; l'onglet n'utilise que les clés plates ci-dessous
@@ -309,12 +345,20 @@ export const STUDIO_WORKFLOW_LABELS = {
     remind: 'Relancer les approbateurs',
     reminded: 'Rappel envoyé.',
     actionError: 'L\'action n\'a pas pu être effectuée.',
+    /** 4.6d2 (D-44-96) — confirmation d'annulation inline, même motif et libellés que le tiroir (D-44-26). */
+    cancelConfirmTitle: 'Annuler cette instance ?',
+    cancelReason: 'Motif (optionnel, 500 caractères max.)',
+    cancelConfirm: 'Confirmer l\'annulation',
+    cancelBack: 'Retour',
+    colActions: 'Actions',
     detail: 'Détail',
     close: 'Fermer',
     colWorkflow: 'Workflow',
     colStatus: 'Statut',
     colStep: 'Étape',
     colStarted: 'Démarré le',
+    /** 4.6c1 (D-46-F03) — nom du lanceur servi par `WorkflowInstanceDto.startedByName` (4.6b1) ; « — » si inconnu. */
+    colRequestedBy: 'Demandé par',
     colDue: 'Échéance'
   },
 
@@ -323,10 +367,8 @@ export const STUDIO_WORKFLOW_LABELS = {
 
 export type StudioWorkflowLabels = typeof STUDIO_WORKFLOW_LABELS;
 
-/** Remplace les `{jetons}` d'un libellé (copie de `formatLabel`, studio-ai-labels.ts l.697 — D-44-08). */
-export function formatWorkflowLabel(template: string, values: Record<string, string | number>): string {
-  return template.replace(/\{(\w+)\}/g, (_, k: string) => (values[k] !== undefined ? String(values[k]) : `{${k}}`));
-}
+/** Remplace les `{jetons}` d'un libellé — alias ré-exporté de `formatLabel` (shared/studio-text.util.ts, 4.5h — D-44-08 clos). */
+export { formatLabel as formatWorkflowLabel } from '../shared/studio-text.util';
 
 /** Libellé d'un type d'étape : `label` du catalogue s'il est fourni, sinon repli FR local, sinon la clé brute. */
 export function stepTypeLabel(type: WorkflowStepType, catalogLabel?: string | null): string {

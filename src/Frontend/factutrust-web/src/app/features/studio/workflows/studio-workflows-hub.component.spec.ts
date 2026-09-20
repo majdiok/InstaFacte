@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
@@ -9,7 +9,7 @@ import { ConfirmationService } from '@core/services/confirmation.service';
 import { environment } from '@environments/environment';
 import { StudioWorkflowsHubComponent } from './studio-workflows-hub.component';
 import { STUDIO_WORKFLOW_LABELS } from './studio-workflow-labels';
-import { WorkflowDefinitionDto } from './studio-workflows.models';
+import { WorkflowDefinitionDto, WorkflowDefinitionListItemDto } from './studio-workflows.models';
 import { CustomEntity } from '../studio.models';
 
 const API = `${environment.apiUrl}/studio`;
@@ -27,13 +27,24 @@ const wf = (over: Partial<WorkflowDefinitionDto> = {}): WorkflowDefinitionDto =>
   ...over
 });
 
+/** Ligne de la liste globale (4.5c2) : définition + table porteuse. */
+const item = (over: Partial<WorkflowDefinitionDto> = {}, entityKey = 'devis', entityDisplayName = 'Devis'): WorkflowDefinitionListItemDto =>
+  ({ workflow: wf(over), entityKey, entityDisplayName });
+
+/** Réponse `PagedResult` de la liste globale (4.5f ; 4.6a1 : `page`/`pageSize` reflètent la requête). */
+const paged = (items: WorkflowDefinitionListItemDto[], totalCount = items.length, page = 1, pageSize = 50) => ({
+  success: true,
+  data: { items, page, pageSize, totalCount, totalPages: Math.ceil(totalCount / pageSize), hasNextPage: page * pageSize < totalCount, hasPreviousPage: page > 1 },
+  message: null, error: null
+});
+
 describe('StudioWorkflowsHubComponent', () => {
   let fixture: ComponentFixture<StudioWorkflowsHubComponent>;
   let component: StudioWorkflowsHubComponent;
   let httpMock: HttpTestingController;
   let toastSpy: jasmine.Spy;
 
-  function setup(): void {
+  function setup(query: Record<string, string> = {}): void {
     TestBed.configureTestingModule({
       imports: [StudioWorkflowsHubComponent],
       providers: [
@@ -43,7 +54,7 @@ describe('StudioWorkflowsHubComponent', () => {
         provideNoopAnimations(),
         MessageService,
         { provide: ConfirmationService, useValue: { confirm: jasmine.createSpy('confirm').and.callFake((c: { accept: () => void }) => c.accept()) } },
-        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } }
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(query) } } }
       ]
     });
     toastSpy = spyOn(TestBed.inject(MessageService), 'add');
@@ -54,34 +65,151 @@ describe('StudioWorkflowsHubComponent', () => {
     httpMock.expectOne(r => r.url === `${API}/entities`).flush({ success: true, data: entities, message: null, error: null });
   }
 
-  /** Répond aux chargements de workflows en cours (500 sur e2 possible) puis relance le rendu. */
-  function flushWorkflows(payloads: Record<string, WorkflowDefinitionDto[] | 'erreur'>): void {
-    for (const [entityId, payload] of Object.entries(payloads)) {
-      const req = httpMock.expectOne(`${API}/entities/${entityId}/workflows`);
-      if (payload === 'erreur') req.flush('erreur', { status: 500, statusText: 'Server Error' });
-      else req.flush({ success: true, data: payload, message: null, error: null });
-    }
+  /**
+   * Répond à la requête globale `GET workflows` (4.6a1 : page + taille fixe 50, `search` optionnel)
+   * puis relance le rendu.
+   */
+  function flushAll(
+    items: WorkflowDefinitionListItemDto[],
+    totalCount = items.length,
+    expected: { page?: string; search?: string | null } = {}
+  ): void {
+    const req = httpMock.expectOne(r =>
+      r.method === 'GET' && r.url === `${API}/workflows`
+      && r.params.get('page') === (expected.page ?? '1')
+      && r.params.get('pageSize') === '50'
+      && (expected.search === undefined || r.params.get('search') === expected.search));
+    req.flush(paged(items, totalCount, Number(req.request.params.get('page'))));
     fixture.detectChanges();
   }
 
-  beforeEach(() => setup());
-
   afterEach(() => httpMock.verify());
 
-  it('agrège les workflows de toutes les tables actives non jonction et ignore une table en erreur', () => {
-    flushWorkflows({ e1: [wf()], e2: 'erreur' });
+  it('liste tous les workflows du tenant en une requête GET workflows?page=1&pageSize=50 et affiche la table porteuse', () => {
+    setup();
+    flushAll([item({ id: 'w2', name: 'Relance facture' }, 'factures', 'Factures'), item()]);
 
-    httpMock.expectNone(`${API}/entities/e3/workflows`);
-    expect(component.workflows().length).toBe(1);
-    expect(component.workflows()[0].entityName).toBe('Devis');
+    httpMock.expectNone(r => r.url.startsWith(`${API}/entities/`) && r.url.endsWith('/workflows'));   // plus de forkJoin par table
+    // 4.6a1 : la page est affichée dans l'ordre du serveur (nom croissant) — pas de re-tri local par table.
+    expect(component.workflows().map(w => `${w.entityName}/${w.name}`)).toEqual(['Factures/Relance facture', 'Devis/Validation devis']);
+    expect(component.totalCount()).toBe(2);
+    expect(fixture.debugElement.query(By.css('p-paginator'))).toBeNull();   // totalCount ≤ pageSize ⇒ pas de paginator
     // data-testid figés (consommés par les tests Playwright de 4.4l1).
     expect(fixture.debugElement.query(By.css('[data-testid="wf-hub-new"]'))).not.toBeNull();
     expect(fixture.debugElement.query(By.css('[data-testid="wf-hub-row-w1"]'))).not.toBeNull();
     expect(fixture.debugElement.query(By.css('[data-testid="wf-hub-toggle-w1"]'))).not.toBeNull();
   });
 
+  it('héberge le p-toast des messages de la page (D-44-95 : succès/erreurs des écritures visibles)', () => {
+    setup();
+    flushAll([item()]);
+
+    expect(fixture.debugElement.query(By.css('p-toast'))).not.toBeNull();
+    // Un toast de succès (bascule) trouve bien son hôte : l'appel MessageService part déjà (spy du describe).
+    component.toggle(component.workflows()[0], false);
+    httpMock.expectOne(`${API}/workflows/w1/toggle`).flush({ success: true, data: wf({ isActive: false }), message: null, error: null });
+    expect(toastSpy).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'success' }));
+  });
+
+  it('filtre par table via ?entity= avec GET entities/{id}/workflows (chemin conservé, sans paginator)', () => {
+    setup({ entity: 'e1' });
+    httpMock.expectNone(r => r.url === `${API}/workflows`);
+    httpMock.expectOne(`${API}/entities/e1/workflows`).flush({ success: true, data: [wf()], message: null, error: null });
+    fixture.detectChanges();
+
+    expect(component.entityId()).toBe('e1');
+    expect(component.workflows().length).toBe(1);
+    expect(component.workflows()[0].entityName).toBe('Devis');
+    expect(component.totalCount()).toBe(1);
+    expect(fixture.debugElement.query(By.css('p-paginator'))).toBeNull();
+  });
+
+  it('en mode ?entity=, la recherche reste locale (aucune requête serveur)', fakeAsync(() => {
+    setup({ entity: 'e1' });
+    httpMock.expectOne(`${API}/entities/e1/workflows`).flush({
+      success: true,
+      data: [wf(), wf({ id: 'w2', key: 'relance_devis', name: 'Relance devis' })],
+      message: null, error: null
+    });
+    fixture.detectChanges();
+
+    component.onSearchInput('relance');
+    tick(300);
+    fixture.detectChanges();
+
+    httpMock.expectNone(r => r.url === `${API}/workflows`);
+    expect(component.visible().map(w => w.id)).toEqual(['w2']);
+    expect(component.counter()).toBe(1);
+  }));
+
+  it('affiche le paginator quand totalCount dépasse la page et le compteur lit totalCount', () => {
+    setup();
+    flushAll([item()], 250);
+
+    const paginator = fixture.debugElement.query(By.css('[data-testid="wf-hub-paginator"]'));
+    expect(paginator).not.toBeNull();
+    expect(component.totalCount()).toBe(250);
+    const count = fixture.debugElement.query(By.css('.studio-toolbar .studio-muted'));
+    expect((count.nativeElement as HTMLElement).textContent).toContain('250 workflow(s)');
+    expect(fixture.debugElement.query(By.css('[data-testid="wf-hub-row-w1"]'))).not.toBeNull();   // la page reste affichée
+  });
+
+  it('change de page : une requête ?page=2&pageSize=50 est émise', () => {
+    setup();
+    flushAll([item()], 120);
+
+    component.onPage({ page: 1, first: 50, rows: 50, pageCount: 3 });
+    flushAll([item({ id: 'w51', key: 'workflow_51', name: 'Workflow 51' })], 120, { page: '2' });
+
+    expect(component.page()).toBe(2);
+    expect(fixture.debugElement.query(By.css('[data-testid="wf-hub-row-w51"]'))).not.toBeNull();
+  });
+
+  it('recherche serveur : après debounce, une requête ?search=…&page=1 est émise', fakeAsync(() => {
+    setup();
+    flushAll([item()], 120);
+    component.onPage({ page: 1, first: 50, rows: 50, pageCount: 3 });
+    flushAll([item({ id: 'w51', key: 'workflow_51', name: 'Workflow 51' })], 120, { page: '2' });
+
+    component.onSearchInput('  relance ');
+    tick(299);
+    httpMock.expectNone(r => r.url === `${API}/workflows`);   // debounce pas encore écoulé
+    tick(1);
+    flushAll([item({ id: 'w9', key: 'relance_facture', name: 'Relance facture' }, 'factures', 'Factures')], 1, { page: '1', search: 'relance' });
+
+    expect(component.page()).toBe(1);   // toute recherche ramène à la page 1
+    expect(component.searchServer()).toBe('relance');
+    expect(component.counter()).toBe(1);
+  }));
+
+  it('une recherche vidée repart sans paramètre search', fakeAsync(() => {
+    setup();
+    flushAll([item()]);
+
+    component.onSearchInput('devis');
+    tick(300);
+    flushAll([item()], 1, { search: 'devis' });
+    component.onSearchInput('');
+    tick(300);
+    flushAll([item(), item({ id: 'w2', key: 'relance_facture', name: 'Relance facture' }, 'factures', 'Factures')], 2, { search: null });
+
+    expect(component.searchServer()).toBeNull();
+  }));
+
+  it("affiche le toast d'erreur et une liste vide quand GET workflows échoue (500 ou 404 drapeau coupé)", () => {
+    setup();
+    httpMock.expectOne(r => r.method === 'GET' && r.url === `${API}/workflows`).flush(null, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+
+    expect(component.workflows().length).toBe(0);
+    expect(component.totalCount()).toBe(0);
+    expect(component.loading()).toBeFalse();
+    expect(toastSpy).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'error', detail: STUDIO_WORKFLOW_LABELS.hub.loadError }));
+  });
+
   it("active/désactive via POST toggle et restaure l'état sur 409", () => {
-    flushWorkflows({ e1: [wf()], e2: [] });
+    setup();
+    flushAll([item()]);
 
     component.toggle(component.workflows()[0], false);
     httpMock.expectOne(`${API}/workflows/w1/toggle`).flush(
@@ -94,12 +222,13 @@ describe('StudioWorkflowsHubComponent', () => {
   });
 
   it("supprime après confirmation et affiche le nombre d'instances annulées", () => {
-    flushWorkflows({ e1: [wf({ openInstances: 2 })], e2: [] });
+    setup();
+    flushAll([item({ openInstances: 2 })]);
 
     component.remove(component.workflows()[0]);
     httpMock.expectOne(`${API}/workflows/w1`).flush({ success: true, data: { cancelledInstances: 2 }, message: null, error: null });
     // Rechargement après suppression.
-    flushWorkflows({ e1: [], e2: [] });
+    flushAll([]);
 
     expect(toastSpy).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'success', detail: '2 instance(s) annulée(s).' }));
     expect(component.workflows().length).toBe(0);
@@ -131,8 +260,7 @@ describe('StudioWorkflowsHubComponent — injection réelle du ConfirmationServi
     const httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
     httpMock.expectOne(r => r.url === `${API}/entities`).flush({ success: true, data: entities, message: null, error: null });
-    httpMock.expectOne(`${API}/entities/e1/workflows`).flush({ success: true, data: [wf()], message: null, error: null });
-    httpMock.expectOne(`${API}/entities/e2/workflows`).flush({ success: true, data: [], message: null, error: null });
+    httpMock.expectOne(r => r.method === 'GET' && r.url === `${API}/workflows`).flush(paged([item()]));   // liste globale paginée
     fixture.detectChanges();
 
     fixture.componentInstance.remove(fixture.componentInstance.workflows()[0]);

@@ -404,9 +404,13 @@ public static class DependencyInjection
         services.AddScoped<FactuTrust.Application.Features.Studio.Ai.IStudioAiPlanExecutor, Services.Studio.StudioAiPlanExecutor>();
         // Workflows Studio (PR 4.1) — dépôt SQL multi-tenant.
         services.AddScoped<IStudioWorkflowRepository, Repositories.Studio.StudioWorkflowRepository>();
+        // 4.5a1 — noms d'utilisateurs en lot (StartedByName des DTO workflow) ; requis par ListMyApprovalsQueryHandler (ValidateOnBuild).
+        services.AddScoped<IStudioUserNameResolver, Services.Studio.StudioUserNameResolver>();
         services.AddScoped<IStudioWorkflowEngine, Services.Studio.Workflows.StudioWorkflowEngine>();
         // Runner runtime (PR 4.2c2) : bail + impersonation autour du moteur.
         services.AddScoped<IStudioWorkflowRunner, Services.Studio.Workflows.StudioWorkflowRunner>();
+        // 4.7b2 / D-47-B03 — ordonnancement Hangfire des déclencheurs planifiés (best-effort aux écritures).
+        services.AddScoped<IStudioWorkflowScheduleService, Services.Studio.Workflows.StudioWorkflowScheduleService>();
         services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.ConditionStepHandler>();
         services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.UpdateFieldStepHandler>();
         services.AddScoped<IStudioWorkflowStepHandler, Services.Studio.Workflows.Steps.ErpActionStepHandler>();

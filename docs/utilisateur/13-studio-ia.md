@@ -159,28 +159,55 @@ Dans le **concepteur de table** (hors assistant), modifiez un champ existant et 
 
 ---
 
+## Relier deux tables (plusieurs-à-plusieurs)
+
+Dans le **concepteur de table**, la section **Relations** permet d'ajouter une relation **plusieurs-à-plusieurs** vers une autre table (par exemple *Interventions* ↔ *Techniciens*) : choisissez la table cible, donnez un nom à la relation et, si besoin, un **attribut de liaison** (par exemple *Quantité*) — une information chiffrée portée par chaque lien.
+
+Sur la **fiche d'un enregistrement**, les liens se gèrent à deux endroits :
+
+- sous le formulaire, une **carte de puces** par relation : chaque puce affiche l'enregistrement lié et sa quantité ; ajoutez un lien (recherche + quantité), retirez-le par la croix, ou cliquez la quantité pour la corriger ;
+- dans l'**onglet « Liés »**, la même liste en tableau, avec la quantité affichée, saisie à l'ajout et modifiable en ligne.
+
+Un lien ne peut pas exister en double : l'application affiche « Lien déjà existant. ». Si quelqu'un modifie le lien entre-temps, le message « Modifié entre-temps — liste rechargée. » apparaît et la liste se rafraîchit. Sans droit d'écriture, les puces et quantités restent visibles mais aucune action n'est proposée.
+
+---
+
+## Les vues enregistrées
+
+Une proposition peut inclure des **vues** (liste, kanban, calendrier). Dans une table, le sélecteur de vue en haut de la liste applique la vue choisie ; le kanban permet de déplacer une carte d'une colonne à l'autre (avec le droit d'écriture), le calendrier place les enregistrements sur leurs dates.
+
+**Concevoir une vue** (profil concepteur) : **Nouvelle vue** / **Modifier la vue** ouvrent le concepteur de vues. L'**aperçu suit votre brouillon** : dès que la définition est complète (par exemple un champ de regroupement choisi pour un kanban), il se remplit avec les 20 premiers enregistrements et se met à jour environ 300 ms après chaque modification — colonnes, filtres, tris ou mode. Rien n'est enregistré pendant la frappe : tant que vous ne cliquez pas **Enregistrer**, la vue reste inchangée. **Actualiser l'aperçu** force une exécution immédiate. Si la définition est incomplète, le message « Complétez la définition pour voir l'aperçu. » s'affiche à la place ; les profils sans droit de conception voient « L'aperçu en direct est réservé aux concepteurs. ».
+
 ## Workflows et approbations
 
 Les **workflows Studio** automatisent vos validations : à la création ou modification d’une fiche (ou à la
 demande, depuis la fiche), une suite d’étapes s’exécute — approbations, mises à jour de champs, création
 d’enregistrements, actions ERP.
 
-- **Hub et concepteur** (concepteurs, menu Studio → **Workflows**) : liste par table, création en trois
-  colonnes (étapes réordonnables, éditeur par type, instances récentes), **Valider** avant
-  **Enregistrer**, activation par interrupteur. Un workflow est créé **inactif**.
+- **Hub et concepteur** (concepteurs, menu Studio → **Workflows**) : liste par table ou vue **Toutes les
+  tables** — l’ensemble des workflows de l’entreprise, paginé par 50 avec **recherche** (nom ou clé) —
+  création en trois colonnes (étapes réordonnables, éditeur par type, instances récentes — les 50 plus
+  récentes), **Valider** avant **Enregistrer**, activation par interrupteur. Les succès et erreurs de vos
+  actions (enregistrement, activation, duplication, suppression) s’affichent en bas d’écran. Un workflow
+  est créé **inactif**.
 
   ![Hub des workflows](../screenshots/studio-ia-workflows-hub.png)
   ![Concepteur de workflow](../screenshots/studio-ia-workflows-concepteur.png)
 
 - **Fiche enregistrement** : l’onglet **Workflows (n)** liste les instances de la fiche (statut, étape,
-  dates) et permet d’**en lancer un** (permission d’écriture) ; les concepteurs ouvrent le **détail** :
-  déroulé des étapes, annulation avec motif, relance des approbateurs (une fois par 24 h).
+  dates, colonne **Demandé par** — qui a lancé l’instance, « — » si inconnu) et permet d’**en lancer un**
+  (permission d’écriture) ; **Détail** ouvre le déroulé des étapes pour toute personne qui peut lire la
+  fiche — annulation (désormais **confirmée** : un panneau demande un motif optionnel avant l’envoi) et
+  relance des approbateurs (une fois par 24 h) restent réservées à la permission d’écriture.
 
   ![Onglet Workflows de la fiche](../screenshots/studio-ia-workflows-fiche.png)
 
 - **Mes approbations** (menu Studio, badge rouge du nombre en attente) : tout ce qui attend **votre**
-  décision — indicateurs (à traiter, en retard, sous 24 h), message du demandeur, **Approuver** ou
-  **Refuser** (un commentaire est alors obligatoire). Les notifications de la cloche vous y ramènent.
+  décision — indicateurs (à traiter, en retard, sous 24 h), colonne **Demandé par** (qui a lancé la
+  demande ; « — » si l’utilisateur n’existe plus), message du demandeur, **Voir l’instance**, **Approuver**
+  ou **Refuser** (un commentaire est alors obligatoire). Les notifications de la cloche vous y ramènent.
+  Les utilisateurs disposant du droit de lecture des enregistrements accèdent à « Mes approbations » et au
+  détail d’une instance depuis la fiche, sans être concepteurs. À la déconnexion, le badge repasse à zéro.
 
   ![Page Mes approbations](../screenshots/studio-ia-workflows-approbations.png)
 

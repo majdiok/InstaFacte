@@ -51,11 +51,17 @@ public sealed class StudioWorkflowFeaturesTests
     private readonly Mock<IAuditService> _audit = new();
     private readonly Mock<ICurrentUser> _currentUser = new();
     private readonly Mock<IStudioWorkflowEngine> _engine = new(MockBehavior.Strict);
+    private readonly Mock<IStudioUserNameResolver> _userNames = new(MockBehavior.Strict);
+    // 4.7b2 / D-47-B03 : ordonnancement (lâche — les faits dédiés vérifient les appels).
+    private readonly Mock<IStudioWorkflowScheduleService> _schedule = new();
 
     public StudioWorkflowFeaturesTests()
     {
         _currentUser.Setup(u => u.TenantId).Returns(Tid);
         _currentUser.Setup(u => u.UserId).Returns(Uid);
+        // 4.6b1 : par défaut aucun lanceur n'est résolu (null) ; les tests « Demandé par » posent un nom.
+        _userNames.Setup(r => r.GetDisplayNamesAsync(Tid, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string>());
 
         _entities.Setup(e => e.GetByIdAsync(Tid, Entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Entity);
         _fields.Setup(f => f.ListByEntityAsync(Tid, Entity.Id, false, It.IsAny<CancellationToken>())).ReturnsAsync(Fields);
@@ -91,8 +97,11 @@ public sealed class StudioWorkflowFeaturesTests
         string? rowVersion = null,
         bool isActive = true,
         JsonObject? steps = null,
-        string name = "Relance")
-        => new(key, name, "  Relance des commandes  ", trigger, null, steps ?? ValidSteps(), isActive, rowVersion);
+        string name = "Relance",
+        string? triggerConfig = null)
+        => new(key, name, "  Relance des commandes  ", trigger,
+            triggerConfig is null ? null : JsonNode.Parse(triggerConfig)!.AsObject(),
+            steps ?? ValidSteps(), isActive, rowVersion);
 
     private static StudioWorkflowDefinition Definition(string key = "relance", bool isActive = true, byte[]? rowVersion = null)
     {
@@ -118,16 +127,16 @@ public sealed class StudioWorkflowFeaturesTests
     }
 
     private CreateWorkflowCommandHandler CreateHandler() =>
-        new(_workflows.Object, _entities.Object, _fields.Object, _quota.Object, _audit.Object, _currentUser.Object);
+        new(_workflows.Object, _entities.Object, _fields.Object, _quota.Object, _audit.Object, _currentUser.Object, _schedule.Object);
 
     private UpdateWorkflowCommandHandler UpdateHandler() =>
-        new(_workflows.Object, _entities.Object, _fields.Object, _audit.Object, _currentUser.Object);
+        new(_workflows.Object, _entities.Object, _fields.Object, _audit.Object, _currentUser.Object, _schedule.Object);
 
     private ToggleWorkflowCommandHandler ToggleHandler() =>
-        new(_workflows.Object, _audit.Object, _currentUser.Object);
+        new(_workflows.Object, _audit.Object, _currentUser.Object, _schedule.Object);
 
     private DeleteWorkflowCommandHandler DeleteHandler() =>
-        new(_workflows.Object, _engine.Object, _audit.Object, _currentUser.Object, NullLogger<DeleteWorkflowCommandHandler>.Instance);
+        new(_workflows.Object, _engine.Object, _audit.Object, _currentUser.Object, NullLogger<DeleteWorkflowCommandHandler>.Instance, _schedule.Object);
 
     private DuplicateWorkflowCommandHandler DuplicateHandler() =>
         new(_workflows.Object, _quota.Object, _audit.Object, _currentUser.Object);
@@ -136,10 +145,16 @@ public sealed class StudioWorkflowFeaturesTests
         new(_entities.Object, _fields.Object, _currentUser.Object);
 
     private ListWorkflowInstancesQueryHandler ListInstancesHandler() =>
-        new(_workflows.Object, _currentUser.Object);
+        new(_workflows.Object, _currentUser.Object, _userNames.Object);
 
     private GetWorkflowInstanceQueryHandler GetInstanceHandler() =>
+        new(_workflows.Object, _currentUser.Object, _userNames.Object);
+
+    private ListTenantWorkflowsQueryHandler ListTenantHandler() =>
         new(_workflows.Object, _currentUser.Object);
+
+    private void SetupDesignPermission(bool granted = true) =>
+        _currentUser.Setup(u => u.HasPermission(Permissions.Studio.DesignEntities)).Returns(granted);
 
     private void VerifyAudit(string action, Times times) =>
         _audit.Verify(a => a.LogAsync(action, "StudioWorkflowDefinition", It.IsAny<Guid?>(), It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), times);
@@ -194,17 +209,108 @@ public sealed class StudioWorkflowFeaturesTests
         VerifyAudit("Studio.Workflow.Created", Times.Never());
     }
 
+    // 4.7b1 / D-47-B02 (D5 levé) : le déclencheur planifié est accepté avec un cron valide.
     [Fact]
-    public async Task Create_rejects_the_scheduled_trigger_as_a_validation_error()
+    public async Task Create_accepts_a_scheduled_trigger_with_a_valid_cron()
+    {
+        StudioWorkflowDefinition? added = null;
+        SetupCreateRepository();
+        _workflows.Setup(w => w.AddDefinitionAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<CancellationToken>()))
+            .Callback<StudioWorkflowDefinition, CancellationToken>((d, _) => added = d)
+            .Returns(Task.CompletedTask);
+
+        var result = await CreateHandler().Handle(new CreateWorkflowCommand(Entity.Id,
+            Request(trigger: "scheduled", triggerConfig: """{ "cron": "0 6 * * 1" }""")), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.NotNull(added);
+        Assert.Equal(StudioWorkflowTriggerKind.Scheduled, added!.Trigger);
+        Assert.Contains("\"cron\"", added.TriggerConfigJson);
+        VerifyAudit("Studio.Workflow.Created", Times.Once());
+    }
+
+    [Fact]
+    public async Task Create_rejects_a_scheduled_trigger_without_a_valid_cron()
     {
         SetupCreateRepository();
 
-        var result = await CreateHandler().Handle(new CreateWorkflowCommand(Entity.Id, Request(trigger: "scheduled")), CancellationToken.None);
+        // cron absent ⇒ « Validation.triggerConfig.cron ».
+        var missing = await CreateHandler().Handle(new CreateWorkflowCommand(Entity.Id,
+            Request(trigger: "scheduled")), CancellationToken.None);
+        Assert.True(missing.IsFailure);
+        Assert.Equal("Validation.triggerConfig.cron", missing.Error.Code);
 
-        Assert.True(result.IsFailure);
-        Assert.Equal("Validation.trigger", result.Error.Code);
-        Assert.Equal("Déclencheur planifié : bientôt disponible.", result.Error.Description);
+        // cron invalide ⇒ idem, jamais d'écriture partielle.
+        var invalid = await CreateHandler().Handle(new CreateWorkflowCommand(Entity.Id,
+            Request(trigger: "scheduled", triggerConfig: """{ "cron": "chaque jour" }""")), CancellationToken.None);
+        Assert.True(invalid.IsFailure);
+        Assert.Equal("Validation.triggerConfig.cron", invalid.Error.Code);
+
         _workflows.Verify(w => w.AddDefinitionAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<CancellationToken>()), Times.Never);
+        VerifyAudit("Studio.Workflow.Created", Times.Never());
+        _schedule.Verify(s => s.SyncDefinitionAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // 4.7b2 / D-47-B03 — l'ordonnancement est synchronisé aux écritures (comportement Hangfire : StudioWorkflowScheduleServiceTests).
+    [Fact]
+    public async Task Create_syncs_the_schedule_after_the_write()
+    {
+        SetupCreateRepository();
+
+        var result = await CreateHandler().Handle(new CreateWorkflowCommand(Entity.Id, Request()), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        _schedule.Verify(s => s.SyncDefinitionAsync(
+            It.Is<StudioWorkflowDefinition>(d => d.Key == "relance"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_syncs_the_schedule_after_a_successful_write()
+    {
+        var def = Definition();
+        SetupDefinition(def, openInstances: 1);
+        var token = Convert.ToBase64String(RowVersion1);
+        _workflows.Setup(w => w.UpdateDefinitionWithConcurrencyAsync(def, It.Is<byte[]>(b => b.SequenceEqual(RowVersion1)), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var updated = await UpdateHandler().Handle(
+            new UpdateWorkflowCommand(def.Id, Request(rowVersion: token, name: "Relance v2")), CancellationToken.None);
+
+        Assert.True(updated.IsSuccess, updated.Error.Description);
+        _schedule.Verify(s => s.SyncDefinitionAsync(def, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Toggle_syncs_the_schedule_once_per_effective_change()
+    {
+        var def = Definition(isActive: true);
+        SetupDefinition(def, openInstances: 0);
+        _workflows.Setup(w => w.UpdateDefinitionWithConcurrencyAsync(def, null, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var toggled = await ToggleHandler().Handle(new ToggleWorkflowCommand(def.Id, IsActive: false), CancellationToken.None);
+        Assert.True(toggled.IsSuccess, toggled.Error.Description);
+        _schedule.Verify(s => s.SyncDefinitionAsync(
+            It.Is<StudioWorkflowDefinition>(d => !d.IsActive), It.IsAny<CancellationToken>()), Times.Once);
+
+        // Idempotent : même état ⇒ aucune écriture, aucune synchronisation supplémentaire.
+        var again = await ToggleHandler().Handle(new ToggleWorkflowCommand(def.Id, IsActive: false), CancellationToken.None);
+        Assert.True(again.IsSuccess);
+        _schedule.Verify(s => s.SyncDefinitionAsync(It.IsAny<StudioWorkflowDefinition>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Delete_removes_the_scheduled_job()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        _workflows.Setup(w => w.UpdateDefinitionWithConcurrencyAsync(def, null, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _workflows.Setup(w => w.ListOpenInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<StudioWorkflowInstance>());
+
+        var deleted = await DeleteHandler().Handle(new DeleteWorkflowCommand(def.Id), CancellationToken.None);
+
+        Assert.True(deleted.IsSuccess, deleted.Error.Description);
+        _schedule.Verify(s => s.RemoveDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -544,14 +650,14 @@ public sealed class StudioWorkflowFeaturesTests
     [Fact]
     public async Task Validate_returns_success_with_issues_for_an_invalid_definition()
     {
-        // Déclencheur planifié + étape invalide ⇒ 200, IsValid false, deux erreurs localisées, StepCount renseigné.
+        // Déclencheur planifié sans cron + étape invalide ⇒ 200, IsValid false, deux erreurs localisées, StepCount renseigné.
         var invalidSteps = Steps("""{ "key": "aa", "type": "update_field", "set": { "fantome": 1 } }""", UpdateStep);
         var result = await ValidateHandler().Handle(
             new ValidateWorkflowQuery(Entity.Id, Request(trigger: "scheduled", steps: invalidSteps)), CancellationToken.None);
 
         Assert.True(result.IsSuccess, result.Error.Description);
         Assert.False(result.Value.IsValid);
-        Assert.Contains(result.Value.Errors, e => e.Path == "trigger" && e.Message == "Déclencheur planifié : bientôt disponible.");
+        Assert.Contains(result.Value.Errors, e => e.Path == "triggerConfig.cron");
         Assert.Contains(result.Value.Errors, e => e.Path == "steps[0].set");
         Assert.Equal(2, result.Value.StepCount);
         Assert.Empty(result.Value.Warnings);
@@ -601,26 +707,140 @@ public sealed class StudioWorkflowFeaturesTests
         });
     }
 
-    // ---- Instances (4.1j2) ----
+    // ---- Catalogue tenant (4.5c2 / D-44-20) ----
 
     [Fact]
-    public async Task List_instances_clamps_max_and_carries_the_workflow_key()
+    public async Task List_tenant_workflows_returns_paged_items_with_entity_context_and_open_counts()
+    {
+        SetupDesignPermission();
+        var d1 = Definition("wf_a");
+        var d2 = Definition("wf_b");
+        _workflows.Setup(w => w.CountByTenantAsync(Tid, null, It.IsAny<CancellationToken>())).ReturnsAsync(7);
+        _workflows.Setup(w => w.ListByTenantAsync(Tid, null, 10, 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new StudioWorkflowCatalogRow(d1, "commandes", "Commande"), new StudioWorkflowCatalogRow(d2, "commandes", "Commande") });
+        _workflows.Setup(w => w.CountOpenInstancesForDefinitionsAsync(
+                Tid, It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(d1.Id) && ids.Contains(d2.Id)), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, int> { [d1.Id] = 3 });
+
+        var result = await ListTenantHandler().Handle(new ListTenantWorkflowsQuery(null, Page: 3, PageSize: 5), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var page = result.Value;
+        Assert.Equal(7, page.TotalCount);
+        Assert.Equal(3, page.Page);
+        Assert.Equal(5, page.PageSize);
+        Assert.Equal(2, page.Items.Count);
+        Assert.Equal(d1.Id, page.Items[0].Workflow.Id);
+        Assert.Equal("wf_a", page.Items[0].Workflow.Key);
+        Assert.Equal("commandes", page.Items[0].EntityKey);
+        Assert.Equal("Commande", page.Items[0].EntityDisplayName);
+        Assert.Equal(3, page.Items[0].Workflow.OpenInstances);
+        Assert.Equal(0, page.Items[1].Workflow.OpenInstances);
+        Assert.True(page.HasPreviousPage);
+        Assert.False(page.HasNextPage);
+        _workflows.Verify(w => w.CountOpenInstancesForDefinitionsAsync(Tid, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task List_tenant_workflows_clamps_page_and_page_size_trims_search_and_skips_listing_when_total_is_zero()
+    {
+        SetupDesignPermission();
+        _workflows.Setup(w => w.CountByTenantAsync(Tid, "relance", It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        _workflows.Setup(w => w.CountOpenInstancesForDefinitionsAsync(
+                Tid, It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 0), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, int>());
+
+        var result = await ListTenantHandler().Handle(new ListTenantWorkflowsQuery("  relance  ", Page: 0, PageSize: 999), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var page = result.Value;
+        Assert.Equal(1, page.Page);
+        Assert.Equal(ListTenantWorkflowsQueryHandler.MaxPageSize, page.PageSize);
+        Assert.Empty(page.Items);
+        Assert.Equal(0, page.TotalCount);
+        Assert.False(page.HasNextPage);
+        _workflows.Verify(w => w.ListByTenantAsync(It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task List_tenant_workflows_bounds_page_so_that_skip_never_overflows()
+    {
+        // Revue 4.5i★ (D-45-28) : `?page=2147483647` ne doit pas produire un Skip négatif (500) — page bornée à int.MaxValue / MaxPageSize.
+        SetupDesignPermission();
+        var skips = new List<int>();
+        _workflows.Setup(w => w.CountByTenantAsync(Tid, null, It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        _workflows.Setup(w => w.ListByTenantAsync(Tid, null, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, string?, int, int, CancellationToken>((_, _, skip, _, _) => skips.Add(skip))
+            .ReturnsAsync(Array.Empty<StudioWorkflowCatalogRow>());
+        _workflows.Setup(w => w.CountOpenInstancesForDefinitionsAsync(Tid, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, int>());
+
+        var result = await ListTenantHandler().Handle(
+            new ListTenantWorkflowsQuery(null, Page: int.MaxValue, PageSize: ListTenantWorkflowsQueryHandler.MaxPageSize), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(int.MaxValue / ListTenantWorkflowsQueryHandler.MaxPageSize, result.Value.Page);
+        var skip = Assert.Single(skips);
+        Assert.True(skip >= 0);
+        Assert.Equal((result.Value.Page - 1) * ListTenantWorkflowsQueryHandler.MaxPageSize, skip);
+    }
+
+    [Fact]
+    public async Task List_tenant_workflows_truncates_overlong_search_before_querying()
+    {
+        SetupDesignPermission();
+        var longSearch = new string('a', ListTenantWorkflowsQueryHandler.MaxSearchLength + 40);
+        var expected = longSearch[..ListTenantWorkflowsQueryHandler.MaxSearchLength];
+        _workflows.Setup(w => w.CountByTenantAsync(Tid, expected, It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        _workflows.Setup(w => w.CountOpenInstancesForDefinitionsAsync(Tid, It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 0), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, int>());
+
+        var result = await ListTenantHandler().Handle(new ListTenantWorkflowsQuery(longSearch), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value.Page);
+        Assert.Equal(50, result.Value.PageSize);
+        _workflows.Verify(w => w.CountByTenantAsync(Tid, expected, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task List_tenant_workflows_requires_design_permission_and_calls_no_repository()
+    {
+        SetupDesignPermission(false);
+
+        var result = await ListTenantHandler().Handle(new ListTenantWorkflowsQuery("x"), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Unauthorized", result.Error.Code);
+        _workflows.VerifyNoOtherCalls();
+    }
+
+    // ---- Instances (4.1j2) ----
+
+    // 4.7a1 / D-47-B01 — pagination réelle (page/pageSize → PagedResult), lève D-46-01.
+    [Fact]
+    public async Task List_instances_clamps_page_and_page_size_and_carries_the_workflow_key()
     {
         var def = Definition();
         SetupDefinition(def);
         var instance = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.FieldChanged, Uid, "{}", 0, null);
-        var requestedMax = new List<int>();
-        _workflows.Setup(w => w.ListInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Callback<Guid, Guid, int, CancellationToken>((_, _, max, _) => requestedMax.Add(max))
+        var requested = new List<(int Skip, int Take)>();
+        _workflows.Setup(w => w.CountInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        _workflows.Setup(w => w.ListInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, Guid, int, int, CancellationToken>((_, _, skip, take, _) => requested.Add((skip, take)))
             .ReturnsAsync(new[] { instance });
 
-        var big = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id, Max: 500), CancellationToken.None);
-        var zero = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id, Max: 0), CancellationToken.None);
+        var big = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id, Page: 3, PageSize: 500), CancellationToken.None);
+        var zero = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id, Page: 0, PageSize: 0), CancellationToken.None);
         var dflt = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id), CancellationToken.None);
 
-        Assert.Equal(new[] { 200, 1, 50 }, requestedMax);
+        Assert.Equal(new[] { (400, 200), (0, 1), (0, 50) }, requested);
         Assert.True(big.IsSuccess && zero.IsSuccess && dflt.IsSuccess);
-        var dto = Assert.Single(big.Value);
+        var dto = Assert.Single(big.Value.Items);
+        Assert.Equal(3, big.Value.Page);
+        Assert.Equal(200, big.Value.PageSize);
+        Assert.Equal(1, big.Value.TotalCount);
         Assert.Equal(instance.Id, dto.Id);
         Assert.Equal(def.Key, dto.WorkflowKey);
         Assert.Equal(def.Name, dto.WorkflowName);
@@ -636,19 +856,133 @@ public sealed class StudioWorkflowFeaturesTests
     }
 
     [Fact]
+    public async Task List_instances_returns_the_requested_page_with_the_server_total()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        var pageRows = Enumerable.Range(0, 5)
+            .Select(_ => StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.Manual, Uid, "{}", 0, null))
+            .ToArray();
+        var seenSkip = -1;
+        var seenTake = -1;
+        _workflows.Setup(w => w.CountInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(55);
+        _workflows.Setup(w => w.ListInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, Guid, int, int, CancellationToken>((_, _, skip, take, _) => { seenSkip = skip; seenTake = take; })
+            .ReturnsAsync(pageRows);
+
+        // Page 2 sur 55 instances à 50 par page ⇒ 5 lignes et le total serveur fait foi.
+        var result = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id, Page: 2, PageSize: 50), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal((50, 50), (seenSkip, seenTake));
+        Assert.Equal(5, result.Value.Items.Count);
+        Assert.Equal(55, result.Value.TotalCount);
+        Assert.Equal(2, result.Value.TotalPages);
+        Assert.True(result.Value.HasPreviousPage);
+        Assert.False(result.Value.HasNextPage);
+    }
+
+    [Fact]
+    public async Task List_instances_skips_the_page_query_when_the_total_is_zero()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        _workflows.Setup(w => w.CountInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+
+        var result = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value.Items);
+        Assert.Equal(0, result.Value.TotalCount);
+        _workflows.Verify(w => w.ListInstancesForDefinitionAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // 4.6b1 / D-46-B01 — « Demandé par » sur les instances (même motif que l'inbox 4.5a2).
+    [Fact]
+    public async Task List_instances_resolves_started_by_name_in_one_batch()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        var other = Guid.NewGuid();
+        var named = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.Manual, Uid, "{}", 0, null);
+        var unknownStarter = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.Manual, other, "{}", 0, null);
+        var systemStarted = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.OnCreate, null, "{}", 0, null);
+        _workflows.Setup(w => w.CountInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(3);
+        _workflows.Setup(w => w.ListInstancesForDefinitionAsync(Tid, def.Id, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { named, unknownStarter, systemStarted });
+        _userNames.Setup(r => r.GetDisplayNamesAsync(Tid, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [Uid] = "Bob Martin" });   // « other » inconnu ⇒ null (D-45-02)
+
+        var result = await ListInstancesHandler().Handle(new ListWorkflowInstancesQuery(def.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Bob Martin", result.Value.Items[0].StartedByName);
+        Assert.Null(result.Value.Items[1].StartedByName);
+        Assert.Null(result.Value.Items[2].StartedByName);
+        // Une seule requête master pour les deux lanceurs distincts (le null n'est jamais résolu).
+        _userNames.Verify(r => r.GetDisplayNamesAsync(Tid,
+            It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(Uid) && ids.Contains(other)),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Get_instance_includes_the_started_by_name()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        var instance = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.OnUpdate, Uid, "{}", 1, null);
+        _workflows.Setup(w => w.GetInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(instance);
+        _workflows.Setup(w => w.ListStepRunsAsync(Tid, instance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<StudioWorkflowStepRun>());
+        _workflows.Setup(w => w.ListApprovalsForInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<StudioWorkflowApproval>());
+        _userNames.Setup(r => r.GetDisplayNamesAsync(Tid, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [Uid] = "Bob Martin" });
+
+        var result = await GetInstanceHandler().Handle(new GetWorkflowInstanceQuery(instance.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error?.Description);
+        Assert.Equal("Bob Martin", result.Value.Instance.StartedByName);
+    }
+
+    // Revue ★ 4.6 / D-46-05 — symétrie : la route de conception sert toujours l'erreur au niveau
+    // instance (seule la portée lecteur la masque).
+    [Fact]
+    public async Task Get_instance_serves_the_instance_level_error_on_the_design_route()
+    {
+        var def = Definition();
+        SetupDefinition(def);
+        var instance = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.Manual, Uid, null, 0, null);
+        instance.Fail("erp indisponible (instance)");
+        _workflows.Setup(w => w.GetInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(instance);
+        _workflows.Setup(w => w.ListStepRunsAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<StudioWorkflowStepRun>());
+        _workflows.Setup(w => w.ListApprovalsForInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<StudioWorkflowApproval>());
+
+        var result = await GetInstanceHandler().Handle(new GetWorkflowInstanceQuery(instance.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error?.Description);
+        Assert.Equal("failed", result.Value.Instance.Status);
+        Assert.Equal("erp indisponible (instance)", result.Value.Instance.Error);
+    }
+
+    [Fact]
     public async Task Get_instance_masks_previous_and_returns_steps_and_approvals()
     {
         var def = Definition();
         SetupDefinition(def);
-        const string contextJson = """{ "record": { "statut": "valide" }, "previous": { "statut": "brouillon", "secret": "x" }, "vars": { "a": 1 } }""";
+        const string contextJson = """{ "record": { "statut": "valide" }, "previous": { "statut": "brouillon", "secret": "x" }, "vars": { "a": 1 }, "startedBy": { "id": "u1", "email": "bob@exemple.fr" }, "results": { "erp": { "raw": "ok" } } }""";
         var instance = StudioWorkflowInstance.Start(Tid, def, Guid.NewGuid(), StudioWorkflowTriggerKind.OnUpdate, Uid, contextJson, 1, Guid.NewGuid());
         _workflows.Setup(w => w.GetInstanceAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(instance);
 
         var now = DateTime.UtcNow;
         var runB = StudioWorkflowStepRun.Record(Tid, instance.Id, 1, "maj", "update_field", StudioWorkflowStepRunStatus.Succeeded,
             StudioWorkflowStepOutcome.Continue, null, """{ "updated": ["montant"] }""", null, now.AddSeconds(1), now.AddSeconds(2), Uid);
-        var runA = StudioWorkflowStepRun.Record(Tid, instance.Id, 0, "verif", "condition", StudioWorkflowStepRunStatus.Succeeded,
-            StudioWorkflowStepOutcome.Continue, null, "pas-un-objet", null, now, now.AddSeconds(1), Uid);
+        var runA = StudioWorkflowStepRun.Record(Tid, instance.Id, 0, "verif", "condition", StudioWorkflowStepRunStatus.Failed,
+            null, null, "pas-un-objet", "erp indisponible", now, now.AddSeconds(1), Uid);
         _workflows.Setup(w => w.ListStepRunsAsync(Tid, instance.Id, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { runB, runA });
 
         var approved = StudioWorkflowApproval.Create(Tid, instance.Id, "validation", null, "Administrators", "Valider ?", null, null);
@@ -671,9 +1005,15 @@ public sealed class StudioWorkflowFeaturesTests
         Assert.Equal("valide", detail.Context["record"]!["statut"]!.GetValue<string>());
         Assert.Equal(1, detail.Context["vars"]!["a"]!.GetValue<int>());
         Assert.DoesNotContain("brouillon", detail.Context.ToJsonString(), StringComparison.Ordinal);
+        // Route de conception : contexte complet (l'expurgation D-45-27 ne concerne que la portée lecteur).
+        Assert.Equal("bob@exemple.fr", detail.Context["startedBy"]!["email"]!.GetValue<string>());
+        Assert.Equal("ok", detail.Context["results"]!["erp"]!["raw"]!.GetValue<string>());
 
-        // Étapes triées par index ; Result reparsé (objet) ou null (JSON non objet).
+        // Étapes triées par index ; Result reparsé (objet) ou null (JSON non objet). Route de conception :
+        // Result et Error servis intacts (le nullage ne concerne que la portée lecteur, D-46-B02).
         Assert.Equal(new[] { 0, 1 }, detail.Steps.Select(s => s.StepIndex).ToArray());
+        Assert.Equal("failed", detail.Steps[0].Status);
+        Assert.Equal("erp indisponible", detail.Steps[0].Error);
         Assert.Null(detail.Steps[0].Result);
         Assert.Equal("montant", detail.Steps[1].Result!["updated"]![0]!.GetValue<string>());
         Assert.Equal("succeeded", detail.Steps[1].Status);

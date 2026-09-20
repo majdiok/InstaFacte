@@ -139,6 +139,20 @@ test.describe('Studio — workflows (4.4)', () => {
     await expect(page.getByTestId('srw-row-inst-1')).toBeVisible();
     await expect(page.getByTestId('srw-row-inst-2')).toBeVisible();
 
+    // « Détail » (4.5d2, bi-mode) : le tiroir charge l'instance par la route runtime de la fiche
+    // (`records/{entityKey}/{recordId}/workflow-instances/{id}`), jamais par la route de conception ;
+    // « Ouvrir l'origine » est masqué en portée fiche (D-45-15).
+    await page.getByTestId('srw-detail-inst-1').click();
+    await expect(page.getByTestId('wf-detail-summary')).toBeVisible();
+    await expect.poll(() => ctx.find('/records/interventions/r1/workflow-instances/inst-1', 'GET').length).toBe(1);
+    expect(ctx.find('/workflows/instances/inst-1', 'GET').length).toBe(0);
+    await expect(page.getByTestId('wf-detail-origin')).toHaveCount(0);
+    // 4.6c1 : « Démarré par » affiche le nom du lanceur (startedByName, 4.6b1) dans le tiroir et l'onglet.
+    await expect(page.getByTestId('wf-detail-started-by-inst-1')).toHaveText('Alice Martin');
+    await expect(page.getByTestId('srw-requested-by-inst-2')).toHaveText('—');
+    await page.keyboard.press('Escape'); // p-drawer modal : fermeture clavier avant le lancement manuel
+    await expect(page.getByRole('complementary')).toBeHidden();
+
     // Lancement manuel : dialog → select « Validation intervention » → confirmation (201).
     await page.getByTestId('srw-run').click();
     await page.getByTestId('srw-run-select').click();

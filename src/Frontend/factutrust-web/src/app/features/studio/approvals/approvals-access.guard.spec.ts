@@ -34,12 +34,12 @@ describe('approvalsAccessGuard', () => {
     expect(await promise).toBe(true);
   });
 
-  it('redirige vers /studio quand la sonde répond 404 (module coupé)', async () => {
+  it('redirige vers /dashboard quand la sonde répond 404 (module coupé)', async () => {
     const promise = firstValueFrom(activate());
     http.expectOne(COUNT_URL).flush('introuvable', { status: 404, statusText: 'Not Found' });
     const result = await promise;
     expect(result).not.toBe(true);
-    expect(router.serializeUrl(result as UrlTree)).toBe('/studio');
+    expect(router.serializeUrl(result as UrlTree)).toBe('/dashboard');
   });
 
   it('redirige vers /access-denied avec returnUrl sur un 403', async () => {

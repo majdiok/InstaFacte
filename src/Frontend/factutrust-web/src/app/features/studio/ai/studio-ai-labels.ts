@@ -711,7 +711,5 @@ export const STUDIO_AI_LABELS = {
 
 export type StudioAiLabels = typeof STUDIO_AI_LABELS;
 
-/** Remplace les `{jetons}` d'un libellé. */
-export function formatLabel(template: string, values: Record<string, string | number>): string {
-  return template.replace(/\{(\w+)\}/g, (_, k: string) => (values[k] !== undefined ? String(values[k]) : `{${k}}`));
-}
+/** Remplace les `{jetons}` d'un libellé — ré-export de `formatLabel` (shared/studio-text.util.ts, 4.5h). */
+export { formatLabel } from '../shared/studio-text.util';

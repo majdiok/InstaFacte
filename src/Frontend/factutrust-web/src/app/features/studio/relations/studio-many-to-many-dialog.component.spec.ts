@@ -4,6 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { environment } from '@environments/environment';
 import { StudioManyToManyDialogComponent } from './studio-many-to-many-dialog.component';
+import { ManyToManyRelationDto } from '../studio.models';
 import { CustomEntity } from '../studio.models';
 
 const entity = (id: string, key: string, name: string, kind?: 'Standard' | 'Junction'): CustomEntity => ({
@@ -46,6 +47,13 @@ describe('StudioManyToManyDialogComponent', () => {
     expect(component.canSubmit()).toBeTrue();
   });
 
+  it('ne préfixe jamais la clé par défaut de « v_ » (D-46-F04 : convention serveur {a}_{b} sans préfixe)', () => {
+    component.targetEntityId.set('e2');
+    const key = component.defaultJunctionKey();
+    expect(key.startsWith('v_')).toBeFalse();
+    expect(key).toBe('interventions_techniciens');
+  });
+
   it('POST relations/many-to-many avec targetEntityId et champs optionnels nettoyés ; succès ⇒ émet created et ferme', () => {
     component.visible.set(true);
     component.targetEntityId.set('e2');
@@ -57,7 +65,7 @@ describe('StudioManyToManyDialogComponent', () => {
     component.submit();
     const req = httpMock.expectOne(API);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ targetEntityId: 'e2', label: null, junctionKey: null, junctionDisplayName: null });
+    expect(req.request.body).toEqual({ targetEntityId: 'e2', label: null, junctionKey: null, junctionDisplayName: null, junctionAttributeLabel: null });
     req.flush({ success: true, data: { junction, sourceField: {}, targetField: {} }, message: null, errors: [] });
     expect(emitted).toBeTrue();
     expect(component.visible()).toBeFalse();
@@ -76,6 +84,40 @@ describe('StudioManyToManyDialogComponent', () => {
       { success: false, data: null, message: 'Une table ne peut pas être reliée à elle-même.', errors: [] },
       { status: 400, statusText: 'Bad Request' });
     expect(component.error()).toBe('Une table ne peut pas être reliée à elle-même.');
+  });
+
+  it('attribut vide ⇒ junctionAttributeLabel null (comportement v1 inchangé)', () => {
+    component.targetEntityId.set('e2');
+    component.junctionAttribute.set('   ');
+    component.submit();
+    const req = httpMock.expectOne(API);
+    expect(req.request.body.junctionAttributeLabel).toBeNull();
+    req.flush({ success: true, data: { junction, sourceField: {}, targetField: {}, attributeField: null }, message: null, errors: [] });
+  });
+
+  it('attribut saisi ⇒ envoyé trimmé ; succès ⇒ attributeField propagé à created', () => {
+    component.targetEntityId.set('e2');
+    component.junctionAttribute.set('  Quantité  ');
+    let dto: ManyToManyRelationDto | undefined;
+    component.created.subscribe(d => dto = d);
+
+    component.submit();
+    const req = httpMock.expectOne(API);
+    expect(req.request.body.junctionAttributeLabel).toBe('Quantité');
+    const attributeField = { id: 'f-q', key: 'quantit', label: 'Quantité', fieldType: 2 };
+    req.flush({ success: true, data: { junction, sourceField: {}, targetField: {}, attributeField }, message: null, errors: [] });
+    expect(dto?.attributeField?.key).toBe('quantit');
+  });
+
+  it("le bloc « Bientôt » n'est plus rendu — l'attribut est un input actif", () => {
+    // Le contenu du p-dialog n'est rendu (dans le body) que lorsque le dialogue est visible.
+    component.visible.set(true);
+    fixture.detectChanges();
+    const input = document.querySelector('[data-testid="m2m-attribute"]') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    expect(input.disabled).toBeFalse();
+    expect(input.placeholder).toBe('Quantité');
+    expect(document.querySelector('.p-dialog')?.textContent).not.toContain('Bientôt');
   });
 
   it('clé de jonction invalide ⇒ submit bloqué', () => {

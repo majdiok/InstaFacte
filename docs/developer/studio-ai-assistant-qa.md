@@ -875,3 +875,253 @@ Tester/Personnaliser désactivés, « Créer maintenant » actif) ; confirmation
 « Workflow « … » créé » avec bouton « Ouvrir dans le concepteur » (workflow créé **inactif**).
 
 - Portée automatisée : +48 `it` Karma sous `features/studio` (g1 7, g2 12, h1 6, h2 8, i 4, j 1, k1 7, k2 4 — plus ceux d'A-44a) + 8 `it` sous `core/` (navigation j) ; 11 parcours Playwright + 4 captures (e2e, mocks HTTP). Baseline Studio 551 → 672 `it`.
+
+## Consolidation Studio IA 4.5 — accès lecteur, « Demandé par », hub global, polish (PR #125 et suivantes)
+
+Fiches transverses (UI + API) : les cas API figurent en sous-points, aucune fiche API séparée (D-45-25).
+
+### 107. Accès lecteur (profil `Accountant` : `custom_records:read` sans `studio:design_entities`)
+
+Connexion lecteur, drapeau on : « Mes approbations » apparaît dans la navigation dès la première réponse
+200 de la sonde `approvals/mine/count` (au plus tard 60 s ; entrée « Workflows » absente) ; `/studio/approvals`
+accessible ; « Voir l'instance » (inbox) et « Détail » (onglet Workflows d'une fiche) ouvrent le tiroir par
+la **route runtime** `GET records/{entityKey}/{recordId}/workflow-instances/{instanceId}` — aucun appel à
+`workflows/instances/{id}` (conception) ; bouton « Ouvrir l'origine » absent en portée fiche ; `/studio`
+et `/studio/workflows` ⇒ `/access-denied`. Drapeau coupé ⇒ `/studio/approvals` redirige vers `/dashboard`
+(et non `/access-denied`). API : 200 pour l'instance de la fiche avec `context.startedBy.email` = `null` et
+`context.results` / `context.vars` = `{}` (route de conception : inchangée — D-45-27) ; 404 `StudioWorkflowInstance.NotFound`
+pour une instance d'une autre fiche ou d'une autre table ; 400 `Validation.entityKey` pour une table
+inconnue ou inactive ; 404 `CustomRecord.NotFound` pour un enregistrement inconnu ; 403 sans
+`custom_records:read` ; 404 drapeau coupé avant tout appel au médiateur.
+
+### 108. « Demandé par »
+
+Page « Mes approbations » : 7e colonne « Demandé par » avec « Prénom Nom » du lanceur ; panneau de détail :
+fait « Demandé par » ; « — » si le lanceur est inconnu, sans nom, supprimé ou d'un autre tenant (mode
+délégué cabinet) — jamais d'email. API : `GET workflows/approvals/mine` renvoie `startedByName` (camelCase)
+en fin d'élément, `null` par défaut ; une seule requête master pour les lanceurs distincts ;
+`WorkflowInstanceDto` inchangé (pas de `startedByName`).
+
+### 109. Hub « Toutes les tables »
+
+`/studio/workflows` sans `?entity=` : **une** requête `GET workflows?page=1&pageSize=200` (plus de requête
+par table, plus de message « plus de 25 tables ») ; colonne « Table » renseignée depuis `entityDisplayName`,
+tri table puis nom ; au-delà de 200 workflows, message « Seuls les 200 premiers workflows sont affichés :
+choisissez une table pour voir les autres. » et liste toujours affichée ; `?entity=` ⇒
+`GET entities/{id}/workflows` inchangé ; 500 ou 404 ⇒ liste vide (toast d'erreur soumis à D-44-95 : pas
+d'hôte `<p-toast>` dans le hub). API : `search` (contient, nom ou clé, ≤ 128), `page` ≥ 1, `pageSize`
+borné 1..200 (0 ⇒ 1, 500 ⇒ 200), `page=2147483647` ⇒ 200 avec page vide (jamais 500 — D-45-28), tri
+`entityDisplayName, name, key`, tables actives non-jonction
+seulement, définitions actives et inactives, `PagedResult` (`totalCount`, `totalPages`, `hasNextPage`) ;
+403 sans `studio:design_entities` (policy **et** handler) ; 404 drapeau coupé.
+
+### 110. Déconnexion et toast unique
+
+Connecté avec n approbations en attente (badge n) : déconnexion (ou jeton expiré) ⇒ badge à 0, plus aucune
+requête `approvals/mine/count` (observer le réseau pendant 60 s) ; reconnexion ⇒ badge rafraîchi au plus
+tard 60 s après. Fiche enregistrement, onglet Workflows : lancer, annuler ou relancer une instance ⇒ **un
+seul** toast (celui de la fiche hôte), plus de doublon ; le toast n'a plus la classe `studio-theme`
+(accepté, D-45-20).
+
+- Portée automatisée : +22 `it` Karma (`features/studio` +19 dont 2 issus de la revue ★ — portée figée du tiroir
+  D-45-29, routes ouvertes au lecteur — , `core` +3 ; 5 réécrits 1:1, 0 supprimé) ; backend : API Studio 131 → **136**,
+  Infra Studio **1440** (+1 borne `page`, assertions D-45-27), dépôt SQL **18** (0 ignoré) ; Playwright mocké :
+  2 mocks ajoutés (`records/{entityKey}/r1/workflow-instances/inst-1`, `GET workflows` paginé), deux assertions
+  de `studio-approvals.spec.ts` réalignées (« Demandé par » visible ; sonde 404 ⇒ `/dashboard` — D-45-26) et
+  +1 assertion « Détail » (route runtime) dans le parcours fiche de `studio-workflows.spec.ts` — aucun
+  nouveau parcours (11 réussis + 4 ignorés).
+
+### 111. Hub « Toutes les tables » : pagination serveur
+
+Concepteur, plus de 50 workflows dans l'entreprise : le hub « Toutes les tables » n'affiche que 50 lignes,
+le compteur indique le **total serveur** (« 250 workflow(s) ») et un paginateur apparaît ; page 2 ⇒
+nouvelle requête `GET workflows?page=2&pageSize=50`, ordre du serveur conservé (pas de re-tri local).
+Avec `?entity=` : liste intégrale de la table, **pas** de paginateur (4.6a1, D-46-02).
+
+- Portée automatisée : Karma hub réécrit (`paged(items, totalCount)`, paramètres `page`/`pageSize`
+  vérifiés, paginateur absent en mode table) ; la page unique de 200 et le message de troncature ont
+  disparu (D-45-F07 levé).
+
+### 112. Hub : recherche serveur
+
+Concepteur, hub « Toutes les tables » : taper « relance » ⇒ aucune requête avant 300 ms (anti-rebond),
+puis `GET workflows?search=relance&page=1&pageSize=50` et retour page 1 ; vider le champ ⇒ `search` absent
+(page 1 rechargée). En mode table (`?entity=`), la recherche reste **locale** (aucune requête serveur)
+(4.6a1, D-46-03 ; jokers `LIKE` acceptés tels quels côté API — D-45-28).
+
+- Portée automatisée : Karma hub (`fakeAsync` 299/300 ms, `expectNone`/`expectOne` avec paramètres).
+
+### 113. Concepteur : panneau « instances récentes » borné à 50
+
+Concepteur, définition avec plus de 50 instances : le panneau demande `max=50` et affiche l'invite
+« Les 50 instances les plus récentes sont affichées. » ; en dessous de 50, aucune invite. La route n'est
+pas paginée (borne API 1..200, défaut 50) : la pagination complète est reportée à v1.1 « Historique »
+(4.6a2, D-46-01).
+
+- Portée automatisée : Karma panneau (+2 `it` : invite à 50, absente en dessous) et concepteur (`max=50`).
+
+### 114. « Demandé par » sur les instances
+
+Fiche enregistrement, onglet Workflows : la colonne **Demandé par** affiche le nom du lanceur
+(`startedByName`, « — » si inconnu ou non résolu). Tiroir de détail (fiche et « Mes approbations ») :
+« Demandé par » = nom du lanceur, guid si le nom n'est pas servi, « Système » si démarrage automatique.
+Les réponses d'écriture (lancer, annuler, relancer) ne portent pas le nom (repli guid/Système jusqu'au
+rechargement) (4.6b1 + 4.6c1, D-46-04/06).
+
+- Portée automatisée : Karma onglet (+1 `it` colonne) et tiroir (+1 `it`, +1 assertion « Système ») ;
+  Playwright mocké : `startedByName: 'Alice Martin'` sur inst-1, `wf-detail-started-by-inst-1` =
+  « Alice Martin », `srw-requested-by-inst-2` = « — » ; backend : Infra Studio +4 (résolution en un lot,
+  nom servi en portée lecteur avec email toujours masqué), API Studio +1 (`startedByName` camelCase,
+  défaut null).
+
+### 115. Surface lecteur : résultats d'étapes masqués
+
+Lecteur (`custom_records:read` sans `studio:design_entities`), tiroir depuis la fiche : le détail de
+l'instance ne sert plus `steps[].result` ni `steps[].error` (null), y compris sur une étape en échec ;
+l'`error` au niveau instance est masquée aussi (détail ET liste de la fiche — revue ★ 4.6) ;
+`context.startedBy.email`, `results`, `vars` restent expurgés. La route de conception (concepteur) sert
+toujours tout (4.6b2, D-46-05 — résiduel D-45-27 levé).
+
+- Portée automatisée : Infra Studio — runtime : `Assert.All(Steps, Result/Error null)` + 2 faits
+  (erreur instance masquée au détail et à la liste) ; conception : étape en échec avec `Error` servi et
+  `Result` null (1:1) + 1 fait (erreur instance servie sur la route de conception).
+
+### 116. Toasts du hub
+
+Concepteur, hub : basculer un workflow en conflit (409), le supprimer, le dupliquer ou le créer ⇒ le toast
+de succès/d'erreur **s'affiche** (avant 4.6d1, `MessageService.add` sans hôte `<p-toast>` = muet —
+D-44-95). Un seul hôte par page ; l'onglet Workflows de la fiche garde celui de la fiche (D-44-89
+inchangé).
+
+- Portée automatisée : Karma hub (+1 `it` : `p-toast` présent + toast de succès après bascule).
+
+### 117. Toasts du concepteur
+
+Concepteur : **Enregistrer** ⇒ toast de succès visible ; conflit 409 (jeton périmé) ⇒ toast d'avertissement
+visible (4.6d1, D-44-95).
+
+- Portée automatisée : Karma concepteur (+1 `it` : `p-toast` présent + succès après enregistrement ;
+  spy `MessageService.add` ajouté au setup).
+
+### 118. Onglet Workflows de la fiche : annulation confirmée
+
+Fiche enregistrement (écriture), onglet Workflows : **Annuler** n'envoie plus le POST immédiatement — un
+panneau inline demande un **motif optionnel** (500 caractères max, compteur) ; « Confirmer l'annulation »
+envoie le POST (motif trimmé) et referme le panneau ; « Retour » ferme sans rien envoyer ; en cas d'erreur
+(409 « déjà terminée »), le panneau reste ouvert et le message serveur s'affiche. Rouvrir sur une autre
+instance repart avec un motif vide (4.6d2, D-44-96).
+
+- Portée automatisée : Karma onglet (2 `it` réécrits 1:1 : confirmation + motif trimmé + réinitialisation
+  + 409 ; « Retour » sans POST).
+
+### 119. Accessibilité de l'onglet et clé de jonction
+
+Fiche enregistrement, onglet Workflows : les boutons icônes (Détail, Relancer, Annuler) ont un nom
+accessible (`aria-label`), le sélecteur du dialogue « Lancer » aussi, l'en-tête de la colonne d'actions
+n'est plus vide. Studio → Relations, « Relation plusieurs-à-plusieurs » : la clé de jonction proposée est
+`{table}_{table}` **sans préfixe `v_`** (réservé aux vues) ; les jonctions existantes restent valides
+(4.6d2 + 4.6e, D-46-08/09).
+
+- Portée automatisée : Karma onglet (assertions `aria-label`) ; Karma dialogue M-à-N (+1 `it` : la clé par
+  défaut ne commence jamais par `v_`).
+
+## Studio IA 4.7 « v1.1 » — vues : aperçu en direct du brouillon (PR #160, #161)
+
+### 130. Création d'une vue : l'aperçu suit le brouillon sans enregistrer
+
+`/studio/d/<table>/views/new` : la grille d'aperçu se remplit dès la définition valide ; ajouter une
+colonne ou un filtre ⇒ mise à jour après ~300 ms ; `POST /views/preview` est émis, **jamais** `/run`
+ni `/views` tant qu'« Enregistrer » n'est pas cliqué ; le compteur de vues de la table n'augmente pas.
+
+- Portée automatisée : Karma concepteur de vues (création : runner monté d'emblée, POST
+  `/views/preview` au montage, jamais `/run`) ; Karma service (`previewRecordView`).
+
+### 131. Édition : l'aperçu reflète le brouillon, y compris le mode
+
+Modifier un tri/un filtre ⇒ aperçu mis à jour après ~300 ms (aucune requête avant le délai) ;
+basculer Liste → Kanban ⇒ le kanban **du brouillon** s'affiche (plus de message « version
+enregistrée ») ; « Actualiser l'aperçu » force une exécution immédiate.
+
+- Portée automatisée : Karma concepteur (anti-rebond vérifié en temps réel — `tick()` annule les
+  XHR en attente sous Karma/zone.js, motif retenu : `sleep` 250/400 ms ; changement de mode :
+  `/preview` repart avec le nouveau `mode` ; Actualiser : exécution hors anti-rebond).
+
+### 132. Définition invalide et erreur serveur
+
+Kanban sans champ de regroupement / pageSize hors bornes ⇒ hint « Complétez la définition pour voir
+l'aperçu. », **aucune** requête émise ; champ supprimé entre-temps ⇒ 400 rendu en ligne dans le
+panneau avec « Réessayer », aucun toast global pendant la frappe.
+
+- Portée automatisée : Karma concepteur (hint invalide + 0 requête) ; Karma runner (erreur réseau ⇒
+  état inline sans toast en mode preview).
+
+### 133. Garde-fous
+
+Profil lecteur (sans `studio:design_forms`) : hint « L'aperçu en direct est réservé aux
+concepteurs. », pas de runner ; `POST /views/preview` ⇒ 403 ; drapeau `EnableStudioRecordViews`
+coupé ⇒ 404 ; aucune ligne d'audit `Studio.RecordView.*` pour un aperçu ; quota « 20 vues/table »
+non consommé.
+
+- Portée automatisée : Karma concepteur (lecture seule : hint, pas de runner) ; API contract
+  (policy + gabarit figés, drapeau coupé ⇒ 404) ; Infrastructure (handler sans dépendances
+  vues/quota/audit — `VerifyNoOtherCalls`).
+
+---
+
+## Studio IA 4.7 « v1.1 » — relations : attribut de liaison et puces inline (PR #163 à #166)
+
+### 140. Dialogue N-N : attribut de liaison
+
+Dans le concepteur de table, dialogue « Nouvelle relation plusieurs-à-plusieurs » : « Attribut de
+liaison » renseigné (« Quantité ») ⇒ la jonction créée porte un **3ᵉ champ numérique** (clé
+`quantit`), visible dans le concepteur via l'URL de la jonction ; laissé vide ⇒ comportement v1
+inchangé (deux champs seulement). Libellé réservé (`id`) ou en collision avec une clé de liaison ⇒
+`400 Validation.junctionAttributeLabel`, **aucune** écriture.
+
+- Portée automatisée : Infrastructure `CreateManyToManyRelationCommandTests` (nominal 3 champs +
+  séquence + audit ; [Theory] ×4 rejets sans écriture ni audit ; compensation) ; Karma dialogue
+  (champ actif, label envoyé, vidé au reset) ; contrat API (`attributeField` en réponse).
+
+### 141. Onglet « Liés » : quantité affichée et saisie à l'ajout
+
+La quantité s'affiche par lien ; ajout avec quantité ⇒ valeur visible après rafraîchissement ;
+jonction **sans** attribut ⇒ aucune colonne/affichage (non-régression v1) ; schéma de jonction en
+404 ⇒ dégradé silencieux (pas de bannière d'erreur pour la lecture).
+
+- Portée automatisée : Karma service `getJunctionAttribute` (résolution via `/schema`, cache
+  `shareReplay` — un seul appel HTTP, 404 ⇒ `null`) ; Karma onglet (affichage, ajout avec quantité).
+
+### 142. Onglet « Liés » : édition inline de la quantité
+
+Crayon ⇒ `p-inputNumber` ⇒ Enregistrer ⇒ `PATCH records/{jonction}/{id}` avec `rowVersion` ; 409
+jeton périmé (deux onglets ouverts) ⇒ « Modifié entre-temps — liste rechargée. » + rechargement ;
+la paire reste protégée (doublon à l'ajout ⇒ 409 « Lien déjà existant. » en ligne).
+
+- Portée automatisée : Karma service `patchLink` (motif `patchRecord`, `skipErrorUi`) ; Karma onglet
+  (édition + 409) ; Infrastructure `CustomRecordJunctionUniquenessTests` (la paire reste contrôlée
+  avec un 3ᵉ champ attribut).
+
+### 143. Fiche en édition : puces inline par relation N-N
+
+Sous le formulaire (onglet Fiche), **une carte de puces par relation N-N** ; ajout avec quantité,
+retrait, édition de la quantité au clic ; fiche en **création** ⇒ aucune carte (les puces exigent un
+enregistrement existant, comme l'onglet « Liés »).
+
+- Portée automatisée : Karma composant puces (montage + libellés + quantité) ; Karma fiche (une
+  carte par relation N-N en édition, aucune en création) ; Playwright mocké (scénario complet).
+
+### 144. Puces : doublon et retrait
+
+Ajout d'un doublon ⇒ 409 « Lien déjà existant. » **en ligne** dans la carte, puces inchangées ;
+retrait ⇒ DELETE + toast de succès (hôte `<p-toast>` de la fiche, pas de toast en double).
+
+- Portée automatisée : Karma composant (doublon 409 en ligne ; retrait + `toast.add` appelé une
+  fois) ; Playwright mocké (surcharge de route 409 ; DELETE vérifié).
+
+### 145. Lecture seule
+
+Profil `custom_records:read` sans `:write` : quantités et puces visibles, **aucune** action
+d'écriture (barre d'ajout, crayons et croix masqués) — miroir de la garde `canWrite` de l'onglet.
+
+- Portée automatisée : Karma composant puces (lecture seule) ; Karma onglet (miroir existant) ;
+  Playwright mocké (parcours lecteur couvert par les permissions mockées).

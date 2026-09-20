@@ -1,4 +1,7 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subject } from 'rxjs';
+import { debounceTime } from 'rxjs/operators';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -25,6 +28,7 @@ import {
   CustomRecordViewDto, RECORD_VIEW_LIMITS, RECORD_VIEW_PERSISTED_KEYS, RecordViewCalendar, RecordViewColumn,
   RecordViewDefinition, RecordViewFilter, RecordViewKanban, RecordViewMode, RecordViewSort, SaveCustomRecordViewRequest
 } from './studio-record-views.models';
+import { slugifyKey } from '../shared/studio-text.util';
 
 /** Option `{ key, label }` d'un `p-select` de champ. */
 interface FieldOption { key: string; label: string; }
@@ -211,21 +215,19 @@ const PERSISTED_LABELS: Readonly<Record<string, string>> = { createdAt: 'Créé 
           <aside class="studio-preview rvd-preview">
             <div class="studio-block-head">
               <h3 class="studio-preview-title">Aperçu</h3>
-              @if (editing) {
+              @if (canDesign()) {
                 <p-button label="Actualiser l’aperçu" icon="pi pi-refresh" [text]="true" size="small"
-                  [disabled]="saving()" (onClick)="refreshPreview()" data-testid="designer-preview-refresh" />
+                  [disabled]="saving() || !previewEligible()" (onClick)="refreshPreview()" data-testid="designer-preview-refresh" />
               }
             </div>
-            @if (editing) {
-              @if (previewModeChanged()) {
-                <p class="studio-muted">{{ labels.designer.previewStale }}</p>
-              } @else {
-                <app-studio-record-view-runner [entityKey]="entityKey" [view]="previewView()" [allFields]="fields()"
-                  [showActions]="false" [previewLimit]="20" />
-                <p class="studio-muted">{{ labels.designer.previewSaved }}</p>
-              }
+            @if (!canDesign()) {
+              <p class="studio-muted" data-testid="designer-preview-design-only">{{ labels.designer.previewDesignOnly }}</p>
+            } @else if (!previewEligible()) {
+              <p class="studio-muted" data-testid="designer-preview-invalid">{{ labels.designer.previewInvalid }}</p>
             } @else {
-              <p class="studio-muted">{{ labels.designer.previewHint }}</p>
+              <app-studio-record-view-runner [entityKey]="entityKey" [view]="previewView()" [allFields]="fields()"
+                [showActions]="false" [preview]="true" [previewLimit]="20" />
+              <p class="studio-muted">{{ labels.designer.previewDraft }}</p>
             }
           </aside>
         </div>
@@ -334,12 +336,15 @@ export class StudioRecordViewDesignerComponent implements OnInit {
     pageSize: this.pageSize()
   }));
 
-  /** Brouillon DTO de la définition courante, utilisé par l'aperçu R3 (édition seulement). */
+  /**
+   * Brouillon DTO de la définition courante, utilisé par l'aperçu en direct (4.7v2, R3) —
+   * création ET édition. `id: 'apercu'` est un placeholder JAMAIS émis (le runner en mode
+   * `preview` poste sur `/views/preview` avec la définition, sans identifiant).
+   */
   readonly previewView = computed<CustomRecordViewDto | null>(() => {
-    if (!this.editing) return null;
     const current = this.view();
     return {
-      id: this.viewId!,
+      id: this.viewId ?? 'apercu',
       key: this.key() || current?.key || 'apercu',
       displayName: this.displayName().trim() || current?.displayName || 'Aperçu',
       mode: this.mode(),
@@ -350,9 +355,39 @@ export class StudioRecordViewDesignerComponent implements OnInit {
       updatedAt: current?.updatedAt ?? new Date(0).toISOString()
     };
   });
-  /** Le `run` exécute la définition persistée : changer de mode rend l'aperçu trompeur ⇒ masqué + hint. */
-  readonly previewModeChanged = computed(() => this.editing && this.view()?.mode !== this.mode());
   readonly previewRunner = viewChild(StudioRecordViewRunnerComponent);
+
+  /**
+   * 4.7v2 : le brouillon est prévisualisable dès que sa définition passerait la validation
+   * client — `canSave` MOINS nom/clé (rien n'est enregistré : une définition prévisualisable
+   * peut être innommable, D-47-20).
+   */
+  readonly previewEligible = computed(() => this.canDesign() && this.pageSizeValid() && this.modeValid()
+    && this.columns().length <= RECORD_VIEW_LIMITS.maxColumns
+    && this.filters().length <= RECORD_VIEW_LIMITS.maxFilters
+    && this.sort().length <= RECORD_VIEW_LIMITS.maxSorts);
+
+  /** Anti-rebond de l'aperçu en direct (motif du hub, D-44-86) — branché dans le constructeur. */
+  private readonly previewRefresh$ = new Subject<void>();
+  private readonly destroyRef = inject(DestroyRef);
+  /** La première émission de l'effet est ignorée : le montage du runner exécute déjà (garde du runner). */
+  private previewFirstEmission = true;
+
+  constructor() {
+    // Aperçu en direct (4.7v2) : toute modification du brouillon (definition suit colonnes,
+    // filtres, tris, mode, pageSize…) reprogramme une exécution après 300 ms de calme.
+    this.previewRefresh$.pipe(debounceTime(300), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.previewEligible()) this.previewRunner()?.reload();
+    });
+    effect(() => {
+      this.definition(); // signal suivi : le graphe complet du brouillon
+      if (this.previewFirstEmission) { this.previewFirstEmission = false; return; }
+      // Le peuplement initial du brouillon (schéma/vue chargés) ne doit PAS doubler l'exécution
+      // de montage du runner — `untracked` : le retour de loading ne relance pas l'effet.
+      if (untracked(() => this.loading())) return;
+      this.previewRefresh$.next();
+    });
+  }
 
   ngOnInit(): void {
     this.reload();
@@ -388,6 +423,9 @@ export class StudioRecordViewDesignerComponent implements OnInit {
   }
 
   private applyView(v: CustomRecordViewDto): void {
+    // 4.7v2 : le peuplement du brouillon depuis la vue enregistrée n'est PAS une modification —
+    // l'effet d'aperçu saute cette émission (l'exécution de montage du runner suffit).
+    this.previewFirstEmission = true;
     this.view.set(v);
     this.displayName.set(v.displayName);
     this.key.set(v.key);
@@ -582,11 +620,5 @@ export class StudioRecordViewDesignerComponent implements OnInit {
   }
 }
 
-/** Clé auto-dérivée du nom (même règle que `slugify()` du concepteur de table, préfixe `v_` si chiffre initial). */
-export function slugifyViewKey(input: string): string {
-  const base = (input || '').trim().toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  if (!base) return '';
-  return /^[a-z]/.test(base) ? base.slice(0, 64) : ('v_' + base).slice(0, 64);
-}
+/** Clé auto-dérivée du nom : enveloppe de `slugifyKey` (shared/studio-text.util.ts, 4.5h), préfixe `v_` si chiffre initial. */
+export function slugifyViewKey(input: string): string { return slugifyKey(input, 'v_'); }

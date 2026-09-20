@@ -7,8 +7,8 @@ import type { WorkflowApprovalInboxItemDto } from '../workflows/studio-workflows
 
 const labels = STUDIO_WORKFLOW_LABELS.approvals;
 
-/** Item de boîte de réception au format H-1 (même forme que la spec de la page, 4.4g2). */
-function inboxItem(): WorkflowApprovalInboxItemDto {
+/** Item de boîte de réception au format H-1 (même forme que la spec de la page, 4.4g2) ; `startedByName` optionnel (4.5a2). */
+function inboxItem(startedByName?: string | null): WorkflowApprovalInboxItemDto {
   return {
     approval: {
       id: 'a1', instanceId: 'i1', stepKey: 'approval_1', title: 'Valider le devis', status: 'pending',
@@ -17,7 +17,7 @@ function inboxItem(): WorkflowApprovalInboxItemDto {
     },
     instanceId: 'i1', workflowKey: 'validation_devis', workflowName: 'Validation devis',
     entityKey: 'devis', entityName: 'Devis', recordId: 'r1', recordLabel: 'DEV-001',
-    startedBy: null, startedAt: '2026-09-16T09:00:00Z'
+    startedBy: null, startedAt: '2026-09-16T09:00:00Z', startedByName
   };
 }
 
@@ -31,16 +31,15 @@ describe('StudioApprovalDetailPanelComponent', () => {
   let fixture: ComponentFixture<StudioApprovalDetailPanelComponent>;
   let row: ApprovalRow;
 
-  function setup(inputs: { canDecide?: boolean; canOpenInstance?: boolean; busy?: boolean } = {}): void {
+  function setup(inputs: { canDecide?: boolean; busy?: boolean; startedByName?: string | null } = {}): void {
     TestBed.configureTestingModule({
       imports: [StudioApprovalDetailPanelComponent],
       providers: [provideNoopAnimations()]
     });
     fixture = TestBed.createComponent(StudioApprovalDetailPanelComponent);
-    row = toApprovalRow(inboxItem());
+    row = toApprovalRow(inboxItem(inputs.startedByName));
     fixture.componentRef.setInput('item', row);
     fixture.componentRef.setInput('canDecide', inputs.canDecide ?? false);
-    fixture.componentRef.setInput('canOpenInstance', inputs.canOpenInstance ?? false);
     fixture.componentRef.setInput('busy', inputs.busy ?? false);
     fixture.componentRef.setInput('nowMs', Date.parse('2026-09-17T10:00:00Z'));
     fixture.detectChanges();
@@ -97,13 +96,21 @@ describe('StudioApprovalDetailPanelComponent', () => {
     expect(rejected).toBe(row);
   });
 
-  it("n'affiche Voir l'instance qu'avec canOpenInstance et émet l'identifiant d'instance", () => {
-    setup({ canOpenInstance: false });
+  it('affiche « Demandé par » avec le nom du demandeur ou —', () => {
+    setup({ startedByName: 'Alice Martin' });
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('[data-testid="sapd-instance"]')).toBeNull();
+    expect(el.textContent).toContain(labels.requestedBy);                       // « Demandé par »
+    expect(el.querySelector('[data-testid="sapd-requested-by"]')?.textContent?.trim()).toBe('Alice Martin');
 
-    fixture.componentRef.setInput('canOpenInstance', true);
+    fixture.componentRef.setInput('item', toApprovalRow(inboxItem(null)));
     fixture.detectChanges();
+    expect(el.querySelector('[data-testid="sapd-requested-by"]')?.textContent?.trim()).toBe('—');
+  });
+
+  it("affiche Voir l'instance pour tout lecteur et émet l'identifiant d'instance", () => {
+    setup();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="sapd-instance"]')).withContext('bouton rendu sans studio:design_entities (4.5d3)').not.toBeNull();
 
     let emitted: string | undefined;
     fixture.componentInstance.openInstance.subscribe(id => (emitted = id));

@@ -7,13 +7,14 @@
  */
 import { CustomFieldType } from '@shared/studio-runtime/studio-runtime.models';
 import type { RecordViewFilterOp } from '../views/studio-record-views.models';
+import { slugifyKey } from '../shared/studio-text.util';
 
 // ---------------------------------------------------------------------------------------------
 // Unions (miroir `StudioWorkflowEnumNames`, Domain/Enums/StudioWorkflowEnums.cs l.76–155 :
 // les DTO exposent des `string` déjà snake_case).
 // ---------------------------------------------------------------------------------------------
 
-export type WorkflowTrigger = 'on_create' | 'on_update' | 'field_changed' | 'manual' | 'scheduled'; // 'scheduled' refusé par le serveur (D5)
+export type WorkflowTrigger = 'on_create' | 'on_update' | 'field_changed' | 'manual' | 'scheduled'; // 'scheduled' accepté depuis 4.7b1 (cron UTC + filtres)
 export type WorkflowInstanceStatus = 'running' | 'waiting' | 'waiting_approval' | 'completed' | 'failed' | 'cancelled';
 export type WorkflowStepRunStatus = 'succeeded' | 'skipped' | 'failed' | 'suspended';
 export type WorkflowApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired';
@@ -26,8 +27,8 @@ export type StepPropertyKind = 'string' | 'int' | 'bool' | 'field' | 'fieldMap' 
 // `StudioWorkflowRuntimeFeatures.cs` l.18–21).
 // ---------------------------------------------------------------------------------------------
 
-/** StudioWorkflowStepsSpec.cs — config `field_changed` uniquement, ≤ 2 Ko. */
-export interface WorkflowTriggerConfig { field?: string; from?: unknown; to?: unknown }
+/** StudioWorkflowStepsSpec.cs — config `field_changed` (`field`/`from`/`to`) et `scheduled` (`cron` + `filters`, 4.7b1/b4), ≤ 2 Ko. */
+export interface WorkflowTriggerConfig { field?: string; from?: unknown; to?: unknown; cron?: string; filters?: WorkflowFilterSpec[] }
 
 /** Filtre de condition ; `value2` = borne haute de `between`. */
 export interface WorkflowFilterSpec { field: string; op: RecordViewFilterOp; value?: unknown; value2?: unknown }
@@ -67,7 +68,7 @@ export interface WorkflowDefinitionDto { id: string; entityDefinitionId: string;
  * D-44-27 : `workflowKey` / `workflowName` sont `string?` côté C# — null quand la définition a
  * été supprimée (StudioWorkflowFeatures.cs l.847, `d?.Key` / `d?.Name`).
  */
-export interface WorkflowInstanceDto { id: string; workflowDefinitionId: string; entityDefinitionId: string; workflowKey: string | null; workflowName: string | null; definitionVersion: number; recordId: string; trigger: WorkflowTrigger; status: WorkflowInstanceStatus; currentStepIndex: number; currentStepKey: string | null; dueAt: string | null; startedBy: string | null; startedAt: string; completedAt: string | null; depth: number; originInstanceId: string | null; error: string | null }
+export interface WorkflowInstanceDto { id: string; workflowDefinitionId: string; entityDefinitionId: string; workflowKey: string | null; workflowName: string | null; definitionVersion: number; recordId: string; trigger: WorkflowTrigger; status: WorkflowInstanceStatus; currentStepIndex: number; currentStepKey: string | null; dueAt: string | null; startedBy: string | null; startedAt: string; completedAt: string | null; depth: number; originInstanceId: string | null; error: string | null; startedByName?: string | null }
 
 /**
  * StudioWorkflowDtos.cs l.93–102. D-44-28 : `finishedAt` est `DateTime` NON nullable côté C#
@@ -86,13 +87,18 @@ export interface WorkflowInstanceDetailDto { instance: WorkflowInstanceDto; step
 export interface WorkflowDeletionResultDto { cancelledInstances: number }
 
 /**
- * StudioWorkflowApprovalFeatures.cs l.28–36 — forme IMBRIQUÉE : l'approbation + son contexte
+ * StudioWorkflowApprovalFeatures.cs l.28–38 — forme IMBRIQUÉE : l'approbation + son contexte
  * d'affichage (`workflowKey`/`workflowName` valent « — » si la définition a été supprimée).
+ * `startedByName` (4.5a2 — nom lisible du demandeur, `null` si utilisateur supprimé / inconnu) est
+ * ajouté EN FIN du contrat et optionnel côté TS : tolère un backend pas encore déployé.
  */
-export interface WorkflowApprovalInboxItemDto { approval: WorkflowApprovalDto; instanceId: string; workflowKey: string; workflowName: string; entityKey: string; entityName: string; recordId: string; recordLabel: string | null; startedBy: string | null; startedAt: string }
+export interface WorkflowApprovalInboxItemDto { approval: WorkflowApprovalDto; instanceId: string; workflowKey: string; workflowName: string; entityKey: string; entityName: string; recordId: string; recordLabel: string | null; startedBy: string | null; startedAt: string; startedByName?: string | null }
 
 /** StudioWorkflowRuntimeFeatures.cs l.19. */
 export interface RunnableWorkflowDto { id: string; key: string; name: string; description: string | null; stepCount: number }
+
+/** StudioWorkflowDtos.cs (4.5c2) — ligne de la liste globale du tenant : définition + table porteuse (`PagedResult` côté API, D-44-20). */
+export interface WorkflowDefinitionListItemDto { workflow: WorkflowDefinitionDto; entityKey: string; entityDisplayName: string }
 
 /** StudioWorkflowApprovalFeatures.cs l.22. */
 export interface ApprovalCountDto { count: number }
@@ -116,7 +122,7 @@ export const WORKFLOW_LIMITS = { maxWorkflowsPerEntity: 20, maxSteps: 30, maxFil
 export const STEP_KEY_REGEX = /^[a-z][a-z0-9_]{1,63}$/;   // StudioKey.IsValidShape
 export const SAVE_AS_REGEX = /^[a-z][a-z0-9_]{0,31}$/;    // SaveAsRegex
 export const COMPUTED_FIELD_TYPES: readonly CustomFieldType[] = [CustomFieldType.AutoNumber, CustomFieldType.Formula, CustomFieldType.Lookup, CustomFieldType.Rollup]; // D16 (enum l.6–29 : 16, 17, 18, 19)
-export const WORKFLOW_TRIGGERS: readonly { value: WorkflowTrigger; soon?: true }[] = [{ value: 'on_create' }, { value: 'on_update' }, { value: 'field_changed' }, { value: 'manual' }, { value: 'scheduled', soon: true }];
+export const WORKFLOW_TRIGGERS: readonly { value: WorkflowTrigger; soon?: true }[] = [{ value: 'on_create' }, { value: 'on_update' }, { value: 'field_changed' }, { value: 'manual' }, { value: 'scheduled' }]; // 4.7b4 : 'scheduled' sélectionnable (`soon` reste pour de futurs déclencheurs)
 
 /**
  * Variables de gabarit « {{…}} » réellement résolues par `StudioTemplateRenderer.cs` l.69–91 :
@@ -149,12 +155,39 @@ export function stepRunStatusSeverity(status: WorkflowStepRunStatus): WorkflowSe
   switch (status) { case 'succeeded': return 'success'; case 'suspended': return 'warn'; case 'failed': return 'danger'; default: return 'secondary'; }
 }
 
-/** Même règle que `slugifyViewKey` (views/studio-record-view-designer.component.ts l.586) ; préfixe `wf_` si chiffre initial (D-44-12). */
-export function slugifyWorkflowKey(input: string): string {
-  const base = (input || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-
-  if (!base) return '';
-  return /^[a-z]/.test(base) ? base.slice(0, 64) : ('wf_' + base).slice(0, 64);
-}
+/** Enveloppe de `slugifyKey` (shared/studio-text.util.ts, 4.5h) ; préfixe `wf_` si chiffre initial (D-44-12). */
+export function slugifyWorkflowKey(input: string): string { return slugifyKey(input, 'wf_'); }
 
 export function stepsJsonBytes(doc: WorkflowStepsDocument): number { return new TextEncoder().encode(JSON.stringify(doc)).length; }
+
+// ---------------------------------------------------------------------------------------------
+// 4.7c2 — trace de la simulation pure `POST workflows/{id}/test` (4.7c1, R17). Les verdicts
+// sont figés côté serveur (`WorkflowTestVerdicts`) : ne jamais traduire ces valeurs.
+// ---------------------------------------------------------------------------------------------
+
+export const WORKFLOW_TEST_VERDICTS = {
+  wouldRun: 'would_run',
+  skipped: 'skipped',
+  wouldSuspend: 'would_suspend',
+  wouldFail: 'would_fail',
+} as const;
+
+export type WorkflowTestVerdict = (typeof WORKFLOW_TEST_VERDICTS)[keyof typeof WORKFLOW_TEST_VERDICTS];
+
+export interface WorkflowTestStepTraceDto {
+  key: string;
+  type: string;
+  label: string | null;
+  verdict: string;
+  detail: string | null;
+  rendered: Record<string, unknown> | null;
+}
+
+export interface WorkflowTestResultDto {
+  recordId: string;
+  entityKey: string;
+  evaluatedSteps: number;
+  suspended: boolean;
+  steps: WorkflowTestStepTraceDto[];
+  warnings: string[];
+}

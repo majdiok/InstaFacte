@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Workflows.Engine;
 using FactuTrust.Application.Features.Studio.Workflows.Spec;
@@ -304,6 +305,61 @@ public sealed class ListWorkflowsQueryHandler : IRequestHandler<ListWorkflowsQue
     }
 }
 
+// ---- List (catalogue tenant, 4.5c2 / D-44-20) ----
+
+/// <summary>Catalogue tenant paginé ; <c>Page</c> ≥ 1, <c>PageSize</c> borné 1..200 au handler (défense) comme au contrôleur.</summary>
+public sealed record ListTenantWorkflowsQuery(string? Search, int Page = 1, int PageSize = 50)
+    : IRequest<Result<PagedResult<WorkflowDefinitionListItemDto>>>;
+
+public sealed class ListTenantWorkflowsQueryHandler
+    : IRequestHandler<ListTenantWorkflowsQuery, Result<PagedResult<WorkflowDefinitionListItemDto>>>
+{
+    public const int MaxPageSize = 200;
+    public const int MaxSearchLength = 128;
+
+    private readonly IStudioWorkflowRepository _workflows;
+    private readonly ICurrentUser _currentUser;
+
+    public ListTenantWorkflowsQueryHandler(IStudioWorkflowRepository workflows, ICurrentUser currentUser)
+    {
+        _workflows = workflows;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<PagedResult<WorkflowDefinitionListItemDto>>> Handle(ListTenantWorkflowsQuery query, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
+            return Result.Failure<PagedResult<WorkflowDefinitionListItemDto>>(err);
+        // Le contrôleur porte déjà la policy ; le handler la reprend (motif StudioAiPlanWorkbenchFeatures, S-base).
+        if (!_currentUser.HasPermission(Permissions.Studio.DesignEntities))
+            return Result.Failure<PagedResult<WorkflowDefinitionListItemDto>>(Error.Unauthorized("Permission de conception Studio requise."));
+
+        // `page` borné pour que `(page - 1) * pageSize` ne déborde jamais (revue 4.5i★, D-45-28).
+        var page = Math.Clamp(query.Page, 1, int.MaxValue / MaxPageSize);
+        var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);
+        var search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim();
+        if (search is { Length: > MaxSearchLength })
+            search = search[..MaxSearchLength];
+
+        // 3 requêtes au plus, quelle que soit la taille du tenant : total, page, instances ouvertes groupées.
+        var total = await _workflows.CountByTenantAsync(tenantId, search, cancellationToken);
+        var rows = total == 0
+            ? Array.Empty<StudioWorkflowCatalogRow>()
+            : await _workflows.ListByTenantAsync(tenantId, search, (page - 1) * pageSize, pageSize, cancellationToken);
+        var open = await _workflows.CountOpenInstancesForDefinitionsAsync(
+            tenantId, rows.Select(r => r.Definition.Id).ToList(), cancellationToken);
+
+        var items = rows
+            .Select(r => new WorkflowDefinitionListItemDto(
+                StudioWorkflowMapping.ToDto(r.Definition, open.GetValueOrDefault(r.Definition.Id)),
+                r.EntityKey,
+                r.EntityDisplayName))
+            .ToList();
+
+        return Result.Success(PagedResult<WorkflowDefinitionListItemDto>.Create(items, page, pageSize, total));
+    }
+}
+
 // ---- Get ----
 
 public sealed record GetWorkflowQuery(Guid Id) : IRequest<Result<WorkflowDefinitionDto>>;
@@ -345,6 +401,7 @@ public sealed class CreateWorkflowCommandHandler : IRequestHandler<CreateWorkflo
     private readonly IStudioQuotaService _quota;
     private readonly IAuditService _audit;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioWorkflowScheduleService _schedule;
 
     public CreateWorkflowCommandHandler(
         IStudioWorkflowRepository workflows,
@@ -352,7 +409,8 @@ public sealed class CreateWorkflowCommandHandler : IRequestHandler<CreateWorkflo
         ICustomFieldRepository fields,
         IStudioQuotaService quota,
         IAuditService audit,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IStudioWorkflowScheduleService schedule)
     {
         _workflows = workflows;
         _entities = entities;
@@ -360,6 +418,7 @@ public sealed class CreateWorkflowCommandHandler : IRequestHandler<CreateWorkflo
         _quota = quota;
         _audit = audit;
         _currentUser = currentUser;
+        _schedule = schedule;
     }
 
     public async Task<Result<WorkflowDefinitionDto>> Handle(CreateWorkflowCommand command, CancellationToken cancellationToken)
@@ -408,6 +467,9 @@ public sealed class CreateWorkflowCommandHandler : IRequestHandler<CreateWorkflo
             },
             cancellationToken);
 
+        // 4.7b2 / D-47-B03 : ordonnancement synchronisé à l'écriture (best-effort — jamais de 500 métier).
+        await _schedule.SyncDefinitionAsync(definition, cancellationToken);
+
         return Result.Success(StudioWorkflowMapping.ToDto(definition, 0));
     }
 }
@@ -423,19 +485,22 @@ public sealed class UpdateWorkflowCommandHandler : IRequestHandler<UpdateWorkflo
     private readonly ICustomFieldRepository _fields;
     private readonly IAuditService _audit;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioWorkflowScheduleService _schedule;
 
     public UpdateWorkflowCommandHandler(
         IStudioWorkflowRepository workflows,
         ICustomEntityRepository entities,
         ICustomFieldRepository fields,
         IAuditService audit,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IStudioWorkflowScheduleService schedule)
     {
         _workflows = workflows;
         _entities = entities;
         _fields = fields;
         _audit = audit;
         _currentUser = currentUser;
+        _schedule = schedule;
     }
 
     public async Task<Result<WorkflowDefinitionDto>> Handle(UpdateWorkflowCommand command, CancellationToken cancellationToken)
@@ -505,6 +570,9 @@ public sealed class UpdateWorkflowCommandHandler : IRequestHandler<UpdateWorkflo
             },
             cancellationToken);
 
+        // 4.7b2 / D-47-B03 : cron / actif / déclencheur ont pu changer ⇒ synchronisation systématique.
+        await _schedule.SyncDefinitionAsync(definition, cancellationToken);
+
         var open = await _workflows.CountOpenInstancesForDefinitionAsync(tenantId, definition.Id, cancellationToken);
         return Result.Success(StudioWorkflowMapping.ToDto(definition, open));
     }
@@ -519,12 +587,14 @@ public sealed class ToggleWorkflowCommandHandler : IRequestHandler<ToggleWorkflo
     private readonly IStudioWorkflowRepository _workflows;
     private readonly IAuditService _audit;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioWorkflowScheduleService _schedule;
 
-    public ToggleWorkflowCommandHandler(IStudioWorkflowRepository workflows, IAuditService audit, ICurrentUser currentUser)
+    public ToggleWorkflowCommandHandler(IStudioWorkflowRepository workflows, IAuditService audit, ICurrentUser currentUser, IStudioWorkflowScheduleService schedule)
     {
         _workflows = workflows;
         _audit = audit;
         _currentUser = currentUser;
+        _schedule = schedule;
     }
 
     public async Task<Result<WorkflowDefinitionDto>> Handle(ToggleWorkflowCommand command, CancellationToken cancellationToken)
@@ -560,6 +630,9 @@ public sealed class ToggleWorkflowCommandHandler : IRequestHandler<ToggleWorkflo
             new { definition.IsActive },
             cancellationToken);
 
+        // 4.7b2 / D-47-B03 : active un workflow planifié (job enregistré) ou le suspend (job retiré).
+        await _schedule.SyncDefinitionAsync(definition, cancellationToken);
+
         return Result.Success(StudioWorkflowMapping.ToDto(definition, open));
     }
 }
@@ -575,19 +648,22 @@ public sealed class DeleteWorkflowCommandHandler : IRequestHandler<DeleteWorkflo
     private readonly IAuditService _audit;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<DeleteWorkflowCommandHandler> _logger;
+    private readonly IStudioWorkflowScheduleService _schedule;
 
     public DeleteWorkflowCommandHandler(
         IStudioWorkflowRepository workflows,
         IStudioWorkflowEngine engine,
         IAuditService audit,
         ICurrentUser currentUser,
-        ILogger<DeleteWorkflowCommandHandler> logger)
+        ILogger<DeleteWorkflowCommandHandler> logger,
+        IStudioWorkflowScheduleService schedule)
     {
         _workflows = workflows;
         _engine = engine;
         _audit = audit;
         _currentUser = currentUser;
         _logger = logger;
+        _schedule = schedule;
     }
 
     public async Task<Result<WorkflowDeletionResultDto>> Handle(DeleteWorkflowCommand command, CancellationToken cancellationToken)
@@ -637,6 +713,9 @@ public sealed class DeleteWorkflowCommandHandler : IRequestHandler<DeleteWorkflo
             old,
             new { CancelledInstances = cancelled },
             cancellationToken);
+
+        // 4.7b2 / D-47-B03 : le job planifié est retiré avec la définition.
+        await _schedule.RemoveDefinitionAsync(tenantId, definition.Id, cancellationToken);
 
         return Result.Success(new WorkflowDeletionResultDto(cancelled));
     }
@@ -790,35 +869,137 @@ public sealed class GetWorkflowStepCatalogQueryHandler : IRequestHandler<GetWork
 
 // ---- Instances ----
 
-public sealed record ListWorkflowInstancesQuery(Guid WorkflowId, int Max = 50) : IRequest<Result<IReadOnlyList<WorkflowInstanceDto>>>;
+/// <summary>Instances d'un workflow paginées ; <c>Page</c> ≥ 1, <c>PageSize</c> borné 1..200 (4.7a1 / D-47-B01 : lève D-46-01).</summary>
+public sealed record ListWorkflowInstancesQuery(Guid WorkflowId, int Page = 1, int PageSize = 50)
+    : IRequest<Result<PagedResult<WorkflowInstanceDto>>>;
 
-public sealed class ListWorkflowInstancesQueryHandler : IRequestHandler<ListWorkflowInstancesQuery, Result<IReadOnlyList<WorkflowInstanceDto>>>
+public sealed class ListWorkflowInstancesQueryHandler : IRequestHandler<ListWorkflowInstancesQuery, Result<PagedResult<WorkflowInstanceDto>>>
 {
-    public const int MaxInstances = 200;
+    public const int MaxPageSize = 200;
 
     private readonly IStudioWorkflowRepository _workflows;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioUserNameResolver _userNames;
 
-    public ListWorkflowInstancesQueryHandler(IStudioWorkflowRepository workflows, ICurrentUser currentUser)
+    public ListWorkflowInstancesQueryHandler(IStudioWorkflowRepository workflows, ICurrentUser currentUser, IStudioUserNameResolver userNames)
     {
         _workflows = workflows;
         _currentUser = currentUser;
+        _userNames = userNames;
     }
 
-    public async Task<Result<IReadOnlyList<WorkflowInstanceDto>>> Handle(ListWorkflowInstancesQuery query, CancellationToken cancellationToken)
+    public async Task<Result<PagedResult<WorkflowInstanceDto>>> Handle(ListWorkflowInstancesQuery query, CancellationToken cancellationToken)
     {
         if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
-            return Result.Failure<IReadOnlyList<WorkflowInstanceDto>>(err);
+            return Result.Failure<PagedResult<WorkflowInstanceDto>>(err);
 
         var definition = await _workflows.GetDefinitionAsync(tenantId, query.WorkflowId, cancellationToken);
         if (definition is null)
-            return Result.Failure<IReadOnlyList<WorkflowInstanceDto>>(Error.NotFound("StudioWorkflowDefinition", query.WorkflowId));
+            return Result.Failure<PagedResult<WorkflowInstanceDto>>(Error.NotFound("StudioWorkflowDefinition", query.WorkflowId));
 
-        var instances = await _workflows.ListInstancesForDefinitionAsync(
-            tenantId, definition.Id, Math.Clamp(query.Max, 1, MaxInstances), cancellationToken);
+        // `page` borné pour que `(page - 1) * pageSize` ne déborde jamais (motif D-45-28).
+        var page = Math.Clamp(query.Page, 1, int.MaxValue / MaxPageSize);
+        var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);
 
-        return Result.Success<IReadOnlyList<WorkflowInstanceDto>>(
-            instances.Select(i => StudioWorkflowMapping.ToDto(i, definition)).ToList());
+        // 2 requêtes par appel : total, puis page (page vide si total nul).
+        var total = await _workflows.CountInstancesForDefinitionAsync(tenantId, definition.Id, cancellationToken);
+        var instances = total == 0
+            ? (IReadOnlyList<StudioWorkflowInstance>)Array.Empty<StudioWorkflowInstance>()
+            : await _workflows.ListInstancesForDefinitionAsync(
+                tenantId, definition.Id, (page - 1) * pageSize, pageSize, cancellationToken);
+
+        var items = instances.Select(i => StudioWorkflowMapping.ToDto(i, definition)).ToList();
+        var resolved = await StudioWorkflowStartedByNameSupport.ResolveAsync(_userNames, tenantId, items, cancellationToken);
+        return Result.Success(PagedResult<WorkflowInstanceDto>.Create(resolved, page, pageSize, total));
+    }
+}
+
+/// <summary>
+/// Détail d'une instance (résumé, étapes triées par index puis début, approbations, contexte sans « previous » — D-41-09),
+/// partagé par la route de conception (<see cref="GetWorkflowInstanceQueryHandler"/>) et la route runtime lecteur (4.5b1, D-45-05).
+/// En portée lecteur (<paramref name="readerScope"/>), le contexte est en outre expurgé de l'e-mail du lanceur et des sorties
+/// brutes des étapes (<c>results</c>, <c>vars</c>) : un profil <c>custom_records:read</c> n'a pas à recevoir ces données
+/// que le tiroir ne rend pas (D-45-27 ; 4.6b2 / D-46-B02 : <c>Steps[].Result</c> et <c>Steps[].Error</c> sont aussi nullés).
+/// </summary>
+internal static class StudioWorkflowInstanceDetailBuilder
+{
+    public static async Task<WorkflowInstanceDetailDto> BuildAsync(
+        IStudioWorkflowRepository workflows, Guid tenantId, StudioWorkflowInstance instance, CancellationToken cancellationToken,
+        bool readerScope = false, IStudioUserNameResolver? userNames = null)
+    {
+        // Définition possiblement supprimée (filtre IsDeleted) ⇒ WorkflowKey / WorkflowName null.
+        var definition = await workflows.GetDefinitionAsync(tenantId, instance.WorkflowDefinitionId, cancellationToken);
+        var stepRuns = await workflows.ListStepRunsAsync(tenantId, instance.Id, cancellationToken);
+        var approvals = await workflows.ListApprovalsForInstanceAsync(tenantId, instance.Id, cancellationToken);
+
+        // Les données « avant » de l'enregistrement ne sortent pas de l'API : clé conservée, valeur masquée (D-41-09).
+        var context = StudioWorkflowMapping.ParseObject(instance.ContextJson);
+        context["previous"] = null;
+        if (readerScope)
+        {
+            if (context["startedBy"] is JsonObject startedBy)
+                startedBy["email"] = null;
+            context["results"] = new JsonObject();
+            context["vars"] = new JsonObject();
+        }
+
+        var summary = StudioWorkflowMapping.ToDto(instance, definition);
+        if (userNames is not null)
+            summary = await StudioWorkflowStartedByNameSupport.ResolveOneAsync(userNames, tenantId, summary, cancellationToken);
+
+        // Portée lecteur (revue ★ 4.6) : l'erreur au niveau instance (texte interne possible) suit la même
+        // règle que les erreurs des étapes ci-dessous — elle ne sort pas de la route lecteur.
+        if (readerScope)
+            summary = summary with { Error = null };
+
+        // Portée lecteur (D-46-B02, lève le résiduel de D-45-27) : les sorties (même tronquées) et les erreurs
+        // internes des étapes ne sortent pas — le tiroir ne les rend pas.
+        var steps = stepRuns.OrderBy(r => r.StepIndex).ThenBy(r => r.StartedAt)
+            .Select(r =>
+            {
+                var dto = StudioWorkflowMapping.ToDto(r);
+                return readerScope ? dto with { Result = null, Error = null } : dto;
+            });
+
+        return new WorkflowInstanceDetailDto(
+            summary,
+            steps.ToList(),
+            approvals.Select(StudioWorkflowMapping.ToDto).ToList(),
+            context);
+    }
+}
+
+/// <summary>
+/// 4.6b1 / D-46-B01 — « Demandé par » sur les instances : résolution du nom du lanceur en une requête
+/// par page (même motif que l'inbox 4.5a2, <c>StudioWorkflowApprovalFeatures</c>) ; lanceur inconnu ⇒
+/// <see langword="null"/> (D-45-02, jamais de repli sur l'e-mail). Appelée seulement par les handlers qui
+/// servent des listes ou des détails d'instances ; les réponses ponctuelles (cancel / remind / start)
+/// laissent <c>StartedByName</c> à null.
+/// </summary>
+internal static class StudioWorkflowStartedByNameSupport
+{
+    public static async Task<List<WorkflowInstanceDto>> ResolveAsync(
+        IStudioUserNameResolver userNames, Guid tenantId, List<WorkflowInstanceDto> items, CancellationToken cancellationToken)
+    {
+        var starterIds = items.Where(i => i.StartedBy is not null).Select(i => i.StartedBy!.Value).Distinct().ToList();
+        if (starterIds.Count == 0)
+            return items;
+        var names = await userNames.GetDisplayNamesAsync(tenantId, starterIds, cancellationToken);
+        for (var k = 0; k < items.Count; k++)
+        {
+            if (items[k].StartedBy is { } starter && names.TryGetValue(starter, out var name))
+                items[k] = items[k] with { StartedByName = name };
+        }
+        return items;
+    }
+
+    public static async Task<WorkflowInstanceDto> ResolveOneAsync(
+        IStudioUserNameResolver userNames, Guid tenantId, WorkflowInstanceDto item, CancellationToken cancellationToken)
+    {
+        if (item.StartedBy is not { } starter)
+            return item;
+        var names = await userNames.GetDisplayNamesAsync(tenantId, new[] { starter }, cancellationToken);
+        return names.TryGetValue(starter, out var name) ? item with { StartedByName = name } : item;
     }
 }
 
@@ -828,11 +1009,13 @@ public sealed class GetWorkflowInstanceQueryHandler : IRequestHandler<GetWorkflo
 {
     private readonly IStudioWorkflowRepository _workflows;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioUserNameResolver _userNames;
 
-    public GetWorkflowInstanceQueryHandler(IStudioWorkflowRepository workflows, ICurrentUser currentUser)
+    public GetWorkflowInstanceQueryHandler(IStudioWorkflowRepository workflows, ICurrentUser currentUser, IStudioUserNameResolver userNames)
     {
         _workflows = workflows;
         _currentUser = currentUser;
+        _userNames = userNames;
     }
 
     public async Task<Result<WorkflowInstanceDetailDto>> Handle(GetWorkflowInstanceQuery query, CancellationToken cancellationToken)
@@ -844,19 +1027,7 @@ public sealed class GetWorkflowInstanceQueryHandler : IRequestHandler<GetWorkflo
         if (instance is null)
             return Result.Failure<WorkflowInstanceDetailDto>(Error.NotFound("StudioWorkflowInstance", query.InstanceId));
 
-        // Définition possiblement supprimée (filtre IsDeleted) ⇒ WorkflowKey / WorkflowName null.
-        var definition = await _workflows.GetDefinitionAsync(tenantId, instance.WorkflowDefinitionId, cancellationToken);
-        var stepRuns = await _workflows.ListStepRunsAsync(tenantId, instance.Id, cancellationToken);
-        var approvals = await _workflows.ListApprovalsForInstanceAsync(tenantId, instance.Id, cancellationToken);
-
-        // Les données « avant » de l'enregistrement ne sortent pas de l'API : clé conservée, valeur masquée (D-41-09).
-        var context = StudioWorkflowMapping.ParseObject(instance.ContextJson);
-        context["previous"] = null;
-
-        return Result.Success(new WorkflowInstanceDetailDto(
-            StudioWorkflowMapping.ToDto(instance, definition),
-            stepRuns.OrderBy(r => r.StepIndex).ThenBy(r => r.StartedAt).Select(StudioWorkflowMapping.ToDto).ToList(),
-            approvals.Select(StudioWorkflowMapping.ToDto).ToList(),
-            context));
+        return Result.Success(await StudioWorkflowInstanceDetailBuilder.BuildAsync(
+            _workflows, tenantId, instance, cancellationToken, userNames: _userNames));
     }
 }

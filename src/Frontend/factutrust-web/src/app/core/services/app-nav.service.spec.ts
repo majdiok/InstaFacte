@@ -132,6 +132,7 @@ interface CapsStub {
 interface BadgeStub {
   start: jasmine.Spy;
   count: WritableSignal<number>;
+  available: WritableSignal<boolean>;
 }
 
 // Stubs systématiques (4.4j) : évitent tout appel GET /ai/studio/capabilities ou
@@ -141,7 +142,7 @@ function makeCapsStub(): CapsStub {
 }
 
 function makeBadgeStub(): BadgeStub {
-  return { start: jasmine.createSpy('start'), count: signal(0) };
+  return { start: jasmine.createSpy('start'), count: signal(0), available: signal(false) };
 }
 
 describe('AppNavService — secondary nav parity', () => {
@@ -578,6 +579,52 @@ describe('AppNavService — secondary nav parity', () => {
     nav.navItems();
 
     expect(badgeStub.start).not.toHaveBeenCalled();
+    expect(capsStub.ensureLoaded).not.toHaveBeenCalled();
+  });
+
+  // 4.5d1 (D11 levée) : un lecteur `custom_records:read` sans `studio:design_entities` voit
+  // « Mes approbations » dès que la sonde du badge a répondu 200 (`available`), sans jamais
+  // charger les capacités (403 pour ce profil) ; « Workflows » reste réservé au concepteur.
+  it("affiche « Mes approbations » avec son badge pour un lecteur custom_records:read sans design_entities quand la sonde du badge répond", () => {
+    const auth = TestBed.inject(AuthService);
+    const readerUser: User = {
+      ...companyUser,
+      id: 'u-studio-reader',
+      effectivePermissions: [...(companyUser.effectivePermissions ?? []), 'custom_records:read']
+    };
+    setUser(auth, readerUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+    capsStub.workflowsEnabled.set(false);
+    badgeStub.available.set(true);
+    badgeStub.count.set(2);
+
+    const nav = TestBed.inject(AppNavService);
+    const studio = nav.navItems().find(i => i.label === 'Studio');
+    const approvals = studio?.children?.find(c => c.label === 'Mes approbations');
+
+    expect(approvals).toBeDefined();
+    expect(approvals?.badge).toBe(2);
+    expect(studioChildLabels(nav)).not.toContain('Workflows');
+    expect(badgeStub.start).toHaveBeenCalled();
+    expect(capsStub.ensureLoaded).not.toHaveBeenCalled();
+  });
+
+  it("masque « Mes approbations » pour un lecteur quand la sonde a répondu 404 (drapeau coupé)", () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, {
+      ...companyUser,
+      id: 'u-studio-reader',
+      effectivePermissions: [...(companyUser.effectivePermissions ?? []), 'custom_records:read']
+    });
+    TestBed.inject(FirmContextService).syncFromUser();
+    capsStub.workflowsEnabled.set(true); // ignorée pour un lecteur : seule la sonde fait foi
+    badgeStub.available.set(false);
+
+    const nav = TestBed.inject(AppNavService);
+
+    expect(studioChildLabels(nav)).not.toContain('Mes approbations');
+    expect(studioChildLabels(nav)).not.toContain('Workflows');
+    expect(badgeStub.start).toHaveBeenCalled();
     expect(capsStub.ensureLoaded).not.toHaveBeenCalled();
   });
 

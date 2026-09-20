@@ -1,13 +1,16 @@
 import { Component, input, model, output } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { WritableSignal, signal } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import { MessageService } from 'primeng/api';
 import { environment } from '@environments/environment';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { AuthService } from '@core/services/auth.service';
+import { ViewportService } from '@core/services/viewport.service';
 import { StudioApprovalsPageComponent } from './studio-approvals-page.component';
 import { StudioApprovalsBadgeService } from './studio-approvals-badge.service';
 import { STUDIO_WORKFLOW_LABELS } from '../workflows/studio-workflow-labels';
@@ -18,10 +21,9 @@ const API = `${environment.apiUrl}/studio`;
 const labels = STUDIO_WORKFLOW_LABELS.approvals;
 
 /**
- * Bouchon du drawer d'instance 4.4f (API figée H-8) : la page l'importe pour
- * « Voir l'instance » (4.4h1) mais l'utilisateur de test n'a pas
- * `studio:design_entities` par défaut — le vrai drawer (et son `getInstance`,
- * route de conception D-44-25) n'est donc jamais rendu ; on le neutralise quand même.
+ * Bouchon du drawer d'instance 4.4f (API figée H-8 + `recordId` 4.5d2) : la page le rend
+ * pour tout lecteur (4.5d3) et le vrai drawer appellerait la route runtime à l'ouverture —
+ * neutralisé ici, on vérifie seulement les inputs transmis.
  */
 @Component({
   selector: 'app-studio-workflow-instance-detail',
@@ -31,11 +33,12 @@ const labels = STUDIO_WORKFLOW_LABELS.approvals;
 class InstanceDetailStubComponent {
   readonly instanceId = model<string | null>(null);
   readonly entityKey = input<string | null>(null);
+  readonly recordId = input<string | null>(null);
   readonly changed = output<WorkflowInstanceDto>();
   readonly closed = output<void>();
 }
 
-/** Item de boîte de réception au format H-1 (forme imbriquée, annexe 4.4g2). */
+/** Item de boîte de réception au format H-1 (forme imbriquée, annexe 4.4g2) ; `startedByName` (4.5a2) connu pour `a1` seulement. */
 function inboxItem(id = 'a1', dueAt: string | null = null): WorkflowApprovalInboxItemDto {
   return {
     approval: {
@@ -45,7 +48,8 @@ function inboxItem(id = 'a1', dueAt: string | null = null): WorkflowApprovalInbo
     },
     instanceId: 'i1', workflowKey: 'validation_devis', workflowName: 'Validation devis',
     entityKey: 'devis', entityName: 'Devis', recordId: 'r1', recordLabel: 'DEV-001',
-    startedBy: null, startedAt: '2026-09-16T09:00:00Z'
+    startedBy: null, startedAt: '2026-09-16T09:00:00Z',
+    startedByName: id === 'a1' ? 'Alice Martin' : null
   };
 }
 
@@ -56,8 +60,11 @@ describe('StudioApprovalsPageComponent', () => {
   let toastSpy: jasmine.Spy;
   let badgeRefresh: jasmine.Spy;
   let perms: Set<string>;
+  /** 4.6T2 : `wide` vient de ViewportService — stubbé par un signal piloté par les tests (D-44-56). */
+  let wideStub: WritableSignal<boolean>;
 
   function setup(): void {
+    wideStub = signal(false);
     TestBed.configureTestingModule({
       imports: [StudioApprovalsPageComponent],
       providers: [
@@ -66,6 +73,7 @@ describe('StudioApprovalsPageComponent', () => {
         provideRouter([]),
         provideNoopAnimations(),
         MessageService,
+        { provide: ViewportService, useValue: { isWide: wideStub } },
         { provide: AuthService, useValue: { hasPermission: (p: string) => perms.has(p) } },
         { provide: StudioApprovalsBadgeService, useValue: { refresh: (badgeRefresh = jasmine.createSpy('refresh')) } }
       ]
@@ -140,6 +148,19 @@ describe('StudioApprovalsPageComponent', () => {
     expect(empty).not.toBeNull();
     expect(empty.textContent).toContain(labels.empty);
     expect(empty.textContent).toContain(labels.emptyHint);
+    expect(empty.getAttribute('colspan')).toBe('7');   // 7 colonnes depuis « Demandé par » (4.5e)
+  });
+
+  it('affiche la colonne « Demandé par » avec le nom du demandeur et — quand il est inconnu', () => {
+    perms = new Set([PERMISSIONS.customData.recordsRead]);
+    setup();
+    flushInbox([inboxItem('a1'), inboxItem('a2')]);
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('thead th') as NodeListOf<HTMLElement>).map(th => th.textContent?.trim());
+    expect(headers).toContain(labels.colRequestedBy);   // « Demandé par »
+    expect(headers.length).toBe(7);
+    expect((fixture.nativeElement.querySelector('[data-testid="sap-requested-by-a1"]') as HTMLElement).textContent?.trim()).toBe('Alice Martin');
+    expect((fixture.nativeElement.querySelector('[data-testid="sap-requested-by-a2"]') as HTMLElement).textContent?.trim()).toBe('—');
   });
 
   it('masque Approuver / Refuser et affiche la note lecture seule sans custom_records:write', () => {
@@ -220,7 +241,7 @@ describe('StudioApprovalsPageComponent', () => {
     setup();
     flushInbox([inboxItem('a1')]);
 
-    component.wide.set(true);                                        // D-44-56 : bascule pilotée par le signal en test
+    wideStub.set(true);                                             // D-44-56 : bascule pilotée par le stub ViewportService (4.6T2)
     clickRowButton('sap-detail-a1');
 
     expect(component.selected()?.id).toBe('a1');
@@ -235,7 +256,7 @@ describe('StudioApprovalsPageComponent', () => {
     setup();
     flushInbox([inboxItem('a1')]);
 
-    component.wide.set(false);
+    wideStub.set(false);
     clickRowButton('sap-detail-a1');
 
     expect(fixture.nativeElement.querySelector('[data-testid="sap-panel-column"]')).toBeNull();
@@ -247,6 +268,25 @@ describe('StudioApprovalsPageComponent', () => {
     fixture.detectChanges();
     expect(component.selected()).toBeNull();
     expect(document.querySelector('.p-drawer')).toBeNull();
+  });
+
+  it("ouvre le drawer d'instance pour un lecteur custom_records:read en lui passant entityKey et recordId", () => {
+    perms = new Set([PERMISSIONS.customData.recordsRead]);
+    setup();
+    flushInbox([inboxItem('a1')]);
+
+    wideStub.set(true);
+    clickRowButton('sap-detail-a1');
+    expect(component.selected()?.recordId).toBe('r1');
+
+    // « Voir l'instance » rendu sans studio:design_entities (D-44-82 levé) et ouvre le drawer en place.
+    clickRowButton('sapd-instance');
+
+    const stub = fixture.debugElement.query(By.css('app-studio-workflow-instance-detail'))?.componentInstance as InstanceDetailStubComponent | undefined;
+    expect(stub).withContext('drawer rendu').toBeDefined();
+    expect(stub!.instanceId()).toBe('i1');
+    expect(stub!.entityKey()).toBe('devis');
+    expect(stub!.recordId()).toBe('r1');
   });
 
   it("affiche l'erreur et Réessayer quand le chargement échoue", () => {
@@ -267,5 +307,92 @@ describe('StudioApprovalsPageComponent', () => {
 
     expect(fixture.nativeElement.querySelector('.sai-banner--error')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="sap-row-a1"]')).not.toBeNull();
+  });
+
+  // ---- 4.7 « v1.1 » (ap-f, D-47-60/61) : onglets « Déléguées » (Bientôt) et « Historique » ----
+
+  /** Décision passée au format H-1 (même forme que l'inbox). */
+  function historyItem(id: string, status: 'approved' | 'rejected', comment: string | null,
+                       startedByName: string | null = 'Alice Martin'): WorkflowApprovalInboxItemDto {
+    const item = inboxItem(id);
+    item.approval = {
+      ...item.approval, status, comment,
+      decidedBy: 'u-me', decidedAt: status === 'approved' ? '2026-09-17T15:30:00Z' : '2026-09-18T09:05:00Z'
+    };
+    item.startedByName = startedByName;
+    return item;
+  }
+
+  function flushHistory(items: WorkflowApprovalInboxItemDto[]): void {
+    httpMock.expectOne(r => r.method === 'GET' && r.url === `${API}/workflows/approvals/mine/history`)
+      .flush({ success: true, data: items, message: null, error: null });
+    fixture.detectChanges();
+  }
+
+  function clickTab(key: string): void {
+    (fixture.nativeElement.querySelector(`[data-testid="studio-tab-${key}"]`) as HTMLElement).click();
+    fixture.detectChanges();
+  }
+
+  it('onglet « Historique » : chargé à la première activation seulement, statut et date affichés', () => {
+    perms = new Set([PERMISSIONS.customData.recordsRead, PERMISSIONS.customData.recordsWrite]);
+    setup();
+    flushInbox([inboxItem('a1')]);
+    httpMock.expectNone(r => r.url === `${API}/workflows/approvals/mine/history`);   // paresseux
+
+    clickTab('history');
+    flushHistory([historyItem('h1', 'rejected', 'Non justifié.'), historyItem('h2', 'approved', null, null)]);
+
+    const row = fixture.nativeElement.querySelector('[data-testid="sap-history-row-h1"]') as HTMLElement;
+    expect(row).not.toBeNull();
+    expect(row.textContent).toContain('Alice Martin');
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-decided-h1"]').textContent).toContain('18/09/2026');
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-decision-h1"]').textContent)
+      .toContain(labels.decisionRejected);
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-decision-h2"]').textContent)
+      .toContain(labels.decisionApproved);
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-comment-h1"]').textContent)
+      .toContain('Non justifié.');
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-comment-h2"]').textContent)
+      .toContain('—');
+
+    // Retour « À traiter » puis « Historique » : aucune nouvelle requête.
+    clickTab('pending');
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-row-a1"]')).not.toBeNull();
+    clickTab('history');
+    httpMock.expectNone(r => r.url === `${API}/workflows/approvals/mine/history`);
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-row-h1"]')).not.toBeNull();
+  });
+
+  it('onglet « Déléguées » : désactivé avec infobulle « Bientôt », jamais activé', () => {
+    perms = new Set([PERMISSIONS.customData.recordsRead]);
+    setup();
+    flushInbox([]);
+
+    const tab = fixture.nativeElement.querySelector('[data-testid="studio-tab-delegated"]') as HTMLButtonElement;
+    expect(tab.disabled).toBeTrue();
+    expect(tab.title).toBe(labels.delegatedSoon);
+    tab.click();
+    fixture.detectChanges();
+    expect(component.activeTab()).toBe('pending');
+  });
+
+  it('onglet « Historique » : erreur ⇒ bannière + Réessayer', () => {
+    perms = new Set([PERMISSIONS.customData.recordsRead]);
+    setup();
+    flushInbox([]);
+    clickTab('history');
+    httpMock.expectOne(r => r.method === 'GET' && r.url === `${API}/workflows/approvals/mine/history`)
+      .flush('panne', { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+
+    const banner = fixture.nativeElement.querySelector('.sai-banner--error') as HTMLElement;
+    expect(banner.textContent).toContain(labels.historyLoadError);
+
+    (fixture.nativeElement.querySelector('[data-testid="sap-history-retry"] button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    flushHistory([historyItem('h1', 'approved', 'Vu.')]);
+    expect(fixture.nativeElement.querySelector('.sai-banner--error')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="sap-history-row-h1"]')).not.toBeNull();
   });
 });

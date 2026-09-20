@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Studio.Automations;
 using FactuTrust.Application.Features.Studio.Common;
@@ -170,11 +171,12 @@ public sealed class CreateCustomRecordCommandHandler : IRequestHandler<CreateCus
     private readonly IPublisher _publisher;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<CreateCustomRecordCommandHandler>? _logger;
+    private readonly IAuditService? _audit;
 
     public CreateCustomRecordCommandHandler(
         ICustomEntityRepository entities, ICustomFieldRepository fields, ICustomRecordRepository records,
         IStudioQuotaService quota, IStudioComputedFieldWriter computedWriter, IPublisher publisher, ICurrentUser currentUser,
-        ILogger<CreateCustomRecordCommandHandler>? logger = null)
+        IAuditService? audit = null, ILogger<CreateCustomRecordCommandHandler>? logger = null)
     {
         _entities = entities;
         _fields = fields;
@@ -184,6 +186,7 @@ public sealed class CreateCustomRecordCommandHandler : IRequestHandler<CreateCus
         _publisher = publisher;
         _currentUser = currentUser;
         _logger = logger;
+        _audit = audit;
     }
 
     public async Task<Result<CustomRecordDto>> Handle(CreateCustomRecordCommand command, CancellationToken cancellationToken)
@@ -220,6 +223,9 @@ public sealed class CreateCustomRecordCommandHandler : IRequestHandler<CreateCus
         var record = CustomRecord.Create(tenantId, entity.Id, canonicalJson, userId);
         await _records.AddAsync(record, cancellationToken);
 
+        // 4.7 « v1.1 » (D-47-62) : audit best-effort — document canonique complet (jamais d'échec métier).
+        await StudioRecordAudit.LogCreatedAsync(_audit, record.Id, canonicalJson, cancellationToken);
+
         // ERP bridge: fire OnCreate automations (best-effort — the record is already persisted).
         await StudioRecordLifecycle.PublishAsync(
             _publisher, tenantId, entity.Id, record.Id, canonicalJson, StudioAutomationTrigger.OnCreate, userId, cancellationToken);
@@ -245,11 +251,12 @@ public sealed class UpdateCustomRecordCommandHandler : IRequestHandler<UpdateCus
     private readonly IPublisher _publisher;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<UpdateCustomRecordCommandHandler>? _logger;
+    private readonly IAuditService? _audit;
 
     public UpdateCustomRecordCommandHandler(
         ICustomEntityRepository entities, ICustomFieldRepository fields, ICustomRecordRepository records,
         IStudioComputedFieldWriter computedWriter, IPublisher publisher, ICurrentUser currentUser,
-        ILogger<UpdateCustomRecordCommandHandler>? logger = null)
+        IAuditService? audit = null, ILogger<UpdateCustomRecordCommandHandler>? logger = null)
     {
         _entities = entities;
         _fields = fields;
@@ -258,6 +265,7 @@ public sealed class UpdateCustomRecordCommandHandler : IRequestHandler<UpdateCus
         _publisher = publisher;
         _currentUser = currentUser;
         _logger = logger;
+        _audit = audit;
     }
 
     public async Task<Result<CustomRecordDto>> Handle(UpdateCustomRecordCommand command, CancellationToken cancellationToken)
@@ -304,6 +312,9 @@ public sealed class UpdateCustomRecordCommandHandler : IRequestHandler<UpdateCus
         }
         await _records.UpdateWithConcurrencyAsync(record, expectedRowVersion, cancellationToken);
 
+        // 4.7 « v1.1 » (D-47-63) : audit des seules clés modifiées — aucune ligne si le PUT est sans effet.
+        await StudioRecordAudit.LogUpdatedAsync(_audit, record.Id, previousDataJson, canonicalJson, cancellationToken);
+
         // ERP bridge: fire OnUpdate automations (best-effort — the record is already persisted).
         await StudioRecordLifecycle.PublishAsync(
             _publisher, tenantId, entity.Id, record.Id, canonicalJson, StudioAutomationTrigger.OnUpdate, userId, cancellationToken);
@@ -325,12 +336,15 @@ public sealed class DeleteCustomRecordCommandHandler : IRequestHandler<DeleteCus
     private readonly ICustomEntityRepository _entities;
     private readonly ICustomRecordRepository _records;
     private readonly ICurrentUser _currentUser;
+    private readonly IAuditService? _audit;
 
-    public DeleteCustomRecordCommandHandler(ICustomEntityRepository entities, ICustomRecordRepository records, ICurrentUser currentUser)
+    public DeleteCustomRecordCommandHandler(ICustomEntityRepository entities, ICustomRecordRepository records, ICurrentUser currentUser,
+        IAuditService? audit = null)
     {
         _entities = entities;
         _records = records;
         _currentUser = currentUser;
+        _audit = audit;
     }
 
     public async Task<Result> Handle(DeleteCustomRecordCommand command, CancellationToken cancellationToken)
@@ -348,6 +362,9 @@ public sealed class DeleteCustomRecordCommandHandler : IRequestHandler<DeleteCus
 
         record.SoftDelete(userId);
         await _records.UpdateAsync(record, cancellationToken);
+
+        // 4.7 « v1.1 » (D-47-62) : audit best-effort sans valeurs (suppression douce).
+        await StudioRecordAudit.LogDeletedAsync(_audit, record.Id, cancellationToken);
         return Result.Success();
     }
 }

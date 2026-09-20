@@ -3,8 +3,8 @@
  * Angular/PrimeNG (testé isolément). `ApprovalRow` aplatit
  * `WorkflowApprovalInboxItemDto` (forme imbriquée H-1) pour le tableau :
  * `id` = `approval.id` (identifiant de décision et `dataKey` de la table) — D-44-80.
- * Pas de « Demandé par » : le DTO n'expose que `startedBy` (Guid nullable) — D-44-79,
- * la colonne « Lancé le » affiche `startedAt`.
+ * « Demandé par » (4.5e, D-45-F06) : `startedByName` fourni par l'API (4.5a2), `null` si
+ * inconnu ⇒ « — » à l'affichage (jamais de repli sur le Guid `startedBy`, D-44-79 levé).
  */
 import type { WorkflowApprovalInboxItemDto, WorkflowApprovalStatus } from '../workflows/studio-workflows.models';
 
@@ -13,7 +13,10 @@ export interface ApprovalRow {
   id: string; instanceId: string; workflowKey: string; workflowName: string; stepTitle: string;
   entityKey: string; entityName: string; recordId: string; recordLabel: string | null;
   message: string | null; createdAt: string; dueAt: string | null; startedAt: string;
+  startedByName: string | null;
   status: WorkflowApprovalStatus; rowVersion: string;
+  /** 4.7 « v1.1 » (ap-f) : renseignés par la route historique (inbox ⇒ `null`). */
+  decidedAt: string | null; comment: string | null;
 }
 
 export function toApprovalRow(item: WorkflowApprovalInboxItemDto): ApprovalRow {
@@ -21,7 +24,8 @@ export function toApprovalRow(item: WorkflowApprovalInboxItemDto): ApprovalRow {
   return { id: a.id, instanceId: item.instanceId, workflowKey: item.workflowKey, workflowName: item.workflowName,
            stepTitle: a.title?.trim() || a.stepKey, entityKey: item.entityKey, entityName: item.entityName,
            recordId: item.recordId, recordLabel: item.recordLabel, message: a.message, createdAt: a.createdAt,
-           dueAt: a.dueAt, startedAt: item.startedAt, status: a.status, rowVersion: a.rowVersion };
+           dueAt: a.dueAt, startedAt: item.startedAt, startedByName: item.startedByName ?? null,
+           status: a.status, rowVersion: a.rowVersion, decidedAt: a.decidedAt ?? null, comment: a.comment ?? null };
 }
 
 export type ApprovalDueState = 'late' | 'soon' | 'later' | 'none';

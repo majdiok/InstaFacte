@@ -31,6 +31,7 @@ public class StudioWorkflowApprovalFeaturesTests
     private readonly Mock<INotificationService> _notifications = new(MockBehavior.Strict);
     private readonly Mock<IAuditService> _audit = new(MockBehavior.Strict);
     private readonly Mock<ICurrentUser> _currentUser = new(MockBehavior.Strict);
+    private readonly Mock<IStudioUserNameResolver> _userNames = new(MockBehavior.Strict);
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 9, 17, 10, 0, 0, TimeSpan.Zero));
 
     public StudioWorkflowApprovalFeaturesTests()
@@ -41,7 +42,7 @@ public class StudioWorkflowApprovalFeaturesTests
     }
 
     private ListMyApprovalsQueryHandler CreateListHandler() =>
-        new(_workflows.Object, _entities.Object, _fields.Object, _records.Object, _currentUser.Object);
+        new(_workflows.Object, _entities.Object, _fields.Object, _records.Object, _currentUser.Object, _userNames.Object);
 
     private CountMyApprovalsQueryHandler CreateCountHandler() => new(_workflows.Object, _currentUser.Object);
 
@@ -54,6 +55,11 @@ public class StudioWorkflowApprovalFeaturesTests
 
     private void SetupWritePermission(bool granted = true) =>
         _currentUser.Setup(c => c.HasPermission(Permissions.CustomData.RecordsWrite)).Returns(granted);
+
+    // 4.5a2 — résolveur de noms (mock strict : tout test produisant ≥ 1 élément avec lanceur doit l'appeler).
+    private void SetupUserNames(IReadOnlyDictionary<Guid, string> names) =>
+        _userNames.Setup(r => r.GetDisplayNamesAsync(TenantId, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(names);
 
     [Fact]
     public async Task ListMyApprovals_returns_items_assigned_by_user_or_role_with_workflow_and_record_context()
@@ -69,6 +75,7 @@ public class StudioWorkflowApprovalFeaturesTests
         var record = CustomRecord.Create(TenantId, entity.Id, "{\"name\":\"Dossier A\"}", StartedBy);
 
         SetupReadPermission();
+        SetupUserNames(new Dictionary<Guid, string> { [StartedBy] = "Amine Zorgati" });
         _workflows.Setup(r => r.ListPendingApprovalsForUserAsync(TenantId, ApproverId, nameof(UserRole.SalesRep), 100,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<StudioWorkflowApproval> { direct, byRole });
@@ -97,8 +104,81 @@ public class StudioWorkflowApprovalFeaturesTests
             Assert.Equal("Client", item.EntityName);
             Assert.Equal("Dossier A", item.RecordLabel);
             Assert.Equal(StartedBy, item.StartedBy);
+            Assert.Equal("Amine Zorgati", item.StartedByName);
             Assert.Equal("pending", item.Approval.Status);
         });
+    }
+
+    // 4.5a2 / D-44-79 — « Demandé par » : une seule résolution pour les lanceurs distincts de la page.
+    [Fact]
+    public async Task ListMyApprovals_resolves_started_by_name_once_for_distinct_starters()
+    {
+        var entity = CustomEntityDefinition.Create(TenantId, "customer", "Client", "Clients", null, null, null);
+        var definition = NewDefinition(entity.Id);
+        var first = NewInstance(definition);
+        var second = NewInstance(definition);
+        var approvals = new[] { NewApproval(first.Id, assigneeUserId: ApproverId), NewApproval(second.Id, assigneeUserId: ApproverId) };
+
+        SetupReadPermission();
+        SetupUserNames(new Dictionary<Guid, string> { [StartedBy] = "Amine Zorgati" });
+        _workflows.Setup(r => r.ListPendingApprovalsForUserAsync(TenantId, ApproverId, nameof(UserRole.SalesRep), 100,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(approvals.ToList());
+        foreach (var (approval, instance) in new[] { (approvals[0], first), (approvals[1], second) })
+        {
+            _workflows.Setup(r => r.GetInstanceAsync(TenantId, approval.InstanceId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(instance);
+            _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(definition);
+            _entities.Setup(r => r.GetByIdAsync(TenantId, entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
+            _records.Setup(r => r.GetAsync(TenantId, entity.Id, instance.RecordId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((CustomRecord?)null);
+        }
+
+        var result = await CreateListHandler().Handle(new ListMyApprovalsQuery(), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value.Count);
+        Assert.All(result.Value, i => Assert.Equal("Amine Zorgati", i.StartedByName));
+        _userNames.Verify(r => r.GetDisplayNamesAsync(TenantId,
+            It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1 && ids.Contains(StartedBy)), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // 4.5a2 / D-45-02 — lanceur inconnu du tenant ou instance sans lanceur ⇒ null, jamais d'email ; un seul appel, sans l'identifiant absent.
+    [Fact]
+    public async Task ListMyApprovals_leaves_started_by_name_null_for_unknown_or_absent_starter()
+    {
+        var entity = CustomEntityDefinition.Create(TenantId, "customer", "Client", "Clients", null, null, null);
+        var definition = NewDefinition(entity.Id);
+        var known = NewInstance(definition);
+        var anonymous = StudioWorkflowInstance.Start(TenantId, definition, Guid.NewGuid(), StudioWorkflowTriggerKind.OnCreate, null, "{}", 0, null);
+        var approvals = new[] { NewApproval(known.Id, assigneeUserId: ApproverId), NewApproval(anonymous.Id, assigneeUserId: ApproverId) };
+
+        SetupReadPermission();
+        SetupUserNames(new Dictionary<Guid, string>());
+        _workflows.Setup(r => r.ListPendingApprovalsForUserAsync(TenantId, ApproverId, nameof(UserRole.SalesRep), 100,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(approvals.ToList());
+        foreach (var (approval, instance) in new[] { (approvals[0], known), (approvals[1], anonymous) })
+        {
+            _workflows.Setup(r => r.GetInstanceAsync(TenantId, approval.InstanceId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(instance);
+            _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(definition);
+            _entities.Setup(r => r.GetByIdAsync(TenantId, entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
+            _records.Setup(r => r.GetAsync(TenantId, entity.Id, instance.RecordId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((CustomRecord?)null);
+        }
+
+        var result = await CreateListHandler().Handle(new ListMyApprovalsQuery(), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value.Count);
+        Assert.All(result.Value, i => Assert.Null(i.StartedByName));
+        Assert.Contains(result.Value, i => i.StartedBy == StartedBy);
+        Assert.Contains(result.Value, i => i.StartedBy is null);
+        _userNames.Verify(r => r.GetDisplayNamesAsync(TenantId,
+            It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1 && ids.Contains(StartedBy)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -333,6 +413,119 @@ public class StudioWorkflowApprovalFeaturesTests
         _audit.Setup(a => a.LogAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid>(),
                 It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
+    }
+
+    // ---- 4.7 « v1.1 » (D-47-60) : historique de mes décisions ----
+
+    private ListMyApprovalHistoryQueryHandler CreateHistoryHandler() =>
+        new(_workflows.Object, _entities.Object, _fields.Object, _records.Object, _currentUser.Object, _userNames.Object);
+
+    [Fact]
+    public async Task ListMyApprovalHistory_returns_my_decisions_with_status_comment_and_starter_name()
+    {
+        var entity = CustomEntityDefinition.Create(TenantId, "customer", "Client", "Clients", null, null, null);
+        var definition = NewDefinition(entity.Id);
+        var approvedInstance = NewInstance(definition);
+        var rejectedInstance = NewInstance(definition);
+        var approved = NewApproval(approvedInstance.Id, assigneeUserId: ApproverId);
+        approved.Decide(StudioWorkflowApprovalStatus.Approved, ApproverId, "Vu.",
+            new DateTime(2026, 9, 17, 10, 0, 0, DateTimeKind.Utc));
+        var rejected = NewApproval(rejectedInstance.Id, assigneeRole: nameof(UserRole.SalesRep));
+        rejected.Decide(StudioWorkflowApprovalStatus.Rejected, ApproverId, "Non justifié.",
+            new DateTime(2026, 9, 18, 9, 0, 0, DateTimeKind.Utc));
+        var field = CustomFieldDefinition.Create(TenantId, entity.Id, "name", "Nom", CustomFieldType.Text,
+            false, false, 0, null, null, null, null);
+        var record = CustomRecord.Create(TenantId, entity.Id, "{\"name\":\"Dossier A\"}", StartedBy);
+
+        SetupReadPermission();
+        SetupUserNames(new Dictionary<Guid, string> { [StartedBy] = "Amine Zorgati" });
+        // Le dépôt filtre (mes décisions Approved/Rejected) et trie DecidedAt desc — le handler mappe tel quel.
+        _workflows.Setup(r => r.ListDecidedApprovalsByUserAsync(TenantId, ApproverId, 50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StudioWorkflowApproval> { rejected, approved });
+        foreach (var (approval, instance) in new[] { (rejected, rejectedInstance), (approved, approvedInstance) })
+        {
+            _workflows.Setup(r => r.GetInstanceAsync(TenantId, approval.InstanceId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(instance);
+            _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(definition);
+            _entities.Setup(r => r.GetByIdAsync(TenantId, entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
+            _records.Setup(r => r.GetAsync(TenantId, entity.Id, instance.RecordId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(record);
+            _fields.Setup(r => r.ListByEntityAsync(TenantId, entity.Id, false, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<CustomFieldDefinition> { field });
+        }
+
+        var result = await CreateHistoryHandler().Handle(new ListMyApprovalHistoryQuery(), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value.Count);
+        Assert.Equal("rejected", result.Value[0].Approval.Status);
+        Assert.Equal("Non justifié.", result.Value[0].Approval.Comment);
+        Assert.NotNull(result.Value[0].Approval.DecidedAt);
+        Assert.Equal("approved", result.Value[1].Approval.Status);
+        Assert.All(result.Value, item =>
+        {
+            Assert.Equal("Dossier A", item.RecordLabel);
+            Assert.Equal("Amine Zorgati", item.StartedByName);
+        });
+    }
+
+    [Fact]
+    public async Task ListMyApprovalHistory_keeps_terminal_instances_and_skips_purged_ones()
+    {
+        var entity = CustomEntityDefinition.Create(TenantId, "customer", "Client", "Clients", null, null, null);
+        var definition = NewDefinition(entity.Id);
+        var terminalInstance = NewInstance(definition);
+        terminalInstance.Complete("{}");
+        var done = NewApproval(terminalInstance.Id, assigneeUserId: ApproverId);
+        done.Decide(StudioWorkflowApprovalStatus.Approved, ApproverId, null, DateTime.UtcNow);
+        var purged = NewApproval(Guid.NewGuid(), assigneeUserId: ApproverId);
+        purged.Decide(StudioWorkflowApprovalStatus.Rejected, ApproverId, "x", DateTime.UtcNow);
+
+        SetupReadPermission();
+        SetupUserNames(new Dictionary<Guid, string>());
+        _workflows.Setup(r => r.ListDecidedApprovalsByUserAsync(TenantId, ApproverId, 50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StudioWorkflowApproval> { done, purged });
+        _workflows.Setup(r => r.GetInstanceAsync(TenantId, done.InstanceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(terminalInstance);
+        _workflows.Setup(r => r.GetDefinitionAsync(TenantId, definition.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(definition);
+        _entities.Setup(r => r.GetByIdAsync(TenantId, entity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
+        _records.Setup(r => r.GetAsync(TenantId, entity.Id, terminalInstance.RecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CustomRecord?)null);
+        _workflows.Setup(r => r.GetInstanceAsync(TenantId, purged.InstanceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StudioWorkflowInstance?)null);
+
+        var result = await CreateHistoryHandler().Handle(new ListMyApprovalHistoryQuery(), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var item = Assert.Single(result.Value);
+        Assert.Equal(done.Id, item.Approval.Id);
+    }
+
+    [Fact]
+    public async Task ListMyApprovalHistory_clamps_max_to_200()
+    {
+        SetupReadPermission();
+        _workflows.Setup(r => r.ListDecidedApprovalsByUserAsync(TenantId, ApproverId, 200, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StudioWorkflowApproval>());
+
+        var result = await CreateHistoryHandler().Handle(new ListMyApprovalHistoryQuery(Max: 10_000), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value);
+    }
+
+    [Fact]
+    public async Task ListMyApprovalHistory_requires_records_read()
+    {
+        SetupReadPermission(false);
+
+        var result = await CreateHistoryHandler().Handle(new ListMyApprovalHistoryQuery(), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        _workflows.Verify(r => r.ListDecidedApprovalsByUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(),
+            It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private static StudioWorkflowDefinition NewDefinition(Guid entityId) =>

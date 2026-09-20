@@ -1,8 +1,10 @@
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FactuTrust.API.Authorization;
 using FactuTrust.API.Controllers.Studio;
 using FactuTrust.Application.Configuration;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Studio.Workflows;
 using FactuTrust.Domain.Common;
 using MediatR;
@@ -16,7 +18,7 @@ using Xunit;
 namespace FactuTrust.API.Tests.Studio;
 
 /// <summary>
-/// Contrat des onze routes de conception de <see cref="StudioWorkflowsController"/> (PR 4.1, tranche
+/// Contrat des douze routes de conception de <see cref="StudioWorkflowsController"/> (PR 4.1, tranche
 /// 4.1k) : politique de classe <c>studio:design_entities</c> sans affaiblissement par action, table
 /// de routes figée, garde de drapeau (404 à message fixe AVANT tout appel au médiateur), 201 +
 /// Location vers <c>Get</c>, mappage 409 / 404 / 400 et transmission brute de <c>max</c>.
@@ -37,6 +39,7 @@ public sealed class StudioWorkflowsControllerContractTests
         new Dictionary<string, (string, string)>
         {
             [nameof(StudioWorkflowsController.StepCatalog)] = ("GET", "workflows/step-catalog"),
+            [nameof(StudioWorkflowsController.ListAll)] = ("GET", "workflows"),
             [nameof(StudioWorkflowsController.List)] = ("GET", "entities/{entityId:guid}/workflows"),
             [nameof(StudioWorkflowsController.Get)] = ("GET", "workflows/{id:guid}"),
             [nameof(StudioWorkflowsController.Create)] = ("POST", "entities/{entityId:guid}/workflows"),
@@ -47,6 +50,7 @@ public sealed class StudioWorkflowsControllerContractTests
             [nameof(StudioWorkflowsController.Validate)] = ("POST", "entities/{entityId:guid}/workflows/validate"),
             [nameof(StudioWorkflowsController.ListInstances)] = ("GET", "workflows/{id:guid}/instances"),
             [nameof(StudioWorkflowsController.GetInstance)] = ("GET", "workflows/instances/{instanceId:guid}"),
+            [nameof(StudioWorkflowsController.Test)] = ("POST", "workflows/{id:guid}/test"),
         };
 
     // ---- Politique, routes, drapeau ----
@@ -108,6 +112,7 @@ public sealed class StudioWorkflowsControllerContractTests
         var results = new[]
         {
             await controller.StepCatalog(ct),
+            await controller.ListAll(cancellationToken: ct),
             await controller.List(EntityId, ct),
             await controller.Get(WorkflowId, ct),
             await controller.Create(EntityId, Save(), ct),
@@ -118,6 +123,7 @@ public sealed class StudioWorkflowsControllerContractTests
             await controller.Validate(EntityId, Save(), ct),
             await controller.ListInstances(WorkflowId, cancellationToken: ct),
             await controller.GetInstance(InstanceId, ct),
+            await controller.Test(WorkflowId, new WorkflowTestRequest(Guid.NewGuid()), ct),
         };
 
         Assert.Equal(FrozenRoutes.Count, results.Length);
@@ -233,6 +239,57 @@ public sealed class StudioWorkflowsControllerContractTests
         Assert.IsType<NotFoundObjectResult>(await controller.List(EntityId, CancellationToken.None));
     }
 
+    // ---- Simulation « Tester sur un enregistrement » (4.7c1) ----
+
+    [Fact]
+    public async Task Test_sends_the_query_and_returns_200_with_the_trace()
+    {
+        var recordId = Guid.NewGuid();
+        var trace = new WorkflowTestResultDto(
+            recordId, "clients", 2, true,
+            new[]
+            {
+                new WorkflowTestStepTraceDto("si", "condition", "Montant élevé", WorkflowTestVerdicts.WouldRun, "Condition remplie (match = all).", null),
+                new WorkflowTestStepTraceDto("valide", "approval", null, WorkflowTestVerdicts.WouldSuspend, "Approbation assignée au rôle « Admin ».", null)
+            },
+            new[] { "Sorties fictives : « _results.fact.* » ne sera renseigné qu'à l'exécution réelle." });
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        TestWorkflowQuery? captured = null;
+        mediator.Setup(m => m.Send(It.IsAny<TestWorkflowQuery>(), It.IsAny<CancellationToken>()))
+            .Callback<IRequest<Result<WorkflowTestResultDto>>, CancellationToken>((q, _) => captured = (TestWorkflowQuery)q)
+            .ReturnsAsync(Result.Success(trace));
+
+        var result = await CreateController(mediator).Test(WorkflowId, new WorkflowTestRequest(recordId), CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<WorkflowTestResultDto>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal(recordId, body.Data!.RecordId);
+        Assert.True(body.Data.Suspended);
+        Assert.Equal("would_suspend", body.Data.Steps[1].Verdict);
+        Assert.NotNull(captured);
+        Assert.Equal(WorkflowId, captured!.WorkflowId);
+        Assert.Equal(recordId, captured.RecordId);
+    }
+
+    [Fact]
+    public async Task Test_maps_not_found_to_404_and_invalid_definition_to_400()
+    {
+        var notFoundMediator = new Mock<IMediator>(MockBehavior.Strict);
+        notFoundMediator.Setup(m => m.Send(It.IsAny<TestWorkflowQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<WorkflowTestResultDto>(Error.NotFound("CustomRecord", Guid.NewGuid())));
+        var notFound = await CreateController(notFoundMediator).Test(WorkflowId, new WorkflowTestRequest(Guid.NewGuid()), CancellationToken.None);
+        Assert.IsType<NotFoundObjectResult>(notFound);
+
+        var invalidMediator = new Mock<IMediator>(MockBehavior.Strict);
+        invalidMediator.Setup(m => m.Send(It.IsAny<TestWorkflowQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<WorkflowTestResultDto>(Error.Validation("steps", "Définition invalide.")));
+        var invalid = await CreateController(invalidMediator).Test(WorkflowId, new WorkflowTestRequest(Guid.NewGuid()), CancellationToken.None);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(invalid);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<string>>(badRequest.Value);
+        Assert.Equal("Définition invalide.", body.Error);
+    }
+
     // ---- Suppression, instances, validation, catalogue ----
 
     [Fact]
@@ -250,28 +307,75 @@ public sealed class StudioWorkflowsControllerContractTests
         Assert.Equal(2, body.Data!.CancelledInstances);
     }
 
+    // 4.7a1 / D-47-B01 — la route est paginée : ?page=&pageSize= ⇒ enveloppe PagedResult (remplace ?max=).
     [Fact]
-    public async Task List_instances_defaults_max_to_50_and_forwards_the_raw_value()
+    public async Task List_instances_defaults_page_1_size_50_clamps_size_to_1_200_and_returns_paged_envelope()
     {
         var mediator = new Mock<IMediator>(MockBehavior.Strict);
         var seen = new List<ListWorkflowInstancesQuery>();
         mediator.Setup(m => m.Send(It.IsAny<ListWorkflowInstancesQuery>(), It.IsAny<CancellationToken>()))
-            .Callback<IRequest<Result<IReadOnlyList<WorkflowInstanceDto>>>, CancellationToken>((q, _) => seen.Add((ListWorkflowInstancesQuery)q))
-            .ReturnsAsync(Result.Success<IReadOnlyList<WorkflowInstanceDto>>(new[] { Instance() }));
+            .Callback<IRequest<Result<PagedResult<WorkflowInstanceDto>>>, CancellationToken>((q, _) => seen.Add((ListWorkflowInstancesQuery)q))
+            .ReturnsAsync(Result.Success(PagedResult<WorkflowInstanceDto>.Create(new[] { Instance() }, 1, 50, 1)));
         var controller = CreateController(mediator);
+        var ct = CancellationToken.None;
 
-        var byDefault = await controller.ListInstances(WorkflowId, cancellationToken: CancellationToken.None);
-        var explicitMax = await controller.ListInstances(WorkflowId, max: 500, cancellationToken: CancellationToken.None);
+        var byDefault = await controller.ListInstances(WorkflowId, cancellationToken: ct);
+        Assert.IsType<OkObjectResult>(await controller.ListInstances(WorkflowId, page: 3, pageSize: 500, cancellationToken: ct));
+        Assert.IsType<OkObjectResult>(await controller.ListInstances(WorkflowId, page: 1, pageSize: 0, cancellationToken: ct));
 
         var ok = Assert.IsType<OkObjectResult>(byDefault);
-        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<IReadOnlyList<WorkflowInstanceDto>>>(ok.Value);
-        Assert.Equal(InstanceId, Assert.Single(body.Data!).Id);
-        Assert.IsType<OkObjectResult>(explicitMax);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<PagedResult<WorkflowInstanceDto>>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal(1, body.Data!.TotalCount);
+        Assert.Equal(InstanceId, Assert.Single(body.Data.Items).Id);
 
-        Assert.Equal(2, seen.Count);
+        Assert.Equal(3, seen.Count);
         Assert.All(seen, q => Assert.Equal(WorkflowId, q.WorkflowId));
-        Assert.Equal(50, seen[0].Max);
-        Assert.Equal(500, seen[1].Max);
+        Assert.Equal((1, 50), (seen[0].Page, seen[0].PageSize));
+        Assert.Equal((3, 200), (seen[1].Page, seen[1].PageSize));
+        Assert.Equal((1, 1), (seen[2].Page, seen[2].PageSize));
+    }
+
+    [Fact]
+    public async Task ListAll_defaults_page_1_size_50_clamps_size_to_1_200_and_returns_paged_envelope()
+    {
+        var mediator = new Mock<IMediator>(MockBehavior.Strict);
+        var seen = new List<ListTenantWorkflowsQuery>();
+        mediator.Setup(m => m.Send(It.IsAny<ListTenantWorkflowsQuery>(), It.IsAny<CancellationToken>()))
+            .Callback<IRequest<Result<PagedResult<WorkflowDefinitionListItemDto>>>, CancellationToken>((q, _) => seen.Add((ListTenantWorkflowsQuery)q))
+            .ReturnsAsync(Result.Success(PagedResult<WorkflowDefinitionListItemDto>.Create(
+                new[] { new WorkflowDefinitionListItemDto(Definition(), "devis", "Devis") }, 1, 50, 1)));
+        var controller = CreateController(mediator);
+        var ct = CancellationToken.None;
+
+        var byDefault = await controller.ListAll(cancellationToken: ct);
+        Assert.IsType<OkObjectResult>(await controller.ListAll("rel", 2, 999, ct));
+        Assert.IsType<OkObjectResult>(await controller.ListAll(null, 1, 0, ct));
+
+        var ok = Assert.IsType<OkObjectResult>(byDefault);
+        var body = Assert.IsType<FactuTrust.API.Controllers.ApiResponse<PagedResult<WorkflowDefinitionListItemDto>>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal(1, body.Data!.TotalCount);
+        Assert.Equal("devis", Assert.Single(body.Data.Items).EntityKey);
+
+        Assert.Equal(3, seen.Count);
+        Assert.Equal((null, 1, 50), (seen[0].Search, seen[0].Page, seen[0].PageSize));
+        Assert.Equal(("rel", 2, 200), (seen[1].Search, seen[1].Page, seen[1].PageSize));
+        Assert.Equal((null, 1, 1), (seen[2].Search, seen[2].Page, seen[2].PageSize));
+    }
+
+    [Fact]
+    public void ListAll_item_serializes_workflow_entityKey_and_entityDisplayName_in_camelCase()
+    {
+        var item = new WorkflowDefinitionListItemDto(Definition(), "devis", "Devis");
+
+        var json = JsonSerializer.Serialize(item, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Contains("\"workflow\":{", json);
+        Assert.Contains("\"entityKey\":\"devis\"", json);
+        Assert.Contains("\"entityDisplayName\":\"Devis\"", json);
+        Assert.Contains("\"openInstances\":", json);
+        Assert.Contains("\"stepCount\":", json);
     }
 
     [Fact]

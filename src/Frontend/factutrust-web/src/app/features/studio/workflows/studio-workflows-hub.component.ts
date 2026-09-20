@@ -1,16 +1,19 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { forkJoin, of } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { Subject, of } from 'rxjs';
+import { catchError, debounceTime, map } from 'rxjs/operators';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
+import { PaginatorModule, PaginatorState } from 'primeng/paginator';
 import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
+import { ToastModule } from 'primeng/toast';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-table.component';
@@ -22,9 +25,6 @@ import { STUDIO_WORKFLOW_LABELS, formatWorkflowLabel } from './studio-workflow-l
 import { workflowErrorMessage } from './studio-workflow-http.util';
 import { WorkflowDefinitionDto, WorkflowTrigger } from './studio-workflows.models';
 import { StudioWorkflowsService } from './studio-workflows.service';
-
-/** Agrégation multi-tables bornée (D-44-20) : au-delà, le hub impose le choix d'une table. */
-const HUB_MAX_TABLES = 25;
 
 type HubWorkflow = WorkflowDefinitionDto & { entityName: string };
 
@@ -42,11 +42,13 @@ type HubWorkflow = WorkflowDefinitionDto & { entityName: string };
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    FormsModule, RouterLink, ButtonModule, InputTextModule, SelectModule, TableModule, TagModule,
-    ToggleSwitchModule, TooltipModule, StudioPageShellComponent, SkeletonTableComponent
+    FormsModule, RouterLink, ButtonModule, InputTextModule, PaginatorModule, SelectModule, TableModule, TagModule,
+    ToastModule, ToggleSwitchModule, TooltipModule, StudioPageShellComponent, SkeletonTableComponent
   ],
   template: `
     <app-studio-page-shell [title]="L.hub.title" [subtitle]="L.hub.subtitle" [breadcrumbs]="breadcrumbs">
+      <!-- 4.6d1 (D-44-95) : hôte des toasts — les succès/erreurs des écritures étaient muets sur cette page. -->
+      <p-toast styleClass="studio-theme" />
       <button pButton type="button" studioActions data-testid="wf-hub-new" [label]="L.hub.newWorkflow"
         icon="fa-solid fa-plus" routerLink="/studio/workflows/new" [queryParams]="{ entity: entityId() }"
         [disabled]="newDisabled()"></button>
@@ -56,18 +58,16 @@ type HubWorkflow = WorkflowDefinitionDto & { entityName: string };
           optionLabel="displayName" optionValue="id" [showClear]="true" filter appendTo="body"
           panelStyleClass="studio-theme" [placeholder]="L.hub.allTables" [attr.aria-label]="L.hub.columns.table" />
         <input pInputText type="search" class="studio-search-input" [placeholder]="L.hub.search"
-          [ngModel]="search()" (ngModelChange)="search.set($event)" [attr.aria-label]="L.hub.search" />
+          [ngModel]="search()" (ngModelChange)="onSearchInput($event)" [attr.aria-label]="L.hub.search" />
         <span class="studio-toolbar__spacer"></span>
-        @if (!loading() && !tooManyTables()) {
-          <span class="studio-muted">{{ filtered().length }} workflow(s)</span>
+        @if (!loading()) {
+          <span class="studio-muted">{{ counter() }} workflow(s)</span>
         }
       </div>
 
       @if (loading()) {
         <app-skeleton-table [rows]="5" [columns]="skeletonColumns" />
-      } @else if (tooManyTables()) {
-        <p class="studio-muted" data-testid="wf-hub-too-many-tables">{{ L.hub.tooManyTables }}</p>
-      } @else if (filtered().length === 0) {
+      } @else if (visible().length === 0) {
         <div class="wf-hub-empty">
           <i class="fa-solid fa-diagram-project" aria-hidden="true"></i>
           <h3>{{ L.hub.emptyTitle }}</h3>
@@ -76,7 +76,7 @@ type HubWorkflow = WorkflowDefinitionDto & { entityName: string };
             routerLink="/studio/workflows/new" [queryParams]="{ entity: entityId() }" [disabled]="newDisabled()"></button>
         </div>
       } @else {
-        <p-table [value]="filtered()" dataKey="id" styleClass="p-datatable-sm">
+        <p-table [value]="visible()" dataKey="id" styleClass="p-datatable-sm">
           <ng-template pTemplate="header">
             <tr>
               <th>{{ L.hub.columns.name }}</th>
@@ -120,6 +120,11 @@ type HubWorkflow = WorkflowDefinitionDto & { entityName: string };
             </tr>
           </ng-template>
         </p-table>
+        <!-- 4.6a1 (D-46-F01) : pagination serveur, motif des projets IA — seulement en vue « Toutes les tables ». -->
+        @if (!entityId() && totalCount() > pageSize) {
+          <p-paginator [first]="(page() - 1) * pageSize" [rows]="pageSize" [totalRecords]="totalCount()"
+            [showCurrentPageReport]="false" (onPageChange)="onPage($event)" data-testid="wf-hub-paginator" />
+        }
       }
     </app-studio-page-shell>
   `,
@@ -148,17 +153,42 @@ export class StudioWorkflowsHubComponent implements OnInit {
   readonly workflows = signal<HubWorkflow[]>([]);
   readonly loading = signal(true);
   readonly search = signal('');
-  readonly tooManyTables = signal(false);
+  /** 4.6a1 : état de la pagination serveur de la vue « Toutes les tables » (page 1-based, taille fixe ≤ borne API 200). */
+  readonly page = signal(1);
+  readonly pageSize = 50;
+  readonly totalCount = signal(0);
+  /** Valeur de recherche réellement envoyée au serveur (après debounce) en vue « Toutes les tables ». */
+  readonly searchServer = signal<string | null>(null);
+  private readonly search$ = new Subject<string>();
+  private readonly destroyRef = inject(DestroyRef);
+  protected readonly formatWorkflowLabel = formatWorkflowLabel;
 
-  readonly filtered = computed(() => {
+  /**
+   * 4.6a1 (D-46-F02) : en vue « Toutes les tables », recherche et pagination sont côté serveur
+   * (`GET workflows?search=&page=&pageSize=`) — la liste affichée est la page renvoyée, dans
+   * l'ordre du serveur (nom croissant). Avec `?entity=`, le filtre local est conservé (une table
+   * dépasse rarement la vingtaine de workflows ; le chemin `listWorkflows(entityId)` n'est pas paginé).
+   */
+  readonly visible = computed(() => {
+    if (!this.entityId()) return this.workflows();
     const q = this.search().trim().toLowerCase();
     return this.workflows().filter(w => !q || w.name.toLowerCase().includes(q) || w.key.includes(q));
   });
+  /** Compteur de la barre d'outils : filtre local en mode « une table », `totalCount` du serveur sinon. */
+  readonly counter = computed(() => this.entityId() ? this.visible().length : this.totalCount());
   /** Sans table choisie et plus d'une table : la clé technique doit être choisie dans le concepteur (4.4e1). */
   readonly newDisabled = computed(() => !this.entityId() && this.entities().length > 1);
 
   ngOnInit(): void {
     this.entityId.set(this.route.snapshot.queryParamMap.get('entity'));
+    // Recherche serveur debouncée (motif `studio-view-designer`) : seulement en vue « Toutes les tables » ;
+    // toute recherche ramène à la page 1.
+    this.search$.pipe(debounceTime(300), takeUntilDestroyed(this.destroyRef)).subscribe(value => {
+      if (this.entityId()) return;
+      this.searchServer.set(value.trim() || null);
+      this.page.set(1);
+      this.load();
+    });
     this.studio.listEntities(false).subscribe({
       next: r => {
         const list = (r.data ?? []).filter(e => e.kind !== 'Junction');
@@ -172,29 +202,41 @@ export class StudioWorkflowsHubComponent implements OnInit {
     });
   }
 
+  /**
+   * 4.5f (D-45-F07, D-44-20 clos) : sans `?entity=`, UNE requête paginée `GET workflows` au lieu
+   * de N `forkJoin` par table. 4.6a1 : la page demandée (`page`, taille fixe `pageSize`) et la
+   * recherche serveur (`searchServer`, LIKE côté API, tronquée à 128) sont passées au serveur ;
+   * la page est affichée dans l'ordre du serveur (nom croissant) — un tri local par table
+   * disperserait les lignes d'une page à l'autre. Avec `?entity=`, le chemin `listWorkflows(entityId)`
+   * est conservé (table inconnue / jonction ⇒ liste vide sans appel, comme avant) avec tri local.
+   */
   private load(): void {
-    const targets = this.entityId() ? this.entities().filter(e => e.id === this.entityId()) : this.entities();
-    if (!this.entityId() && targets.length > HUB_MAX_TABLES) {
-      this.tooManyTables.set(true);
-      this.workflows.set([]);
-      this.loading.set(false);
-      return;
-    }
     this.loading.set(true);
-    this.tooManyTables.set(false);
-    if (targets.length === 0) {
+    const entityId = this.entityId();
+    const entity = entityId ? this.entities().find(e => e.id === entityId) : undefined;
+    if (entityId && !entity) {
       this.workflows.set([]);
+      this.totalCount.set(0);
       this.loading.set(false);
       return;
     }
-    // Motif Relations (l.100–102) : une table en erreur ne fait pas échouer la page.
-    forkJoin(targets.map(e =>
-      this.workflowsSvc.listWorkflows(e.id).pipe(
-        map(r => (r.data ?? []).map(w => ({ ...w, entityName: e.displayName }))),
-        catchError(() => of([] as HubWorkflow[]))
-      )
-    )).subscribe(all => {
-      this.workflows.set(all.flat().sort((a, b) => a.entityName.localeCompare(b.entityName) || a.name.localeCompare(b.name)));
+    const src$ = entity
+      ? this.workflowsSvc.listWorkflows(entity.id).pipe(map(r => {
+          // Tri local par nom (une seule table : la clé `entityName` serait constante).
+          const items = (r.data ?? []).map(w => ({ ...w, entityName: entity.displayName }));
+          items.sort((a, b) => a.name.localeCompare(b.name));
+          return { items, total: items.length };
+        }))
+      : this.workflowsSvc.listAllWorkflows(this.searchServer(), this.page(), this.pageSize).pipe(map(r => ({
+          items: (r.data?.items ?? []).map(i => ({ ...i.workflow, entityName: i.entityDisplayName })),
+          total: r.data?.totalCount ?? 0
+        })));
+    src$.pipe(catchError(() => {
+      this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.L.hub.loadError });
+      return of({ items: [] as HubWorkflow[], total: 0 });
+    })).subscribe(({ items, total }) => {
+      this.workflows.set(items);
+      this.totalCount.set(total);
       this.loading.set(false);
     });
   }
@@ -203,9 +245,28 @@ export class StudioWorkflowsHubComponent implements OnInit {
     return this.L.triggers[trigger];
   }
 
+  /** Saisie du champ de recherche : filtre local immédiat en mode « une table », recherche serveur debouncée sinon. */
+  onSearchInput(value: string): void {
+    this.search.set(value);
+    this.search$.next(value);
+  }
+
+  /** Changement de page du paginator (motif des projets IA : `event.page` est 0-based). */
+  onPage(event: PaginatorState): void {
+    const next = (event.page ?? 0) + 1;
+    if (next === this.page()) return;
+    this.page.set(next);
+    this.load();
+  }
+
   onEntityChange(id: string | null): void {
     this.entityId.set(id);
     this.router.navigate([], { relativeTo: this.route, queryParams: { entity: id || null }, queryParamsHandling: 'merge', replaceUrl: true });
+    if (!id) {
+      // Retour à la vue « Toutes les tables » : page 1 et recherche serveur alignée sur le champ.
+      this.page.set(1);
+      this.searchServer.set(this.search().trim() || null);
+    }
     this.load();
   }
 
@@ -245,7 +306,7 @@ export class StudioWorkflowsHubComponent implements OnInit {
         ? formatWorkflowLabel(this.L.hub.deleteWithInstances, { name: w.name, count: w.openInstances })
         : formatWorkflowLabel(this.L.hub.deleteMessage, { name: w.name }),
       acceptLabel: this.L.hub.delete,
-      acceptButtonStyleClass: 'p-button-danger',
+      acceptButtonStyleClass: 'btn-danger',
       icon: 'fa-solid fa-triangle-exclamation',
       accept: () => this.workflowsSvc.deleteWorkflow(w.id).subscribe({
         next: r => {

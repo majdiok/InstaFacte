@@ -14,6 +14,7 @@ import { AuthService } from '@core/services/auth.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { StudioRecordTabsComponent, StudioRecordTab } from './shared/studio-record-tabs.component';
 import { StudioLinkedRecordsTabComponent } from './relations/studio-linked-records-tab.component';
+import { StudioLinkChipsEditorComponent } from './relations/studio-link-chips-editor.component';
 import { StudioRecordWorkflowsTabComponent } from './workflows/studio-record-workflows-tab.component';
 import { StudioWorkflowsService } from './workflows/studio-workflows.service';
 import { STUDIO_WORKFLOW_LABELS } from './workflows/studio-workflow-labels';
@@ -28,7 +29,7 @@ function linkedTabKey(r: { junctionEntityKey?: string | null; targetEntityKey: s
 @Component({
   selector: 'app-studio-record-form',
   standalone: true,
-  imports: [CommonModule, RouterModule, ToastModule, DynamicFormComponent, StudioPageShellComponent, SkeletonTableComponent, StudioRecordTabsComponent, StudioLinkedRecordsTabComponent, StudioRecordWorkflowsTabComponent],
+  imports: [CommonModule, RouterModule, ToastModule, DynamicFormComponent, StudioPageShellComponent, SkeletonTableComponent, StudioRecordTabsComponent, StudioLinkedRecordsTabComponent, StudioLinkChipsEditorComponent, StudioRecordWorkflowsTabComponent],
   template: `
     <p-toast></p-toast>
     @if (entity(); as e) {
@@ -60,10 +61,17 @@ function linkedTabKey(r: { junctionEntityKey?: string | null; targetEntityKey: s
                 <a [routerLink]="['/studio', e.id]">Ajoutez des champs</a> avant de saisir des données.
               </p>
             }
+            @if (recordId) {
+              <!-- v1.1 / D-47-40 (R4) : une carte de puces par relation N-N, SOUS le formulaire ;
+                   édition seulement (recordId requis — même garde que les onglets « Liés »). -->
+              @for (rel of manyToMany(); track rel.junctionEntityKey) {
+                <app-studio-link-chips-editor [relation]="rel" [recordId]="recordId!" [canWrite]="canWrite()" />
+              }
+            }
           }
           @case ('workflows') {
             <app-studio-record-workflows-tab [entityKey]="entityKey" [recordId]="recordId!" [instances]="workflowInstances() ?? []"
-              [canWrite]="canWrite()" [canDesign]="canDesign()" (changed)="loadWorkflowInstances()" />
+              [canWrite]="canWrite()" (changed)="loadWorkflowInstances()" />
           }
           @default {
             @if (activeRelation(); as rel) {
@@ -100,7 +108,6 @@ export class StudioRecordFormComponent implements OnInit {
   private readonly workflows = inject(StudioWorkflowsService);
   /** Sonde `listRecordInstances` : null = module coupé / droit absent (403-404) ⇒ onglet masqué (fail-closed, 4.4h2). */
   readonly workflowInstances = signal<WorkflowInstanceDto[] | null>(null);
-  readonly canDesign = computed(() => this.auth.hasPermission(PERMISSIONS.studio.designEntities));
   /** Badge de l'onglet : instances OUVERTES seulement, `null` si 0 pour ne pas afficher « 0 » (D-44-58). */
   readonly openWorkflowCount = computed(() => (this.workflowInstances() ?? []).filter(i => isOpenInstance(i.status)).length);
   readonly showWorkflowsTab = computed(() => !!this.recordId && this.workflowInstances() !== null);

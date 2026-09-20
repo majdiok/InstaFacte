@@ -418,6 +418,14 @@ public sealed class OllamaSettings
     /// </summary>
     public int StudioWorkflowRetentionDays { get; set; } = 180;
 
+    /// <summary>
+    /// Taille de lot du balayage d'un déclencheur planifié (4.7b3 / D-47-B05) : au plus ce nombre
+    /// d'enregistrements correspondants sont démarrés par tick et par définition ; si le total dépasse
+    /// le lot, un avertissement est journalisé et la suite est traitée au prochain tick.
+    /// Borné 10..500 par le job. Défaut 100.
+    /// </summary>
+    public int StudioWorkflowScheduledBatchSize { get; set; } = 100;
+
     /// <summary>Cartes maximales chargées par une vue Kanban (au-delà, <c>truncated = true</c>). Défaut 500.</summary>
     public int StudioRecordViewMaxKanbanCards { get; set; } = 500;
 

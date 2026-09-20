@@ -15,7 +15,7 @@ public enum StudioWorkflowTriggerKind
     /// <summary>Runs only when explicitly started by a user on a record.</summary>
     Manual = 3,
 
-    /// <summary>Runs on a schedule — reserved (rejected at validation: « Déclencheur planifié : bientôt disponible. »).</summary>
+    /// <summary>Runs on the <c>triggerConfig.cron</c> schedule (UTC), one instance per record matching <c>triggerConfig.filters</c> (4.7b1, D5 levé).</summary>
     Scheduled = 4
 }
 

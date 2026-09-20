@@ -3,6 +3,9 @@ using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Application.Common.Interfaces.Repositories;
 
+/// <summary>Ligne du catalogue tenant (4.5c1) : définition + identité de sa table (jointure SQL, tables actives non-jonction).</summary>
+public sealed record StudioWorkflowCatalogRow(StudioWorkflowDefinition Definition, string EntityKey, string EntityDisplayName);
+
 /// <summary>
 /// Accès aux définitions, instances, exécutions d'étapes et approbations des workflows Studio
 /// (PR 4.1). Toutes les méthodes filtrent sur <c>TenantId</c> ; le filtre global
@@ -45,9 +48,12 @@ public interface IStudioWorkflowRepository
     Task<IReadOnlyList<StudioWorkflowInstance>> ListInstancesForRecordAsync(
         Guid tenantId, Guid recordId, int max, CancellationToken cancellationToken = default);
 
-    /// <summary>Instances d'une définition, les plus récentes d'abord ; <paramref name="max"/> borné à [1, 200].</summary>
+    /// <summary>Page d'instances d'une définition, les plus récentes d'abord ; <paramref name="take"/> borné à [1, 200] (4.7a1 / D-47-B01).</summary>
     Task<IReadOnlyList<StudioWorkflowInstance>> ListInstancesForDefinitionAsync(
-        Guid tenantId, Guid definitionId, int max, CancellationToken cancellationToken = default);
+        Guid tenantId, Guid definitionId, int skip, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>Nombre total d'instances d'une définition (pagination du panneau « Historique », 4.7a1).</summary>
+    Task<int> CountInstancesForDefinitionAsync(Guid tenantId, Guid definitionId, CancellationToken cancellationToken = default);
 
     /// <summary>Instances ouvertes (Running, Waiting, WaitingApproval) d'une définition, les plus récentes d'abord.</summary>
     Task<IReadOnlyList<StudioWorkflowInstance>> ListOpenInstancesForDefinitionAsync(
@@ -92,6 +98,23 @@ public interface IStudioWorkflowRepository
     /// <summary>Nombre d'instances ouvertes d'une définition (D9 : alimente <c>WorkflowDefinitionDto.OpenInstances</c>).</summary>
     Task<int> CountOpenInstancesForDefinitionAsync(Guid tenantId, Guid definitionId, CancellationToken cancellationToken = default);
 
+    // ---- Catalogue tenant (4.5c1, D-44-20) ----
+
+    /// <summary>
+    /// Page du catalogue tenant : définitions (actives et inactives, non supprimées) des tables <b>actives non-jonction</b>,
+    /// filtrées par <paramref name="search"/> (nom ou clé, insensible à la casse), triées <c>EntityDisplayName, Name, Key</c>.
+    /// <paramref name="skip"/> ≥ 0, <paramref name="take"/> ∈ 1..200 (bornés par l'appelant).
+    /// </summary>
+    Task<IReadOnlyList<StudioWorkflowCatalogRow>> ListByTenantAsync(
+        Guid tenantId, string? search, int skip, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>Total correspondant à <see cref="ListByTenantAsync"/> (mêmes filtres), pour <c>PagedResult.TotalCount</c>.</summary>
+    Task<int> CountByTenantAsync(Guid tenantId, string? search, CancellationToken cancellationToken = default);
+
+    /// <summary>Instances ouvertes (Running / Waiting / WaitingApproval) par définition, en une requête ; définitions sans instance absentes du résultat.</summary>
+    Task<IReadOnlyDictionary<Guid, int>> CountOpenInstancesForDefinitionsAsync(
+        Guid tenantId, IReadOnlyCollection<Guid> definitionIds, CancellationToken cancellationToken = default);
+
     // ---- Runtime (4.2) ----
 
     /// <summary>
@@ -129,6 +152,15 @@ public interface IStudioWorkflowRepository
     /// <summary>Même prédicat que <see cref="ListPendingApprovalsForUserAsync"/>, en nombre.</summary>
     Task<int> CountPendingApprovalsForUserAsync(
         Guid tenantId, Guid userId, string? role, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Décisions d'approbation <paramref name="userId"/> (4.7 « v1.1 », D‑47‑60) : statuts
+    /// <c>Approved</c>/<c>Rejected</c> décidés par l'utilisateur (les annulées/expirées ne sont pas
+    /// des décisions), tri <c>DecidedAt</c> puis <c>Id</c> décroissants, borné à
+    /// <c>Math.Clamp(max, 1, 200)</c>. Miroir de <see cref="ListPendingApprovalsForUserAsync"/>.
+    /// </summary>
+    Task<IReadOnlyList<StudioWorkflowApproval>> ListDecidedApprovalsByUserAsync(
+        Guid tenantId, Guid userId, int max, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Supprime les instances terminales (<c>Completed</c>/<c>Failed</c>/<c>Cancelled</c>) achevées avant

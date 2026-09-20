@@ -24,6 +24,10 @@ public sealed record CancelInstanceRequest(string? Reason);
 public sealed record ListRecordWorkflowInstancesQuery(string EntityKey, Guid RecordId, int Max = 50)
     : IRequest<Result<IReadOnlyList<WorkflowInstanceDto>>>;
 
+/// <summary>Détail d'une instance d'un enregistrement, pour les lecteurs (<c>custom_records:read</c>, 4.5b1 / D11).</summary>
+public sealed record GetRecordWorkflowInstanceQuery(string EntityKey, Guid RecordId, Guid InstanceId)
+    : IRequest<Result<WorkflowInstanceDetailDto>>;
+
 /// <summary>Workflows manuels actifs de la table (bouton « Lancer » de la fiche).</summary>
 public sealed record GetRecordWorkflowsQuery(string EntityKey)
     : IRequest<Result<IReadOnlyList<RunnableWorkflowDto>>>;
@@ -45,17 +49,20 @@ public sealed class ListRecordWorkflowInstancesQueryHandler
     private readonly ICustomEntityRepository _entities;
     private readonly ICustomRecordRepository _records;
     private readonly ICurrentUser _currentUser;
+    private readonly IStudioUserNameResolver _userNames;
 
     public ListRecordWorkflowInstancesQueryHandler(
         IStudioWorkflowRepository workflows,
         ICustomEntityRepository entities,
         ICustomRecordRepository records,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IStudioUserNameResolver userNames)
     {
         _workflows = workflows;
         _entities = entities;
         _records = records;
         _currentUser = currentUser;
+        _userNames = userNames;
     }
 
     public async Task<Result<IReadOnlyList<WorkflowInstanceDto>>> Handle(
@@ -91,10 +98,62 @@ public sealed class ListRecordWorkflowInstancesQueryHandler
                     tenantId, instance.WorkflowDefinitionId, cancellationToken);
                 definitions[instance.WorkflowDefinitionId] = definition;
             }
-            result.Add(StudioWorkflowMapping.ToDto(instance, definition));
+            // Route lecteur : l'erreur au niveau instance (texte interne possible) ne sort pas
+            // (revue ★ 4.6 / D-46-05 — même règle que le détail ; l'onglet fiche ne la rend pas).
+            result.Add(StudioWorkflowMapping.ToDto(instance, definition) with { Error = null });
         }
 
-        return Result.Success<IReadOnlyList<WorkflowInstanceDto>>(result);
+        // 4.6b1 / D-46-B01 — « Demandé par » : une résolution en lot pour la page (motif inbox 4.5a2).
+        return Result.Success<IReadOnlyList<WorkflowInstanceDto>>(
+            await StudioWorkflowStartedByNameSupport.ResolveAsync(_userNames, tenantId, result, cancellationToken));
+    }
+}
+
+public sealed class GetRecordWorkflowInstanceQueryHandler
+    : IRequestHandler<GetRecordWorkflowInstanceQuery, Result<WorkflowInstanceDetailDto>>
+{
+    private readonly IStudioWorkflowRepository _workflows;
+    private readonly ICustomEntityRepository _entities;
+    private readonly ICustomRecordRepository _records;
+    private readonly ICurrentUser _currentUser;
+    private readonly IStudioUserNameResolver _userNames;
+
+    public GetRecordWorkflowInstanceQueryHandler(
+        IStudioWorkflowRepository workflows, ICustomEntityRepository entities, ICustomRecordRepository records, ICurrentUser currentUser,
+        IStudioUserNameResolver userNames)
+    {
+        _workflows = workflows;
+        _entities = entities;
+        _records = records;
+        _currentUser = currentUser;
+        _userNames = userNames;
+    }
+
+    public async Task<Result<WorkflowInstanceDetailDto>> Handle(GetRecordWorkflowInstanceQuery query, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
+            return Result.Failure<WorkflowInstanceDetailDto>(err);
+        if (!_currentUser.HasPermission(Permissions.CustomData.RecordsRead))
+            return Result.Failure<WorkflowInstanceDetailDto>(Error.Unauthorized("Lecture des enregistrements requise."));
+
+        var (entity, resolveError) = await RecordEntityResolver.ResolveAsync(_entities, tenantId, query.EntityKey, cancellationToken);
+        if (entity is null)
+            return Result.Failure<WorkflowInstanceDetailDto>(resolveError);
+
+        // 404 aussi pour un enregistrement d'un autre tenant (aucune divulgation).
+        var record = await _records.GetAsync(tenantId, entity.Id, query.RecordId, cancellationToken);
+        if (record is null)
+            return Result.Failure<WorkflowInstanceDetailDto>(Error.NotFound("CustomRecord", query.RecordId));
+
+        // L'instance doit appartenir à CET enregistrement de CETTE table ; sinon 404 non révélateur (D-45-04).
+        var instance = await _workflows.GetInstanceAsync(tenantId, query.InstanceId, cancellationToken);
+        if (instance is null || instance.RecordId != query.RecordId || instance.EntityDefinitionId != entity.Id)
+            return Result.Failure<WorkflowInstanceDetailDto>(Error.NotFound("StudioWorkflowInstance", query.InstanceId));
+
+        // Portée lecteur : contexte expurgé (e-mail du lanceur, results, vars — D-45-27). Le NOM du lanceur
+        // reste servi (colonne « Demandé par » déjà visible aux lecteurs dans l'inbox, 4.5e — D-46-B01).
+        return Result.Success(await StudioWorkflowInstanceDetailBuilder.BuildAsync(
+            _workflows, tenantId, instance, cancellationToken, readerScope: true, userNames: _userNames));
     }
 }
 

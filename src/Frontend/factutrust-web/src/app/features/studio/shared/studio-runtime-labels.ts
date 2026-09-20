@@ -31,9 +31,9 @@ export const STUDIO_RUNTIME_LABELS = {
   },
   designer: {
     title: 'Concepteur de vue',
-    previewHint: 'Enregistrez pour voir l’aperçu.',
-    previewSaved: 'Aperçu calculé sur la version enregistrée (20 premiers enregistrements).',
-    previewStale: 'L’aperçu reflète la version enregistrée : enregistrez la vue pour prévisualiser ce mode.',
+    previewDraft: 'Aperçu du brouillon en cours (20 premiers enregistrements).',
+    previewInvalid: 'Complétez la définition pour voir l’aperçu.',
+    previewDesignOnly: 'L’aperçu en direct est réservé aux concepteurs.',
     setDefault: 'Vue par défaut',
     delete: 'Supprimer',
     save: 'Enregistrer',
@@ -58,7 +58,7 @@ export const STUDIO_RUNTIME_LABELS = {
   relations: {
     title: 'Relations',
     addManyToMany: 'Ajouter une relation plusieurs-à-plusieurs',
-    junctionAttributeSoon: 'Attribut de liaison — Bientôt',
+    junctionAttributeHint: 'Un champ numérique est ajouté à la table de liaison (ex. quantité par fiche liée).',
     empty: 'Relations non activées.',
     duplicateKey: 'Une table de liaison porte déjà cette clé.',
     created: 'Relation plusieurs-à-plusieurs créée.'
@@ -69,7 +69,11 @@ export const STUDIO_RUNTIME_LABELS = {
     remove: 'Retirer',
     duplicate: 'Lien déjà existant.',
     truncated: 'Certaines fiches liées ne sont pas affichées.',
-    error: 'Chargement des fiches liées impossible.'
+    error: 'Chargement des fiches liées impossible.',
+    edit: 'Modifier',
+    save: 'Enregistrer',
+    cancel: 'Annuler',
+    conflict: 'Modifié entre-temps — liste rechargée.'
   },
   entities: {
     junctionBadge: 'Jonction',

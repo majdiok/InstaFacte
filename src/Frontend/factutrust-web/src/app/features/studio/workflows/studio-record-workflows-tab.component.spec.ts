@@ -16,13 +16,14 @@ const API = `${environment.apiUrl}/studio`;
 const labels = STUDIO_WORKFLOW_LABELS.recordTab;
 
 /**
- * Bouchon du drawer d'instance 4.4f (même contrat figé H-8 que le stub de 4.4h1) : le vrai
- * drawer appelle `getInstance` (route de conception D-44-25) à l'ouverture — neutralisé ici.
+ * Bouchon du drawer d'instance 4.4f (même contrat figé H-8 que le stub de 4.4h1, + `recordId`
+ * 4.5d2) : le vrai drawer appelle la route runtime à l'ouverture — neutralisé ici.
  */
 @Component({ selector: 'app-studio-workflow-instance-detail', standalone: true, template: '' })
 class InstanceDetailStubComponent {
   readonly instanceId = model<string | null>(null);
   readonly entityKey = input<string | null>(null);
+  readonly recordId = input<string | null>(null);
   readonly changed = output<WorkflowInstanceDto>();
   readonly closed = output<void>();
 }
@@ -45,7 +46,7 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
   let toastSpy: jasmine.Spy;
   let changedSpy: jasmine.Spy;
 
-  function setup(opts: { canWrite?: boolean; canDesign?: boolean; instances?: WorkflowInstanceDto[] } = {}): void {
+  function setup(opts: { canWrite?: boolean; instances?: WorkflowInstanceDto[] } = {}): void {
     TestBed.configureTestingModule({
       imports: [StudioRecordWorkflowsTabComponent],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), provideNoopAnimations(), MessageService]
@@ -62,7 +63,6 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     fixture.componentRef.setInput('recordId', 'r1');
     fixture.componentRef.setInput('instances', opts.instances ?? []);
     fixture.componentRef.setInput('canWrite', opts.canWrite ?? true);
-    fixture.componentRef.setInput('canDesign', opts.canDesign ?? false);
     changedSpy = jasmine.createSpy('changed');
     component.changed.subscribe(changedSpy);
     fixture.detectChanges();
@@ -88,6 +88,11 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     document.querySelectorAll('.p-dialog, .p-dialog-mask, .p-drawer, .p-drawer-mask').forEach(el => el.remove());
   });
 
+  it("ne rend pas de p-toast : la fiche hôte porte l'unique toast (D-44-89)", () => {
+    setup();
+    expect((fixture.nativeElement as HTMLElement).querySelector('p-toast')).toBeNull();
+  });
+
   it('liste les instances avec leur statut et leur étape courante', () => {
     setup({
       instances: [
@@ -111,6 +116,22 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     expect(row2.querySelector('p-tag[data-status="running"]')).not.toBeNull();
   });
 
+  // 4.6c1 (D-46-F03) — colonne « Demandé par » : nom du lanceur servi par 4.6b1, « — » sinon.
+  it('affiche la colonne « Demandé par » (nom du lanceur, « — » si inconnu)', () => {
+    setup({
+      instances: [
+        instance('i1', 'waiting_approval', { startedByName: 'Alice Martin' }),
+        instance('i2', 'running')
+      ]
+    });
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('th') as NodeListOf<HTMLElement>)
+      .map(th => th.textContent?.trim());
+    expect(headers).toContain('Demandé par');
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-requested-by-i1"]').textContent.trim()).toBe('Alice Martin');
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-requested-by-i2"]').textContent.trim()).toBe('—');
+  });
+
   it('masque Lancer / Annuler / Relancer sans custom_records:write', () => {
     setup({ canWrite: false, instances: [instance('i1', 'running')] });
 
@@ -119,18 +140,18 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     expect(fixture.nativeElement.querySelector('[data-testid="srw-cancel-i1"]')).toBeNull();
   });
 
-  it("n'affiche Détail qu'avec studio:design_entities et ouvre le drawer avec l'identifiant d'instance", () => {
-    setup({ canDesign: false, instances: [instance('i1', 'running')] });
-    expect(fixture.nativeElement.querySelector('[data-testid="srw-detail-i1"]')).toBeNull();
-    expect(fixture.debugElement.query(By.css('app-studio-workflow-instance-detail'))).toBeNull();
+  it('affiche Détail pour tout lecteur et ouvre le drawer avec entityKey + recordId (portée fiche, 4.5b)', () => {
+    setup({ canWrite: false, instances: [instance('i1', 'running')] });
+    const stubDebug = fixture.debugElement.query(By.css('app-studio-workflow-instance-detail'));
+    expect(stubDebug).withContext('drawer rendu sans studio:design_entities (4.5d3)').not.toBeNull();
+    const stub = stubDebug.componentInstance as InstanceDetailStubComponent;
+    expect(stub.instanceId()).toBeNull();   // fermé tant qu'aucun « Détail » n'est cliqué
 
-    fixture.componentRef.setInput('canDesign', true);
-    fixture.detectChanges();
     clickButton('srw-detail-i1');
 
-    const stubDebug = fixture.debugElement.query(By.css('app-studio-workflow-instance-detail'));
-    expect(stubDebug).not.toBeNull();
-    expect((stubDebug.componentInstance as InstanceDetailStubComponent).instanceId()).toBe('i1');
+    expect(stub.instanceId()).toBe('i1');
+    expect(stub.entityKey()).toBe('interventions');
+    expect(stub.recordId()).toBe('r1');
   });
 
   it('charge les workflows exécutables puis lance le choisi et émet changed', () => {
@@ -159,24 +180,69 @@ describe('StudioRecordWorkflowsTabComponent — onglet « Workflows » de la fic
     expect(toastSpy).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'success', detail: labels.started }));
   });
 
-  it('annule une instance ouverte et émet changed', () => {
-    setup({ instances: [instance('i1', 'waiting_approval')] });
+  it("annule après confirmation inline (motif optionnel borné à 500), réinitialise le formulaire et émet changed (D-44-96)", () => {
+    setup({ instances: [instance('i1', 'waiting_approval'), instance('i2', 'running')] });
 
     clickButton('srw-cancel-i1');
+    fixture.detectChanges();
+    httpMock.expectNone(`${API}/workflows/instances/i1/cancel`);        // pas d'annulation immédiate (D-44-96)
+    expect(component.cancelTarget()?.id).toBe('i1');
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-cancel-panel"]')).not.toBeNull();
+
+    component.cancelReason.set('  Facture annulée côté ERP  ');
+    fixture.detectChanges();
+    clickButton('srw-cancel-confirm');
+    // Revue ★ 4.6 : tant que le POST est en cours, un autre « Annuler » ne change pas la cible.
+    expect(component.busy()).toBeTrue();
+    clickButton('srw-cancel-i2');
+    expect(component.cancelTarget()?.id).toBe('i1');
+    expect(component.cancelReason()).toBe('  Facture annulée côté ERP  ');
     const cancelReq = httpMock.expectOne(`${API}/workflows/instances/i1/cancel`);
     expect(cancelReq.request.method).toBe('POST');
-    expect(cancelReq.request.body).toEqual({ reason: null });
+    expect(cancelReq.request.body).toEqual({ reason: 'Facture annulée côté ERP' }); // trimmé (motif du tiroir)
     cancelReq.flush({ success: true, data: instance('i1', 'cancelled'), message: null, error: null });
     fixture.detectChanges();
     expect(changedSpy).toHaveBeenCalledTimes(1);
+    expect(component.cancelTarget()).toBeNull();                       // formulaire refermé après succès
     expect(toastSpy).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'success', detail: labels.cancelled }));
 
-    // Variante erreur : instance déjà terminée côté serveur (409 ⇒ message serveur, D-44-02).
+    // Réouverture : le motif repart vide (pas de fuite vers la cible suivante).
     clickButton('srw-cancel-i1');
+    fixture.detectChanges();
+    expect(component.cancelReason()).toBe('');
+
+    // Variante erreur : instance déjà terminée côté serveur (409 ⇒ message serveur, D-44-02) — le panneau reste ouvert.
+    clickButton('srw-cancel-confirm');
     httpMock.expectOne(`${API}/workflows/instances/i1/cancel`)
       .flush({ success: false, error: 'Instance déjà terminée.' }, { status: 409, statusText: 'Conflict' });
     fixture.detectChanges();
     expect(changedSpy).toHaveBeenCalledTimes(1);                        // pas de second changed
+    expect(component.cancelTarget()).not.toBeNull();
     expect(toastSpy).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'warn', detail: 'Instance déjà terminée.' }));
+
+    // Échap ferme le panneau (hors action en cours) — même garde que « Retour ».
+    const panel = fixture.nativeElement.querySelector('[data-testid="srw-cancel-panel"]') as HTMLElement;
+    panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expect(component.cancelTarget()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-cancel-panel"]')).toBeNull();
+  });
+
+  it("« Retour » ferme la confirmation sans POST (D-44-96) et l'accessibilité est posée (aria-labels + th libellé)", () => {
+    setup({ instances: [instance('i1', 'waiting_approval')] });
+
+    // a11y : les boutons d'action et le sélecteur ont un nom accessible ; l'en-tête d'actions n'est plus vide.
+    const detailBtn = fixture.nativeElement.querySelector('[data-testid="srw-detail-i1"]') as HTMLElement;
+    expect(detailBtn.getAttribute('aria-label')).toBe(labels.detail);
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-cancel-i1"]').getAttribute('aria-label')).toBe(labels.cancel);
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-remind-i1"]').getAttribute('aria-label')).toBe(labels.remind);
+
+    clickButton('srw-cancel-i1');
+    fixture.detectChanges();
+    clickButton('srw-cancel-back');
+    fixture.detectChanges();
+    expect(component.cancelTarget()).toBeNull();
+    httpMock.expectNone(`${API}/workflows/instances/i1/cancel`);        // rien n'a été envoyé
+    expect(fixture.nativeElement.querySelector('[data-testid="srw-cancel-panel"]')).toBeNull();
   });
 });

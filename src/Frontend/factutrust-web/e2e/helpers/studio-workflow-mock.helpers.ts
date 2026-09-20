@@ -165,7 +165,8 @@ export const WF_INSTANCES = [
     completedAt: null,
     depth: 0,
     originInstanceId: null,
-    error: null
+    error: null,
+    startedByName: 'Alice Martin' // 4.6b1 : « Demandé par » sur l'onglet fiche (null toléré)
   },
   {
     id: 'inst-2',
@@ -241,7 +242,8 @@ export const WF_APPROVALS = [
     recordId: 'r1',
     recordLabel: 'Chaudière A12',
     startedBy: null,
-    startedAt: iso(-26 * HOUR_MS)
+    startedAt: iso(-26 * HOUR_MS),
+    startedByName: 'Alice Martin' // 4.5a2 : « Demandé par » (11e champ, `null` par défaut)
   },
   {
     approval: {
@@ -268,7 +270,34 @@ export const WF_APPROVALS = [
     recordId: 'r2',
     recordLabel: 'Pompe B3',
     startedBy: null,
-    startedAt: iso(-3 * HOUR_MS)
+    startedAt: iso(-3 * HOUR_MS),
+    startedByName: null // lanceur inconnu ⇒ « — » (D-45-02)
+  }
+];
+
+/** 4.7 « v1.1 » (D-47-60) — onglet « Historique » : mes décisions passées (même forme que l'inbox). */
+export const WF_APPROVAL_HISTORY = [
+  {
+    approval: {
+      id: 'h1', instanceId: 'inst-9', stepKey: 'approval_1', assigneeUserId: null,
+      assigneeRole: 'Administrator', title: 'Validation de l\'intervention', message: null,
+      status: 'rejected', decidedBy: 'u-e2e', decidedAt: iso(-2 * HOUR_MS), comment: 'Non justifié.',
+      dueAt: null, createdAt: iso(-30 * HOUR_MS), rowVersion: 'AhAAAB'
+    },
+    instanceId: 'inst-9', workflowKey: 'validation_intervention', workflowName: 'Validation intervention',
+    entityKey: 'interventions', entityName: 'Interventions', recordId: 'r9', recordLabel: 'Vanne C7',
+    startedBy: null, startedAt: iso(-30 * HOUR_MS), startedByName: 'Alice Martin'
+  },
+  {
+    approval: {
+      id: 'h2', instanceId: 'inst-10', stepKey: 'approval_1', assigneeUserId: 'u-e2e',
+      assigneeRole: null, title: 'Accord devis', message: null,
+      status: 'approved', decidedBy: 'u-e2e', decidedAt: iso(-26 * HOUR_MS), comment: null,
+      dueAt: null, createdAt: iso(-50 * HOUR_MS), rowVersion: 'AiAAAB'
+    },
+    instanceId: 'inst-10', workflowKey: 'validation_devis', workflowName: 'Validation devis',
+    entityKey: 'devis', entityName: 'Devis', recordId: 'r10', recordLabel: 'DEV-0042',
+    startedBy: null, startedAt: iso(-50 * HOUR_MS), startedByName: null
   }
 ];
 
@@ -276,6 +305,19 @@ export const WF_APPROVALS = [
 export const WF_RUNNABLE = [
   { id: 'wf-1', key: 'validation_intervention', name: 'Validation intervention', description: null, stepCount: 3 }
 ];
+
+/** 4.7c2 — trace de simulation pure (miroir `WorkflowTestResultDto` de 4.7c1) servie par `POST wf-1/test`. */
+export const WF_TEST_TRACE = {
+  recordId: 'r1',
+  entityKey: 'interventions',
+  evaluatedSteps: 2,
+  suspended: true,
+  steps: [
+    { key: 'si_prioritaire', type: 'condition', label: 'Priorité haute', verdict: 'would_run', detail: 'Condition remplie (match = all).', rendered: { passed: true, match: 'all' } },
+    { key: 'valide', type: 'approval', label: 'Validation', verdict: 'would_suspend', detail: 'Approbation assignée au rôle « Admin » — échéance 2026-09-21T08:00:00Z.', rendered: { title: 'Validation intervention', message: 'Merci de valider.' } }
+  ],
+  warnings: []
+};
 
 // ---------------------------------------------------------------------------------------------
 
@@ -288,6 +330,8 @@ export interface StudioWorkflowMockOptions {
   instances?: unknown[];
   /** Boîte d'approbations (défaut `WF_APPROVALS` : 1 en retard, 1 sous 24 h). */
   approvals?: unknown[];
+  /** 4.7 « v1.1 » (ap-f) : onglet « Historique » (défaut `WF_APPROVAL_HISTORY` : 1 approuvée, 1 refusée). */
+  approvalHistory?: unknown[];
   /** Statut de la sonde count + de la liste (200 par défaut ; 403/404 = garde fail-closed). */
   approvalsStatus?: 200 | 403 | 404;
   /** Statut de la sonde d'instances de la fiche (200 par défaut ; 404 = onglet masqué, D21). */
@@ -295,6 +339,12 @@ export interface StudioWorkflowMockOptions {
 }
 
 const ok = <T>(data: T) => ({ success: true, data, message: null, errors: [] });
+
+/** 4.7a2 — enveloppe `PagedResult` de la route instances paginée (4.7a1) : tableau brut ⇒ page unique. */
+const pagedInstances = <T>(items: T[]) => ({
+  items, page: 1, pageSize: 20, totalCount: items.length,
+  totalPages: items.length ? 1 : 0, hasPreviousPage: false, hasNextPage: false
+});
 
 function safeJson(raw: string | null): unknown {
   if (!raw) return null;
@@ -320,6 +370,7 @@ export async function installStudioWorkflowMocks(
   const definitions = (options.definitions ?? WF_DEFINITIONS) as Record<string, unknown>[];
   const instances = (options.instances ?? WF_INSTANCES) as Record<string, unknown>[];
   const approvals = (options.approvals ?? WF_APPROVALS) as unknown[];
+  const approvalHistory = (options.approvalHistory ?? WF_APPROVAL_HISTORY) as unknown[];
   const approvalsStatus = options.approvalsStatus ?? 200;
   const recordProbeStatus = options.recordProbeStatus ?? 200;
   /** Définition renvoyée par le POST de création — resservie par GET wf-new après la navigation. */
@@ -337,8 +388,13 @@ export async function installStudioWorkflowMocks(
   const notFound = { success: false, data: null, message: 'Introuvable.', errors: [] };
 
   // — Génériques d'abord (évaluées en dernier) —
-  // Hub : une requête de liste par table active — vide par défaut pour les tables sans workflow.
+  // Hub avec ?entity= : une requête de liste par table — vide par défaut pour les tables sans workflow.
   await page.route('**/api/studio/entities/*/workflows', route => fulfil(route, ok([])));
+  // Hub « Toutes les tables » (4.5f) : GET api/studio/workflows?page=&pageSize= ⇒ PagedResult vide. RegExp (et non
+  // glob `workflows?**`) pour ne jamais capturer `workflows/wf-1`, `workflows/step-catalog`, etc. Aucun scénario
+  // actuel ne charge le hub sans ?entity= — filet contre un 404 réel si un futur test l'omet.
+  await page.route(/\/api\/studio\/workflows(\?[^/]*)?$/, route =>
+    fulfil(route, ok({ items: [], page: 1, pageSize: 200, totalCount: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false })));
   // Pont ERP du concepteur (picker erp_action) : liste vide — non couvert par le filet paginé.
   await page.route('**/api/studio/automations/actions', route => fulfil(route, ok([])));
 
@@ -354,6 +410,12 @@ export async function installStudioWorkflowMocks(
     if (approvalsStatus === 404) return fulfil(route, notFound, 404);
     return fulfil(route, ok(approvals));
   });
+  // 4.7 « v1.1 » (ap-f) — onglet « Historique » (motif distinct de `mine?**`, aucune collision).
+  await page.route('**/api/studio/workflows/approvals/mine/history?**', async route => {
+    if (approvalsStatus === 403) return fulfil(route, forbidden, 403);
+    if (approvalsStatus === 404) return fulfil(route, notFound, 404);
+    return fulfil(route, ok(approvalHistory));
+  });
   await page.route('**/api/studio/workflows/approvals/*/approve', route => fulfil(route, ok(instances[0])));
   await page.route('**/api/studio/workflows/approvals/*/reject', route => fulfil(route, ok(instances[0])));
 
@@ -363,8 +425,10 @@ export async function installStudioWorkflowMocks(
     fulfil(route, ok({ ...instances[0], status: 'cancelled' })));
   await page.route('**/api/studio/workflows/instances/inst-1/remind', route => fulfil(route, ok(instances[0])));
 
-  // — Définition wf-1 : instances récentes (panneau 4.4e2), activation, GET/PUT/DELETE —
-  await page.route('**/api/studio/workflows/wf-1/instances?**', route => fulfil(route, ok(instances)));
+  // — Définition wf-1 : historique des instances paginé (panneau 4.7a2), activation, GET/PUT/DELETE —
+  await page.route('**/api/studio/workflows/wf-1/instances?**', route => fulfil(route, ok(pagedInstances(instances))));
+  // 4.7c2 — simulation pure (route 4.7c1) : trace fixe à 2 lignes, aucune écriture attendue.
+  await page.route('**/api/studio/workflows/wf-1/test', route => fulfil(route, ok(WF_TEST_TRACE)));
   await page.route('**/api/studio/workflows/wf-1/toggle', async route => {
     const body = (safeJson(route.request().postData()) ?? {}) as { isActive?: boolean };
     await fulfil(route, ok({ ...definitions[0], isActive: body.isActive ?? false }));
@@ -387,6 +451,9 @@ export async function installStudioWorkflowMocks(
     if (recordProbeStatus === 404) return fulfil(route, notFound, 404);
     return fulfil(route, ok(instances));
   });
+  // Route runtime lecteur (4.5b/d2) : même détail que `workflows/instances/inst-1`, portée fiche.
+  await page.route(`**/api/studio/records/${entityKey}/r1/workflow-instances/inst-1`, route =>
+    fulfil(route, ok(WF_INSTANCE_DETAIL)));
   await page.route(`**/api/studio/records/${entityKey}/workflows`, route => fulfil(route, ok(WF_RUNNABLE)));
   await page.route(`**/api/studio/records/${entityKey}/r1/workflows/validation_intervention/run`, route =>
     fulfil(route, ok({ ...instances[0], id: 'inst-new', status: 'running', completedAt: null }), 201));
@@ -407,7 +474,7 @@ export async function installStudioWorkflowMocks(
 
   // Après création, le concepteur navigue (replaceUrl) vers /studio/workflows/wf-new et
   // recharge la définition + ses instances (panneau vide pour un workflow neuf).
-  await page.route('**/api/studio/workflows/wf-new/instances?**', route => fulfil(route, ok([])));
+  await page.route('**/api/studio/workflows/wf-new/instances?**', route => fulfil(route, ok(pagedInstances([]))));
   await page.route('**/api/studio/workflows/wf-new', route =>
     fulfil(route, ok(created ?? { ...definitions[0], id: 'wf-new', isActive: false, openInstances: 0 })));
 }

@@ -1,14 +1,14 @@
-import { BreakpointObserver } from '@angular/cdk/layout';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, HostListener, OnInit, computed, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { EMPTY, forkJoin, of } from 'rxjs';
-import { catchError, map, switchMap } from 'rxjs/operators';
+import { EMPTY, Subject, forkJoin, of } from 'rxjs';
+import { catchError, debounceTime, map, switchMap } from 'rxjs/operators';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
+import { DialogModule } from 'primeng/dialog';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
@@ -16,14 +16,19 @@ import { SelectModule } from 'primeng/select';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TagModule } from 'primeng/tag';
 import { TextareaModule } from 'primeng/textarea';
+import { ToastModule } from 'primeng/toast';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { ApiResponse } from '@core/services/client.service';
+import { ViewportService } from '@core/services/viewport.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { CustomField, CustomFieldType } from '@shared/studio-runtime/studio-runtime.models';
 import { StudioPageShellComponent } from '../shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from '../shared/studio-breadcrumb.util';
+import { StudioFilterBuilderComponent } from '../shared/studio-filter-builder.component';
 import { StudioService } from '../studio.service';
-import { AutomationAction, CustomEntity } from '../studio.models';
+import { AutomationAction, CustomEntity, CustomRecord } from '../studio.models';
+import type { RecordViewFilter } from '../views/studio-record-views.models';
+import { toRecordViewFilters, toWorkflowFilters } from './step-editor/studio-workflow-filter.adapter';
 import { StudioWorkflowConditionTreeComponent } from './step-editor/studio-workflow-condition-tree.component';
 import { StudioWorkflowStepEditorComponent } from './step-editor/studio-workflow-step-editor.component';
 import { StudioWorkflowStepListComponent } from './step-editor/studio-workflow-step-list.component';
@@ -45,6 +50,8 @@ import {
   WorkflowTriggerConfig,
   WorkflowValidationIssueDto,
   WorkflowValidationResultDto,
+  WORKFLOW_TEST_VERDICTS,
+  WorkflowTestResultDto,
   slugifyWorkflowKey,
   stepsJsonBytes
 } from './studio-workflows.models';
@@ -65,7 +72,7 @@ const COMPUTED: ReadonlySet<CustomFieldType> = new Set(COMPUTED_FIELD_TYPES);
  * Libellés FR locaux absents de `STUDIO_WORKFLOW_LABELS` (4.4a1, non modifié dans cette
  * tranche — même motif que `LIST_LABELS` de la liste d'étapes, 4.4c2) ; à centraliser si un
  * autre composant en a besoin. `L.designer.error` et `L.instances.title`, cités par l'annexe,
- * n'existent pas : remplacés par `saveError` et `L.instances.recent`.
+ * n'existent pas : remplacés par `saveError` et `L.instances.history` (4.7a2).
  */
 const DESIGNER_LABELS = {
   description: 'Description',
@@ -83,8 +90,9 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
 /**
  * Concepteur de workflow `/studio/workflows/new?entity=<id>` et `/studio/workflows/:id` (4.4e1) :
  * en-tête (nom, clé auto-slugifiée D-44-12, description, actif — `false` par défaut à la création,
- * D-44-23), déclencheur en cartes radio (`scheduled` désactivé « Bientôt », D5) avec
- * sous-formulaire `field_changed`, puis grille 3 colonnes `1fr · 320 px · 250 px` (D-44-21) :
+ * D-44-23), déclencheur en cartes radio avec sous-formulaires `field_changed` et `scheduled`
+ * (4.7b4 : expression cron UTC — presets ou saisie libre — et filtres optionnels ; la mécanique
+ * `soon` reste pour de futurs déclencheurs), puis grille 3 colonnes `1fr · 320 px · 250 px` (D-44-21) :
  * liste d'étapes + arbre de branchements en `@defer` (col. 1), éditeur d'étape 4.4c1 (col. 2),
  * aperçu/instances récentes (col. 3, panneau 4.4e2 rafraîchi via `refreshToken` ; le clic pose
  * `?instance=<id>`, D20 — le drawer de détail 4.4f `app-studio-workflow-instance-detail` est
@@ -100,8 +108,9 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    CommonModule, FormsModule, ButtonModule, DrawerModule, InputTextModule, MessageModule, SelectModule,
-    SkeletonModule, TagModule, TextareaModule, ToggleSwitchModule, StudioPageShellComponent,
+    CommonModule, FormsModule, ButtonModule, DialogModule, DrawerModule, InputTextModule, MessageModule, SelectModule,
+    SkeletonModule, TagModule, TextareaModule, ToastModule, ToggleSwitchModule, StudioPageShellComponent,
+    StudioFilterBuilderComponent,
     StudioWorkflowStepListComponent, StudioWorkflowStepEditorComponent, StudioWorkflowInstancesPanelComponent,
     StudioWorkflowInstanceDetailComponent,
     // Référencé UNIQUEMENT dans le bloc `@defer` ci-dessous : Angular l'isole dans un chunk
@@ -110,9 +119,14 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
   ],
   template: `
     <app-studio-page-shell [title]="title()" [breadcrumbs]="breadcrumbs()">
+      <!-- 4.6d1 (D-44-95) : hôte des toasts — les succès/erreurs des écritures étaient muets sur cette page. -->
+      <p-toast styleClass="studio-theme" />
       <ng-container studioActions>
         <button pButton type="button" [outlined]="true" icon="fa-solid fa-list-check" [label]="L.designer.validate"
           data-testid="wf-validate" [disabled]="busy() || saving() || loading() || loadError()" (click)="validate()"></button>
+        <button pButton type="button" [outlined]="true" icon="fa-solid fa-vial" [label]="L.test.button"
+          data-testid="wf-test" [disabled]="busy() || saving() || loading() || loadError() || !id || dirty()"
+          [attr.title]="!id || dirty() ? L.test.saveFirst : null" (click)="openTestDialog()"></button>
         <button pButton type="button" icon="fa-solid fa-floppy-disk" [label]="L.designer.save"
           data-testid="wf-save" [loading]="saving()" [disabled]="saving() || !canSave()" (click)="save()"></button>
         @if (id) {
@@ -239,9 +253,32 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
                   (ngModelChange)="patchTriggerConfig({ to: $event || undefined })" autocomplete="off" data-testid="wf-to" />
               </div>
             </div>
-            @if (triggerConfigTooLarge()) {
-              <p-message severity="warn" [text]="localLabels.triggerConfigTooLarge" styleClass="wf-banner" data-testid="wf-trigger-too-large" />
-            }
+          }
+          @if (trigger() === 'scheduled') {
+            <!-- 4.7b4 : cron UTC (presets ou saisie libre) + filtres optionnels (même adaptateur que l'étape condition). -->
+            <div class="wf-sub wf-sub--scheduled" data-testid="wf-scheduled-config">
+              <div class="wf-field">
+                <label for="wf-cron-preset">{{ L.designer.cronPreset }}</label>
+                <p-select inputId="wf-cron-preset" [options]="cronPresets" [ngModel]="cronPresetSelection()"
+                  (ngModelChange)="onCronPreset($event)" optionLabel="label" optionValue="value"
+                  appendTo="body" panelStyleClass="studio-theme" styleClass="wf-w"
+                  data-testid="wf-cron-preset" [attr.aria-label]="L.designer.cronPreset" />
+              </div>
+              <div class="wf-field">
+                <label for="wf-cron">{{ L.designer.cron }} <span class="wf-req">*</span></label>
+                <input id="wf-cron" pInputText [ngModel]="triggerConfig()?.cron ?? ''"
+                  (ngModelChange)="onCronInput($event)" autocomplete="off" placeholder="0 6 * * *" data-testid="wf-cron" />
+                <small class="wf-hint">{{ L.designer.cronHint }}</small>
+              </div>
+              <div class="wf-field wf-field--filters">
+                <span class="wf-lbl">{{ L.designer.scheduledFilters }}</span>
+                <app-studio-filter-builder [fields]="scheduledFilterFields()" [filters]="scheduledFilterModel()"
+                  (filtersChange)="onScheduledFilters($event)" />
+              </div>
+            </div>
+          }
+          @if (triggerConfigTooLarge()) {
+            <p-message severity="warn" [text]="localLabels.triggerConfigTooLarge" styleClass="wf-banner" data-testid="wf-trigger-too-large" />
           }
           @if (tooLarge()) {
             <p-message severity="error" [text]="L.designer.tooLarge" styleClass="wf-banner" data-testid="wf-too-large" />
@@ -264,7 +301,7 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
             </div>
             <div class="wf-designer__col wf-designer__col--side">
               <app-studio-workflow-instances-panel [workflowId]="id" [entityKey]="entity()?.key ?? null"
-                [refreshToken]="refreshToken()" (open)="openInstance($event)" />
+                [refreshToken]="refreshToken()" [openCount]="openInstances()" (open)="openInstance($event)" />
             </div>
           }
         </div>
@@ -294,6 +331,60 @@ interface ValidationState { isValid: boolean; errors: WorkflowValidationIssueDto
           </div>
         }
       </ng-template>
+      <!-- 4.7c2 (R17) : dialogue « Tester sur un enregistrement » — simulation pure (4.7c1), aucune écriture serveur. -->
+      <p-dialog [header]="L.test.dialogTitle" [(visible)]="testDialogVisible" [modal]="true"
+        [style]="{ width: '42rem' }" styleClass="studio-theme" data-testid="wf-test-dialog">
+        <p-message severity="info" [text]="L.test.banner" styleClass="wf-test-banner" data-testid="wf-test-banner" />
+        <div class="wf-test-picker">
+          <input pInputText type="text" class="wf-test-search" [ngModel]="testSearch()" (ngModelChange)="onTestSearch($event)"
+            [placeholder]="L.test.searchPlaceholder" data-testid="wf-test-search" />
+          @if (testSearching()) { <span class="wf-test-hint">{{ L.test.searching }}</span> }
+        </div>
+        <ul class="wf-test-records" data-testid="wf-test-records">
+          @for (r of testRecords(); track r.id) {
+            <li>
+              <button type="button" class="wf-test-record" [class.wf-test-record--selected]="testRecord()?.id === r.id"
+                (click)="pickTestRecord(r)">
+                <span class="wf-test-record-label">{{ testRecordLabel(r) }}</span>
+                <small class="wf-test-record-id" [title]="r.id">{{ shortRecordId(r.id) }}</small>
+              </button>
+            </li>
+          } @empty {
+            @if (!testSearching()) { <li class="wf-test-hint" data-testid="wf-test-empty">{{ L.test.noRecords }}</li> }
+          }
+        </ul>
+        <button pButton type="button" icon="fa-solid fa-play" [label]="L.test.run" data-testid="wf-test-run"
+          [loading]="testRunning()" [disabled]="!testRecord() || testRunning()" (click)="runTest()"></button>
+        @if (testError()) {
+          <p-message severity="error" [text]="testError()!" styleClass="wf-test-msg" data-testid="wf-test-error" />
+        }
+        @if (testTrace(); as trace) {
+          <div class="wf-test-trace" data-testid="wf-test-trace">
+            @if (trace.warnings.length) {
+              <ul class="wf-test-warnings" data-testid="wf-test-warnings">
+                @for (w of trace.warnings; track w) { <li><i class="fa-solid fa-triangle-exclamation"></i> {{ w }}</li> }
+              </ul>
+            }
+            <ol class="wf-trace">
+              @for (step of trace.steps; track $index) {
+                <li class="wf-trace-row wf-trace-row--{{ testVerdictClass(step.verdict) }}" [attr.data-verdict]="step.verdict">
+                  <i [class]="testVerdictIcon(step.verdict)"></i>
+                  <span class="wf-trace-name">{{ step.label ?? step.key }} <small>({{ step.type }})</small></span>
+                  <span class="wf-trace-verdict">{{ testVerdictLabel(step.verdict) }}</span>
+                  @if (step.detail) { <div class="wf-trace-detail">{{ step.detail }}</div> }
+                  @if (step.rendered) {
+                    <details class="wf-trace-rendered"><summary>{{ L.test.rendered }}</summary><pre>{{ step.rendered | json }}</pre></details>
+                  }
+                </li>
+              }
+            </ol>
+            <div class="wf-trace-summary" data-testid="wf-test-summary">
+              {{ trace.evaluatedSteps }} {{ L.test.evaluatedSuffix }}
+              @if (trace.suspended) { — {{ L.test.suspendedSuffix }} }
+            </div>
+          </div>
+        }
+      </p-dialog>
     </app-studio-page-shell>
   `,
   styleUrls: ['../shared/studio-layout.scss', './studio-workflow-designer.scss']
@@ -361,10 +452,7 @@ export class StudioWorkflowDesignerComponent implements OnInit {
 
   // ---- Réactif écran étroit (D-44-21 : colonnes 2–3 en tiroir sous 1280 px) ----
   readonly editorDrawer = signal(false);
-  readonly narrow = toSignal(
-    inject(BreakpointObserver).observe('(max-width: 1279px)').pipe(map(s => s.matches)),
-    { initialValue: false }
-  );
+  readonly narrow = inject(ViewportService).isNarrow;   // 4.6T2 (D-44-56) : seuil 1 279 px inchangé
 
   readonly title = computed(() => this.name().trim() || (this.id ? this.L.designer.title : this.L.designer.newTitle));
   readonly breadcrumbs = computed(() => STUDIO_BREADCRUMBS.workflowDesigner(this.name()));
@@ -379,17 +467,26 @@ export class StudioWorkflowDesignerComponent implements OnInit {
   readonly tooLarge = computed(() => stepsJsonBytes({ version: 1, steps: this.steps() }) > WORKFLOW_LIMITS.maxStepsJsonBytes);
   readonly triggerConfigTooLarge = computed(() => {
     const c = this.triggerConfig();
-    return this.trigger() === 'field_changed' && !!c
+    const t = this.trigger();
+    // 4.7b4 : la jauge 2 Ko (borne serveur) vaut aussi pour `scheduled` (cron + filtres).
+    return (t === 'field_changed' || t === 'scheduled') && !!c
       && new TextEncoder().encode(JSON.stringify(c)).length > WORKFLOW_LIMITS.maxTriggerConfigBytes;
   });
-  readonly canSave = computed(() =>
-    this.name().trim().length > 0 && STEP_KEY_REGEX.test(this.key()) && this.steps().length > 0
-    && !this.tooLarge() && this.trigger() !== 'scheduled');
+  readonly canSave = computed(() => {
+    if (this.name().trim().length === 0 || !STEP_KEY_REGEX.test(this.key()) || this.steps().length === 0 || this.tooLarge()) return false;
+    // 4.7b4 : un déclencheur planifié exige une expression cron non vide (revalidée par le serveur, b1).
+    return this.trigger() !== 'scheduled' || !!this.triggerConfig()?.cron?.trim();
+  });
   /** Instantané JSON du brouillon de requête — toute modification (y compris d'étape) salit. */
   readonly dirty = computed(() => !this.loading() && JSON.stringify(this.toRequest()) !== this.snapshot());
   /** Champ surveillé `field_changed` : champs actifs non calculés (même règle que `update_field.set`). */
   readonly watchableFields = computed(() =>
     this.fields().filter(f => f.isActive && !COMPUTED.has(f.fieldType)).map(f => ({ label: `${f.label} (${f.key})`, value: f.key })));
+
+  constructor() {
+    // Recherche d'enregistrement anti-rebond (300 ms) du dialogue « Tester ».
+    this.testSearchQuery$.pipe(debounceTime(300), takeUntilDestroyed()).subscribe(q => this.searchTestRecords(q));
+  }
 
   ngOnInit(): void {
     this.id = this.route.snapshot.paramMap.get('id');
@@ -442,16 +539,147 @@ export class StudioWorkflowDesignerComponent implements OnInit {
     this.key.set((value ?? '').trim());
   }
 
-  /** Carte radio de déclencheur ; `scheduled` est « bientôt » et non sélectionnable (D5). */
+  /** Carte radio de déclencheur ; la mécanique `soon` reste pour de futurs déclencheurs (4.7b4 : `scheduled` sélectionnable). */
   selectTrigger(t: { value: WorkflowTrigger; soon?: true }): void {
     if (t.soon) return;
+    if (t.value === this.trigger()) return;   // re-clic : conserve la configuration saisie
     this.trigger.set(t.value);
-    if (t.value !== 'field_changed') this.triggerConfig.set(null);
-    else this.triggerConfig.update(c => c ?? {});
+    // Config par déclencheur : jamais de clés d'un type sur un autre (le serveur les rejette, b1).
+    this.triggerConfig.set(t.value === 'field_changed' || t.value === 'scheduled' ? {} : null);
   }
 
   patchTriggerConfig(patch: Partial<WorkflowTriggerConfig>): void {
     this.triggerConfig.update(c => ({ ...(c ?? {}), ...patch }));
+  }
+
+  // ---- Déclencheur « Planifié » (4.7b4) ----
+
+  /** Sentinelle du preset « Personnalisé » (jamais une expression cron valide). */
+  private static readonly CUSTOM_CRON = '__custom__';
+
+  /** Presets UTC affichés dans le `p-select` (le champ libre reste éditable en « Personnalisé »). */
+  /** Presets cron (4.7b4). Mutable : `p-select [options]` exige `any[]` — un `readonly[]` casse le build dev (NG4). */
+  readonly cronPresets: { label: string; value: string }[] = [
+    { label: this.L.designer.cronPresets.hourly, value: '0 * * * *' },
+    { label: this.L.designer.cronPresets.daily, value: '0 6 * * *' },
+    { label: this.L.designer.cronPresets.weekly, value: '0 6 * * 1' },
+    { label: this.L.designer.cronPresets.custom, value: StudioWorkflowDesignerComponent.CUSTOM_CRON }
+  ];
+
+  /** Preset sélectionné : l'expression courante si elle correspond à un preset, sinon « Personnalisé ». */
+  readonly cronPresetSelection = computed(() => {
+    const cron = this.triggerConfig()?.cron ?? '';
+    return this.cronPresets.some(p => p.value === cron) ? cron : StudioWorkflowDesignerComponent.CUSTOM_CRON;
+  });
+
+  onCronPreset(value: string): void {
+    if (value !== StudioWorkflowDesignerComponent.CUSTOM_CRON) this.patchTriggerConfig({ cron: value });
+  }
+
+  onCronInput(value: string): void {
+    this.patchTriggerConfig({ cron: value.trim() || undefined });
+  }
+
+  /** Filtres `scheduled` : champs actifs non calculés SEULS (b1 refuse `_previous` et les variables de contexte). */
+  readonly scheduledFilterFields = computed(() => this.fields().filter(f => f.isActive && !COMPUTED.has(f.fieldType)));
+
+  readonly scheduledFilterModel = computed(() => toRecordViewFilters(this.triggerConfig()?.filters ?? []));
+
+  onScheduledFilters(filters: RecordViewFilter[]): void {
+    this.patchTriggerConfig({ filters: toWorkflowFilters(filters) });
+  }
+
+  // ---- 4.7c2 — dialogue « Tester sur un enregistrement » (simulation pure, route 4.7c1) ----
+
+  /** Recherche anti-rebond 300 ms (D-44-86) — branchée dans le constructeur. */
+  private readonly testSearchQuery$ = new Subject<string>();
+
+  readonly testDialogVisible = signal(false);
+  readonly testSearch = signal('');
+  readonly testSearching = signal(false);
+  readonly testRecords = signal<CustomRecord[]>([]);
+  readonly testRecord = signal<CustomRecord | null>(null);
+  readonly testRunning = signal(false);
+  readonly testTrace = signal<WorkflowTestResultDto | null>(null);
+  readonly testError = signal<string | null>(null);
+
+  openTestDialog(): void {
+    this.testDialogVisible.set(true);
+    this.testRecord.set(null);
+    this.testTrace.set(null);
+    this.testError.set(null);
+    this.searchTestRecords(this.testSearch().trim());
+  }
+
+  onTestSearch(value: string): void {
+    this.testSearch.set(value);
+    this.testSearchQuery$.next(value.trim());
+  }
+
+  pickTestRecord(record: CustomRecord): void {
+    this.testRecord.set(record);
+    this.testTrace.set(null);
+    this.testError.set(null);
+  }
+
+  runTest(): void {
+    const record = this.testRecord();
+    if (!this.id || !record || this.testRunning()) return;
+    this.testRunning.set(true);
+    this.testTrace.set(null);
+    this.testError.set(null);
+    this.workflowsSvc.testWorkflow(this.id, record.id).subscribe({
+      next: res => { this.testRunning.set(false); this.testTrace.set(res.data ?? null); },
+      error: err => { this.testRunning.set(false); this.testError.set(workflowErrorMessage(err) || this.L.test.error); }
+    });
+  }
+
+  /** Libellé d'un enregistrement candidat : premier champ texte actif renseigné, sinon identifiant tronqué (D-44-24). */
+  testRecordLabel(record: CustomRecord): string {
+    const titleKey = this.fields().find(f => f.isActive && f.fieldType === CustomFieldType.Text)?.key;
+    const value = titleKey && record.data ? record.data[titleKey] : null;
+    if (typeof value === 'string' && value.trim()) return value;
+    return this.shortRecordId(record.id);
+  }
+
+  shortRecordId(id: string): string { return id.length > 8 ? id.slice(0, 8) + '…' : id; }
+
+  testVerdictIcon(verdict: string): string {
+    switch (verdict) {
+      case WORKFLOW_TEST_VERDICTS.wouldRun: return 'fa-solid fa-check';
+      case WORKFLOW_TEST_VERDICTS.skipped: return 'fa-solid fa-forward';
+      case WORKFLOW_TEST_VERDICTS.wouldSuspend: return 'fa-solid fa-pause';
+      default: return 'fa-solid fa-xmark';
+    }
+  }
+
+  testVerdictClass(verdict: string): string {
+    switch (verdict) {
+      case WORKFLOW_TEST_VERDICTS.wouldRun: return 'run';
+      case WORKFLOW_TEST_VERDICTS.skipped: return 'skip';
+      case WORKFLOW_TEST_VERDICTS.wouldSuspend: return 'suspend';
+      default: return 'fail';
+    }
+  }
+
+  testVerdictLabel(verdict: string): string {
+    const v = this.L.test.verdicts;
+    switch (verdict) {
+      case WORKFLOW_TEST_VERDICTS.wouldRun: return v.wouldRun;
+      case WORKFLOW_TEST_VERDICTS.skipped: return v.skipped;
+      case WORKFLOW_TEST_VERDICTS.wouldSuspend: return v.wouldSuspend;
+      default: return v.wouldFail;
+    }
+  }
+
+  private searchTestRecords(query: string): void {
+    const entityKey = this.entity()?.key;
+    if (!entityKey) return;
+    this.testSearching.set(true);
+    this.studio.listRecords(entityKey, query || null, 1, 10).subscribe({
+      next: res => { this.testSearching.set(false); this.testRecords.set(res.data?.items ?? []); },
+      error: () => { this.testSearching.set(false); this.testRecords.set([]); }
+    });
   }
 
   protected asText(v: unknown): string { return typeof v === 'string' ? v : v == null ? '' : String(v); }
@@ -599,7 +827,7 @@ export class StudioWorkflowDesignerComponent implements OnInit {
         ? formatWorkflowLabel(this.L.hub.deleteWithInstances, { name, count: this.openInstances() })
         : formatWorkflowLabel(this.L.hub.deleteMessage, { name }),
       acceptLabel: this.L.hub.delete,
-      acceptButtonStyleClass: 'p-button-danger',
+      acceptButtonStyleClass: 'btn-danger',
       accept: () => this.workflowsSvc.deleteWorkflow(this.id!).subscribe({
         next: r => {
           this.toast.add({ severity: 'success', summary: this.L.hub.title, detail: formatWorkflowLabel(this.L.hub.deleted, { count: r.data?.cancelledInstances ?? 0 }) });
@@ -619,7 +847,7 @@ export class StudioWorkflowDesignerComponent implements OnInit {
       name: this.name().trim(),
       description: this.description().trim() || null,
       trigger,
-      triggerConfig: trigger === 'field_changed' ? this.triggerConfig() : null,
+      triggerConfig: trigger === 'field_changed' || trigger === 'scheduled' ? this.triggerConfig() : null,
       steps: { version: 1, steps: this.steps() },
       isActive: this.isActive()
     };
