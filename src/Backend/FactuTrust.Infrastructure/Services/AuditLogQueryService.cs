@@ -33,7 +33,9 @@ public sealed class AuditLogQueryService : IAuditLogQueryService
         int pageSize,
         CancellationToken cancellationToken = default)
     {
-        page = Math.Max(1, page);
+        // 4.7 suite (R52, D-47-75) : même borne haute que GetEntityHistoryAsync, sur la taille max 200,
+        // pour que (page - 1) * pageSize ne déborde jamais (motif D-45-28, StudioWorkflowFeatures).
+        page = Math.Clamp(page, 1, int.MaxValue / MaxPageSize);
         pageSize = Math.Clamp(pageSize <= 0 ? DefaultPageSize : pageSize, 1, MaxPageSize);
 
         await using var ctx = _contextFactory.CreateContext();
