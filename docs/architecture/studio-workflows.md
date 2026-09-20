@@ -1,9 +1,14 @@
 # Workflows Studio (PR 4.1)
 
-> État : livré (backend — modèle, moteur, déclencheur, API de conception). Runtime différé, approbations
-> et routes d'exécution : PR 4.2. Workflows proposés par l'IA : PR 4.3. Frontend : PR 4.4.
-> Drapeau : `Ollama:EnableStudioWorkflows` (défaut C# `false`, **`false` dans les deux `appsettings*.json`** —
-> activation par configuration d'environnement `Ollama__EnableStudioWorkflows=true`, jamais dans le dépôt).
+> État : livré — backend (modèle, moteur, déclencheur, API de conception), runtime différé, approbations
+> et routes d'exécution (PR 4.2), workflows proposés par l'IA (PR 4.3), frontend (PR 4.4), déclencheur
+> planifié, test sur enregistrement et historique (4.7).
+> Drapeau : `Ollama:EnableStudioWorkflows` (défaut C# `false`) — **`true` dans `appsettings.Production.json`
+> depuis la PR #180 (D-47-90)** ; `false` dans `appsettings.json` (développement : activation par
+> `Ollama__EnableStudioWorkflows=true`) ; désactivation en production par la variable d'environnement
+> `Ollama__EnableStudioWorkflows=false` dans `deploy/.env` puis `docker compose up -d api` (recréation du
+> conteneur ; la variable prime sur le fichier, rien n'est supprimé). Le drapeau est global à l'instance
+> (tous les tenants), sans surcharge par tenant.
 > Migration tenant : `20260912150000_AddStudioWorkflows_Tenant` (additive, inerte drapeau coupé).
 
 ## Vue d'ensemble
@@ -19,8 +24,9 @@ Public : le concepteur (`studio:design_entities`) dessine et active les workflow
 qui créent ou modifient des enregistrements (`custom_records:write`) les déclenchent sans le savoir.
 Tout est gardé par le drapeau `Ollama:EnableStudioWorkflows` : coupé ⇒ 404 sur chaque route de
 conception et **aucun démarrage** d'instance ; la capability `workflowsEnabled`
-(`GET api/ai/studio/capabilities`) reflète le drapeau, `workflowToolsEnabled` reste figé à `false`
-jusqu'à la PR 4.3.
+(`GET api/ai/studio/capabilities`) reflète le drapeau ; `workflowToolsEnabled` (outil IA
+`studio_plan_workflow`, PR 4.3) exige en plus `EnableStudioAiWorkflowTools` et `EnableStudioAiPlanPreview`
+(`StudioAiPlanCreation.WorkflowToolsEnabled`) — les trois sont `true` en production depuis la PR #180.
 
 ## Modèle
 
@@ -177,7 +183,8 @@ majuscules est déjà refusée en `400 Validation.key` avant d'atteindre ce cont
 - Quotas plan (`StudioQuotas`) : `MaxWorkflowsPerEntity` = 20 définitions non supprimées par table,
   `MaxWorkflowSteps` = 30 étapes, `MaxWorkflowInstancesPerRecord` = 200 instances ouvertes par
   enregistrement ; dépassement ⇒ `Validation.Plan`.
-- Capability : `workflowsEnabled` = drapeau ; `workflowToolsEnabled` = `false` jusqu'à la PR 4.3.
+- Capability : `workflowsEnabled` = drapeau ; `workflowToolsEnabled` = `EnableStudioWorkflows &&
+  EnableStudioAiWorkflowTools && EnableStudioAiPlanPreview` (PR 4.3 ; `true` en production depuis la PR #180).
 - Audit (`IAuditService`, `entityType` `StudioWorkflowDefinition` / `StudioWorkflowInstance`) :
   `Studio.Workflow.Created`, `Updated`, `Toggled`, `Deleted`, `Duplicated`, `InstanceStarted`,
   `InstanceFailed`, `InstanceCancelled`. Aucune valeur d'enregistrement ni `StepsJson` dans les journaux

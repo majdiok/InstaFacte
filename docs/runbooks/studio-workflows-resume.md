@@ -89,7 +89,7 @@ Garde commune : si `Ollama:EnableStudioWorkflows` est `false`, chaque job journa
 | `StudioWorkflowResumeBatchSize` | 100 | 10..500 | Taille de lot des 4 phases |
 | `StudioWorkflowScheduledBatchSize` | 100 | 10..500 | Fiches traitées par tick d'un déclencheur planifié (v1.1) |
 | `StudioWorkflowRetentionDays` | 180 | 30..3650 | Âge minimal des instances terminales purgées (et horizon de l'onglet Historique de « Mes approbations ») |
-| `EnableStudioWorkflows` | `false` | — | Coupé ⇒ jobs inertes, routes runtime 404 |
+| `EnableStudioWorkflows` | `false` (défaut C# et `appsettings.json`) ; **prod : `true`** (`appsettings.Production.json`, PR #180, D-47-90) | — | Coupé ⇒ jobs inertes, routes runtime 404 |
 
 ## Lecture des logs
 
@@ -122,8 +122,14 @@ job expire l'approbation et applique `onTimeout`.
 
 ## Activation progressive
 
-1. `Ollama:EnableStudioWorkflows=true` sur un **tenant pilote** (les autres tenants ne sont pas affectés :
-   le job itère sur les tenants actifs mais les routes et les déclencheurs restent gardés).
+1. Depuis la PR #180, le drapeau est `true` par défaut en production. Il est **global à l'instance** (lu une
+   fois depuis la section `Ollama`, aucune surcharge par tenant) : une fois actif, tous les tenants de
+   l'instance voient les routes runtime et le job `studio-workflow-resume` parcourt tous les tenants actifs.
+   Le pilotage se fait donc en ne créant des définitions que sur une table de test d'un tenant de recette ;
+   la coupure globale passe par `Ollama__EnableStudioWorkflows=false` dans `deploy/.env` (voir
+   « Désactivation »). Avant le déploiement, vérifier sur l'hôte qu'aucune ligne `Ollama__EnableStudio*` ne
+   subsiste dans `deploy/.env` (`grep -n Ollama__EnableStudio deploy/.env` ⇒ aucune ligne) : une surcharge
+   `=false` héritée d'un pilote antérieur neutraliserait silencieusement le `true` du fichier.
 2. Créer un workflow `manual` à une étape `wait` courte sur une table de test, le lancer depuis la fiche.
 3. Après 2 ticks, vérifier qu'aucune instance n'est bloquée échue :
 
@@ -137,8 +143,10 @@ job expire l'approbation et applique `onTimeout`.
 
 ## Désactivation
 
-`Ollama:EnableStudioWorkflows=false` : les jobs (`studio-workflow-resume` et chaque
-`studio-workflow-scheduled:*`) sortent immédiatement à chaque tick, les **11 routes runtime**
+`Ollama__EnableStudioWorkflows=false` en **variable d'environnement** : ajouter la ligne dans `deploy/.env`
+puis `docker compose up -d api` (recréation du conteneur — un simple `docker compose restart api` ne relit
+pas `.env`). La variable prime sur le `true` de `appsettings.Production.json` (ne pas repasser le fichier à
+`false` : `ProductionStudioFlagsTests` le garde) : les jobs (`studio-workflow-resume` et chaque `studio-workflow-scheduled:*`) sortent immédiatement à chaque tick, les **11 routes runtime**
 (`StudioWorkflowRuntimeController` : boîte de réception, historique et compteur des approbations, approve / reject,
 instances d'une fiche et détail, workflows lançables, run / cancel / remind) répondent `404` « Les workflows Studio
 ne sont pas activés. » avant tout traitement. La route `GET api/studio/records/{entityKey}/{id}/history`
