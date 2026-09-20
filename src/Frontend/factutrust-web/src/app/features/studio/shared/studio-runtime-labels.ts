@@ -75,6 +75,30 @@ export const STUDIO_RUNTIME_LABELS = {
     cancel: 'Annuler',
     conflict: 'Modifié entre-temps — liste rechargée.'
   },
+  history: {
+    tabLabel: 'Historique',
+    hint: 'Créations, modifications et suppression de cet enregistrement, du plus récent au plus ancien.',
+    colDate: 'Date',
+    colAction: 'Action',
+    colUser: 'Utilisateur',
+    colChanges: 'Changements',
+    actionCreated: 'Création',
+    actionUpdated: 'Modification',
+    actionDeleted: 'Suppression',
+    unknownUser: 'Utilisateur inconnu',
+    empty: 'Aucun historique pour cet enregistrement',
+    emptyHint: 'Les créations, modifications et suppressions apparaîtront ici.',
+    loadError: 'Impossible de charger l\'historique.',
+    retry: 'Réessayer',
+    loadMore: 'Charger plus',
+    count: '{shown} sur {total}',
+    showMore: 'Afficher les {count} autres',
+    showLess: 'Réduire',
+    emptyValue: '(vide)',
+    noChanges: '—',
+    yes: 'Oui',
+    no: 'Non'
+  },
   entities: {
     junctionBadge: 'Jonction',
     hideJunctions: 'Masquer les jonctions'

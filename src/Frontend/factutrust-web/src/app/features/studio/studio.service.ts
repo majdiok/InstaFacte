@@ -40,6 +40,7 @@ import {
   SaveAutomationRequest
 } from './studio.models';
 import { CreateManyToManyRelationRequest, EntityRelationDto } from './relations/studio-relations.models';
+import { STUDIO_RECORD_HISTORY_PAGE_SIZE, StudioRecordHistoryEntry } from './records/studio-record-history.models';
 
 @Injectable({ providedIn: 'root' })
 export class StudioService {
@@ -177,6 +178,22 @@ export class StudioService {
 
   deleteRecord(entityKey: string, id: string): Observable<ApiResponse<unknown>> {
     return this.http.delete<ApiResponse<unknown>>(`${this.base}/records/${entityKey}/${id}`);
+  }
+
+  /**
+   * Historique d'un enregistrement (4.7h3, D-47-64) : `GET records/{entityKey}/{id}/history`, page 1 de 20 par défaut,
+   * du plus récent au plus ancien. Erreurs (400/403/404/500) gérées en ligne par l'onglet : pas de toast global.
+   */
+  listRecordHistory(
+    entityKey: string,
+    id: string,
+    page = 1,
+    pageSize = STUDIO_RECORD_HISTORY_PAGE_SIZE
+  ): Observable<ApiResponse<PagedResult<StudioRecordHistoryEntry>>> {
+    const params = new HttpParams().set('page', String(page)).set('pageSize', String(pageSize));
+    return this.http.get<ApiResponse<PagedResult<StudioRecordHistoryEntry>>>(
+      `${this.base}/records/${encodeURIComponent(entityKey)}/${id}/history`,
+      { params, context: createHttpContextSkipGlobalErrorUi() });
   }
 
   // ---- Reports ----
