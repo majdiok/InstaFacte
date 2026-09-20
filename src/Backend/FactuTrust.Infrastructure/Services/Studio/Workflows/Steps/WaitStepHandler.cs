@@ -15,8 +15,6 @@ namespace FactuTrust.Infrastructure.Services.Studio.Workflows.Steps;
 /// </summary>
 public sealed class WaitStepHandler : IStudioWorkflowStepHandler
 {
-    private const int DefaultMaxHours = 720;
-
     public string StepType => StudioWorkflowStepTypes.Wait;
 
     public Task<StepOutcome> ExecuteAsync(StepExecutionContext ctx, CancellationToken cancellationToken)
@@ -40,7 +38,7 @@ public sealed class WaitStepHandler : IStudioWorkflowStepHandler
                 return Task.FromResult<StepOutcome>(new StepOutcome.Fail("Date d'attente invalide."));
         }
 
-        var cap = ctx.NowUtc.AddHours(Math.Clamp(ReadInt(raw, "maxHours") ?? DefaultMaxHours, 1, 720));
+        var cap = ctx.NowUtc.AddHours(Math.Clamp(ReadInt(raw, "maxHours") ?? StudioWorkflowStepsSpec.DefaultWaitMaxHours, 1, StudioWorkflowStepsSpec.MaxHours));
         if (dueAt > cap)
             dueAt = cap;
 

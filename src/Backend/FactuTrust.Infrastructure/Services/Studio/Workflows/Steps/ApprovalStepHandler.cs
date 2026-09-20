@@ -23,8 +23,6 @@ namespace FactuTrust.Infrastructure.Services.Studio.Workflows.Steps;
 /// </summary>
 public sealed class ApprovalStepHandler : IStudioWorkflowStepHandler
 {
-    private const int DefaultDueInHours = 72;
-
     private readonly IStudioWorkflowRepository _workflows;
     private readonly INotificationService _notifications;
     private readonly ILogger<ApprovalStepHandler> _logger;
@@ -87,7 +85,7 @@ public sealed class ApprovalStepHandler : IStudioWorkflowStepHandler
         }
 
         var dueInHours = ReadInt(raw, "dueInHours");
-        var dueAt = ctx.NowUtc.AddHours(Math.Clamp(dueInHours ?? DefaultDueInHours, 1, 720));
+        var dueAt = ctx.NowUtc.AddHours(Math.Clamp(dueInHours ?? StudioWorkflowStepsSpec.DefaultApprovalDueInHours, 1, StudioWorkflowStepsSpec.MaxHours));
 
         var title = Truncate(
             StudioTemplateRenderer.Render(

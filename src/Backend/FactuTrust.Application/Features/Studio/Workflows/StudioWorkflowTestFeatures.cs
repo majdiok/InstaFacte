@@ -36,10 +36,6 @@ public sealed class TestWorkflowQueryHandler : IRequestHandler<TestWorkflowQuery
     /// <summary>Borne du premier segment simulé — même valeur que <c>StudioWorkflowEngine.MaxStepsPerSegment</c> (B-test-1).</summary>
     public const int MaxSimulatedSteps = 30;
 
-    // Miroirs des constantes privées des handlers réels (bornes validées en amont par b1).
-    private const int DefaultWaitMaxHours = 720;   // WaitStepHandler.DefaultMaxHours
-    private const int DefaultApprovalDueHours = 72; // ApprovalStepHandler.DefaultDueInHours
-
     private readonly IStudioWorkflowRepository _workflows;
     private readonly ICustomEntityRepository _entities;
     private readonly ICustomFieldRepository _fields;
@@ -70,6 +66,10 @@ public sealed class TestWorkflowQueryHandler : IRequestHandler<TestWorkflowQuery
         // Le contrôleur porte déjà la policy ; le handler la reprend (motif B-pag-1, S-base).
         if (!_currentUser.HasPermission(Permissions.Studio.DesignEntities))
             return Result.Failure<WorkflowTestResultDto>(Error.Unauthorized("Permission de conception Studio requise."));
+        // 4.7★1 (D-47-74, U6) — défense en profondeur : la trace rend les gabarits sur une fiche RÉELLE ;
+        // un concepteur sans lecture des enregistrements ne doit pas la voir (motif CustomRecordHistoryFeatures).
+        if (!_currentUser.HasPermission(Permissions.CustomData.RecordsRead))
+            return Result.Failure<WorkflowTestResultDto>(Error.Unauthorized("Permission de lecture des enregistrements requise."));
 
         var definition = await _workflows.GetDefinitionAsync(tenantId, query.WorkflowId, cancellationToken);
         if (definition is null)
@@ -232,7 +232,7 @@ public sealed class TestWorkflowQueryHandler : IRequestHandler<TestWorkflowQuery
                 {
                     evaluated++;
                     var assignee = ReadAssignee(step.Raw);
-                    var dueAt = nowUtc.AddHours(Math.Clamp(ReadInt(step.Raw, "dueInHours") ?? DefaultApprovalDueHours, 1, 720));
+                    var dueAt = nowUtc.AddHours(Math.Clamp(ReadInt(step.Raw, "dueInHours") ?? StudioWorkflowStepsSpec.DefaultApprovalDueInHours, 1, StudioWorkflowStepsSpec.MaxHours));
                     trace.Add(new(step.Key, step.Type, step.Label, WorkflowTestVerdicts.WouldSuspend,
                         $"Approbation {assignee} ; échéance calculée : {Iso(dueAt)}.",
                         new JsonObject
@@ -267,7 +267,7 @@ public sealed class TestWorkflowQueryHandler : IRequestHandler<TestWorkflowQuery
                             break;
                         }
                     }
-                    var cap = nowUtc.AddHours(Math.Clamp(ReadInt(step.Raw, "maxHours") ?? DefaultWaitMaxHours, 1, 720));
+                    var cap = nowUtc.AddHours(Math.Clamp(ReadInt(step.Raw, "maxHours") ?? StudioWorkflowStepsSpec.DefaultWaitMaxHours, 1, StudioWorkflowStepsSpec.MaxHours));
                     if (dueAt > cap)
                         dueAt = cap;
 

@@ -585,7 +585,8 @@ export const STUDIO_AI_LABELS = {
       on_update: 'À la modification',
       field_changed: 'Au changement d’un champ',
       manual: 'Manuel',
-      scheduled: 'Planifié (bientôt)'
+      /** 4.7★1 (D-47-76) : le déclencheur planifié est livré (4.7b1 → b5) — même libellé que le concepteur. */
+      scheduled: 'Planifié'
     },
     active: 'Actif',
     inactive: 'Inactif',

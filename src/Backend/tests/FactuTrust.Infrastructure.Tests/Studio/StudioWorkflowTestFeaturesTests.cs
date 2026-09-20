@@ -8,6 +8,7 @@ using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Repositories.Studio;
+using FactuTrust.Infrastructure.Services.Studio.Workflows;
 using FactuTrust.Infrastructure.Tests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -282,15 +283,61 @@ public sealed class StudioWorkflowTestFeaturesTests : IClassFixture<StudioWorkfl
         Assert.Contains("Unauthorized", result.Error.Code);
     }
 
+    /// <summary>4.7★1 (D-47-74, U6) : concepteur sans <c>custom_records:read</c> ⇒ refus avant toute lecture de fiche.</summary>
+    [SkippableFact]
+    public async Task Without_records_read_the_test_is_unauthorized()
+    {
+        Skip.If(!_sql.CanRun, SkipMessage);
+        var h = NewHarness(granted: true, recordsRead: false);
+        var (entity, record) = await h.SeedAsync("noread");
+        var definition = await h.NewDefinitionAsync(entity, """
+        { "version": 1, "steps": [
+            { "key": "notifie", "type": "notify", "to": { "kind": "role", "value": "Admin" },
+              "title": "Facture {{numero}}", "body": "Montant {{montant}}" }
+        ] }
+        """);
+
+        var result = await h.Handler.Handle(new TestWorkflowQuery(definition.Id, record.Id), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("Unauthorized", result.Error.Code);
+        Assert.Contains("lecture des enregistrements", result.Error.Description);
+        await h.AssertNoWriteAsync();
+    }
+
+    /// <summary>4.7★3 (D-47-80) : la seule constante encore miroir de la simulation — la borne du premier segment —
+    /// reste égale à celle du moteur réel (les délais par défaut `approval` / `wait` sont désormais partagés via
+    /// <c>StudioWorkflowStepsSpec</c>, plus de miroir possible).</summary>
+    [Fact]
+    public void Simulated_segment_bound_matches_the_real_engine_segment_bound()
+        => Assert.Equal(StudioWorkflowEngine.MaxStepsPerSegment, TestWorkflowQueryHandler.MaxSimulatedSteps);
+
+    /// <summary>4.7★2 (S2) : invariant D-47-B07 par construction — le handler de simulation ne reçoit aucun service
+    /// d'écriture (moteur, notifications, audit, e-mail, médiateur, unité de travail) ; il ne peut donc rien persister.</summary>
+    [Fact]
+    public void TestWorkflowQueryHandler_depends_on_no_writing_service()
+    {
+        var ctor = Assert.Single(typeof(TestWorkflowQueryHandler).GetConstructors());
+        var parameterTypes = ctor.GetParameters().Select(p => p.ParameterType.Name).ToArray();
+
+        Assert.Equal(
+            new[] { "IStudioWorkflowRepository", "ICustomEntityRepository", "ICustomFieldRepository", "ICustomRecordRepository", "ICurrentUser", "TimeProvider" },
+            parameterTypes);
+
+        var forbidden = new[] { "Engine", "Runner", "Notification", "Audit", "Email", "Sender", "Mediator", "Publisher", "UnitOfWork", "DbContext", "Writer", "Schedule", "Quota" };
+        foreach (var name in parameterTypes)
+            Assert.DoesNotContain(forbidden, f => name.Contains(f, StringComparison.Ordinal));
+    }
+
     // ---------------------------------------------------------------- harness
 
-    private Harness NewHarness(bool granted = true) => new(_sql, granted);
+    private Harness NewHarness(bool granted = true, bool recordsRead = true) => new(_sql, granted, recordsRead);
 
     private sealed class Harness
     {
         private readonly SqlFixture _sql;
 
-        public Harness(SqlFixture sql, bool granted)
+        public Harness(SqlFixture sql, bool granted, bool recordsRead = true)
         {
             _sql = sql;
             TenantId = Guid.NewGuid();
@@ -302,6 +349,8 @@ public sealed class StudioWorkflowTestFeaturesTests : IClassFixture<StudioWorkfl
             currentUser.Setup(u => u.TenantId).Returns(TenantId);
             currentUser.Setup(u => u.UserId).Returns(Guid.NewGuid());
             currentUser.Setup(u => u.HasPermission(Permissions.Studio.DesignEntities)).Returns(granted);
+            // 4.7★1 (D-47-74, U6) : le handler exige aussi la lecture des enregistrements ; accordée par défaut.
+            currentUser.Setup(u => u.HasPermission(Permissions.CustomData.RecordsRead)).Returns(recordsRead);
             Handler = new TestWorkflowQueryHandler(
                 Workflows, Entities, Fields, Records, currentUser.Object, new FakeTimeProvider());
         }

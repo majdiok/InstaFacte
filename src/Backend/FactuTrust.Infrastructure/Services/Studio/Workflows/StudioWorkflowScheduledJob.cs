@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
@@ -7,6 +6,7 @@ using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.RecordViews;
 using FactuTrust.Application.Features.Studio.Workflows.Engine;
+using FactuTrust.Application.Features.Studio.Workflows.Spec;
 using FactuTrust.Domain.Entities.Studio.Workflows;
 using FactuTrust.Domain.Enums;
 using Hangfire;
@@ -173,19 +173,7 @@ public sealed class StudioWorkflowScheduledJob
     internal static bool TryReadFilters(string? triggerConfigJson, out IReadOnlyList<RecordViewFilter> filters)
     {
         filters = Array.Empty<RecordViewFilter>();
-        if (string.IsNullOrWhiteSpace(triggerConfigJson))
-            return false;
-
-        JsonNode? node;
-        try
-        {
-            node = JsonNode.Parse(triggerConfigJson);
-        }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
-        {
-            return false;
-        }
-        if (node is not JsonObject config)
+        if (!StudioWorkflowJson.TryParseObject(triggerConfigJson, out var config))
             return false;
         if (config["filters"] is null)
             return true; // filtres absents : balayage de toute la table

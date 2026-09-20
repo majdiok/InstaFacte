@@ -219,6 +219,118 @@ async function capture(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: path.join(SCREENSHOTS_BASE, `studio-ia-workflows-${name}.png`), fullPage: true });
 }
 
+/**
+ * 4.7★2 (S12 / annexe C §4) — parcours 4.7 livrés : déclencheur planifié (4.7b4), dialogue « Tester »
+ * (4.7c2) et « Charger plus » du panneau d'instances (4.7a2). API mockée comme la suite 4.4.
+ */
+test.describe('Studio — workflows 4.7 (planifié, Tester, Charger plus)', () => {
+
+  test('le déclencheur Planifié affiche le cron, le préréglage remplit le champ et Enregistrer envoie triggerConfig.cron', async ({ page }) => {
+    const ctx = await setup(page);
+    await page.goto('/studio/workflows/wf-1');
+    await expect(page.getByTestId('wf-name')).toHaveValue('Validation intervention');
+
+    // Le déclencheur n'est plus « bientôt » : la carte est cliquable et ouvre la configuration cron.
+    const card = page.getByTestId('wf-trigger-scheduled');
+    await expect(card).not.toHaveAttribute('aria-disabled', 'true');
+    await card.click();
+    await expect(page.getByTestId('wf-scheduled-config')).toBeVisible();
+
+    // Préréglage « Chaque jour à 06:00 UTC » ⇒ le champ cron est rempli, la sauvegarde devient possible.
+    await page.getByTestId('wf-cron-preset').click();
+    await page.getByRole('option', { name: 'Chaque jour à 06:00 UTC' }).click();
+    await expect(page.getByTestId('wf-cron')).toHaveValue('0 6 * * *');
+    await expect(page.getByTestId('wf-save')).toBeEnabled();
+
+    // Saisie libre ensuite : le préréglage passe à « Personnalisé » et la valeur saisie est conservée.
+    await page.getByTestId('wf-cron').fill('30 7 * * 1-5');
+    await expect(page.getByTestId('wf-cron-preset')).toContainText('Personnalisé');
+
+    await page.getByTestId('wf-save').click();
+    await expect.poll(() => ctx.find('/workflows/wf-1', 'PUT').length).toBe(1);
+    const body = ctx.find('/workflows/wf-1', 'PUT')[0].body as { trigger: string; triggerConfig: { cron: string } };
+    expect(body.trigger).toBe('scheduled');
+    expect(body.triggerConfig.cron).toBe('30 7 * * 1-5');
+  });
+
+  test('« Tester » ouvre le dialogue, sélectionne une fiche et affiche la trace simulée sans écriture', async ({ page }) => {
+    const ctx = await setup(page);
+    await page.goto('/studio/workflows/wf-1');
+    await expect(page.getByTestId('wf-name')).toHaveValue('Validation intervention');
+
+    await expect(page.getByTestId('wf-test')).toBeEnabled();
+    await page.getByTestId('wf-test').click();
+    // L'hôte <p-dialog data-testid> n'a pas de boîte : on cible la boîte de dialogue accessible (rôle + titre).
+    await expect(page.getByRole('dialog', { name: 'Tester le workflow' })).toBeVisible();
+    await expect(page.getByTestId('wf-test-dialog')).toHaveCount(1);
+    await expect(page.getByTestId('wf-test-banner')).toBeVisible();
+
+    // Les fiches du dialogue viennent de GET records/interventions?page=1&pageSize=10 (runtime mock).
+    const records = page.getByTestId('wf-test-records').locator('.wf-test-record');
+    await expect(records.first()).toBeVisible();
+    await expect(page.getByTestId('wf-test-run')).toBeDisabled();
+    await records.first().click();
+    await expect(page.getByTestId('wf-test-run')).toBeEnabled();
+    await page.getByTestId('wf-test-run').click();
+
+    // Trace 4.7c2 : 2 lignes (would_run puis would_suspend), résumé, aucun avertissement.
+    const trace = page.getByTestId('wf-test-trace');
+    await expect(trace).toBeVisible();
+    await expect(trace.locator('.wf-trace-row')).toHaveCount(2);
+    await expect(trace.locator('.wf-trace-row[data-verdict="would_run"]')).toContainText('Priorité haute');
+    await expect(trace.locator('.wf-trace-row[data-verdict="would_suspend"]')).toContainText('Validation');
+    await expect(page.getByTestId('wf-test-summary')).toContainText('2');
+    await expect(page.getByTestId('wf-test-warnings')).toHaveCount(0);
+
+    // Invariant R17 : un seul POST, celui de la simulation ; aucune écriture (instances, run, PUT, DELETE).
+    expect(ctx.find('/workflows/wf-1/test', 'POST').length).toBe(1);
+    const writes = ctx.calls.filter(c => (c.method === 'POST' || c.method === 'PUT' || c.method === 'DELETE')
+      && !c.url.endsWith('/workflows/wf-1/test') && !c.url.includes('/api/auth/'));
+    expect(writes).toEqual([]);
+  });
+
+  test('le panneau d\'instances charge la page 2 avec « Charger plus » et retire le bouton une fois tout chargé', async ({ page }) => {
+    await setup(page);
+    // Surcharge de la route instances (enregistrée après setup ⇒ prioritaire) : 22 instances en 2 pages.
+    const instanceCalls: string[] = [];
+    const instanceAt = (k: number) => ({
+      id: `inst-p${k}`, workflowDefinitionId: 'wf-1', entityDefinitionId: WF_ENTITY_ID, workflowKey: 'validation_intervention',
+      workflowName: 'Validation intervention', definitionVersion: 1, recordId: `r${k}`, trigger: 'on_create',
+      status: k % 2 ? 'completed' : 'running', currentStepIndex: 0, currentStepKey: null, dueAt: null, startedBy: null,
+      startedAt: '2026-09-17T10:00:00Z', completedAt: null, depth: 0, originInstanceId: null, error: null
+    });
+    await page.route('**/api/studio/workflows/wf-1/instances?**', route => {
+      const url = new URL(route.request().url());
+      instanceCalls.push(url.search);
+      const pageNumber = Number(url.searchParams.get('page') ?? '1');
+      const items = pageNumber === 1 ? Array.from({ length: 20 }, (_, k) => instanceAt(k)) : [instanceAt(20), instanceAt(21)];
+      return route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: {
+          items, page: pageNumber, pageSize: 20, totalCount: 22, totalPages: 2,
+          hasPreviousPage: pageNumber > 1, hasNextPage: pageNumber < 2
+        }, message: null, errors: [] })
+      });
+    });
+
+    await page.goto('/studio/workflows/wf-1');
+    await expect(page.getByTestId('wf-instance-inst-p0')).toBeVisible();
+    await expect(page.locator('.wf-inst__item')).toHaveCount(20);
+    const more = page.getByTestId('wf-instances-more');
+    await expect(more).toBeVisible();
+    await expect(more).toContainText('encore 2');
+
+    await more.click();
+    await expect(page.getByTestId('wf-instance-inst-p21')).toBeVisible();
+    await expect(page.locator('.wf-inst__item')).toHaveCount(22);
+    await expect(page.getByTestId('wf-instances-more')).toHaveCount(0);
+    // Exactement une requête page=2, aucune page=3 (le total serveur borne la pagination).
+    await expect.poll(() => instanceCalls.filter(q => q.includes('page=2')).length).toBe(1);
+    expect(instanceCalls.filter(q => q.includes('page=3')).length).toBe(0);
+    expect(instanceCalls.every(q => q.includes('pageSize=20'))).toBe(true);
+  });
+});
+
 test.describe('captures', () => {
   test.skip(!process.env.STUDIO_DOC_SCREENSHOTS, 'captures docs — définir STUDIO_DOC_SCREENSHOTS=1');
 

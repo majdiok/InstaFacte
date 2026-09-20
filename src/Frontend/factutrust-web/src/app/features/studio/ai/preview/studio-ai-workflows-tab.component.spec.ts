@@ -82,6 +82,22 @@ describe('StudioAiWorkflowsTabComponent', () => {
     expect(steps[1].querySelector('.fa-bell')).not.toBeNull();
   });
 
+  it('affiche « Planifié » (sans « bientôt ») pour un workflow au déclencheur scheduled — D-47-76', () => {
+    fixture.componentRef.setInput('summary', {
+      kind: 'Workflow', title: 'Relance', steps: [], entities: [], warnings: [],
+      workflows: [{
+        key: 'relance', name: 'Relance hebdomadaire', trigger: 'scheduled', isActive: false,
+        stepCount: 1, entityDisplayName: 'Facture',
+        steps: [{ key: 'notif', type: 'notify', label: 'Notifier le gestionnaire' }]
+      }]
+    } as StudioPlanSummary);
+    fixture.detectChanges();
+
+    expect(STUDIO_AI_LABELS.workflows.triggers.scheduled).toBe('Planifié');
+    expect(text()).toContain(`${STUDIO_AI_LABELS.workflows.trigger} : Planifié`);
+    expect(text()).not.toContain('bientôt');
+  });
+
   it('affiche l’état vide pour un résumé sans workflow ni étape', () => {
     fixture.componentRef.setInput('summary', {
       kind: 'Workflow', title: 'Validation congés', steps: [], entities: [], warnings: [], workflows: []

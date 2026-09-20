@@ -24,9 +24,10 @@ import {
 } from './studio-workflows.models';
 
 /**
- * Accès HTTP aux 20 routes des workflows Studio (4.4a2) : 11 de conception
- * (`StudioWorkflowsController.cs`, policy `studio:design_entities`) et 9 runtime
- * (`StudioWorkflowRuntimeController.cs`, `custom_records:read` / `:write`).
+ * Accès HTTP aux routes des workflows Studio (4.4a2 → 4.7) : 24 méthodes HTTP,
+ * 13 de conception (`StudioWorkflowsController.cs`, policy `studio:design_entities` ;
+ * dont `test` et `instances`, 4.7) et 11 runtime (`StudioWorkflowRuntimeController.cs`,
+ * `custom_records:read` / `:write` ; dont `approvals/history`, 4.7h). Compte mis à jour au lot ★ (D-47-76).
  * Le catalogue d'étapes est mis en cache (`shareReplay`) jusqu'à `invalidateCatalog()`.
  * Les sondes et les écritures dont l'appelant gère lui-même le 400/404/409 passent
  * `createHttpContextSkipGlobalErrorUi()` (D-44-03) : pas de toast « Erreur » de

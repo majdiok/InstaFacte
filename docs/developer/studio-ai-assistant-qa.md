@@ -1168,9 +1168,8 @@ Assistant, outil `studio_plan_workflow` : « rappel tous les lundis à 6 h » �
 (`trigger: scheduled`, alias FR « planifié », `triggerConfig.cron`, alias `filtres` ⇒ `filters`) ; sans cron ou cron
 invalide ⇒ contrôle **bloquant** « Workflow « … » : déclencheur planifié sans expression cron valide (triggerConfig.cron
 — 5 champs, UTC). », plan non créé ; la description de l'outil (`AiToolRegistry`) ne parle plus de « bientôt
-disponible ». Voir QA 88 (réécrite). **Écart connu (frontend)** : l'aperçu du plan dans l'atelier affiche encore le
-déclencheur comme « Planifié (bientôt) » (`studio-ai-labels.ts`, clé `scheduled`) — libellé périmé, sans effet sur la
-création ; à corriger au lot ★ (plan C7) : ne pas le compter comme un échec de cette section.
+disponible ». Voir QA 88 (réécrite). L'aperçu du plan dans l'atelier affiche le déclencheur comme « Planifié »
+(`studio-ai-labels.ts`, clé `scheduled` — libellé « Planifié (bientôt) » corrigé au lot ★1, D-47-76 ; QA 153).
 
 - Portée automatisée : Infra `StudioAiWorkflowSpecTests.Keeps_scheduled_workflows_with_cron_and_filters`,
   `StudioAiWorkflowSpecTests.Parses_a_scheduled_only_plan_with_the_french_alias`,
@@ -1507,3 +1506,103 @@ sans l'index, `/history` reste fonctionnel mais lent sur un gros journal (aucune
 
 - Portée automatisée : API `Routes_and_policies_are_unchanged` ; test de migration (`Up`/`Down` idempotents, ligne
   `__EFMigrationsHistory` du jumeau) : **à ajouter en ★2** (U7) — aucun test aujourd'hui.
+
+## Studio IA 4.7 « v1.1 » — passes ★ (revue sécurité, tests, simplify)
+
+### 153. Passes ★ 4.7
+
+Passe de sécurité **S-base** (S1–S17, plan C §4.2) sur le périmètre v1.1 puis passes de tests et de simplification —
+**aucun changement de contrat** (routes, `data-testid`, libellés hors D-47-76, codes d'erreur, migrations).
+
+**★1 — corrections de revue (D-47-74 → D-47-76, D-47-81).**
+
+- **D-47-74 (S3 / U6)** : avec un profil disposant de `studio:design_entities` **sans** `custom_records:read`, ouvrir un
+  workflow ⇒ **Tester sur un enregistrement** ⇒ choisir une fiche ⇒ **Lancer le test** : le dialogue affiche le message
+  serveur « Permission de lecture des enregistrements requise. » (403), aucune trace rendue. Avec les deux permissions
+  (rôles livrés) : trace inchangée (QA 128). Aucune écriture dans les deux cas.
+- **D-47-75 (S9 / R52)** : `GET api/studio/records/{entityKey}/{id}/history?page=2147483647` ⇒ `200`, page vide,
+  `page` renvoyé = `21474836` (`int.MaxValue / 100`), `totalCount` réel — plus de `500`. `pageSize=999` ⇒ `200`, `pageSize`
+  renvoyé `100` (QA 151 inchangée).
+- **D-47-76 (S17)** : atelier IA, plan contenant un workflow au déclencheur planifié ⇒ onglet **Workflows** de l'aperçu :
+  « Déclencheur : Planifié » (plus de « (bientôt) »).
+- **D-47-81** : constats consignés sans code (Journal) — purge des `AuditLogs` absente (R41 / R51), job récurrent orphelin
+  (R54, runbook), cron « chaque minute » accepté (U5), mécanique `soon` conservée (P-d), 22 `skipErrorUi` relus (S13),
+  journaux du job planifié sans valeur métier (S15).
+
+- Portée automatisée : Infra `StudioWorkflowTestFeaturesTests.Without_records_read_the_test_is_unauthorized` (+ les 10
+  faits existants, harnais accordant `RecordsRead`), `AuditLogQueryServiceTests.GetEntityHistoryAsync_bounds_page_so_that_skip_never_overflows` ;
+  Karma `studio-ai-workflows-tab.component.spec.ts` « affiche « Planifié » (sans « bientôt ») … D-47-76 ».
+
+**★2 — tests (D-47-77, D-47-78).** Aucun code de production ; un seul fichier hors tests, le jumeau SQL (`docs/runbooks/sql/`).
+
+- **S6 cron** : `StudioWorkflowCronSpecTests` — 5 champs exigés, bornes (`60`, `24`, `0`/`32`, `0`/`13`, `8` refusés), pas
+  (`*/0`, `*/-5`, `*/` refusés), plages inversées, listes vides, noms `SUN-SAT` / `JAN-DEC` (pas `LUN`, `JANV`), `?` / `L`
+  refusés, normalisation des espaces ; les 24 sorties des helpers `Hangfire.Cron.*` sont acceptées ; recoupement par
+  réflexion avec l'analyseur Cronos embarqué dans Hangfire.Core 1.8.14 (tout ce que la spec accepte, Cronos l'accepte ;
+  les bornes hors plage sont refusées des deux côtés). `* * * * *` reste accepté (U5).
+- **S14 migration (U7)** : `AddAuditLogsEntityHistoryIndexMigrationTests` — 6 faits dont un sur SQL Server réel
+  (`MigrateAsync` ×2 puis rejeu du jumeau : 1 index `IX_AuditLogs_EntityHistory` sur `(EntityType, EntityId, CreatedAt)`,
+  1 ligne `__EFMigrationsHistory`). Jumeau SQL complété de la ligne d'historique (R37) ; migration intacte.
+- **S5 job planifié** : `Fire_is_decorated_with_disable_concurrent_execution_540s_and_no_retry` (attributs relus par
+  `CustomAttributeData`, signature `(Guid, Guid, CancellationToken)`).
+- **S2 simulation** : `TestWorkflowQueryHandler_depends_on_no_writing_service` — constructeur limité à 6 dépendances de
+  lecture (`IStudioWorkflowRepository`, `ICustomEntityRepository`, `ICustomFieldRepository`, `ICustomRecordRepository`,
+  `ICurrentUser`, `TimeProvider`) ; aucun type `Engine` / `Notification` / `Audit` / `Mediator` / `UnitOfWork`…
+- **S7 filtre sur champ supprimé** : `RecordQuerySqlTests.Eq_on_a_field_that_no_longer_exists_falls_back_to_a_parameterized_text_comparison`
+  — un filtre planifié dont le champ n'existe plus est traduit en `JSON_VALUE(...) = @p0` (texte, paramétré), sans
+  exception : le tick continue (l'isolement d'une fiche en échec reste couvert par
+  `Tick_isolates_a_failing_record_and_processes_the_rest`).
+- **S10 historique des approbations** : borne haute déjà couverte (`ListMyApprovalHistory_clamps_max_to_200`) ; ajout de la
+  borne basse `ListMyApprovalHistory_clamps_max_to_1_when_not_positive` (0 et −25 ⇒ dépôt appelé avec `1`).
+- **S1 surface `StudioRecordsController`** : `Action_surface_is_frozen_with_an_explicit_policy_per_action_and_history_reads_no_flag`
+  — exactement 8 actions, verbe / gabarit / policy figés par action, `[Authorize]` de classe sans policy, aucun
+  `[AllowAnonymous]` ; drapeaux tous à `false` ⇒ `History` répond `200`, `Patch` répond `404` sans MediatR.
+- **S12 Karma (+3)** : panneau d'instances — badge absent quand `openCount = 0` même avec des instances en cours sur la
+  page (D-47-F02) ; « Charger plus » porte `p-button-loading` / `p-disabled` pendant la page 2 et un second clic n'émet
+  aucune requête ; concepteur — trace « Tester » hostile (`<img onerror>`, `<b>`, `<script>` dans `detail`, `rendered`,
+  `warnings`) rendue en texte : aucun élément `img` / `b` / `script` dans `wf-test-trace`.
+- **Playwright (+3, `e2e/studio-workflows.spec.ts`, API mockée)** : (a) carte **Planifié** cliquable (plus de
+  `aria-disabled`), préréglage « Chaque jour à 06:00 UTC » ⇒ `wf-cron` = `0 6 * * *`, saisie libre ⇒ préréglage
+  « Personnalisé », **Enregistrer** ⇒ `PUT wf-1` avec `trigger: 'scheduled'` et `triggerConfig.cron` ; (b) **Tester** ⇒
+  boîte de dialogue « Tester le workflow », fiches de `GET records/interventions?page=1&pageSize=10`, **Lancer le test**
+  désactivé sans fiche, trace 2 lignes (`would_run` « Priorité haute », `would_suspend` « Validation »), résumé « 2 »,
+  aucun avertissement, un seul `POST …/test` et **aucune** autre écriture ; (c) panneau d'instances 22 instances en
+  2 pages ⇒ 20 lignes, « Charger plus — encore 2 », clic ⇒ 22 lignes, bouton retiré, une seule requête `page=2`, aucune
+  `page=3`, `pageSize=20` partout.
+- Écart de test consigné : l'hôte `<p-dialog data-testid="wf-test-dialog">` n'a pas de boîte visible (PrimeNG 19) — le
+  dialogue est ciblé par `getByRole('dialog', { name: 'Tester le workflow' })`, le `data-testid` vérifié par `toHaveCount(1)`.
+- Portée automatisée ★2 : Infra +51 cas (`StudioWorkflowCronSpecTests` 40, `AddAuditLogsEntityHistoryIndexMigrationTests` 6,
+  job 1, simulation 1, `RecordQuerySql` 1, approbations 2), API +1 (`StudioRecordsControllerContractTests` : 21 cas),
+  Karma +3, Playwright +3 (suite Studio attendue 47 réussis / 11 ignorés — captures docs — / 58).
+
+**★3 — simplify (D-47-79, D-47-80).** Aucun changement de contrat (routes, `data-testid`, libellés, migrations) ; passe de
+lecture croisée (R56) avant commit : « aucun blocage », deux agents.
+
+- **S16 DI du job planifié (D-47-79)** : `StudioWorkflowScheduledJob` n'était pas enregistré dans `DependencyInjection.cs`
+  (l'activateur Hangfire le construisait implicitement, contrairement à `StudioWorkflowResumeJob`) ⇒ `AddScoped` explicite,
+  et fait `StudioWorkflowDependencyInjectionTests.Scheduled_and_resume_jobs_are_registered_scoped_and_the_scheduled_job_resolves`
+  (descripteur unique, `Scoped`, résolution depuis un scope du conteneur de production `AddApplication` + `AddInfrastructure`).
+- **Constantes moteur (D-47-80)** : `StudioWorkflowStepsSpec.DefaultApprovalDueInHours` (72) et `DefaultWaitMaxHours`
+  (`= MaxHours`, 720) remplacent quatre constantes privées (handlers `approval` / `wait` et leurs miroirs dans la simulation) ;
+  la dernière valeur miroir (`MaxSimulatedSteps` ↔ `StudioWorkflowEngine.MaxStepsPerSegment`) est verrouillée par
+  `Simulated_segment_bound_matches_the_real_engine_segment_bound`.
+- **Helper JSON** : `StudioWorkflowJson.TryParseObject` (Application/Spec) remplace trois blocs identiques (cron, filtres du
+  déclencheur, colonnes JSON du mapping) ; testé directement (`StudioWorkflowJsonTests`, 12 cas : absent, blanc, illisible,
+  tronqué, tableau, `null`, scalaire, chaîne ⇒ `false` ; objets ⇒ `true`).
+- **Dialogue « Tester » extrait** : `StudioWorkflowTestDialogComponent` (`app-studio-workflow-test-dialog`, entrées
+  `workflowId` / `entityKey` / `fields`, ouvert par `#testDialog.open()` depuis le bouton `wf-test`) ; gabarit, styles
+  (`studio-workflow-test-dialog.scss`) et les 4 cas Karma déplacés à l'identique ; le concepteur garde le test du bouton
+  désactivé et gagne un test d'intégration (entrées propagées, `visible` bascule au clic, `GET records … pageSize=10`).
+- Conservés volontairement (consignés D-47-80) : double clamp `max` 1..200 du dépôt (`ListDecidedApprovalsByUserAsync`,
+  contrat documenté de `IStudioWorkflowRepository`, défense en profondeur) ; `cronPresets` mutable (`p-select [options]`
+  exige `any[]` en PrimeNG 19.1) ; préfixe `test*` des signaux du dialogue (déplacement vérifiable à l'identique).
+- Vérification manuelle (Chromium, administrateur du tenant de démonstration, `dotnet run` + `ng serve`) : dialogue « Tester »
+  identique — bouton grisé tant que le brouillon est sale, recherche anti-rebond, 10 fiches, trace et verdicts, erreur 404
+  inline ; approbation sans `dueInHours` ⇒ échéance +72 h, attente sans `maxHours` ⇒ plafond 720 h ; tick planifié
+  inchangé (filtres lus, `value2` replié).
+- Portée automatisée ★3 : Infra +14 (`StudioWorkflowJsonTests` 12, DI 1, borne simulation 1), Karma +1 net
+  (`studio-workflow-test-dialog.component.spec.ts` 4 cas déplacés + 1 intégration concepteur ; dossier `workflows` 105),
+  Playwright inchangé (`studio-workflows.spec.ts` 9 réussis / 3 ignorés ; suite Studio 47 / 11 / 58).
+- V-full du lot ★ (HEAD `107d44d2`, Release, collections xUnit sérialisées) : Infra 8552 / 8552 (d3 : 8485, soit +67 = ★1 2 +
+  ★2 51 + ★3 14), API 450 / 450 (+1), 0 ignoré ; Karma 3955 (d3 : 3950) ; Playwright Studio 47 / 11 / 58 ; `build:prod`
+  initial 1,38 Mo inchangé ; `npm audit` critique 0 ; parité catalogue OK ; aucune migration dans le diff `d0c6111d..HEAD`.

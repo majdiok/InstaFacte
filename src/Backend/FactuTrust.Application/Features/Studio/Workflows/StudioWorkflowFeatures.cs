@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
@@ -102,18 +101,7 @@ internal static class StudioWorkflowMapping
     public static JsonObject ParseObject(string? json) => TryParseObject(json) ?? new JsonObject();
 
     private static JsonObject? TryParseObject(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-            return null;
-        try
-        {
-            return JsonNode.Parse(json) as JsonObject;
-        }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
-        {
-            return null;
-        }
-    }
+        => StudioWorkflowJson.TryParseObject(json, out var obj) ? obj : null;
 
     private static string RowVersionOf(byte[]? rowVersion) => Convert.ToBase64String(rowVersion ?? []);
 }

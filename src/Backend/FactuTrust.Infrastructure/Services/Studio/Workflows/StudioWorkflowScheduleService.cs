@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Features.Studio.Workflows.Spec;
@@ -84,19 +83,7 @@ public sealed class StudioWorkflowScheduleService : IStudioWorkflowScheduleServi
     internal static bool TryReadCron(string? triggerConfigJson, out string cron)
     {
         cron = string.Empty;
-        if (string.IsNullOrWhiteSpace(triggerConfigJson))
-            return false;
-
-        JsonNode? node;
-        try
-        {
-            node = JsonNode.Parse(triggerConfigJson);
-        }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
-        {
-            return false;
-        }
-        if (node is not JsonObject config)
+        if (!StudioWorkflowJson.TryParseObject(triggerConfigJson, out var config))
             return false;
         if (config["cron"] is not JsonValue value || !value.TryGetValue<string>(out var raw))
             return false;

@@ -45,6 +45,13 @@ public static class StudioWorkflowStepsSpec
     public const int MaxMappings = 20;
     public const int MaxHours = 720;
 
+    /// <summary>Échéance par défaut d'une étape <c>approval</c> sans <c>dueInHours</c> explicite (72 h) —
+    /// partagée moteur/simulation depuis 4.7★3 (D-47-80), bornée <c>1..MaxHours</c> à l'usage.</summary>
+    public const int DefaultApprovalDueInHours = 72;
+    /// <summary>Plafond par défaut d'une étape <c>wait</c> sans <c>maxHours</c> explicite : le plafond
+    /// absolu <see cref="MaxHours"/> (720 h) — partagé moteur/simulation depuis 4.7★3 (D-47-80).</summary>
+    public const int DefaultWaitMaxHours = MaxHours;
+
     /// <summary>Nom de variable <c>saveResultAs</c> / clé de <c>_results</c>.</summary>
     public static readonly Regex SaveAsRegex = new("^[a-z][a-z0-9_]{0,31}$", RegexOptions.CultureInvariant);
 

@@ -142,6 +142,43 @@ describe('StudioWorkflowInstancesPanelComponent (4.7a2 — historique paginé)',
     expect((badge.nativeElement as HTMLElement).textContent?.trim()).toBe('7');
   });
 
+  // 4.7★2 (S12) — verrous complémentaires du panneau.
+  it('badge masqué quand openCount vaut 0, même si la page chargée contient des instances en cours (D-47-F02)', () => {
+    setup('w1');
+    httpMock.expectOne(r => r.url === `${API}/workflows/w1/instances`)
+      .flush(page([inst({ id: 'i1', status: 'running' }), inst({ id: 'i2', status: 'waiting_approval' })], 2));
+    fixture.detectChanges();
+
+    expect(fixture.debugElement.query(By.css('[data-testid="wf-instances-open-count"]'))).toBeNull();
+    expect(fixture.debugElement.queryAll(By.css('.wf-inst__item')).length).toBe(2);
+  });
+
+  it('« Charger plus » passe en état de chargement et ignore un second clic tant que la page 2 est en vol', () => {
+    setup('w1');
+    httpMock.expectOne(r => r.url === `${API}/workflows/w1/instances`)
+      .flush(page(Array.from({ length: 20 }, (_, k) => inst({ id: `p1-${k}` })), 45));
+    fixture.detectChanges();
+
+    const more = () => fixture.debugElement.query(By.css('[data-testid="wf-instances-more"]')).nativeElement as HTMLButtonElement;
+    expect(more().classList.contains('p-button-loading')).toBeFalse();
+    more().click();
+    more().click(); // second clic pendant le vol : aucune requête supplémentaire (garde loadingMore)
+    fixture.detectChanges();
+
+    const req2 = httpMock.expectOne(r =>
+      r.url === `${API}/workflows/w1/instances` && r.params.get('page') === '2' && r.params.get('pageSize') === '20');
+    expect(more().classList.contains('p-button-loading')).toBeTrue();
+    expect(more().classList.contains('p-disabled')).toBeTrue();
+
+    req2.flush(page(Array.from({ length: 20 }, (_, k) => inst({ id: `p2-${k}` })), 45, 2));
+    fixture.detectChanges();
+
+    expect(more().classList.contains('p-button-loading')).toBeFalse();
+    expect(more().textContent).toContain('encore 5');
+    expect(fixture.debugElement.queryAll(By.css('.wf-inst__item')).length).toBe(40);
+    httpMock.expectNone(r => r.params.get('page') === '3');
+  });
+
   it('affiche l\'état vide sans requête quand workflowId est nul', () => {
     setup(null);
     httpMock.expectNone(r => r.url.includes('/instances'));

@@ -516,6 +516,23 @@ public class StudioWorkflowApprovalFeaturesTests
         Assert.Empty(result.Value);
     }
 
+    /// <summary>4.7★2 (S10) : borne basse du clamp `max` 1..200 dans le handler (le dépôt n'a pas à se défendre seul).</summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-25)]
+    public async Task ListMyApprovalHistory_clamps_max_to_1_when_not_positive(int requested)
+    {
+        SetupReadPermission();
+        _workflows.Setup(r => r.ListDecidedApprovalsByUserAsync(TenantId, ApproverId, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StudioWorkflowApproval>());
+
+        var result = await CreateHistoryHandler().Handle(new ListMyApprovalHistoryQuery(Max: requested), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value);
+        _workflows.Verify(r => r.ListDecidedApprovalsByUserAsync(TenantId, ApproverId, 1, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task ListMyApprovalHistory_requires_records_read()
     {
