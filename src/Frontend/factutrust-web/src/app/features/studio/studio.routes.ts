@@ -138,6 +138,17 @@ export const STUDIO_CHILD_ROUTES: Routes = [
     loadComponent: () => import('./studio-record-form.component').then(m => m.StudioRecordFormComponent),
     title: 'Modifier enregistrement - InstaFact'
   },
+  // 4.7 suite (D-47-94) : fiche en lecture seule pour un profil `custom_records:read` seul.
+  // Même composant que `/edit` ; le composant détecte la route `/view` et passe DynamicForm en
+  // lecture seule (champs désactivés, actions d'écriture masquées). Tous les endpoints lus sont
+  // en recordsRead (schéma, enregistrement, historique, instances de workflow).
+  {
+    path: 'd/:key/:id/view',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.customData.recordsRead] },
+    loadComponent: () => import('./studio-record-form.component').then(m => m.StudioRecordFormComponent),
+    title: 'Consulter enregistrement - InstaFact'
+  },
   {
     path: 'd/:key',
     canActivate: [permissionGuard],

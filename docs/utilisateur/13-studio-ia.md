@@ -247,7 +247,12 @@ approbations, mises à jour de champs, création d’enregistrements, actions ER
   demande ; « — » si l’utilisateur n’existe plus), message du demandeur, **Voir l’instance**, **Approuver**
   ou **Refuser** (un commentaire est alors obligatoire). Les notifications de la cloche vous y ramènent.
   Les utilisateurs disposant du droit de lecture des enregistrements accèdent à « Mes approbations » et au
-  détail d’une instance depuis la fiche, sans être concepteurs. À la déconnexion, le badge repasse à zéro.
+  détail d’une instance depuis la fiche, sans être concepteurs.
+  Depuis la clôture 4.7, la **fiche en lecture seule** complète ce droit : dans la liste d’une table, l’œil
+  **« Voir »** (colonne Actions) ouvre la fiche (`…/view`) pour toute personne qui peut **lire** les
+  enregistrements — tous les onglets (Fiche, Liés, Workflows, Historique) restent visibles, les champs sont
+  désactivés et les actions d’écriture (Enregistrer, démarrer un workflow, lier/délier) restent réservées au
+  droit d’écriture. Le crayon **« Modifier »** garde l’URL `…/edit` pour ceux qui ont le droit d’écriture. À la déconnexion, le badge repasse à zéro.
   La page a trois onglets : **À traiter** (les demandes en attente, avec le badge), **Déléguées** (grisé,
   « Bientôt » — la délégation n’existe pas encore) et **Historique** : vos **50 dernières décisions**
   (approuvées ou refusées), de la plus récente à la plus ancienne — workflow, enregistrement, demandeur,

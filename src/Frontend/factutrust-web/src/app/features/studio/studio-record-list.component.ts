@@ -94,8 +94,10 @@ import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
                 [allFields]="allFields()"
                 [search]="search"
                 [showActions]="canWrite()"
+                [showView]="true"
                 (editRow)="edit($event)"
                 (deleteRow)="remove($event)"
+                (viewRow)="view($event)"
                 (total)="onRunnerTotal($event)" />
             </div>
           } @else {
@@ -108,9 +110,11 @@ import { STUDIO_RUNTIME_LABELS } from './shared/studio-runtime-labels';
               [pageSize]="pageSize"
               [loading]="loading()"
               [showActions]="canWrite()"
+              [showView]="true"
               (lazyLoad)="onLazy($event)"
               (editRow)="edit($event)"
-              (deleteRow)="remove($event)" />
+              (deleteRow)="remove($event)"
+              (viewRow)="view($event)" />
           }
         }
       </app-studio-page-shell>
@@ -312,6 +316,11 @@ export class StudioRecordListComponent implements OnInit {
 
   edit(row: DynamicRow): void {
     this.router.navigate(['/studio/d', this.entityKey, row.id, 'edit']);
+  }
+
+  /** 4.7 suite (D-47-94) : fiche en lecture seule pour un profil `custom_records:read` seul. */
+  view(row: DynamicRow): void {
+    this.router.navigate(['/studio/d', this.entityKey, row.id, 'view']);
   }
 
   remove(row: DynamicRow): void {

@@ -57,7 +57,7 @@ describe('StudioRecordListComponent', () => {
   let queryParamMap$: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
 
   function setup(recordViewsEnabled: boolean, canDesignForms = true, state: 'unknown' | 'loading' | 'ready' | 'unavailable' = 'ready',
-    canDesign = false, workflowsEnabled = false): void {
+    canDesign = false, workflowsEnabled = false, recordsWrite = true): void {
     queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
 
     TestBed.configureTestingModule({
@@ -72,7 +72,7 @@ describe('StudioRecordListComponent', () => {
           provide: AuthService,
           useValue: {
             hasPermission: (p: string) =>
-              p === PERMISSIONS.customData.recordsWrite ? true :
+              p === PERMISSIONS.customData.recordsWrite ? recordsWrite :
               p === PERMISSIONS.studio.designForms ? canDesignForms :
               p === PERMISSIONS.studio.designEntities ? canDesign : false
           }
@@ -265,6 +265,21 @@ describe('StudioRecordListComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.debugElement.query(By.css('app-studio-record-view-runner'))).not.toBeNull();
+  });
+
+  it('lecteur sans recordsWrite : l’œil « Voir » pointe vers /view (D-47-94)', () => {
+    setup(false, true, 'ready', false, false, false);
+    httpMock.expectOne(`${environment.apiUrl}/studio/records/interventions/schema`).flush({ success: true, data: schema(false), message: null, errors: [] });
+    httpMock.expectOne(req => req.url === `${environment.apiUrl}/studio/records/interventions`)
+      .flush({ success: true, data: { items: [{ id: 'r1', data: { nom: 'X' } }], totalCount: 1 }, message: null, errors: [] });
+    fixture.detectChanges();
+
+    const cmp = fixture.componentInstance;
+    expect(cmp.canWrite()).toBe(false);
+    cmp.view({ id: 'r1', data: {} } as never);
+    expect(router.navigate).toHaveBeenCalledWith(['/studio/d', 'interventions', 'r1', 'view']);
+    cmp.edit({ id: 'r1', data: {} } as never);
+    expect(router.navigate).toHaveBeenCalledWith(['/studio/d', 'interventions', 'r1', 'edit']);
   });
 
   it('reste sur la « Liste » brute quand aucune vue n’est par défaut', () => {
