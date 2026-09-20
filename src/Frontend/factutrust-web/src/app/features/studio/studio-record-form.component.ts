@@ -16,6 +16,7 @@ import { StudioRecordTabsComponent, StudioRecordTab } from './shared/studio-reco
 import { StudioLinkedRecordsTabComponent } from './relations/studio-linked-records-tab.component';
 import { StudioLinkChipsEditorComponent } from './relations/studio-link-chips-editor.component';
 import { StudioRecordWorkflowsTabComponent } from './workflows/studio-record-workflows-tab.component';
+import { StudioRecordHistoryTabComponent } from './records/studio-record-history-tab.component';
 import { StudioWorkflowsService } from './workflows/studio-workflows.service';
 import { STUDIO_WORKFLOW_LABELS } from './workflows/studio-workflow-labels';
 import { WorkflowInstanceDto, isOpenInstance } from './workflows/studio-workflows.models';
@@ -29,7 +30,7 @@ function linkedTabKey(r: { junctionEntityKey?: string | null; targetEntityKey: s
 @Component({
   selector: 'app-studio-record-form',
   standalone: true,
-  imports: [CommonModule, RouterModule, ToastModule, DynamicFormComponent, StudioPageShellComponent, SkeletonTableComponent, StudioRecordTabsComponent, StudioLinkedRecordsTabComponent, StudioLinkChipsEditorComponent, StudioRecordWorkflowsTabComponent],
+  imports: [CommonModule, RouterModule, ToastModule, DynamicFormComponent, StudioPageShellComponent, SkeletonTableComponent, StudioRecordTabsComponent, StudioLinkedRecordsTabComponent, StudioLinkChipsEditorComponent, StudioRecordWorkflowsTabComponent, StudioRecordHistoryTabComponent],
   template: `
     <p-toast></p-toast>
     @if (entity(); as e) {
@@ -73,6 +74,11 @@ function linkedTabKey(r: { junctionEntityKey?: string | null; targetEntityKey: s
             <app-studio-record-workflows-tab [entityKey]="entityKey" [recordId]="recordId!" [instances]="workflowInstances() ?? []"
               [canWrite]="canWrite()" (changed)="loadWorkflowInstances()" />
           }
+          @case ('history') {
+            <!-- 4.7h5 / D-47-66 : historique de la fiche (lecture seule), chargé à l'activation de l'onglet (D-B4) ;
+                 schéma COMPLET (champs inactifs compris) pour résoudre les libellés (D-B8). -->
+            <app-studio-record-history-tab [entityKey]="entityKey" [recordId]="recordId!" [fields]="schema()?.fields ?? []" />
+          }
           @default {
             @if (activeRelation(); as rel) {
               <app-studio-linked-records-tab [relation]="rel" [recordId]="recordId!" [canWrite]="canWrite()" />
@@ -97,7 +103,7 @@ export class StudioRecordFormComponent implements OnInit {
   readonly loading = signal(true);
   readonly saving = signal(false);
   readonly breadcrumbs = signal<BreadcrumbItem[]>([]);
-  /** Schéma complet (relations incluses) — alimente l'onglet « Liés » (2.5e, N8 : Fiche / Liés). */
+  /** Schéma complet (relations incluses, champs inactifs compris) — alimente l'onglet « Liés » (2.5e, N8 : Fiche / Liés) et les libellés de l'onglet « Historique » (4.7h5, D-B8). */
   readonly schema = signal<CustomEntitySchema | null>(null);
   readonly activeTab = signal('form');
   private readonly auth = inject(AuthService);
@@ -111,7 +117,8 @@ export class StudioRecordFormComponent implements OnInit {
   /** Badge de l'onglet : instances OUVERTES seulement, `null` si 0 pour ne pas afficher « 0 » (D-44-58). */
   readonly openWorkflowCount = computed(() => (this.workflowInstances() ?? []).filter(i => isOpenInstance(i.status)).length);
   readonly showWorkflowsTab = computed(() => !!this.recordId && this.workflowInstances() !== null);
-  readonly showTabs = computed(() => !!this.recordId && (this.manyToMany().length > 0 || this.showWorkflowsTab()));
+  /** 4.7h5 / D-B2 : toute fiche existante porte la barre d'onglets (l'onglet « Historique » est toujours présent en édition). */
+  readonly showTabs = computed(() => !!this.recordId);
   readonly tabs = computed<StudioRecordTab[]>(() => [
     { key: 'form', label: 'Fiche' },
     ...this.manyToMany().map(r => ({
@@ -120,7 +127,9 @@ export class StudioRecordFormComponent implements OnInit {
     })),
     ...(this.showWorkflowsTab()
       ? [{ key: 'workflows', label: STUDIO_WORKFLOW_LABELS.recordTab.tabLabel, badge: this.openWorkflowCount() || null }]
-      : [])
+      : []),
+    // 4.7h5 / D-B3 : « Historique » toujours en dernier, sans badge — fiche existante seulement (D-B2).
+    ...(this.recordId ? [{ key: 'history', label: this.runtimeLabels.history.tabLabel }] : [])
   ]);
   readonly activeRelation = computed(() => {
     const key = this.activeTab();

@@ -73,11 +73,12 @@ export function formatHistoryChange(
   labels: StudioRecordHistoryLabels
 ): StudioRecordHistoryChangeView {
   const field = fields.find(f => f.key === change.key);
+  // Nul → nul (clé explicitement nulle dans un document créé) est rendu « Champ : (vide) » — volontaire.
   const kind: StudioRecordHistoryChangeView['kind'] =
     change.oldValue === null ? 'added' : change.newValue === null ? 'removed' : 'changed';
   return {
     key: change.key,
-    label: field?.label ?? change.key,
+    label: historyFieldLabel(change.key, fields),
     kind,
     oldText: formatHistoryValue(change.oldValue, field, labels),
     newText: formatHistoryValue(change.newValue, field, labels)

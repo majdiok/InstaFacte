@@ -103,16 +103,23 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
     });
   }
 
-  it('sans relation N-N ⇒ pas d\'onglets, formulaire seul', () => {
+  it('sans relation N-N ni workflows ⇒ onglets Fiche + Historique seulement, formulaire actif (4.7h5, D-B2)', () => {
     setup('r1', [], true, 'off');   // sonde drainée en 404 : contrat inchangé (4.4h2)
-    expect(component.showTabs()).toBeFalse();
-    expect(fixture.debugElement.query(By.css('app-studio-record-tabs'))).toBeNull();
+    expect(component.showTabs()).toBeTrue();
+    expect(component.tabs().map(t => t.key)).toEqual(['form', 'history']);
+    expect(component.tabs()[1].label).toBe('Historique');
+    expect(component.tabs()[1].badge).toBeUndefined();                 // sans badge (D-B3)
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('app-studio-record-tabs'))).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="studio-tab-history"]')).not.toBeNull();
     expect(fixture.debugElement.query(By.css('app-dynamic-form'))).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('app-studio-record-history-tab'))).toBeNull();
   });
 
-  it('sans relations dans le schéma (null) ⇒ pas d\'onglets', () => {
+  it('sans relations dans le schéma (null) ⇒ onglets Fiche + Historique', () => {
     setup('r1', null, true, 'off');
-    expect(component.showTabs()).toBeFalse();
+    expect(component.showTabs()).toBeTrue();
+    expect(component.tabs().map(t => t.key)).toEqual(['form', 'history']);
   });
 
   it('en création (recordId null) ⇒ pas d\'onglets même avec N-N', () => {
@@ -122,10 +129,10 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
     expect(fixture.debugElement.query(By.css('app-studio-record-tabs'))).toBeNull();
   });
 
-  it('en édition avec N-N ⇒ onglets Fiche puis Liés — <cible>, formulaire actif par défaut', () => {
+  it('en édition avec N-N ⇒ onglets Fiche puis Liés — <cible> puis Historique, formulaire actif par défaut', () => {
     setup('r1', [m2o, m2m], true, 'off');
     expect(component.showTabs()).toBeTrue();
-    expect(component.tabs().map(t => t.key)).toEqual(['form', 'linked:intervention_technicien']);
+    expect(component.tabs().map(t => t.key)).toEqual(['form', 'linked:intervention_technicien', 'history']);
     expect(component.tabs()[1].label).toBe('Liés — Techniciens');
     expect(component.activeTab()).toBe('form');
     fixture.detectChanges();
@@ -168,7 +175,7 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
 
     expect(component.showWorkflowsTab()).toBeTrue();
     expect(component.showTabs()).toBeTrue();                       // onglet présent même sans relation N-N
-    expect(component.tabs().map(t => t.key)).toEqual(['form', 'workflows']);
+    expect(component.tabs().map(t => t.key)).toEqual(['form', 'workflows', 'history']);   // Historique toujours en dernier (D-B3)
     expect(component.tabs()[1].label).toBe('Workflows');
     expect(component.tabs()[1].badge).toBe(1);                     // instances OUVERTES seulement (D-44-58)
     fixture.detectChanges();
@@ -187,7 +194,7 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
     drainLinkSurfaces();                                           // carte de puces montée (4.7r4)
     expect(component.workflowInstances()).toBeNull();
     expect(component.showWorkflowsTab()).toBeFalse();
-    expect(component.tabs().map(t => t.key)).toEqual(['form', 'linked:intervention_technicien']);
+    expect(component.tabs().map(t => t.key)).toEqual(['form', 'linked:intervention_technicien', 'history']);
     expect(fixture.nativeElement.querySelector('[data-testid="studio-tab-workflows"]')).toBeNull();
 
     component.loadWorkflowInstances();                             // variante 403 (policy refusée)
@@ -204,6 +211,37 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
     httpMock.expectNone(r => r.url.includes('/workflow-instances'));
     expect(component.showWorkflowsTab()).toBeFalse();
     expect(component.showTabs()).toBeFalse();
+  });
+
+  it("l'onglet Historique ne déclenche aucune requête /history avant son activation, puis 1 GET page=1&pageSize=20 (4.7h5, D-B4)", () => {
+    setup('r1', [], true, 'off');
+    fixture.detectChanges();
+    httpMock.expectNone(r => r.url.endsWith('/history'));
+    expect(fixture.debugElement.query(By.css('app-studio-record-history-tab'))).toBeNull();
+
+    (fixture.nativeElement.querySelector('[data-testid="studio-tab-history"]') as HTMLElement).click();
+    fixture.detectChanges();
+    expect(component.activeTab()).toBe('history');
+    expect(fixture.debugElement.query(By.css('app-studio-record-history-tab'))).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('app-dynamic-form'))).toBeNull();
+    const history = httpMock.expectOne(r => r.url === `${API}/r1/history`);
+    expect(history.request.method).toBe('GET');
+    expect(history.request.params.get('page')).toBe('1');
+    expect(history.request.params.get('pageSize')).toBe('20');
+    history.flush({ success: true, data: { items: [], page: 1, pageSize: 20, totalCount: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false }, message: null, error: null });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="srh-empty"]')).not.toBeNull();
+  });
+
+  it('création : ni onglet Historique ni requête /history', () => {
+    setup(null, [], true, 'off');
+    fixture.detectChanges();
+    expect(component.showTabs()).toBeFalse();
+    expect(component.tabs().map(t => t.key)).toEqual(['form']);
+    expect(fixture.debugElement.query(By.css('app-studio-record-tabs'))).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="studio-tab-history"]')).toBeNull();
+    expect(fixture.debugElement.query(By.css('app-studio-record-history-tab'))).toBeNull();
+    httpMock.expectNone(r => r.url.endsWith('/history'));
   });
 
 });

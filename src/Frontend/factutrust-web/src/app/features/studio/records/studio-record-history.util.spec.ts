@@ -97,6 +97,10 @@ describe('studio-record-history.util (4.7h3, D-47-64)', () => {
     const raw = formatHistoryChange({ key: '_raw', oldValue: null, newValue: '{"a":1}' }, FIELDS, labels);
     expect(raw.label).toBe('_raw');
     expect(raw.kind).toBe('added');
+
+    // Clé explicitement nulle dans un document créé : rendu « Statut : (vide) » (added, sans flèche).
+    const nullToNull = formatHistoryChange({ key: 'statut', oldValue: null, newValue: null }, FIELDS, labels);
+    expect(nullToNull).toEqual({ key: 'statut', label: 'Statut', kind: 'added', oldText: '(vide)', newText: '(vide)' });
   });
 
   it('historyUserLabel rend le nom ou « Utilisateur inconnu » pour un nom nul ou vide', () => {
