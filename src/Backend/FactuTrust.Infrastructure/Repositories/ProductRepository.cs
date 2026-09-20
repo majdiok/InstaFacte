@@ -136,7 +136,7 @@ public sealed class ProductRepository : IProductRepository
         var items = await query
             .Include(p => p.Category)
             .OrderBy(p => p.Name)
-            .Skip((page - 1) * pageSize)
+            .Skip(PagingBounds.SafeSkip(page, pageSize))
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
@@ -159,7 +159,7 @@ public sealed class ProductRepository : IProductRepository
         var items = await query
             .Include(p => p.Category)
             .OrderBy(p => p.Code)
-            .Skip((page - 1) * pageSize)
+            .Skip(PagingBounds.SafeSkip(page, pageSize))
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
