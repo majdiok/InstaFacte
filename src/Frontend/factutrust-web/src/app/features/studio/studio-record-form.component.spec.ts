@@ -8,6 +8,7 @@ import { MessageService } from 'primeng/api';
 import { environment } from '@environments/environment';
 import { AuthService } from '@core/services/auth.service';
 import { StudioRecordFormComponent } from './studio-record-form.component';
+import { DynamicFormComponent } from '@shared/studio-runtime/dynamic-form.component';
 import { EntityRelationDto } from './relations/studio-relations.models';
 import { WorkflowInstanceDto } from './workflows/studio-workflows.models';
 
@@ -54,7 +55,8 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
   let component: StudioRecordFormComponent;
   let httpMock: HttpTestingController;
 
-  function setup(recordId: string | null, relations: EntityRelationDto[] | null, canWrite = true, instances: WorkflowInstanceDto[] | 'off' = []): void {
+  function setup(recordId: string | null, relations: EntityRelationDto[] | null, canWrite = true, instances: WorkflowInstanceDto[] | 'off' = [],
+    viewOnly = false): void {
     TestBed.configureTestingModule({
       imports: [StudioRecordFormComponent],
       providers: [
@@ -64,7 +66,11 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
         provideNoopAnimations(),
         MessageService,
         { provide: AuthService, useValue: { hasPermission: () => canWrite } },
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap(recordId ? { key: 'interventions', id: recordId } : { key: 'interventions' }) } } }
+        { provide: ActivatedRoute, useValue: { snapshot: {
+          paramMap: convertToParamMap(recordId ? { key: 'interventions', id: recordId } : { key: 'interventions' }),
+          // D-47-94 : `/view` (lecteur pur) active le mode lecture seule du composant.
+          routeConfig: { path: recordId ? (viewOnly ? 'd/:key/:id/view' : 'd/:key/:id/edit') : 'd/:key/new' }
+        } } }
       ]
     });
     fixture = TestBed.createComponent(StudioRecordFormComponent);
@@ -231,6 +237,44 @@ describe('StudioRecordFormComponent — onglets Fiche / Liés (2.5e)', () => {
     history.flush({ success: true, data: { items: [], page: 1, pageSize: 20, totalCount: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false }, message: null, error: null });
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="srh-empty"]')).not.toBeNull();
+  });
+
+  it('lecture seule (/view, lecteur sans recordsWrite) : readOnly vrai, champs désactivés, sans actions (D-47-94)', () => {
+    setup('r1', null, false, [], true);
+    expect(component.readOnly()).toBe(true);
+    expect(component.canWrite()).toBe(false);
+    fixture.detectChanges(); // propage [readOnly] au sous-composant (saisi après ngOnInit)
+    fixture.detectChanges();
+    const df = fixture.debugElement.query(By.directive(DynamicFormComponent));
+    expect(df).withContext('DynamicForm monté').not.toBeNull();
+    expect(df.componentInstance.readOnly).toBe(true);
+    // Le mode lecture seule est entré à ngOnInit → le champ est désactivé dès buildForm.
+    const control = df.componentInstance.form.get('nom');
+    expect(control?.disabled).withContext('champ « nom » désactivé en lecture seule').toBe(true);
+    const actions = fixture.nativeElement.querySelector('.ft-form-actions');
+    expect(actions).withContext('barre Enregistrer/Annuler absente en lecture seule').toBeNull();
+  });
+
+  it('édition (/edit) : readOnly faux, barre d’actions présente (régression D-47-94)', () => {
+    setup('r1', null, true);
+    expect(component.readOnly()).toBe(false);
+    const df = fixture.debugElement.query(By.directive(DynamicFormComponent));
+    expect(df.componentInstance.readOnly).toBe(false);
+    fixture.detectChanges();
+    const actions = fixture.nativeElement.querySelector('.ft-form-actions');
+    expect(actions).withContext('barre Enregistrer/Annuler présente en édition').not.toBeNull();
+  });
+
+  it('lecture seule : submit() est sans effet (défense en profondeur, D-47-94)', () => {
+    setup('r1', null, false, [], true);
+    component.submit({ nom: 'Y' });
+    httpMock.expectNone(r => r.method === 'PUT' || r.method === 'POST');
+    expect(component.saving()).toBe(false);
+  });
+
+  it('lecture seule : tous les onglets restent présents (Fiche + Historique), workflows si sonde OK (D-47-94)', () => {
+    setup('r1', null, false, [wfInstance('w1', 'running')], true);
+    expect(component.tabs().map(t => t.key)).toEqual(['form', 'workflows', 'history']);
   });
 
   it('création : ni onglet Historique ni requête /history', () => {

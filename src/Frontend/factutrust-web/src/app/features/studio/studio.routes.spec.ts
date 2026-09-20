@@ -32,14 +32,14 @@ describe('STUDIO_ROUTES', () => {
     }
   });
 
-  it("n'ouvre au lecteur (custom_records:read seul) que les quatre pages d'exécution prévues (4.5d1, D-45-12)", () => {
+  it("n'ouvre au lecteur (custom_records:read seul) que les cinq pages d'exécution prévues (4.5d1, D-45-12 ; fiche /view en 4.7 suite, D-47-94)", () => {
     // La policy de module `studio` accepte custom_records:read depuis 4.5d1 : toute nouvelle route Studio
     // doit donc porter une permission de conception, sinon elle s'ouvrirait aux lecteurs.
     const readerOnly = STUDIO_CHILD_ROUTES
       .filter(r => (r.data?.['permissions'] as string[]).every(p => p === PERMISSIONS.customData.recordsRead))
       .map(r => r.path)
       .sort();
-    expect(readerOnly).toEqual(['approvals', 'd/:key', 'records/:key/:id', 'systems/:key']);
+    expect(readerOnly).toEqual(['approvals', 'd/:key', 'd/:key/:id/view', 'records/:key/:id', 'systems/:key']);
   });
 
   it('déclare ai, ai/projects et ai/templates avant systems/:key (sinon :key capturerait le segment)', () => {
@@ -67,6 +67,9 @@ describe('STUDIO_ROUTES', () => {
     expect(idx('d/:key/views/:viewId')).toBeGreaterThan(-1);
     expect(idx('d/:key/views/new')).toBeLessThan(idx('d/:key/:id/edit'));
     expect(idx('d/:key/views/:viewId')).toBeLessThan(idx('d/:key/:id/edit'));
+    // D-47-94 : la fiche en lecture seule `/view` est déclarée après `/edit` (segment littéral,
+    // aucune capture possible) et reste réservée à recordsRead (assertion « lecteur » ci-dessus).
+    expect(idx('d/:key/:id/view')).toBeGreaterThan(idx('d/:key/:id/edit'));
   });
 
   it('garde les routes de vues par permissionGuard + capabilityGuard(recordViewsEnabled)', () => {

@@ -73,9 +73,11 @@ interface RunRequestParams {
             [pageSize]="pageSize()"
             [loading]="loading()"
             [showActions]="showActions()"
+            [showView]="showView()"
             (lazyLoad)="onLazy($event)"
             (editRow)="editRow.emit($event)"
-            (deleteRow)="deleteRow.emit($event)" />
+            (deleteRow)="deleteRow.emit($event)"
+            (viewRow)="viewRow.emit($event)" />
         }
         @case ('Kanban') {
           <app-studio-kanban-board
@@ -123,6 +125,8 @@ export class StudioRecordViewRunnerComponent {
   readonly view = input<CustomRecordViewDto | null>(null);
   readonly allFields = input<CustomField[]>([]);
   readonly showActions = input(true);
+  /** 4.7 suite (D-47-94) : propage l'œil « Voir » (fiche en lecture seule) à la table interne. */
+  readonly showView = input(false);
   /** Texte de recherche courant du parent ; pris en compte au prochain `reload()` (pas réactif à la frappe). */
   readonly search = input('');
   /** Tronque le rendu côté client (réutilisation 2.5c) ; `null` = pas de troncature client. */
@@ -137,6 +141,7 @@ export class StudioRecordViewRunnerComponent {
 
   readonly editRow = output<DynamicRow>();
   readonly deleteRow = output<DynamicRow>();
+  readonly viewRow = output<DynamicRow>();
   /** Total serveur de la dernière exécution réussie — permet au parent d'afficher un sous-titre cohérent. */
   readonly total = output<number>();
 

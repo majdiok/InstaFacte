@@ -35,8 +35,8 @@ function linkedTabKey(r: { junctionEntityKey?: string | null; targetEntityKey: s
     <p-toast></p-toast>
     @if (entity(); as e) {
       <app-studio-page-shell
-        [title]="(recordId ? 'Modifier' : 'Nouveau') + ' — ' + e.displayName"
-        [subtitle]="recordId ? 'Modifiez les champs ci-dessous.' : 'Remplissez le formulaire pour créer un enregistrement.'"
+        [title]="(recordId ? (readOnly() ? 'Consulter' : 'Modifier') : 'Nouveau') + ' — ' + e.displayName"
+        [subtitle]="recordId ? (readOnly() ? 'Consultation en lecture seule.' : 'Modifiez les champs ci-dessous.') : 'Remplissez le formulaire pour créer un enregistrement.'"
         [breadcrumbs]="breadcrumbs()">
         @if (showTabs()) {
           <app-studio-record-tabs [tabs]="tabs()" [(active)]="activeTab" />
@@ -53,6 +53,7 @@ function linkedTabKey(r: { junctionEntityKey?: string | null; targetEntityKey: s
                   [model]="model()"
                   [saving]="saving()"
                   [entityKey]="entityKey"
+                  [readOnly]="readOnly()"
                   (save)="submit($event)"
                   (formCancel)="cancel()" />
               </div>
@@ -110,6 +111,9 @@ export class StudioRecordFormComponent implements OnInit {
   readonly runtimeLabels = STUDIO_RUNTIME_LABELS;
 
   readonly canWrite = computed(() => this.auth.hasPermission(PERMISSIONS.customData.recordsWrite));
+  /** 4.7 suite (D-47-94) : la route `/view` (custom_records:read) affiche la fiche en lecture seule.
+   *  Tous les onglets restent visibles ; seules les actions d'écriture sont masquées (canWrite()). */
+  readonly readOnly = computed(() => !!this.recordId && this.route.snapshot.routeConfig?.path === 'd/:key/:id/view');
   readonly manyToMany = computed(() => (this.schema()?.relations ?? []).filter(r => r.kind === 'many_to_many'));
   private readonly workflows = inject(StudioWorkflowsService);
   /** Sonde `listRecordInstances` : null = module coupé / droit absent (403-404) ⇒ onglet masqué (fail-closed, 4.4h2). */
@@ -151,7 +155,7 @@ export class StudioRecordFormComponent implements OnInit {
           this.fields.set(res.data.fields.filter(f => f.isActive));
           this.layout.set(res.data.form);
           this.breadcrumbs.set(STUDIO_BREADCRUMBS.recordForm(
-            res.data.entity.displayName, this.entityKey, !!this.recordId));
+            res.data.entity.displayName, this.entityKey, !!this.recordId, this.readOnly()));
         }
         if (this.recordId) {
           this.studio.getRecord(this.entityKey, this.recordId).subscribe({
@@ -182,6 +186,7 @@ export class StudioRecordFormComponent implements OnInit {
   }
 
   submit(data: Record<string, unknown>): void {
+    if (this.readOnly()) return; // D-47-94 : la fiche en lecture seule n'écrit jamais.
     this.saving.set(true);
     const obs = this.recordId
       ? this.studio.updateRecord(this.entityKey, this.recordId, data, null)

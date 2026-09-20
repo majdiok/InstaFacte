@@ -44,10 +44,10 @@ export const STUDIO_BREADCRUMBS = {
     ),
   records: (name: string, key: string): BreadcrumbItem[] =>
     studioBreadcrumb({ label: name, route: `/studio/d/${key}` }),
-  recordForm: (name: string, key: string, editing: boolean): BreadcrumbItem[] =>
+  recordForm: (name: string, key: string, editing: boolean, viewing = false): BreadcrumbItem[] =>
     studioBreadcrumb(
       { label: name, route: `/studio/d/${key}` },
-      { label: editing ? 'Modifier' : 'Nouveau' }
+      { label: viewing ? 'Consulter' : editing ? 'Modifier' : 'Nouveau' }
     ),
   recordViewNew: (name: string, key: string): BreadcrumbItem[] =>
     studioBreadcrumb(
