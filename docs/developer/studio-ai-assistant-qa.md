@@ -340,6 +340,10 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   unique filtrée `(TenantId, EntityDefinitionId, Key) WHERE IsDeleted = 0`, aucune FK — workflows
   Studio). Jumeau idempotent :
   `docs/runbooks/sql/AddStudioWorkflows_Tenant.idempotent.sql`.
+- `20260918100000_AddAuditLogsEntityHistoryIndex_Tenant` (index non unique `IX_AuditLogs_EntityHistory` sur
+  `AuditLogs (EntityType, EntityId, CreatedAt)` — historique d'une fiche, 4.7h2 ; `Up`/`Down` idempotents
+  `IF NOT EXISTS` / `IF EXISTS`, aucune colonne ajoutée). Jumeau idempotent :
+  `docs/runbooks/sql/AddAuditLogsEntityHistoryIndex_Tenant.idempotent.sql`. Test de migration : ajouté en ★2 (U7).
 
 ## Portée automatisée
 
@@ -388,6 +392,18 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
   déclencheur, dépôt et migration — les tests SQL exigent `FACTUTRUST_TEST_SQL_CONNECTION`, sinon `Skipped` —,
   `StudioWorkflowFeaturesTests` pour les handlers de conception) ; contrat API
   `StudioWorkflowsControllerContractTests` (filtre `FactuTrust.API.Tests.Studio`).
+- Workflows Studio « v1.1 » (4.7 a/b/c/p — PR #151 à #159, #168) : le même filtre `FullyQualifiedName~StudioWorkflow`
+  couvre `StudioWorkflowScheduleServiceTests` (ordonnancement Hangfire, 6), `StudioWorkflowScheduledJobTests`
+  (tick, 13), `StudioWorkflowTestFeaturesTests` (simulation `POST workflows/{id}/test`, 10 `[SkippableFact]` —
+  SQL réel requis, sinon `Skipped`), `StudioWorkflowApprovalFeaturesTests` (historique de mes décisions) et les
+  cas `Scheduled_trigger_*` de `StudioWorkflowStepsSpecTests` ; IA planifiée : `--filter
+  "FullyQualifiedName~StudioAiWorkflowSpec|FullyQualifiedName~StudioAiWorkflowPlanner"` ; contrats API
+  `StudioWorkflowsControllerContractTests` (13 routes figées) et `StudioWorkflowRuntimeControllerContractTests`
+  (11 routes) dans le filtre `FactuTrust.API.Tests.Studio`.
+- Journal d'audit des fiches (4.7h1–h2 — PR #170, #171) : `--filter
+  "FullyQualifiedName~CustomRecordAudit|FullyQualifiedName~CustomRecordHistory|FullyQualifiedName~AuditLogQueryService"`
+  (`CustomRecordAuditTests` 9, `CustomRecordHistoryQueryTests` 6, `AuditLogQueryServiceTests.GetEntityHistoryAsync_*`) ;
+  contrat API `StudioRecordsControllerContractTests` (`History_*`, `Routes_and_policies_are_unchanged`).
 - Frontend : `ng test --watch=false --browsers=ChromeHeadless` (service de plans + flux SSE de confirmation).
 - Gate complet : `powershell -File scripts\verify-all.ps1`.
 
@@ -703,10 +719,11 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
 > `curl` — le frontend arrive en PR 4.4. Les numéros 75–80 sont ceux du registre du plan maître ; l'ordre du
 > fichier suit les PR.
 
-75. **Drapeau éteint** — sans `Ollama__EnableStudioWorkflows`, appeler les 11 routes de
-    `StudioWorkflowsController` (`GET api/studio/workflows/step-catalog`, `GET/POST api/studio/entities/{entityId}/workflows`,
-    `POST …/workflows/validate`, `GET/PUT/DELETE api/studio/workflows/{id}`, `POST …/toggle`, `POST …/duplicate`,
-    `GET …/instances`, `GET api/studio/workflows/instances/{instanceId}`) ⇒ `404`
+75. **Drapeau éteint** — sans `Ollama__EnableStudioWorkflows`, appeler les 13 routes de
+    `StudioWorkflowsController` (`GET api/studio/workflows/step-catalog`, `GET api/studio/workflows` (catalogue tenant, 4.5c3 — consommé par le hub 4.5f),
+    `GET/POST api/studio/entities/{entityId}/workflows`, `POST …/workflows/validate`, `GET/PUT/DELETE api/studio/workflows/{id}`,
+    `POST …/toggle`, `POST …/duplicate`, `POST …/test` (4.7c1), `GET …/instances?page=&pageSize=` (paginée depuis 4.7a1),
+    `GET api/studio/workflows/instances/{instanceId}` — contrat figé `FrozenRoutes` = 13, QA 129) ⇒ `404`
     « Les workflows Studio ne sont pas activés. » partout, aucune trace côté application ;
     `GET api/ai/studio/capabilities` ⇒ `workflowsEnabled=false`, `workflowToolsEnabled=false` ; créer puis
     modifier un enregistrement de `commandes` ⇒ `201` / `200` habituels et **aucune ligne** dans
@@ -731,9 +748,15 @@ doit avoir disparu. Le chemin d'échec est désormais nommé : `studio_silence_f
     avec les mêmes étapes et son `rowVersion` ⇒ `400` dont le message est celui de la **première** issue,
     suivi de « (+n autre(s) erreur(s) — utilisez la validation pour la liste complète.) » s'il y en a
     plusieurs ; `GET` ⇒ définition inchangée (`version` identique, mêmes étapes).
-78. **Déclencheur planifié refusé** — `POST` et `PUT` avec `"trigger": "scheduled"` ⇒ `400`
-    « Déclencheur planifié : bientôt disponible. » ; `POST …/validate` avec le même corps ⇒ `200`
-    `isValid=false`, une issue `path="trigger"` avec ce message ; aucune définition créée ni modifiée.
+78. **Déclencheur planifié accepté (4.7b1, D-47-B02 — remplace le refus « bientôt disponible » de la PR 4.1)** —
+    `POST` et `PUT` avec `"trigger": "scheduled"` et `"triggerConfig": { "cron": "0 6 * * 1" }` ⇒ `201` / `200` ;
+    sans `cron` ⇒ `400` `path="triggerConfig.cron"` « Une expression cron (5 champs, UTC) est requise pour le
+    déclencheur « scheduled ». » ; cron à 4 ou 6 champs, texte libre, hors bornes ou plage inversée ⇒ `400`
+    « Expression cron invalide : « … » (5 champs : minute heure jour-du-mois mois jour-de-semaine). » ; toute autre
+    clé que `cron` / `filters` ⇒ « Propriété « x » non reconnue. » ; `filters` non tableau ⇒
+    « « filters » doit être un tableau de 0 à 10 filtres { field, op, value, value2? }. » ; plus de 10 entrées ⇒
+    « Le déclencheur planifié accepte au plus 10 filtres. » (chemin `triggerConfig.filters` dans les deux cas). `POST …/validate` avec le
+    même corps ⇒ `200` `isValid=false` et les mêmes issues ; aucune définition créée ni modifiée. Détail : QA 122.
 79. **Anti-boucle** — workflow **A** sur `commandes`, `trigger: "on_update"`, une étape `update_field`
     (`set: { "montant": "{{ montant }}" }`) : modifier un enregistrement ⇒ `GET workflows/{A}/instances` ⇒
     **une seule** instance `completed`, `depth=0`, pas de relance par sa propre écriture. Workflow **B** sur
@@ -794,8 +817,10 @@ un second appel immédiat ⇒ `409` (1 relance / 24 h).
 Désactiver l'utilisateur lanceur (ou lui donner un rôle plateforme) avant le tick : l'instance passe
 `failed` avec « Lanceur introuvable ou inactif : reprise refusée. » et le lanceur reçoit la
 notification 17. `POST …/instances/{id}/cancel` avec un compte `custom_records:write` **sans**
-`studio:design_entities` ⇒ `200` `cancelled`. Couper `EnableStudioWorkflows=false` ⇒ les 9 routes
-runtime répondent `404` « Les workflows Studio ne sont pas activés. » sans aucun traitement.
+`studio:design_entities` ⇒ `200` `cancelled`. Couper `EnableStudioWorkflows=false` ⇒ les 11 routes
+runtime de `StudioWorkflowRuntimeController` (9 de la PR 4.2, `records/{entityKey}/{recordId}/workflow-instances/{instanceId}`
+de 4.5b2, `workflows/approvals/mine/history` de 4.7p1) répondent `404` « Les workflows Studio ne sont pas activés. » sans aucun traitement ; la route
+`GET records/{entityKey}/{id}/history` (4.7h2) n'est **pas** sous ce drapeau (QA 152).
 
 ## Workflows par l'IA (PR 4.3)
 
@@ -823,11 +848,15 @@ message « 1 workflow créé — inactif : activez-le depuis le hub après relec
 `Studio.Workflow.Created` et `Studio.AiPlan.Executed`. Le workflow n'a aucun effet tant qu'il n'est pas
 activé depuis le hub.
 
-### 88. Déclencheur planifié
+### 88. Déclencheur planifié (réécrit en 4.7b5, D-47-B06 — l'IA conserve les workflows planifiés)
 
-Demande « tous les lundis » ⇒ avertissement « bientôt disponible » (`warnings[]` du plan et du payload) et
-workflow ignoré ; si **tous** les workflows sont planifiés ⇒ erreur FR de la spec (« La spec ne contient
-aucun workflow réalisable (les déclencheurs planifiés ne sont pas encore disponibles). »), aucun plan créé.
+Demande « tous les lundis à 6 h » ⇒ le plan conserve le workflow avec `trigger: "scheduled"` (alias FR
+« planifié » accepté par la spec) et `triggerConfig: { cron: "0 6 * * 1", filters?: [...] }` (alias `filtres`
+replié en `filters`) ; aucun avertissement « bientôt disponible », plus aucune erreur « aucun workflow
+réalisable » (les deux ont été retirés). Si le modèle omet le cron ou en produit un invalide ⇒ **contrôle
+bloquant** du planificateur : « Workflow « … » : déclencheur planifié sans expression cron valide
+(triggerConfig.cron — 5 champs, UTC). » (`BlockingErrors`, plan non créé — prérequis de la recette P1). Le
+plan confirmé passe ensuite par la validation API de QA 78 / 122 (cron, filtres, clés inconnues). Détail : QA 126.
 
 ### 89. Champ / action inconnus bloqués
 
@@ -955,14 +984,17 @@ puis `GET workflows?search=relance&page=1&pageSize=50` et retour page 1 ; vider 
 
 - Portée automatisée : Karma hub (`fakeAsync` 299/300 ms, `expectNone`/`expectOne` avec paramètres).
 
-### 113. Concepteur : panneau « instances récentes » borné à 50
+### 113. Concepteur : panneau « Historique » paginé (ex-« instances récentes » borné à 50 — remplacé en 4.7a1/a2)
 
-Concepteur, définition avec plus de 50 instances : le panneau demande `max=50` et affiche l'invite
-« Les 50 instances les plus récentes sont affichées. » ; en dessous de 50, aucune invite. La route n'est
-pas paginée (borne API 1..200, défaut 50) : la pagination complète est reportée à v1.1 « Historique »
-(4.6a2, D-46-01).
+Concepteur, définition avec plus de 20 instances : le panneau, retitré **« Historique »**, demande
+`GET workflows/{id}/instances?page=1&pageSize=20` et affiche 20 lignes puis le total serveur ; le bouton
+« Charger plus — encore N » accumule les pages suivantes et disparaît quand tout est chargé. L'ancienne
+invite « Les 50 instances les plus récentes sont affichées. » et le paramètre `?max=` n'existent plus (D-46-01
+**levé**, D-47-B01/F01). Détail : QA 120.
 
-- Portée automatisée : Karma panneau (+2 `it` : invite à 50, absente en dessous) et concepteur (`max=50`).
+- Portée automatisée : Karma panneau `studio-workflow-instances-panel.component.spec.ts` (6 `it` : page 1 de 20,
+  « Charger plus » page 2, disparition du bouton, `refreshToken`, badge, état vide) ; API
+  `List_instances_defaults_page_1_size_50_clamps_size_to_1_200_and_returns_paged_envelope`.
 
 ### 114. « Demandé par » sur les instances
 
@@ -1029,6 +1061,159 @@ n'est plus vide. Studio → Relations, « Relation plusieurs-à-plusieurs » : l
 - Portée automatisée : Karma onglet (assertions `aria-label`) ; Karma dialogue M-à-N (+1 `it` : la clé par
   défaut ne commence jamais par `v_`).
 
+## Studio IA 4.7 « v1.1 » — workflows : historique paginé, déclencheur planifié, test (PR #151 à #159)
+
+> Prérequis : `EnableStudioWorkflows=true` (et `EnableStudioAiWorkflowTools=true` pour 126) ; un compte avec
+> `studio:design_entities` ; une table `commandes` alimentée (voir le prérequis de la PR 4.1). Sous-flux 4.7a
+> (instances paginées, D-47-B01/F01/F02), 4.7b (déclencheur planifié, D-47-B02→B06, F03) et 4.7c (simulation
+> « Tester », D-47-B07/B08, F04) ; lignes de reconstruction au Journal (4.7d1). Architecture :
+> [`docs/architecture/studio-workflows.md`](../architecture/studio-workflows.md) (« Déclencheur planifié (4.7b) »).
+> Les numéros 120–129 sont ceux annoncés par les corps de commit a2, b1→b5, c1, c2.
+
+### 120. Historique des instances paginé
+
+Concepteur, workflow **enregistré** : le panneau « Historique » émet **1 GET** `workflows/{id}/instances?page=1&pageSize=20`
+et affiche 20 lignes puis le total serveur ; « Charger plus — encore N » émet `page=2` et **accumule** ; le bouton
+disparaît quand tout est chargé (dès la page 1 si total ≤ 20) ; un enregistrement / une exécution manuelle fait
+varier `refreshToken` (enregistrement réussi d'un workflow existant ; annulation / relance d'une instance depuis le
+drawer) ⇒ rechargement depuis la page 1, accumulation réinitialisée. API : `page` défaut 1 (clamp
+D-45-28 `int.MaxValue / 200`), `pageSize` défaut 50 clampé 1..200, enveloppe `PagedResult<WorkflowInstanceDto>`
+(`items`, `page`, `pageSize`, `totalCount`) ; `?max=` n'est plus accepté (ignoré).
+
+- Portée automatisée : Karma `studio-workflow-instances-panel.component.spec.ts` (6 `it` : page 1 de 20 et
+  total, « Charger plus » `page=2` accumule, bouton absent si tout chargé, `refreshToken`, badge, état vide sans
+  requête) ; Karma service (`listInstances` `?page=&pageSize=` + bornes 1 / 1..200) ; API
+  `List_instances_defaults_page_1_size_50_clamps_size_to_1_200_and_returns_paged_envelope`.
+
+### 121. Badge « ouvertes »
+
+Le badge `wf-instances-open-count` du panneau affiche `openCount`, valeur fournie par le concepteur depuis
+`openInstances()` de la définition (pas de comptage local des lignes chargées) ; à 0 le badge est **absent** du
+DOM ; il ne change pas quand on charge plus de pages.
+
+- Portée automatisée : Karma panneau (« badge = entrée openCount même sans instance chargée ») ; Playwright
+  `e2e/studio-workflows.spec.ts` (mocks en enveloppe `PagedResult`, `pagedInstances` de
+  `e2e/helpers/studio-workflow-mock.helpers.ts`).
+
+### 122. Déclencheur planifié : validation API
+
+`POST api/studio/entities/{entityId}/workflows` / `PUT api/studio/workflows/{id}` avec `"trigger": "scheduled"` :
+`triggerConfig` sans `cron` ⇒ `400` `triggerConfig.cron` (« Une expression cron (5 champs, UTC) est requise … ») ;
+cron à 4 ou 6 champs, texte libre (« chaque jour »), valeur hors bornes (`61 * * * *`, `0 6 * * 8`), pas nul
+(`*/0 * * * *`), plage inversée ⇒ `400` « Expression cron invalide : … » ; clé autre que `cron` / `filters` ⇒ « Propriété « x » non reconnue. » ; `filters` > 10 entrées ou
+non tableau ⇒ `400` `triggerConfig.filters` ; filtre sur champ inconnu, inactif ou calculé, sur `_previous` /
+`_results`, ou avec un opérateur incompatible avec le type ⇒ `400` sur `triggerConfig.filters` (chemin **sans**
+indice, contrairement aux étapes `condition` ; messages « Champ de filtre inconnu ou inactif : « x ». », « Champ
+calculé non filtrable : « x ». », « Opérateur « op » incompatible avec le champ « x ». », « Opérateur inconnu : « op ». ») ; forme valide
+(`*/10 * * * *`, `0 6 * * 1`, `0 0 1 JAN *`, `0 18 * * MON-FRI`, `0 6 * * 0`) avec 0..10 filtres ⇒ `201` / `200`,
+`triggerConfig` restitué tel quel (`TriggerConfigJson`, aucune migration). `POST …/validate` renvoie les mêmes issues
+avec `isValid=false`.
+
+- Portée automatisée : Infra `StudioWorkflowStepsSpecTests` — `Scheduled_trigger_requires_a_valid_cron`,
+  `Scheduled_trigger_accepts_valid_cron_expressions`, `Scheduled_trigger_rejects_unknown_properties_and_bad_filters`,
+  `Scheduled_trigger_accepts_valid_filters` ; `StudioWorkflowFeaturesTests` —
+  `Create_accepts_a_scheduled_trigger_with_a_valid_cron`, `Create_rejects_a_scheduled_trigger_without_a_valid_cron`.
+  **Aucun test dédié à `StudioWorkflowCronSpec`** (analyseur pur) : ajouté en ★2.
+
+### 123. Ordonnancement Hangfire aux écritures
+
+Créer / modifier / activer un workflow **actif et planifié** ⇒ job récurrent Hangfire
+`studio-workflow-scheduled:{tenantId:N}:{definitionId:N}` ajouté ou mis à jour (`AddOrUpdate`, cron en UTC) ;
+désactiver, supprimer, changer le type de déclencheur ⇒ `RemoveIfExists` ; bascule `toggle` idempotente (même état)
+⇒ aucune synchronisation ; cron illisible en base ⇒ retrait du job + `LogWarning`, sans exception ; Hangfire
+indisponible ⇒ l'écriture métier réussit quand même (erreur absorbée, journalisée). La synchronisation a lieu
+**après** l'écriture réussie, jamais avant.
+
+- Portée automatisée : Infra `StudioWorkflowScheduleServiceTests` (6 : `Sync_registers_the_job_for_an_active_scheduled_definition`,
+  `Sync_removes_the_job_for_an_inactive_or_deleted_definition`, `Sync_removes_the_job_for_a_non_scheduled_trigger`,
+  `Sync_removes_the_job_without_throwing_when_the_cron_is_unreadable`, `Sync_swallows_a_hangfire_failure_best_effort`,
+  `RemoveDefinition_removes_the_job_id_and_swallows_failures`) ; accroches dans `StudioWorkflowFeaturesTests` :
+  `Create_syncs_the_schedule_after_the_write`, `Update_syncs_the_schedule_after_a_successful_write`,
+  `Toggle_syncs_the_schedule_once_per_effective_change`, `Delete_removes_the_scheduled_job`.
+
+### 124. Tick du job planifié
+
+À chaque tick (`StudioWorkflowScheduledJob.FireAsync(tenantId, definitionId)`, `DisableConcurrentExecution 540 s`,
+`AutomaticRetry 0`) : drapeau `EnableStudioWorkflows` coupé ⇒ aucun traitement ; tenant sans chaîne de connexion ⇒
+tick ignoré ; définition inactive, supprimée ou retypée ⇒ **job retiré**, rien démarré ; filtres illisibles ⇒ tick
+ignoré ; sinon balayage `QueryAsync` des enregistrements filtrés par lot (`StudioWorkflowScheduledBatchSize`, défaut 100,
+clamp 10..500) ⇒ **une instance système** par fiche (`trigger=scheduled`, `startedBy` nul, « Demandé par » vide) ;
+fiche ayant déjà une instance **ouverte** de ce workflow (ou de sa chaîne) ⇒ ignorée ; instance terminée ou ouverte
+sur un **autre** workflow ⇒ redémarrée ; quota `MaxWorkflowInstancesPerRecord` atteint ⇒ ignorée ; total > lot ⇒
+`LogWarning` « suite au prochain tick » ; une fiche en erreur n'interrompt pas les autres ; compteurs
+balayés / démarrés / ignorés / échoués dans le log.
+
+- Portée automatisée : Infra `StudioWorkflowScheduledJobTests` (13 faits `Fire_*` / `Tick_*`, mocks stricts :
+  drapeau coupé, sans connexion, une instance par fiche, filtres + lot clampé transmis à la requête, instance ouverte
+  ignorée, autres workflows ⇒ redémarrage, quota, définition inactive / supprimée ⇒ retrait, filtres illisibles,
+  total > lot, fiche en erreur isolée, `SetTenant` bout en bout).
+
+### 125. Concepteur : carte « Planifié »
+
+Concepteur, déclencheur : la carte « Planifié » est **sélectionnable** (plus de veto « bientôt ») ; le sous-formulaire
+`wf-scheduled-config` propose les préréglages « Toutes les heures » (`0 * * * *`), « Chaque jour à 06:00 UTC » (`0 6 * * *`),
+« Chaque lundi à 06:00 UTC » (`0 6 * * 1`) et « Personnalisé » (saisie libre `wf-cron`, aide « fuseau UTC ») ; les filtres passent par
+`app-studio-filter-builder` (`between` replié en `value` / `value2`) ; **Enregistrer** reste désactivé tant que le
+cron est vide ; changer de type de déclencheur réinitialise `triggerConfig` (aucune clé `field_changed` résiduelle) ;
+la jauge « La configuration du déclencheur dépasse 2 Ko. » s'applique aussi au planifié ; un `400
+triggerConfig.cron` serveur s'affiche en bannière.
+
+- Portée automatisée : Karma `studio-workflow-designer.component.spec.ts` (6 `it` : carte sélectionnable + cron requis,
+  préréglage / « Personnalisé », filtres via l'adaptateur, réinitialisation au changement de type, enregistrement
+  `{ cron, filters }`, bannière `400`).
+
+### 126. IA : plan planifié
+
+Assistant, outil `studio_plan_workflow` : « rappel tous les lundis à 6 h » ⇒ le plan **conserve** le workflow
+(`trigger: scheduled`, alias FR « planifié », `triggerConfig.cron`, alias `filtres` ⇒ `filters`) ; sans cron ou cron
+invalide ⇒ contrôle **bloquant** « Workflow « … » : déclencheur planifié sans expression cron valide (triggerConfig.cron
+— 5 champs, UTC). », plan non créé ; la description de l'outil (`AiToolRegistry`) ne parle plus de « bientôt
+disponible ». Voir QA 88 (réécrite). **Écart connu (frontend)** : l'aperçu du plan dans l'atelier affiche encore le
+déclencheur comme « Planifié (bientôt) » (`studio-ai-labels.ts`, clé `scheduled`) — libellé périmé, sans effet sur la
+création ; à corriger au lot ★ (plan C7) : ne pas le compter comme un échec de cette section.
+
+- Portée automatisée : Infra `StudioAiWorkflowSpecTests.Keeps_scheduled_workflows_with_cron_and_filters`,
+  `StudioAiWorkflowSpecTests.Parses_a_scheduled_only_plan_with_the_french_alias`,
+  `StudioAiWorkflowPlannerTests.Review_blocks_a_scheduled_workflow_without_a_valid_cron`.
+
+### 127. `POST workflows/{id}/test` : simulation pure
+
+`POST api/studio/workflows/{id}/test` corps `{ "recordId": "<guid>" }` ⇒ `200` `WorkflowTestResultDto`
+(`recordId`, `entityKey`, `evaluatedSteps`, `suspended`, `steps[]` `{ key, type, label, verdict, detail, rendered }`,
+`warnings[]`) : le **premier segment** (≤ 30 lignes de trace, puis avertissement « Segment épuisé … ») est simulé sur
+une **copie** du document ; verdicts `would_run` / `skipped` / `would_suspend` / `would_fail` ; les sorties
+`_results.*` non produites ⇒ avertissement « Sorties fictives : … ». **Aucune écriture** : aucune instance, aucun
+step run, aucune approbation, fiche inchangée. Fiche inconnue ou d'un autre tenant ⇒ `404` ; définition dont `StepsJson`
+est illisible ⇒ `400` `Validation.steps` ; drapeau coupé ⇒ `404` ; sans `studio:design_entities` ⇒ `403` (policy du
+contrôleur ; le handler re-vérifie la permission).
+
+- Portée automatisée : Infra `StudioWorkflowTestFeaturesTests` (10 `[SkippableFact]`, SQL réel, invariant
+  `AssertNoWriteAsync` : 0 ligne dans `StudioWorkflowInstances`, `StudioWorkflowStepRuns`, `StudioWorkflowApprovals`
+  et `AuditLogs` après chaque simulation) ; API `Test_sends_the_query_and_returns_200_with_the_trace`,
+  `Test_maps_not_found_to_404_and_invalid_definition_to_400`.
+
+### 128. Dialogue « Tester sur un enregistrement »
+
+Concepteur : bouton `wf-test` (après « Valider ») **désactivé** tant que le brouillon est sale ou non enregistré,
+infobulle « Enregistrez d’abord pour tester. » (apostrophe typographique, comme le libellé) ; ouverture ⇒ 10 enregistrements chargés, recherche anti-rebond
+300 ms, libellé = premier champ texte (D-44-24) ; « Lancer le test » ⇒ `POST { recordId }` puis trace rendue
+(verdict par étape — Exécutée / Sautée / En attente / En échec —, détail, « Valeurs rendues ») sous le bandeau « Simulation — aucune donnée n’a été écrite. » ; `400` / `404`
+affichés **en ligne** dans le dialogue (aucun toast, `skipErrorUi`) ; aucun appel d'écriture émis.
+
+- Portée automatisée : Karma concepteur `describe('dialogue « Tester » (4.7c2)')` (4 `it` : bouton désactivé +
+  infobulle, 10 enregistrements + anti-rebond + libellés, simulation sans appel d'écriture, `404` inline) ; Karma
+  service (`testWorkflow poste { recordId } sur workflows/{id}/test`).
+
+### 129. Garde-fous conception v1.1
+
+`StudioWorkflowsController` expose **13 routes figées** (`FrozenRoutes` : 11 de la PR 4.1 + `GET workflows` — catalogue tenant
+4.5c3, consommé par le hub 4.5f — + `POST workflows/{id}/test`) ; drapeau coupé ⇒ `404` sur les 13 sans appel au médiateur ; policy de classe
+`StudioDesignEntities`, aucune action avec un `[Authorize]` plus faible ; `?max=` a disparu de la route
+`instances` (rupture interne assumée, seul consommateur = panneau).
+
+- Portée automatisée : API `Route_table_matches_the_frozen_contract`,
+  `Every_route_returns_404_and_calls_nothing_when_the_flag_is_off`, `No_action_carries_a_weaker_authorize_attribute`.
+
 ## Studio IA 4.7 « v1.1 » — vues : aperçu en direct du brouillon (PR #160, #161)
 
 ### 130. Création d'une vue : l'aperçu suit le brouillon sans enregistrer
@@ -1069,6 +1254,73 @@ non consommé.
 - Portée automatisée : Karma concepteur (lecture seule : hint, pas de runner) ; API contract
   (policy + gabarit figés, drapeau coupé ⇒ 404) ; Infrastructure (handler sans dépendances
   vues/quota/audit — `VerifyNoOtherCalls`).
+
+---
+
+## Studio IA 4.7 « v1.1 » — approbations : onglet Historique (PR #168, #169)
+
+> Prérequis : `EnableStudioWorkflows=true` ; un compte approbateur (`custom_records:read` + `custom_records:write`)
+> ayant déjà approuvé et refusé au moins une demande (QA 82–84). Page `/studio/approvals` (« Mes approbations »).
+> Décisions D-47-60 (API + onglet) et D-47-61 (« Déléguées » désactivé) au Journal.
+
+### 134. Onglet « Historique » de Mes approbations
+
+Onglets `À traiter | Déléguées | Historique` (`app-studio-record-tabs`). Première activation de **Historique** ⇒
+**1 GET** `workflows/approvals/mine/history?max=50`, squelette (5 lignes) puis tableau Workflow / étape / Enregistrement /
+Demandé par / Décidée le (`dd/MM/yyyy HH:mm`) / Décision (`p-tag` « Approuvée » vert, « Refusée » rouge) /
+Commentaire (tronqué à 80 caractères + « … », texte complet en `title`). Revenir sur « À traiter » puis sur
+« Historique » ⇒ **aucun** nouvel appel (chargement paresseux, une seule fois). Le badge de « À traiter » reste
+celui des demandes en attente.
+
+- Portée automatisée : Karma `studio-approvals-page.component.spec.ts` (« onglet « Historique » : chargé à la
+  première activation seulement, statut et date affichés ») ; Playwright `e2e/studio-approvals.spec.ts` (onglets :
+  `studio-tab-history`, `sap-history-row-h1`, `sap-history-decision-h1` « Refusée », `sap-history-comment-h1`).
+
+### 135. États vide et erreur
+
+Aucune décision passée ⇒ icône horloge + « Aucune décision passée » et l'indice « Vos décisions d'approbation
+apparaîtront ici (conservées 180 jours). » (`StudioWorkflowRetentionDays`, défaut 180 : les instances purgées
+disparaissent aussi de l'historique). API en `500` ⇒ bannière en ligne « Impossible de charger l'historique. » +
+bouton `sap-history-retry` ; **aucun toast global** (`skipErrorUi`) ; « Réessayer » relance le GET.
+
+- Portée automatisée : Karma (« onglet « Historique » : erreur ⇒ bannière + Réessayer ») ; Infra
+  `ListMyApprovalHistory_keeps_terminal_instances_and_skips_purged_ones`.
+
+### 136. Onglet « Déléguées »
+
+Onglet **désactivé** (`button[disabled]`, `title` « Bientôt », opacité réduite, curseur `not-allowed`) : clic sans
+effet ; les flèches ← / → du clavier passent dessus sans le sélectionner (`select` refuse un onglet `disabled`) ;
+jamais activé ⇒ aucune requête ; aucun concept de délégation dans le domaine, aucune donnée inventée (convention
+« Bientôt », D-47-61).
+
+- Portée automatisée : Karma (« onglet « Déléguées » : désactivé avec infobulle « Bientôt », jamais activé ») ;
+  Playwright `e2e/studio-approvals.spec.ts` (même test que 134).
+
+### 137. API historique
+
+`GET api/studio/workflows/approvals/mine/history?max=50` : uniquement mes décisions (`DecidedBy` = moi) au statut
+`Approved` / `Rejected`, tri `DecidedAt` décroissant, `max` clampé 1..200 (`0` ⇒ 1, `999` ⇒ 200, défaut 50), même
+forme d'élément que l'inbox `approvals/mine` (`StudioApprovalInboxEnrichment` sans filtrage des instances
+terminales) ; instance purgée ⇒ décision omise ; drapeau coupé ⇒ `404` « Les workflows Studio ne sont pas
+activés. » ; sans `custom_records:read` ⇒ `403`.
+
+- Portée automatisée : API `ListMyApprovalHistory_returns_200_with_the_inbox_item_shape_and_default_max_50`,
+  `Every_route_returns_404_and_calls_nothing_when_the_flag_is_off` (contrat runtime) ; Infra
+  `StudioWorkflowApprovalFeaturesTests` — `ListMyApprovalHistory_returns_my_decisions_with_status_comment_and_starter_name`,
+  `ListMyApprovalHistory_clamps_max_to_200`, `ListMyApprovalHistory_requires_records_read`.
+
+### 138. Autorisations runtime
+
+Les **11 routes** de `StudioWorkflowRuntimeController` sont sous `api/studio` : tous les `GET` exigent la policy
+`CustomRecordsRead`, tous les `POST` la policy `CustomRecordsWrite` (R17) ; la nouvelle route `history` suit la
+règle. Un profil `custom_records:read` seul lit ses approbations et son historique mais ne peut ni approuver ni
+refuser (`403`).
+
+- Portée automatisée : API `Controller_is_routed_under_api_studio_with_read_policies_on_GET_and_write_policies_on_POST`.
+
+### 139. Réservé
+
+Numéro laissé libre pour un scénario « approbations » ultérieur (délégation réelle ou filtre de l'historique).
 
 ---
 
@@ -1197,3 +1449,57 @@ En mode création, `tabs()` ne contient que `form` (aucune barre d'onglets, aucu
 - Portée automatisée : Karma composant (aucun bouton d'écriture, aucun champ, aucun e-mail dans le DOM) ;
   Playwright (aucun `input/textarea/select` dans `srh-panel`) ; contrats backend `StudioRecordsController`
   (`CustomRecordsRead`) inchangés depuis #171.
+
+## Studio IA 4.7 « v1.1 » — journal d'audit des fiches (PR #170, #171)
+
+> Prérequis : une table Studio `interventions` alimentée ; un compte `custom_records:write` (mutations) et un
+> compte `custom_records:read` seul (lecture de l'historique par l'API — la fiche `/edit` reste réservée à
+> `custom_records:write`, D-B1). Aucun drapeau requis. Décisions D-47-62 (audit) et D-47-63 (aucune ligne si
+> identique, index) au Journal ; consommateur frontend : QA 146–149.
+
+### 150. Audit des mutations
+
+`POST api/studio/records/{entityKey}` ⇒ ligne d'audit `Studio.Record.Created` (`EntityType = CustomRecord`,
+`EntityId` = id de la fiche, valeurs = document canonique **aplati** au premier niveau ; JSON illisible ⇒ repli
+`_raw`). `PUT` / `PATCH` ⇒ `Studio.Record.Updated` avec **seulement les clés modifiées** (ajoutées, retirées,
+changées — `oldValues` / `newValues`) ; `PUT` sans changement effectif ⇒ **aucune ligne** (D-47-63) ; `PATCH` d'un
+seul champ ⇒ une seule clé. `DELETE` ⇒ `Studio.Record.Deleted` **sans valeurs**. Service d'audit indisponible
+(exception simulée) ⇒ la mutation réussit quand même (`SafeLogAsync`, best-effort, `IAuditService?` optionnel).
+Portée : uniquement les 4 handlers de l'API records — le moteur de workflows et l'outil IA `update_field`
+n'écrivent pas de ligne (QA 149) ; aucune rétroactivité.
+
+- Portée automatisée : Infra `CustomRecordAuditTests` (9 : `Diff_reports_added_removed_and_changed_top_level_keys_only`,
+  `Diff_returns_null_when_documents_are_identical`, `Diff_falls_back_to_raw_documents_when_json_is_unreadable`,
+  `Create_logs_Created_with_the_full_canonical_document`, `Update_logs_Updated_with_only_the_changed_keys`,
+  `Update_without_effective_change_writes_no_audit_line`, `Patch_logs_Updated_with_only_the_patched_key`,
+  `Delete_logs_Deleted_without_values`, `Audit_failure_is_swallowed_and_the_mutation_succeeds`).
+
+### 151. Route `GET records/{entityKey}/{id}/history`
+
+`GET api/studio/records/{entityKey}/{id}/history?page=1&pageSize=20` ⇒ `200` `PagedResult<RecordHistoryEntryDto>`
+(`items[] { id, action, createdAt, userName, changes[] { key, oldValue, newValue } }`, `totalCount`) ; tri
+`CreatedAt` décroissant puis `Id` ; `pageSize` clampé 1..100 (défaut 20), `page` ≥ 1 ; `userName` résolu par
+`IStudioUserNameResolver` — **jamais** d'identifiant, d'e-mail, d'adresse IP, d'agent ni de hash ; valeurs
+tronquées à **200** caractères ; ligne d'audit au JSON illisible ⇒ entrée présente avec `changes = []`. Entité
+inconnue ou inactive ⇒ `400` `Validation.entityKey` ; fiche inconnue ⇒ `404` `CustomRecord.NotFound` (non
+révélateur) ; sans `custom_records:read` ⇒ `403` (policy `CustomRecordsRead` du contrôleur ; le handler re-vérifie
+la permission et n'appelle rien).
+
+- Portée automatisée : Infra `CustomRecordHistoryQueryTests` (6 : `Handle_without_read_permission_returns_unauthorized_and_calls_nothing`,
+  `Handle_unknown_entity_returns_a_validation_error`, `Handle_unknown_record_returns_not_found`,
+  `Handle_maps_rows_with_resolved_names_and_key_diffs`, `Handle_truncates_change_values_to_200_characters`,
+  `Handle_with_unreadable_json_lists_the_entry_with_empty_changes`) ; `AuditLogQueryServiceTests.GetEntityHistoryAsync_*`
+  (filtre type + id et tri, pagination, clamp 1..100 défaut 20 en `[Theory]`, projection des colonnes internes) ;
+  API `History_forwards_paging_and_maps_success_without_any_flag`, `History_maps_notfound_to_404_and_validation_to_400`.
+
+### 152. Sans drapeau + index
+
+`EnableStudioWorkflows=false` (et tout autre drapeau Studio coupé) ⇒ la route `/history` répond toujours `200`
+(4.7h2 / D-47-63 : route sans drapeau — l'historique ne dépend d'aucune fonctionnalité optionnelle) ; les 8 routes de `StudioRecordsController` et
+leurs policies sont inchangées depuis la PR #171. En base tenant : index non unique `IX_AuditLogs_EntityHistory`
+sur `AuditLogs (EntityType, EntityId, CreatedAt)` présent (migration `20260918100000_AddAuditLogsEntityHistoryIndex_Tenant`,
+`Up` `IF NOT EXISTS` / `Down` `IF EXISTS`, jumeau `docs/runbooks/sql/AddAuditLogsEntityHistoryIndex_Tenant.idempotent.sql`) ;
+sans l'index, `/history` reste fonctionnel mais lent sur un gros journal (aucune erreur SQL).
+
+- Portée automatisée : API `Routes_and_policies_are_unchanged` ; test de migration (`Up`/`Down` idempotents, ligne
+  `__EFMigrationsHistory` du jumeau) : **à ajouter en ★2** (U7) — aucun test aujourd'hui.
