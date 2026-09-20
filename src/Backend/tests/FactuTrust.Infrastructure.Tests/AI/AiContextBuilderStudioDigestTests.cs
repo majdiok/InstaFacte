@@ -272,18 +272,20 @@ public sealed class AiContextBuilderStudioDigestTests
     }
 
     [Fact]
-    public void System_prompt_cache_revision_is_v8()
+    public void System_prompt_cache_revision_is_v9()
     {
         // PR 2.4 : règle 13 « vues enregistrées » ajoutée au prompt StudioBuilder ⇒ « v5 » → « v6 ».
         // PR 3.1b : règle 8 enrichie (amendements reorder_fields / change_field_type / add_relation /
         // assign_system / set_view) ⇒ « v6 » → « v7 ».
         // PR 4.3e : règle 14 « workflows » (outil studio_plan_workflow) + préambule d'intention
         // « workflow » conditionnel ⇒ « v7 » → « v8 ».
+        // 4.7 suite : règle 14 propose le déclencheur planifié (clôture de l'écart D-47-73)
+        // ⇒ « v8 » → « v9 ».
         var field = typeof(AiContextBuilder).GetField(
             "SystemPromptCacheRevision",
             BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(field);
-        Assert.Equal("v8", (string)field!.GetRawConstantValue()!);
+        Assert.Equal("v9", (string)field!.GetRawConstantValue()!);
     }
 
     [Fact]
@@ -434,20 +436,22 @@ public sealed class AiContextBuilderStudioDigestTests
     }
 
     [Fact]
-    public async Task Workflow_rule_14_stays_short_and_names_no_scheduled_trigger()
+    public async Task Workflow_rule_14_stays_short_and_names_the_scheduled_trigger_with_a_utc_cron()
     {
-        // Même budget que la règle 13 (≤ 480 caractères) ; aucun déclencheur planifié proposé au
-        // modèle (le seul « planifié » du texte est l'interdiction explicite) ; rappel « INACTIFS ».
+        // Clôture de l'écart D-47-73 : la règle propose le déclencheur planifié (accepté par la spec et
+        // validé par le planificateur de revue) ; budget porté à ≤ 560 caractères (cron requis, UTC,
+        // exemple) ; rappel « INACTIFS » ; l'interdiction « pas de déclencheur planifié » a disparu.
         var prompt = await Build(WorkflowSettings(), DigestMock("- t « T » : a:text", null).Object)
             .BuildSystemPromptAsync(AssistantMode.StudioBuilder, null, AssistantAgentScope.None, Opts());
 
         var rule = Rule14Line(prompt);
         Assert.NotNull(rule);
-        Assert.True(rule!.Length <= 480, $"règle 14 trop longue : {rule.Length} caractères");
-        Assert.DoesNotContain("scheduled", rule, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("pas de déclencheur planifié", rule);
-        Assert.DoesNotContain("planifié", rule.Replace("pas de déclencheur planifié", string.Empty));
-        Assert.Contains("trigger: on_create|on_update|field_changed|manual", rule);
+        Assert.True(rule!.Length <= 560, $"règle 14 trop longue : {rule.Length} caractères");
+        Assert.Contains("trigger: on_create|on_update|field_changed|manual|scheduled", rule);
+        Assert.Contains("cron", rule, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("UTC", rule);
+        Assert.Contains("requis si scheduled", rule);
+        Assert.DoesNotContain("pas de déclencheur planifié", rule);
         Assert.Contains("INACTIFS", rule);
     }
 

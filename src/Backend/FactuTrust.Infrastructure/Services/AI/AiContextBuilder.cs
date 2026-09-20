@@ -28,7 +28,7 @@ public sealed class AiContextBuilder : IAiContextBuilder
     /// v7 → v8 : règle 14 « workflows » (outil studio_plan_workflow) + préambule d'intention
     /// « workflow » conditionnel (PR 4.3e).
     /// </summary>
-    private const string SystemPromptCacheRevision = "v8";
+    private const string SystemPromptCacheRevision = "v9";
     private readonly ICompanyRepository _companyRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IMemoryCache _memoryCache;
@@ -259,10 +259,14 @@ public sealed class AiContextBuilder : IAiContextBuilder
         }
         if (workflowTools)
         {
+            // 4.7 suite (clôture de l'écart D-47-73) : le déclencheur planifié est proposable — il est
+            // accepté par la spec (« scheduled »/« planifié ») et exige un cron valide (planificateur de
+            // revue, QA 88). La description de l'outil (AiToolRegistry) donne le détail triggerConfig.
             sb.AppendLine("14. WORKFLOWS (« quand X arrive, fais Y puis Z » : validation, relance, facturation auto) : "
-                + "appelle studio_plan_workflow avec { workflows: [ { entityKey, name, trigger: on_create|on_update|field_changed|manual, "
+                + "appelle studio_plan_workflow avec { workflows: [ { entityKey, name, trigger: on_create|on_update|field_changed|manual|scheduled, "
+                + "triggerConfig: { field, cron (5 champs, UTC, requis si scheduled — « chaque matin » ⇒ \"0 6 * * *\") }, "
                 + "steps: [ { type: condition|update_field|erp_action|notify|approval|wait|create_record, … } ] } ] } "
-                + "(5 max ; pas de déclencheur planifié). Workflows créés INACTIFS, activés par l'utilisateur après relecture. "
+                + "(5 max). Workflows créés INACTIFS, activés par l'utilisateur après relecture. "
                 + "Vérifie table et champs dans le SCHÉMA EXISTANT.");
         }
         sb.AppendLine();

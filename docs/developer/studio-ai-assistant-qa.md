@@ -1175,10 +1175,11 @@ disponible ». Voir QA 88 (réécrite). L'aperçu du plan dans l'atelier affiche
 - Portée automatisée : Infra `StudioAiWorkflowSpecTests.Keeps_scheduled_workflows_with_cron_and_filters`,
   `StudioAiWorkflowSpecTests.Parses_a_scheduled_only_plan_with_the_french_alias`,
   `StudioAiWorkflowPlannerTests.Review_blocks_a_scheduled_workflow_without_a_valid_cron`.
-- **Écart connu (prompt)** : la règle 14 du prompt StudioBuilder (`AiContextBuilder.cs`) dit encore « pas de déclencheur
-  planifié » (fait `Workflow_rule_14_stays_short_and_names_no_scheduled_trigger`) alors que l'outil accepte `scheduled`
-  avec cron : le modèle **conserve** un planifié demandé mais ne le propose pas de lui-même — décision produit signalée
-  (D-47-73), hors lot ★. Ne pas compter comme un échec de cette section.
+- **Écart prompt clôturé (4.7 suite)** : la règle 14 du prompt StudioBuilder (`AiContextBuilder.cs`) propose
+  désormais `scheduled` avec `triggerConfig.cron` (5 champs, UTC, requis — exemple « chaque matin » ⇒ `"0 6 * * *"`) ;
+  fait `Workflow_rule_14_stays_short_and_names_the_scheduled_trigger_with_a_utc_cron` (budget ≤ 560) ;
+  `SystemPromptCacheRevision` « v8 » → « v9 ». Comportement antérieur (modèle conservait un planifié demandé
+  sans le proposer) : D-47-73.
 
 ### 127. `POST workflows/{id}/test` : simulation pure
 

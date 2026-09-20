@@ -196,6 +196,24 @@ public sealed class AuditLogQueryServiceTests
         Assert.Equal(0, r.Value.TotalCount);
     }
 
+    /// <summary>4.7 suite (R52, même motif que D-47-75) : <c>page</c> ≈ <c>int.MaxValue</c> ne fait plus déborder <c>(page - 1) * pageSize</c> de <c>GetLogsAsync</c> non plus.</summary>
+    [Fact]
+    public async Task GetLogsAsync_bounds_page_so_that_skip_never_overflows()
+    {
+        var db = $"AuditTest_{Guid.NewGuid()}";
+        var factory = new TestTenantDbContextFactory(db);
+        var sut = new AuditLogQueryService(factory);
+
+        var r = await sut.GetLogsAsync(null, null, null, null, null, int.MaxValue, 200, CancellationToken.None);
+
+        Assert.True(r.IsSuccess);
+        Assert.Equal(int.MaxValue / 200, r.Value.Page);
+        Assert.Equal(200, r.Value.PageSize);
+        Assert.True((long)(r.Value.Page - 1) * r.Value.PageSize <= int.MaxValue, "le décalage doit rester un int");
+        Assert.Empty(r.Value.Items);
+        Assert.Equal(0, r.Value.TotalCount);
+    }
+
     /// <summary>4.7★1 (D-47-75, R52) : <c>page</c> ≈ <c>int.MaxValue</c> ne fait plus déborder <c>(page - 1) * pageSize</c> (500 sur SQL Server).</summary>
     [Fact]
     public async Task GetEntityHistoryAsync_bounds_page_so_that_skip_never_overflows()
